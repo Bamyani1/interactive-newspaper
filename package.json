@@ -1,0 +1,57 @@
+{
+  "name": "transcript-archive",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:api": "vitest run tests/api",
+    "test:py": "source .venv/bin/activate && pytest tests/ -v",
+    "test:all": "npm run test:py && npm run test:run",
+    "extract": "source .venv/bin/activate && python3 scripts/extraction/extract.py",
+    "curate": "source .venv/bin/activate && python3 scripts/extraction/curate.py",
+    "assemble": "source .venv/bin/activate && python3 scripts/extraction/assemble.py",
+    "pipeline": "source .venv/bin/activate && python3 scripts/extraction/pipeline.py",
+    "ocr:extract-images": "source .venv/bin/activate && python3 scripts/ocr/extract_images_yolo.py"
+  },
+  "dependencies": {
+    "@google-cloud/vision": "^4.3.2",
+    "framer-motion": "^12.23.25",
+    "gsap": "^3.13.0",
+    "lucide-react": "^0.556.0",
+    "next": "^16.1.4",
+    "openseadragon": "^5.0.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@prisma/adapter-better-sqlite3": "^7.3.0",
+    "@prisma/client": "^7.3.0",
+    "@tailwindcss/postcss": "^4",
+    "@testing-library/react": "^16.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20",
+    "@types/openseadragon": "^5.0.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^16.4.7",
+    "eslint": "^9",
+    "eslint-config-next": "16.0.7",
+    "jsdom": "^24.0.0",
+    "prisma": "^7.3.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.19.2",
+    "typescript": "^5",
+    "vitest": "^3.0.0"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
+  }
+}
