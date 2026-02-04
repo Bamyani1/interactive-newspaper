@@ -1,0 +1,123 @@
+/**
+ * PageShell Component Styles
+ * Consistent page wrapper with layout variants.
+ */
+
+.pageShell {
+    min-height: 100vh;
+    width: 100%;
+    position: relative;
+    box-sizing: border-box;
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    transition:
+        background-color var(--duration-slow) var(--ease-default),
+        color var(--duration-slow) var(--ease-default);
+}
+
+/* =========================================
+   VARIANT: Default
+   Standard scrollable page layout
+   ========================================= */
+
+.default {
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+}
+
+
+
+/* =========================================
+   VARIANT: Cinema
+   Full viewport with layered backgrounds
+   ========================================= */
+
+.cinema {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background-color: var(--page-cinema-bg);
+}
+
+/* =========================================
+   HEADER OFFSET
+   When page has fixed header
+   ========================================= */
+
+.withHeader {
+    padding-top: var(--header-height);
+}
+
+/* =========================================
+   BACKGROUND LAYER
+   For pages with custom backgrounds
+   ========================================= */
+
+.backgroundLayer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.contentLayer {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* =========================================
+   GRID LAYOUT UTILITIES
+   Common layout patterns
+   ========================================= */
+
+.threeColumnGrid {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+    min-height: 100%;
+}
+
+@media (min-width: 1024px) {
+    .threeColumnGrid {
+        grid-template-columns: var(--sidebar-nav-width) 1fr var(--sidebar-context-width);
+        height: 100%;
+    }
+}
+
+.sidebarLeft {
+    display: none;
+    overflow-y: auto;
+    border-right: 1px solid var(--stroke-accent-soft);
+}
+
+.sidebarRight {
+    overflow-y: auto;
+    border-top: 1px solid var(--stroke-accent-soft);
+}
+
+.mainContent {
+    overflow-y: auto;
+    flex: 1;
+}
+
+@media (min-width: 1024px) {
+    .sidebarLeft {
+        display: block;
+        height: 100%;
+    }
+
+    .sidebarRight {
+        border-top: none;
+        border-left: 1px solid var(--stroke-accent-soft);
+        height: 100%;
+    }
+
+    .mainContent {
+        height: 100%;
+    }
+}

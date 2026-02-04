@@ -1,0 +1,34 @@
+/**
+ * Global Styles
+ * 
+ * This file is now minimal - it imports Tailwind and the organized styles.
+ * All component-specific and token styles live in src/styles/.
+ * 
+ * Structure:
+ *   src/styles/
+ *   ├── tokens/       - Design tokens (colors, typography, spacing)
+ *   ├── base/         - Reset, body defaults, animations
+ *   └── components/   - Component-specific styles
+ */
+
+@import "tailwindcss";
+@import "../styles/index.css";
+
+/* =========================================
+   TAILWIND THEME CONFIGURATION
+   Maps CSS variables to Tailwind tokens
+   ========================================= */
+
+@theme {
+  /* Colors */
+  --color-bg-primary: var(--color-bg-primary);
+  --color-bg-secondary: var(--color-bg-secondary);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-header: var(--color-text-header);
+  --color-accent: var(--color-accent);
+  --color-border-default: var(--color-border-default);
+
+  /* Typography */
+  --font-header: var(--font-header);
+  --font-body: var(--font-body);
+}
