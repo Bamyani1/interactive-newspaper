@@ -1,9 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Article } from "../data/mockData";
-import { ChevronDown, ChevronUp, Share2, Printer } from "lucide-react";
+import { ChevronDown, ChevronUp, Share2, Printer, Check } from "lucide-react";
 import Image from "next/image";
 import { getArticleAuthor, getArticlePage } from "../lib/articleUtils";
 
@@ -22,15 +22,94 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
 }) => {
     // Support both controlled and uncontrolled modes
     const [internalExpanded, setInternalExpanded] = React.useState(false);
+    const [shareStatus, setShareStatus] = React.useState<"idle" | "copied">("idle");
     const isExpanded = controlledExpanded ?? internalExpanded;
     const author = getArticleAuthor(article);
     const page = getArticlePage(article);
+    const articleRef = useRef<HTMLElement>(null);
+
+    // Auto-scroll into view when expanded
+    useEffect(() => {
+        if (isExpanded && articleRef.current) {
+            // Small delay to let the expansion animation start
+            setTimeout(() => {
+                articleRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                });
+            }, 100);
+        }
+    }, [isExpanded]);
 
     const handleClick = () => {
         if (onToggle) {
             onToggle();
         } else {
             setInternalExpanded(!internalExpanded);
+        }
+    };
+
+    const handlePrint = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        // Create a printable version
+        const printContent = `
+            <html>
+                <head>
+                    <title>${article.headline} - The Transcript</title>
+                    <style>
+                        body { font-family: Georgia, serif; max-width: 700px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+                        h1 { font-size: 28px; margin-bottom: 8px; }
+                        .meta { font-size: 12px; color: #666; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 0.1em; }
+                        .content { font-size: 16px; }
+                        img { max-width: 100%; height: auto; margin: 20px 0; }
+                        @media print { body { margin: 0; padding: 20px; } }
+                    </style>
+                </head>
+                <body>
+                    <h1>${article.headline}</h1>
+                    <div class="meta">
+                        ${article.category} • ${article.date}${author ? ` • By ${author}` : ""}${page ? ` • Page ${page}` : ""}
+                    </div>
+                    ${article.imageUrl ? `<img src="${article.imageUrl}" alt="${article.headline}" />` : ""}
+                    <div class="content">${article.fullText}</div>
+                </body>
+            </html>
+        `;
+        const printWindow = window.open("", "_blank");
+        if (printWindow) {
+            printWindow.document.write(printContent);
+            printWindow.document.close();
+            printWindow.print();
+        }
+    };
+
+    const handleShare = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const shareData = {
+            title: article.headline,
+            text: article.summary || article.headline,
+            url: window.location.href,
+        };
+
+        // Try Web Share API first
+        if (navigator.share) {
+            try {
+                await navigator.share(shareData);
+                return;
+            } catch {
+                // User cancelled or error - fall through to clipboard
+            }
+        }
+
+        // Fallback to clipboard
+        try {
+            await navigator.clipboard.writeText(
+                `${article.headline}\n\n${article.summary}\n\nRead more: ${window.location.href}`
+            );
+            setShareStatus("copied");
+            setTimeout(() => setShareStatus("idle"), 2000);
+        } catch {
+            // Clipboard failed silently
         }
     };
 
@@ -43,6 +122,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
 
     return (
         <motion.article
+            ref={articleRef}
             onClick={handleClick}
             onKeyDown={handleKeyDown}
             tabIndex={0}
@@ -161,17 +241,25 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                             )}
                             <button
                                 type="button"
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={handlePrint}
                                 className="flex items-center gap-2 text-sm hover:opacity-100"
                             >
                                 <Printer size={16} /> Print
                             </button>
                             <button
                                 type="button"
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={handleShare}
                                 className="flex items-center gap-2 text-sm hover:opacity-100"
                             >
-                                <Share2 size={16} /> Share
+                                {shareStatus === "copied" ? (
+                                    <>
+                                        <Check size={16} className="text-green-600" /> Copied!
+                                    </>
+                                ) : (
+                                    <>
+                                        <Share2 size={16} /> Share
+                                    </>
+                                )}
                             </button>
                         </div>
                     </motion.div>
@@ -179,7 +267,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
             </AnimatePresence>
 
             {/* Toggle Icon Hint */}
-            <motion.div layout className="absolute top-6 right-0 opacity-0 group-hover:opacity-20 transition-opacity">
+            <motion.div layout className="absolute top-6 right-0 opacity-40 group-hover:opacity-60 transition-opacity">
                 {isExpanded ? <ChevronUp /> : <ChevronDown />}
             </motion.div>
 
