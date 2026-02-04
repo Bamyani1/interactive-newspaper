@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { PageShell } from "@/shared";
@@ -15,22 +15,14 @@ export default function Home() {
     const router = useRouter();
     const { setDate } = useArchive();
     const demoDate = "1986-10-24";
-    const btnRef = useRef<HTMLButtonElement>(null);
+    const [isLoading, setIsLoading] = useState(false);
 
     // Use the extracted animation hook
     useTickerAnimation();
 
     const handleEnter = () => {
         setDate(demoDate);
-
-        if (btnRef.current) {
-            btnRef.current.innerHTML = `
-        <span style="position: relative; z-index: 1;">Printing...</span>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position: relative; z-index: 1; animation: spin 1s linear infinite;">
-          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-        </svg>
-      `;
-        }
+        setIsLoading(true);
 
         // Navigate immediately after a tiny delay so the spinner paints
         setTimeout(() => {
@@ -38,18 +30,14 @@ export default function Home() {
         }, 0);
     };
 
-    // Replicate the ticker items structure (tripled for smooth loop)
-    const tickerItems = [...headlines, ...headlines, ...headlines];
+    // Memoize ticker items to prevent recreation on every render
+    const tickerItems = useMemo(
+        () => [...headlines, ...headlines, ...headlines],
+        []
+    );
 
     return (
         <PageShell variant="cinema" backgroundContent={<CinemaBackground />}>
-            <style jsx global>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-
             {/* TOP TICKER */}
             <Ticker items={tickerItems} />
 
@@ -84,13 +72,22 @@ export default function Home() {
                     </div>
 
                     <button
-                        ref={btnRef}
                         type="button"
                         className="cinema-btn"
                         onClick={handleEnter}
+                        disabled={isLoading}
                     >
-                        <span>Read This Edition</span>
-                        <ArrowRight size={20} />
+                        {isLoading ? (
+                            <>
+                                <span>Printing...</span>
+                                <Loader2 size={20} className="animate-spin" />
+                            </>
+                        ) : (
+                            <>
+                                <span>Read This Edition</span>
+                                <ArrowRight size={20} />
+                            </>
+                        )}
                     </button>
                 </motion.div>
             </main>

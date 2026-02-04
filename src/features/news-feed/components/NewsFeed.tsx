@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
@@ -71,10 +71,12 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 }) => {
     const { currentDate, setDate } = useArchive();
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [focusedIndex, setFocusedIndex] = useState<number>(-1);
     const [viewerState, setViewerState] = useState({
         open: false,
         pageIndex: 0,
     });
+    const articleRefs = useRef<Map<string, HTMLElement>>(new Map());
 
     const scannedPages = useMemo(
         () => getScannedPages(currentDate),
@@ -197,6 +199,80 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     const sectionVariants = fadeUp(18);
     const sectionContainer = staggerContainer(0.08, 0.12);
 
+    // Keyboard navigation for articles
+    const scrollToArticle = useCallback((index: number) => {
+        const article = currentArticles[index];
+        if (article) {
+            const element = articleRefs.current.get(article.id);
+            element?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+    }, [currentArticles]);
+
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            // Don't trigger if user is typing in an input
+            if (
+                event.target instanceof HTMLInputElement ||
+                event.target instanceof HTMLTextAreaElement
+            ) {
+                return;
+            }
+
+            // Only handle keyboard navigation when viewing article sections (not Top or Ads)
+            if (currentSection === "Top" || currentSection === "Ads") {
+                return;
+            }
+
+            switch (event.key) {
+                case "j": {
+                    // Next article
+                    event.preventDefault();
+                    const nextIndex = Math.min(focusedIndex + 1, currentArticles.length - 1);
+                    setFocusedIndex(nextIndex);
+                    scrollToArticle(nextIndex);
+                    break;
+                }
+                case "k": {
+                    // Previous article
+                    event.preventDefault();
+                    const prevIndex = Math.max(focusedIndex - 1, 0);
+                    setFocusedIndex(prevIndex);
+                    scrollToArticle(prevIndex);
+                    break;
+                }
+                case "Enter": {
+                    // Expand/collapse focused article
+                    event.preventDefault();
+                    if (focusedIndex >= 0 && focusedIndex < currentArticles.length) {
+                        const article = currentArticles[focusedIndex];
+                        setExpandedId((prev) =>
+                            prev === article.id ? null : article.id
+                        );
+                    }
+                    break;
+                }
+                case "Escape": {
+                    // Collapse current article
+                    event.preventDefault();
+                    setExpandedId(null);
+                    break;
+                }
+            }
+        };
+
+        document.addEventListener("keydown", handleKeyDown);
+        return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [currentSection, focusedIndex, currentArticles, scrollToArticle]);
+
+    // Register article ref
+    const registerArticleRef = useCallback((id: string, element: HTMLElement | null) => {
+        if (element) {
+            articleRefs.current.set(id, element);
+        } else {
+            articleRefs.current.delete(id);
+        }
+    }, []);
+
     return (
         <div className="w-full pb-20 bg-[var(--color-bg-primary)]">
             <div className="flex flex-col gap-0 min-h-screen">
@@ -251,8 +327,13 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                             initial="hidden"
                             animate="visible"
                         >
-                            {currentArticles.map((article) => (
-                                <motion.div key={article.id} variants={itemVariants}>
+                            {currentArticles.map((article, index) => (
+                                <motion.div
+                                    key={article.id}
+                                    variants={itemVariants}
+                                    ref={(el) => registerArticleRef(article.id, el)}
+                                    className={focusedIndex === index ? "ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-bg-primary)] rounded-sm" : ""}
+                                >
                                     <ArticleCard
                                         article={article}
                                         isExpanded={expandedId === article.id}

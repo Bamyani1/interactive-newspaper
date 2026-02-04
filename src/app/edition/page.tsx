@@ -4,11 +4,13 @@ import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { TimeControls } from "@/features/time-controls";
 import { NavigationSidebar } from "@/features/navigation";
+import { MobileNav } from "@/features/navigation/components/MobileNav";
 import { NewsFeed, getClosestContext, useEditionArticles } from "@/features/news-feed";
 import { ContextSidebar } from "@/features/context-panel";
 import { useArchive } from "@/features/archive";
 import { PageShell } from "@/shared";
 import { fadeUp, TRANSITIONS } from "@/shared/motion/motionTokens";
+import { SkeletonFeed } from "@/src/components/ui/Skeleton";
 
 import type { SectionId } from "@/features/news-feed";
 import { SECTION_ORDER } from "@/features/news-feed/components/NewsFeed";
@@ -54,10 +56,6 @@ function EditionBody({ currentDate }: { currentDate: string }) {
     return result;
   }, [articlesForDate, context]);
 
-  const handleSectionSelect = (sectionId: SectionId) => {
-    setActiveSection(sectionId);
-  };
-
   const handleSectionChange = (sectionId: SectionId) => {
     setActiveSection(sectionId);
   };
@@ -79,16 +77,14 @@ function EditionBody({ currentDate }: { currentDate: string }) {
             <NavigationSidebar
               sections={sections}
               activeSection={activeSection}
-              onSelect={handleSectionSelect}
+              onSelect={handleSectionChange}
             />
           </div>
 
           {/* Center: Main Feed */}
-          <div className="lg:overflow-y-auto lg:h-full scrollbar-hide">
+          <div className="lg:overflow-y-auto lg:h-full scrollbar-hide pb-20 lg:pb-0">
             {isLoading ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="text-[var(--color-text-muted)]">Loading articles...</div>
-              </div>
+              <SkeletonFeed count={4} />
             ) : (
               <NewsFeed
                 key={`${currentDate}-${activeSection}`}
@@ -105,6 +101,13 @@ function EditionBody({ currentDate }: { currentDate: string }) {
           </div>
         </div>
       </motion.main>
+
+      {/* Mobile Bottom Navigation */}
+      <MobileNav
+        sections={sections}
+        activeSection={activeSection}
+        onSelect={handleSectionChange}
+      />
     </PageShell>
   );
 }
