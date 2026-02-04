@@ -1,0 +1,31 @@
+/**
+ * Styles Index
+ * Aggregates all stylesheets in the correct order.
+ * 
+ * Import order matters:
+ * 1. Tokens (design system foundations)
+ * 2. Base (reset, body styles, animations)
+ * 3. Components (specific UI components)
+ */
+
+/* =========================================
+   TOKENS
+   Design system foundations
+   ========================================= */
+@import "./tokens/colors.css";
+@import "./tokens/typography.css";
+@import "./tokens/spacing.css";
+
+/* =========================================
+   BASE
+   Global reset, body styles, animations
+   ========================================= */
+@import "./base/reset.css";
+@import "./base/animations.css";
+
+/* =========================================
+   COMPONENTS
+   Individual UI component styles
+   ========================================= */
+@import "./components/article-card.css";
+@import "./components/cinema-landing.css";

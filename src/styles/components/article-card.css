@@ -1,0 +1,85 @@
+/**
+ * Article Card Component Styles
+ * Styles for the expandable article cards in the news feed.
+ */
+
+.article-card {
+    border-bottom: 2px solid var(--color-accent);
+    padding: var(--space-8) 0;
+    margin-bottom: var(--space-8);
+    border-radius: 0;
+    position: relative;
+    transition: background-color var(--duration-normal) ease;
+}
+
+.article-card:hover {
+    background-color: var(--color-bg-muted);
+}
+
+/* Card image container with sepia filter */
+.card-image-container {
+    border: 1px solid var(--color-text-primary);
+    filter: sepia(80%) contrast(110%);
+    transition: all var(--duration-slow) ease;
+}
+
+/* Hover effect: Bring back color */
+.article-card:hover .card-image-container {
+    filter: sepia(0%) contrast(100%);
+}
+
+/* Digital era override */
+[data-theme='digital'] .card-image-container {
+    filter: saturate(140%) contrast(115%);
+    mix-blend-mode: normal;
+}
+
+[data-theme='digital'] .article-card:hover .card-image-container {
+    filter: none;
+    mix-blend-mode: normal;
+}
+
+/* Card headline */
+.card-headline {
+    font-family: var(--font-header);
+    font-weight: var(--font-bold);
+    font-size: var(--text-2xl);
+    letter-spacing: var(--tracking-tight);
+    line-height: var(--leading-snug);
+    margin-bottom: 0.75rem;
+}
+
+/* Card meta info */
+.card-meta {
+    font-family: var(--font-body);
+    font-weight: var(--font-medium);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+    opacity: 0.75;
+    margin-bottom: var(--space-2);
+}
+
+/* Card summary */
+.card-summary {
+    font-family: var(--font-body);
+    font-size: var(--text-base);
+    line-height: 1.6;
+    opacity: 0.85;
+}
+
+/* Layout adjustments */
+.card-header-flex {
+    align-items: flex-start;
+}
+
+/* Expanded State */
+.article-card.is-expanded {
+    background-color: rgba(0, 0, 0, 0.03);
+    padding: var(--space-12) var(--space-8);
+    border-bottom: 4px double var(--color-accent);
+}
+
+.article-card.is-expanded .card-headline {
+    font-size: var(--text-3xl);
+}

@@ -1,0 +1,82 @@
+# Dependencies
+node_modules/
+
+# Next.js / build output
+.next/
+out/
+.turbo/
+.vercel/
+
+# Logs and diagnostics
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Testing / coverage
+coverage/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.cursor/
+
+# Internal / local-only files
+task.md
+mockups/
+download_iiif_tiles.py
+item.json
+manifest.json
+
+# Large source images (use tiles in /public/tiles instead)
+campus-map-1936-full.jpg
+campus-map-1936.jp2
+campus-map-1936.jpg
+
+# Misc
+*.pem
+
+# Google Cloud / API Credentials
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+credentials/
+
+# Lint output files
+lint_output.txt
+
+# Claude Code local settings
+.claude/
+
+/src/generated/prisma
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Large Media
+public/editions/
+
+# Data files (scans, OCR output, editions)
+data/

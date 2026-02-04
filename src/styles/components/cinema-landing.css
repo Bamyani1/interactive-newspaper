@@ -1,0 +1,375 @@
+/**
+ * Cinema Landing Page Styles
+ * Cinematic photo slideshow landing page with campus map background.
+ */
+
+/* =========================================
+   MAIN CONTAINER
+   ========================================= */
+
+.cinema-container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+/* =========================================
+   FULLSCREEN BACKGROUND
+   ========================================= */
+
+.cinema-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background: var(--page-cinema-bg);
+    cursor: default;
+}
+
+/* Static campus map with Ken Burns effect */
+.cinema-map {
+    position: absolute;
+    inset: 0;
+    animation:
+        mapFadeIn 2s ease-out forwards,
+        mapKenBurns 60s ease-in-out infinite;
+    will-change: transform, opacity;
+    /* Sepia filter for historical warmth */
+    filter: sepia(25%) contrast(105%) brightness(0.95);
+}
+
+/* Dark overlay for readability */
+.cinema-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--page-cinema-overlay);
+    z-index: 1;
+    pointer-events: none;
+}
+
+/* Remove spotlight glow effects */
+.cinema-overlay::before,
+.cinema-overlay::after {
+    display: none;
+}
+
+/* Cinematic vignette - neutral black */
+.cinema-vignette {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center,
+            transparent 40%,
+            color-mix(in srgb, var(--color-bg-primary) 70%, transparent) 100%);
+    z-index: 2;
+    pointer-events: none;
+}
+
+/* =========================================
+   TICKER BARS
+   ========================================= */
+
+.cinema-ticker {
+    position: relative;
+    z-index: 10;
+    overflow: hidden;
+    background: var(--page-cinema-ticker-bg);
+    backdrop-filter: blur(4px);
+    flex-shrink: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.cinema-ticker-top {
+    order: 1;
+}
+
+.cinema-ticker-bottom {
+    order: 3;
+}
+
+.cinema-ticker-track {
+    display: flex;
+    animation: none;
+    will-change: transform;
+}
+
+.cinema-ticker-reverse {
+    animation-direction: reverse;
+}
+
+.cinema-ticker-item {
+    flex-shrink: 0;
+    padding: 12px 35px;
+    font-family: var(--font-header);
+    font-size: var(--text-xs);
+    font-weight: var(--font-bold);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    white-space: nowrap;
+    color: color-mix(in srgb, var(--color-text-primary) 35%, transparent);
+    border-right: 1px solid color-mix(in srgb, var(--color-accent) 16%, transparent);
+    transition: color var(--duration-normal) ease;
+}
+
+.cinema-ticker-item:hover {
+    color: var(--color-accent);
+}
+
+.cinema-ticker-year {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    opacity: 0.5;
+    margin-left: 10px;
+}
+
+/* =========================================
+   MAIN CONTENT AREA
+   ========================================= */
+
+.cinema-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 30px 20px;
+    position: relative;
+    z-index: 5;
+    order: 2;
+}
+
+/* =========================================
+   PAPER CARD - Soft Torn Edges
+   ========================================= */
+
+.cinema-paper {
+    background: var(--page-cinema-paper);
+    color: var(--color-text-primary);
+    padding: 40px 45px;
+    position: relative;
+    box-shadow:
+        8px 12px 50px rgba(0, 0, 0, 0.45),
+        2px 4px 12px rgba(0, 0, 0, 0.25);
+    max-width: 520px;
+    width: 100%;
+    cursor: default;
+
+    /* Natural organic torn edges using SVG mask */
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 520 600'%3E%3Cpath d='M8,2 Q12,8 25,3 Q40,0 60,5 Q80,2 100,4 Q120,0 145,3 Q170,6 195,2 Q220,0 245,4 Q270,7 295,3 Q320,0 345,5 Q370,2 395,4 Q420,0 445,3 Q470,6 495,2 Q510,0 512,8 Q515,25 512,50 Q518,80 514,110 Q510,140 516,170 Q518,200 514,230 Q510,260 516,290 Q518,320 514,350 Q510,380 516,410 Q518,440 514,470 Q510,500 516,530 Q518,555 512,575 Q510,590 495,592 Q470,598 445,594 Q420,590 395,596 Q370,598 345,592 Q320,590 295,596 Q270,598 245,592 Q220,590 195,596 Q170,598 145,592 Q120,590 100,596 Q80,598 60,592 Q40,590 25,596 Q10,598 6,588 Q0,570 5,540 Q2,510 0,480 Q5,450 2,420 Q0,390 5,360 Q2,330 0,300 Q5,270 2,240 Q0,210 5,180 Q2,150 0,120 Q5,90 2,60 Q0,30 6,10 Z' fill='white'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 520 600'%3E%3Cpath d='M8,2 Q12,8 25,3 Q40,0 60,5 Q80,2 100,4 Q120,0 145,3 Q170,6 195,2 Q220,0 245,4 Q270,7 295,3 Q320,0 345,5 Q370,2 395,4 Q420,0 445,3 Q470,6 495,2 Q510,0 512,8 Q515,25 512,50 Q518,80 514,110 Q510,140 516,170 Q518,200 514,230 Q510,260 516,290 Q518,320 514,350 Q510,380 516,410 Q518,440 514,470 Q510,500 516,530 Q518,555 512,575 Q510,590 495,592 Q470,598 445,594 Q420,590 395,596 Q370,598 345,592 Q320,590 295,596 Q270,598 245,592 Q220,590 195,596 Q170,598 145,592 Q120,590 100,596 Q80,598 60,592 Q40,590 25,596 Q10,598 6,588 Q0,570 5,540 Q2,510 0,480 Q5,450 2,420 Q0,390 5,360 Q2,330 0,300 Q5,270 2,240 Q0,210 5,180 Q2,150 0,120 Q5,90 2,60 Q0,30 6,10 Z' fill='white'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+
+}
+
+/* Paper grain texture overlay */
+.cinema-paper::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Ensure content sits above grain texture */
+.cinema-paper>* {
+    position: relative;
+    z-index: 1;
+}
+
+/* =========================================
+   PAPER CARD CONTENT
+   ========================================= */
+
+.cinema-masthead {
+    text-align: center;
+    margin-bottom: 18px;
+    padding-bottom: 15px;
+    border-bottom: 3px solid var(--color-accent);
+}
+
+.cinema-title {
+    font-family: var(--font-masthead);
+    font-size: 2.4rem;
+    font-weight: var(--font-bold);
+    line-height: var(--leading-none);
+    margin-bottom: 6px;
+    color: var(--color-text-primary);
+}
+
+.cinema-subtitle {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.cinema-edition-info {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.cinema-headline {
+    font-family: var(--font-masthead);
+    font-size: 1.5rem;
+    font-weight: var(--font-bold);
+    line-height: var(--leading-snug);
+    text-align: center;
+    margin-bottom: 22px;
+    color: var(--color-text-primary);
+}
+
+.cinema-date-box {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    border: 1px dashed color-mix(in srgb, var(--color-accent) 30%, transparent);
+    padding: 10px;
+    text-align: center;
+    margin-bottom: 18px;
+}
+
+.cinema-date-label {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+}
+
+.cinema-date-value {
+    font-family: var(--font-header);
+    font-size: 1.5rem;
+    font-weight: var(--font-bold);
+    color: var(--color-accent);
+}
+
+/* =========================================
+   CTA BUTTON
+   ========================================= */
+
+.cinema-btn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 16px 30px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    border: none;
+    font-family: var(--font-header);
+    font-size: 0.9rem;
+    font-weight: var(--font-bold);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all var(--duration-normal) ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.cinema-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--color-accent);
+    transform: translateY(100%);
+    transition: transform var(--duration-normal) ease;
+}
+
+.cinema-btn:hover::before {
+    transform: translateY(0);
+}
+
+.cinema-btn span,
+.cinema-btn svg {
+    position: relative;
+    z-index: 1;
+}
+
+/* =========================================
+   SLIDE INDICATORS
+   ========================================= */
+
+.cinema-indicators {
+    display: flex;
+    gap: 12px;
+    margin-top: 25px;
+}
+
+.cinema-dot {
+    width: 10px;
+    height: 10px;
+    border: 2px solid color-mix(in srgb, var(--color-text-primary) 45%, transparent);
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    transition: all var(--duration-normal) ease;
+    padding: 0;
+}
+
+.cinema-dot.active {
+    background: var(--color-text-primary);
+    border-color: var(--color-text-primary);
+}
+
+.cinema-dot:hover {
+    border-color: var(--color-text-primary);
+}
+
+/* =========================================
+   LIGHT MODE TUNING
+   ========================================= */
+
+[data-mode='light'] .cinema-map {
+    filter: sepia(18%) contrast(100%) brightness(1.08);
+}
+
+[data-mode='light'] .cinema-vignette {
+    background: radial-gradient(ellipse at center,
+            transparent 55%,
+            color-mix(in srgb, var(--color-bg-primary) 30%, transparent) 100%);
+}
+
+[data-mode='light'] .cinema-paper {
+    box-shadow:
+        6px 10px 30px color-mix(in srgb, var(--owu-black) 12%, transparent),
+        2px 4px 10px color-mix(in srgb, var(--owu-black) 8%, transparent);
+}
+
+/* =========================================
+   RESPONSIVE
+   ========================================= */
+
+@media (max-width: 768px) {
+    .cinema-paper {
+        padding: 30px 25px;
+    }
+
+    .cinema-title {
+        font-size: 2rem;
+    }
+
+    .cinema-headline {
+        font-size: 1.3rem;
+    }
+
+    .cinema-edition-info {
+        flex-direction: column;
+        gap: 4px;
+        text-align: center;
+    }
+
+    .cinema-ticker-item {
+        padding: 10px 25px;
+        font-size: 0.65rem;
+    }
+}
