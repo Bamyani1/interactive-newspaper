@@ -2,8 +2,8 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import { VintageAd } from "@/features/context-panel/components/VintageAd";
-import type { VintageAd as VintageAdType } from "@/features/news-feed";
+import { VintageAd } from "./VintageAd";
+import type { VintageAd as VintageAdType } from "@/src/types";
 import { fadeUp, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 interface AdsBoardProps {

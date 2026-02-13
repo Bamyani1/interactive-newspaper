@@ -5,28 +5,45 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
-import { PageShell } from "@/shared";
+import { PageShell, CinemaBackground, Ticker, useTickerAnimation } from "@/shared";
 import { headlines } from "@/src/data/headlines";
-import { CinemaBackground } from "@/src/components/landing/CinemaBackground";
-import { Ticker, useTickerAnimation } from "@/src/components/landing/Ticker";
 import { cardIn, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 export default function Home() {
     const router = useRouter();
-    const { setDate } = useArchive();
-    const demoDate = "1986-10-24";
-    const [isLoading, setIsLoading] = useState(false);
+    const { setDate, editions, hasEditions, isLoading } = useArchive();
+    const [isEntering, setIsEntering] = useState(false);
 
     // Use the extracted animation hook
     useTickerAnimation();
 
+    const selectedEdition = editions[0] ?? null;
+
+    const selectedEditionLabel = useMemo(() => {
+        if (!selectedEdition) {
+            return "NO EDITIONS LOADED";
+        }
+        try {
+            return new Intl.DateTimeFormat("en-US", {
+                month: "short",
+                day: "2-digit",
+                year: "numeric",
+            })
+                .format(new Date(`${selectedEdition}T12:00:00`))
+                .toUpperCase();
+        } catch {
+            return selectedEdition;
+        }
+    }, [selectedEdition]);
+
     const handleEnter = () => {
-        setDate(demoDate);
-        setIsLoading(true);
+        if (!selectedEdition) return;
+        setDate(selectedEdition);
+        setIsEntering(true);
 
         // Navigate immediately after a tiny delay so the spinner paints
         setTimeout(() => {
-            router.push("/edition");
+            router.push(`/edition/${selectedEdition}`);
         }, 0);
     };
 
@@ -68,23 +85,33 @@ export default function Home() {
 
                     <div className="cinema-date-box">
                         <p className="cinema-date-label">Selected Edition</p>
-                        <div className="cinema-date-value">OCT 24, 1986</div>
+                        <div className="cinema-date-value">{selectedEditionLabel}</div>
+                        {!isLoading && !hasEditions && (
+                            <p className="mt-2 text-xs uppercase tracking-widest opacity-70">
+                                Run real-material import to begin.
+                            </p>
+                        )}
                     </div>
 
                     <button
                         type="button"
                         className="cinema-btn"
                         onClick={handleEnter}
-                        disabled={isLoading}
+                        disabled={isLoading || isEntering || !hasEditions}
                     >
-                        {isLoading ? (
+                        {isEntering ? (
                             <>
                                 <span>Printing...</span>
                                 <Loader2 size={20} className="animate-spin" />
                             </>
+                        ) : isLoading ? (
+                            <>
+                                <span>Loading Editions...</span>
+                                <Loader2 size={20} className="animate-spin" />
+                            </>
                         ) : (
                             <>
-                                <span>Read This Edition</span>
+                                <span>{hasEditions ? "Read This Edition" : "No Editions Available"}</span>
                                 <ArrowRight size={20} />
                             </>
                         )}

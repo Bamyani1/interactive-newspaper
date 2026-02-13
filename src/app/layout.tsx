@@ -9,6 +9,7 @@ import { ArchiveProvider } from "@/features/archive";
 import { ThemeModeManager } from "@/features/theme";
 import { MotionProvider } from "@/shared/motion/MotionProvider";
 import { PageTransition } from "@/shared/motion/PageTransition";
+import { ErrorBoundary } from "@/shared";
 
 const libreBaskerville = Libre_Baskerville({
   variable: "--font-libre-baskerville",
@@ -54,7 +55,9 @@ export default function RootLayout({
         <ThemeModeManager />
         <MotionProvider>
           <ArchiveProvider>
-            <PageTransition>{children}</PageTransition>
+            <ErrorBoundary>
+              <PageTransition>{children}</PageTransition>
+            </ErrorBoundary>
           </ArchiveProvider>
         </MotionProvider>
       </body>

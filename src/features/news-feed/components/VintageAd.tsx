@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import type { VintageAd as VintageAdType } from "@/features/news-feed";
+import type { VintageAd as VintageAdType } from "@/src/types";
 
 interface VintageAdProps {
     ad: VintageAdType;
