@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { motion } from "framer-motion";
+import React, { useState, useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Newspaper,
   Trophy,
@@ -12,7 +12,7 @@ import {
   ShoppingBag,
   Star,
 } from "lucide-react";
-import type { SectionId } from "@/features/news-feed";
+import type { SectionId } from "@/src/types";
 
 const SECTION_ICONS: Partial<Record<SectionId, React.ElementType>> = {
   Top: Star,
@@ -41,6 +41,25 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   activeSection,
   onSelect,
 }) => {
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+
+  // Close on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
+        setIsMoreOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleMoreSelect = (sectionId: SectionId) => {
+    onSelect(sectionId);
+    setIsMoreOpen(false);
+  };
+
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 lg:hidden z-50 bg-[var(--color-bg-primary)]/95 backdrop-blur-md border-t"
@@ -82,10 +101,12 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
         {/* More sections dropdown if more than 5 */}
         {sections.length > 5 && (
-          <div className="relative group">
+          <div className="relative" ref={moreRef}>
             <button
+              onClick={() => setIsMoreOpen((prev) => !prev)}
               className="flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
               aria-label="More sections"
+              aria-expanded={isMoreOpen}
             >
               <div className="flex gap-0.5">
                 <span className="w-1 h-1 rounded-full bg-current" />
@@ -98,34 +119,42 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             </button>
 
             {/* Dropdown for additional sections */}
-            <div
-              className="absolute bottom-full right-0 mb-2 py-2 bg-[var(--color-bg-secondary)] rounded-lg shadow-xl border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all"
-              style={{ borderColor: "var(--stroke-accent-soft)" }}
-            >
-              {sections.slice(5).map((section) => {
-                const Icon = SECTION_ICONS[section.id] || Newspaper;
-                const isActive = activeSection === section.id;
+            <AnimatePresence>
+              {isMoreOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute bottom-full right-0 mb-2 py-2 bg-[var(--color-bg-secondary)] rounded-lg shadow-xl border"
+                  style={{ borderColor: "var(--stroke-accent-soft)" }}
+                >
+                  {sections.slice(5).map((section) => {
+                    const Icon = SECTION_ICONS[section.id] || Newspaper;
+                    const isActive = activeSection === section.id;
 
-                return (
-                  <button
-                    key={section.id}
-                    onClick={() => onSelect(section.id)}
-                    className={`
-                      flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors
-                      ${isActive
-                        ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
-                        : "text-[var(--color-text-primary)] hover:bg-[var(--color-accent)]/5"
-                      }
-                    `}
-                  >
-                    <Icon size={16} />
-                    <span className="text-sm font-medium whitespace-nowrap">
-                      {section.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                    return (
+                      <button
+                        key={section.id}
+                        onClick={() => handleMoreSelect(section.id)}
+                        className={`
+                          flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors
+                          ${isActive
+                            ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                            : "text-[var(--color-text-primary)] hover:bg-[var(--color-accent)]/5"
+                          }
+                        `}
+                      >
+                        <Icon size={16} />
+                        <span className="text-sm font-medium whitespace-nowrap">
+                          {section.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
       </div>
