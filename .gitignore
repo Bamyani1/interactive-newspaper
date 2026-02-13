@@ -66,4 +66,12 @@ lint_output.txt
 # Git worktrees
 .worktrees/
 
+# Python Virtual Environments
+ocr/.venv/
+ocr/venv/
+ocr/env/
 
+# OCR Model Cache
+ocr/models/.cache/
+ocr/models/*.pth
+ocr/models/*.pt
