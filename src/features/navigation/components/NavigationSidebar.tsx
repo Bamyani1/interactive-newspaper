@@ -3,7 +3,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
-import type { SectionId } from "@/features/news-feed";
+import type { SectionId } from "@/src/types";
 import { fadeLeft, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 interface NavigationSidebarProps {
