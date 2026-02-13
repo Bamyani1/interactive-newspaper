@@ -1,95 +1,44 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "../../../../lib/db";
-import { parsePaginationParams, buildPaginationMeta } from "../../../../lib/pagination";
+import { NextRequest, NextResponse } from 'next/server';
+import { loadEdition, transformArticles, computePageCount } from '@/src/lib/ocr-adapter';
+
+// Revalidate individual edition data every 60 seconds (ISR)
+export const revalidate = 60;
 
 export async function GET(
-    request: NextRequest,
-    { params }: { params: Promise<{ date: string }> }
+  _request: NextRequest,
+  { params }: { params: Promise<{ date: string }> },
 ) {
-    try {
-        const { date } = await params;
-        const { cursor, take, category } = parsePaginationParams(request.nextUrl.searchParams);
+  const { date } = await params;
 
-        // Check edition exists
-        const edition = await prisma.edition.findUnique({
-            where: { date },
-            select: {
-                id: true,
-                date: true,
-                pageCount: true,
-            },
-        });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json(
+      { error: 'Invalid date format' },
+      { status: 400 },
+    );
+  }
 
-        if (!edition) {
-            return NextResponse.json(
-                { error: "Edition not found" },
-                { status: 404 }
-            );
-        }
+  const edition = await loadEdition(date);
+  if (!edition) {
+    return NextResponse.json(
+      { error: 'Edition not found' },
+      { status: 404 },
+    );
+  }
 
-        // Build where clause with optional category filter
-        const whereClause = {
-            editionDate: date,
-            ...(category && {
-                category: { slug: category },
-            }),
-        };
+  const articles = transformArticles(edition);
+  const pageCount = computePageCount(edition);
 
-        // Get total count for this edition (with optional category filter)
-        const total = await prisma.article.count({ where: whereClause });
-
-        // Fetch articles with pagination
-        const articles = await prisma.article.findMany({
-            where: whereClause,
-            take: take + 1,
-            ...(cursor && {
-                cursor: { id: cursor },
-                skip: 1,
-            }),
-            orderBy: [
-                { isHero: "desc" },
-                { isFeatured: "desc" },
-                { page: "asc" },
-            ],
-            include: {
-                category: true,
-            },
-        });
-
-        // Build pagination response
-        const { data, pagination } = buildPaginationMeta(
-            articles,
-            take,
-            (a) => a.id,
-            total
-        );
-
-        return NextResponse.json({
-            edition: {
-                id: edition.id,
-                date: edition.date,
-                pageCount: edition.pageCount,
-            },
-            articles: data.map((a) => ({
-                id: a.id,
-                headline: a.headline,
-                summary: a.summary,
-                fullText: a.fullText,
-                category: a.category?.name ?? "News",
-                byline: a.byline,
-                page: a.page,
-                imageUrl: a.imageUrl,
-                imageCaption: a.imageCaption,
-                isHero: a.isHero,
-                isFeatured: a.isFeatured,
-            })),
-            pagination,
-        });
-    } catch (error) {
-        console.error("Failed to fetch edition:", error);
-        return NextResponse.json(
-            { error: "Failed to fetch edition" },
-            { status: 500 }
-        );
-    }
+  return NextResponse.json({
+    edition: {
+      id: date,
+      date,
+      pageCount,
+      publicationInfo: edition.publication_info || '',
+    },
+    articles,
+    pagination: {
+      nextCursor: null,
+      hasMore: false,
+    },
+  });
 }

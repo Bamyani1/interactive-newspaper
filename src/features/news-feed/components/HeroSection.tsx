@@ -3,26 +3,26 @@
 import React from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
-import { Article } from "../data/mockData";
+import type { Article } from "@/src/types";
 import { ChevronDown } from "lucide-react";
-import { getArticleAuthor, getArticlePage } from "../lib/articleUtils";
 
 interface HeroSectionProps {
     article: Article;
     onReadMore: () => void;
+    isFocused?: boolean;
 }
 
-export const HeroSection: React.FC<HeroSectionProps> = ({ article, onReadMore }) => {
-    const author = getArticleAuthor(article);
-    const page = getArticlePage(article);
+export const HeroSection: React.FC<HeroSectionProps> = ({ article, onReadMore, isFocused }) => {
+    const author = article.byline || null;
+    const page = article.page || null;
 
     return (
-        <section className="relative w-full max-w-4xl mx-auto mb-8 hero-article overflow-hidden border border-[var(--color-text-primary)]/20">
+        <section className={`relative w-full max-w-4xl mx-auto mb-8 hero-article overflow-hidden border border-[var(--color-text-primary)]/20 ${isFocused ? "ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-bg-primary)]" : ""}`}>
             {/* Hero Image Container */}
             <div className="relative w-full aspect-[16/9] md:aspect-[21/9] overflow-hidden">
-                {article.imageUrl && (
+                {article.imageUrls.length > 0 && (
                     <Image
-                        src={article.imageUrl}
+                        src={article.imageUrls[0]}
                         alt={article.headline}
                         fill
                         className="object-cover"

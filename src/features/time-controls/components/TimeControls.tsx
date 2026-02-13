@@ -2,11 +2,11 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useRouter, usePathname } from "next/navigation";
 import { Calendar, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { fadeDown, TRANSITIONS } from "@/shared/motion/motionTokens";
-import { useEditions } from "@/features/news-feed";
 
 const formatDisplayDate = (dateStr: string): string => {
     const date = new Date(dateStr + "T12:00:00");
@@ -19,21 +19,38 @@ const formatDisplayDate = (dateStr: string): string => {
 };
 
 export const TimeControls = () => {
-    const { currentDate, setDate } = useArchive();
-    const { editions, isLoading } = useEditions();
+    const router = useRouter();
+    const pathname = usePathname();
+    const { currentDate, setDate, editions, hasEditions, isLoading } = useArchive();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const canOpenDropdown = hasEditions && !isLoading;
+    const hasCurrentEdition =
+        Boolean(currentDate) && currentDate !== null && editions.includes(currentDate);
 
     // Set default date to first available edition when loaded
     useEffect(() => {
-        if (editions.length > 0 && !editions.includes(currentDate)) {
+        if (isLoading) return;
+
+        if (!hasEditions) {
+            if (currentDate !== null) {
+                setDate(null);
+            }
+            return;
+        }
+
+        if (!hasCurrentEdition) {
             setDate(editions[0]);
         }
-    }, [editions, currentDate, setDate]);
+    }, [editions, currentDate, hasCurrentEdition, hasEditions, isLoading, setDate]);
 
     const handleEditionSelect = (date: string) => {
         setDate(date);
         setIsDropdownOpen(false);
+        // Navigate to the date-based URL if we're on an edition page
+        if (pathname?.startsWith("/edition")) {
+            router.push(`/edition/${date}`);
+        }
     };
 
     // Close dropdown when clicking outside
@@ -64,7 +81,7 @@ export const TimeControls = () => {
 
     return (
         <motion.header
-            className="h-[var(--header-height)] w-full flex items-center justify-between px-6 border-b text-[var(--owu-white)] transition-colors duration-300 z-50 fixed top-0 left-0 backdrop-blur-md bg-[var(--owu-red)]/25"
+            className="h-[var(--header-height)] w-full flex items-center justify-between px-6 border-b text-[var(--owu-white)] transition-colors duration-300 z-40 fixed top-0 left-0 backdrop-blur-md bg-[var(--owu-red)]/25"
             style={{
                 borderColor: "var(--owu-red-deep)",
             }}
@@ -87,7 +104,11 @@ export const TimeControls = () => {
 
             <div className="relative" ref={dropdownRef}>
                 <button
-                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    onClick={() => {
+                        if (!canOpenDropdown) return;
+                        setIsDropdownOpen((prev) => !prev);
+                    }}
+                    disabled={!canOpenDropdown}
                     className="flex items-center gap-2 text-lg font-bold px-3 py-2 rounded-md hover:bg-[color-mix(in_srgb,var(--owu-white)_15%,transparent)] transition-colors focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--owu-white)_60%,transparent)]"
                     aria-expanded={isDropdownOpen}
                     aria-haspopup="listbox"
@@ -95,7 +116,11 @@ export const TimeControls = () => {
                 >
                     <Calendar className="w-5 h-5" />
                     <span className="font-header tracking-wide">
-                        {isLoading ? "Loading..." : formatDisplayDate(currentDate)}
+                        {isLoading
+                            ? "Loading..."
+                            : hasCurrentEdition && currentDate
+                                ? formatDisplayDate(currentDate)
+                                : "No editions loaded"}
                     </span>
                     <ChevronDown
                         className={`w-4 h-4 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""
@@ -104,7 +129,7 @@ export const TimeControls = () => {
                 </button>
 
                 <AnimatePresence>
-                    {isDropdownOpen && (
+                    {isDropdownOpen && canOpenDropdown && (
                         <motion.div
                             initial={{ opacity: 0, y: -10 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -131,8 +156,8 @@ export const TimeControls = () => {
                                             <button
                                                 onClick={() => handleEditionSelect(date)}
                                                 className={`w-full text-left px-4 py-3 flex items-center justify-between transition-colors border-l-2 ${isSelected
-                                                        ? "border-l-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
-                                                        : "border-l-transparent text-[var(--color-text-primary)]/80 hover:bg-[var(--color-accent)]/5 hover:text-[var(--color-text-primary)]"
+                                                    ? "border-l-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
+                                                    : "border-l-transparent text-[var(--color-text-primary)]/80 hover:bg-[var(--color-accent)]/5 hover:text-[var(--color-text-primary)]"
                                                     }`}
                                                 role="option"
                                                 aria-selected={isSelected}

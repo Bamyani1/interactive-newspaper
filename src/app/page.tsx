@@ -6,7 +6,7 @@ import { ArrowRight, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { PageShell, CinemaBackground, Ticker, useTickerAnimation } from "@/shared";
-import { headlines } from "@/src/data/headlines";
+import { headlines } from "@/shared/landing/data/headlines";
 import { cardIn, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 export default function Home() {

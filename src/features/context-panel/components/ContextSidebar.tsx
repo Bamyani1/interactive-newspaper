@@ -10,7 +10,7 @@ import { fadeUp, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 export const ContextSidebar = () => {
     const { currentDate } = useArchive();
-    const context = getClosestContext(currentDate);
+    const context = getClosestContext(currentDate ?? "");
     const itemVariants = fadeUp(14);
     const sidebarVariants = {
         hidden: { opacity: 0, x: 16 },

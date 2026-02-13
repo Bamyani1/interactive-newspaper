@@ -12,14 +12,15 @@ const mockArticle: Article = {
     category: 'News',
     summary: 'Test summary',
     fullText: '<p>Full text content</p>',
-    imageUrl: '/test.jpg',
+    imageUrls: ['/test.jpg'],
+    page: 1,
     isFeatured: false,
     isHero: false
 };
 
 describe('ArticleCard', () => {
     it('renders headline and summary', () => {
-        render(<ArticleCard article={mockArticle} />);
+        render(<ArticleCard article={mockArticle} isExpanded={false} onToggle={() => { }} />);
         expect(screen.getByText('Test Headline')).toBeDefined();
         expect(screen.getByText('Test summary')).toBeDefined();
     });
@@ -27,20 +28,20 @@ describe('ArticleCard', () => {
     it('toggles expansion on click', () => {
         const onToggle = vi.fn();
         render(<ArticleCard article={mockArticle} isExpanded={false} onToggle={onToggle} />);
-        
+
         const card = screen.getByText('Test Headline').closest('article');
         if (card) fireEvent.click(card);
-        
+
         expect(onToggle).toHaveBeenCalled();
     });
 
     it('toggles expansion on Enter key', () => {
         const onToggle = vi.fn();
         render(<ArticleCard article={mockArticle} isExpanded={false} onToggle={onToggle} />);
-        
+
         const card = screen.getByText('Test Headline').closest('article');
         if (card) fireEvent.keyDown(card, { key: 'Enter' });
-        
+
         expect(onToggle).toHaveBeenCalled();
     });
 });

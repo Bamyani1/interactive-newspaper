@@ -22,6 +22,11 @@ export const ScanViewer: React.FC<ScanViewerProps> = ({
 }) => {
     const [zoom, setZoom] = useState(1);
 
+    // Reset zoom when opening
+    useEffect(() => {
+        if (isOpen) setZoom(1);
+    }, [isOpen]);
+
     useEffect(() => {
         if (!isOpen) {
             return () => {};
@@ -36,8 +41,6 @@ export const ScanViewer: React.FC<ScanViewerProps> = ({
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
     }, [isOpen, onClose]);
-
-    if (!isOpen) return null;
 
     return (
         <AnimatePresence>

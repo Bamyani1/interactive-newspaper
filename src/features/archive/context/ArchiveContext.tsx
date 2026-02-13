@@ -1,38 +1,79 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import type { EditionInfo } from "@/src/types";
 
 interface ArchiveContextType {
-    currentDate: string;
-    setDate: (date: string) => void;
+    currentDate: string | null;
+    setDate: (date: string | null) => void;
+    editions: string[];
+    editionInfo: EditionInfo[];
+    hasEditions: boolean;
+    isLoading: boolean;
+    error: Error | null;
 }
 
-const ArchiveContext = createContext<ArchiveContextType | undefined>(undefined);
+const ArchiveContext = createContext<ArchiveContextType | null>(null);
 
-export const useArchive = () => {
-    const context = useContext(ArchiveContext);
-    if (!context) {
-        throw new Error("useArchive must be used within an ArchiveProvider");
-    }
-    return context;
-};
+export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [currentDate, setCurrentDate] = useState<string | null>(null);
+    const [editionInfo, setEditionInfo] = useState<EditionInfo[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<Error | null>(null);
 
-interface ArchiveProviderProps {
-    children: ReactNode;
-}
+    // Fetch editions once on mount
+    useEffect(() => {
+        let cancelled = false;
 
-export const ArchiveProvider: React.FC<ArchiveProviderProps> = ({ children }) => {
-    // Default to existing extracted edition date
-    const [currentDate, setCurrentDate] = useState("1986-10-24");
+        async function fetchEditions() {
+            try {
+                const res = await fetch("/api/editions");
+                if (!res.ok) {
+                    throw new Error(`Failed to fetch editions: ${res.status}`);
+                }
+                const data = await res.json();
+                if (!cancelled) {
+                    setEditionInfo(data.editions);
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    setError(err instanceof Error ? err : new Error("Unknown error"));
+                }
+            } finally {
+                if (!cancelled) {
+                    setIsLoading(false);
+                }
+            }
+        }
 
-    const value = {
-        currentDate,
-        setDate: setCurrentDate,
-    };
+        fetchEditions();
+        return () => { cancelled = true; };
+    }, []);
+
+    const setDate = useCallback((date: string | null) => {
+        setCurrentDate(date);
+    }, []);
+
+    const editions = editionInfo.map((e) => e.date).sort((a, b) => a.localeCompare(b));
+    const hasEditions = editions.length > 0;
 
     return (
-        <ArchiveContext.Provider value={value}>
+        <ArchiveContext.Provider value={{
+            currentDate,
+            setDate,
+            editions,
+            editionInfo,
+            hasEditions,
+            isLoading,
+            error,
+        }}>
             {children}
         </ArchiveContext.Provider>
     );
+};
+
+export const useArchive = () => {
+    const ctx = useContext(ArchiveContext);
+    if (!ctx) throw new Error("useArchive must be used within ArchiveProvider");
+    return ctx;
 };
