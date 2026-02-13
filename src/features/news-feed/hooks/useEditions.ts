@@ -1,17 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-
-interface EditionInfo {
-    id: string;
-    date: string;
-    pageCount: number;
-    articleCount: number;
-}
+import type { EditionInfo } from "@/src/types";
 
 interface UseEditionsResult {
     editions: string[];
     editionInfo: EditionInfo[];
+    hasEditions: boolean;
     isLoading: boolean;
     error: Error | null;
 }
@@ -57,6 +52,7 @@ export function useEditions(): UseEditionsResult {
 
     // Extract just dates for backward compatibility
     const editions = editionInfo.map((e) => e.date).sort((a, b) => a.localeCompare(b));
+    const hasEditions = editions.length > 0;
 
-    return { editions, editionInfo, isLoading, error };
+    return { editions, editionInfo, hasEditions, isLoading, error };
 }
