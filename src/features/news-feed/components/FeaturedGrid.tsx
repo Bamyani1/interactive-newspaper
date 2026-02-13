@@ -3,15 +3,15 @@
 import React from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
-import { Article } from "../data/mockData";
-import { getArticleAuthor } from "../lib/articleUtils";
+import type { Article } from "@/src/types";
 
 interface FeaturedGridProps {
     articles: Article[];
     onArticleClick: (article: Article) => void;
+    focusedId?: string | null;
 }
 
-export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleClick }) => {
+export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleClick, focusedId }) => {
     // Take first 4 articles
     const featured = articles.slice(0, 4);
 
@@ -31,7 +31,7 @@ export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleC
                         {featured.map((article, index) => (
                             <motion.article
                                 key={article.id}
-                                className="relative flex-1 min-w-[192px] max-w-[240px] cursor-pointer group"
+                                className={`relative flex-1 min-w-[192px] max-w-[240px] cursor-pointer group ${focusedId === article.id ? "ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-bg-primary)] rounded-sm" : ""}`}
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{
@@ -58,10 +58,10 @@ export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleC
                                 >
 
                                     {/* Image */}
-                                    {article.imageUrl ? (
+                                    {article.imageUrls.length > 0 ? (
                                         <div className="relative aspect-[4/3] w-full overflow-hidden mb-3 border border-[var(--color-border-default)]">
                                             <Image
-                                                src={article.imageUrl}
+                                                src={article.imageUrls[0]}
                                                 alt={article.headline}
                                                 fill
                                                 className="object-cover filter sepia-[.2] contrast-110 group-hover:sepia-0 transition-all duration-500"
@@ -89,7 +89,7 @@ export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleC
                                         </p>
 
                                         <div className="pt-2 border-t border-[var(--featured-card-border)] mt-auto flex justify-between items-center text-[10px] text-[var(--color-text-secondary)] font-sans uppercase tracking-wide">
-                                            <span>{getArticleAuthor(article)?.split(",")[0] || "Staff"}</span>
+                                            <span>{article.byline?.split(",")[0] || "Staff"}</span>
                                             <span>Pg. {article.page || 1}</span>
                                         </div>
                                     </div>

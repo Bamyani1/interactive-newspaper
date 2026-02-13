@@ -1,84 +1,69 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Article } from "../data/mockData";
-import { ChevronDown, ChevronUp, Share2, Printer, Check } from "lucide-react";
+import type { Article } from "@/src/types";
+import { ChevronDown, ChevronUp, Share2, Printer, Check, FileText } from "lucide-react";
 import Image from "next/image";
-import { getArticleAuthor, getArticlePage } from "../lib/articleUtils";
+
+/**
+ * Basic HTML sanitizer — strips dangerous tags and event-handler attributes.
+ * Sufficient for OCR-generated HTML; for user-generated content, use DOMPurify.
+ */
+function sanitizeHtml(html: string): string {
+    // Remove <script>, <style>, <iframe>, <object>, <embed>, <form> tags and their content
+    let clean = html.replace(/<(script|style|iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, "");
+    // Remove self-closing dangerous tags
+    clean = clean.replace(/<(script|iframe|object|embed|form)[^>]*\/>/gi, "");
+    // Remove on* event handler attributes
+    clean = clean.replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi, "");
+    // Remove javascript: URIs
+    clean = clean.replace(/(href|src|action)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, "$1=$2#$2");
+    return clean;
+}
 
 interface ArticleCardProps {
     article: Article;
-    isExpanded?: boolean;
-    onToggle?: () => void;
+    isExpanded: boolean;
+    onToggle: () => void;
     onViewOriginal?: (article: Article) => void;
 }
 
 export const ArticleCard: React.FC<ArticleCardProps> = ({
     article,
-    isExpanded: controlledExpanded,
+    isExpanded,
     onToggle,
     onViewOriginal,
 }) => {
-    // Support both controlled and uncontrolled modes
-    const [internalExpanded, setInternalExpanded] = React.useState(false);
     const [shareStatus, setShareStatus] = React.useState<"idle" | "copied">("idle");
-    const isExpanded = controlledExpanded ?? internalExpanded;
-    const author = getArticleAuthor(article);
-    const page = getArticlePage(article);
+    const author = article.byline || null;
+    const page = article.page || null;
+    const fullText = typeof article.fullText === "string" ? article.fullText : "";
+    const summary = typeof article.summary === "string" ? article.summary : "";
+    const hasFullText = fullText.trim().length > 0;
+    const hasSummary = summary.trim().length > 0;
     const articleRef = useRef<HTMLElement>(null);
 
-    // Auto-scroll into view when expanded
-    useEffect(() => {
-        if (isExpanded && articleRef.current) {
-            // Small delay to let the expansion animation start
-            setTimeout(() => {
-                articleRef.current?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                });
-            }, 100);
-        }
-    }, [isExpanded]);
-
     const handleClick = () => {
-        if (onToggle) {
-            onToggle();
-        } else {
-            setInternalExpanded(!internalExpanded);
-        }
+        onToggle();
     };
 
     const handlePrint = (e: React.MouseEvent) => {
         e.stopPropagation();
-        // Create a printable version
-        const printContent = `
-            <html>
-                <head>
-                    <title>${article.headline} - The Transcript</title>
-                    <style>
-                        body { font-family: Georgia, serif; max-width: 700px; margin: 40px auto; padding: 20px; line-height: 1.6; }
-                        h1 { font-size: 28px; margin-bottom: 8px; }
-                        .meta { font-size: 12px; color: #666; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 0.1em; }
-                        .content { font-size: 16px; }
-                        img { max-width: 100%; height: auto; margin: 20px 0; }
-                        @media print { body { margin: 0; padding: 20px; } }
-                    </style>
-                </head>
-                <body>
-                    <h1>${article.headline}</h1>
-                    <div class="meta">
-                        ${article.category} • ${article.date}${author ? ` • By ${author}` : ""}${page ? ` • Page ${page}` : ""}
-                    </div>
-                    ${article.imageUrl ? `<img src="${article.imageUrl}" alt="${article.headline}" />` : ""}
-                    <div class="content">${article.fullText}</div>
-                </body>
-            </html>
-        `;
+        // Use the browser's native print with a temporary printable container
+        const printContent = [
+            `<h1>${article.headline}</h1>`,
+            `<div class="meta">${article.category} \u2022 ${article.date}${author ? ` \u2022 By ${author}` : ""}${page ? ` \u2022 Page ${page}` : ""}</div>`,
+            ...article.imageUrls.map(url => `<img src="${url}" alt="${article.headline}" style="max-width:100%;height:auto" />`).join('\n'),
+            `<div class="content">${fullText || summary}</div>`,
+        ].join("\n");
+
         const printWindow = window.open("", "_blank");
         if (printWindow) {
-            printWindow.document.write(printContent);
+            printWindow.document.open();
+            printWindow.document.write(`<!DOCTYPE html><html><head><title>${article.headline} - The Transcript</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;padding:20px;line-height:1.6}h1{font-size:28px;margin-bottom:8px}.meta{font-size:12px;color:#666;margin-bottom:20px;text-transform:uppercase;letter-spacing:.1em}.content{font-size:16px}img{max-width:100%;height:auto;margin:20px 0}</style></head><body>${printContent}</body></html>`);
             printWindow.document.close();
+            printWindow.focus();
             printWindow.print();
         }
     };
@@ -87,7 +72,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
         e.stopPropagation();
         const shareData = {
             title: article.headline,
-            text: article.summary || article.headline,
+            text: summary || article.headline,
             url: window.location.href,
         };
 
@@ -104,7 +89,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
         // Fallback to clipboard
         try {
             await navigator.clipboard.writeText(
-                `${article.headline}\n\n${article.summary}\n\nRead more: ${window.location.href}`
+                `${article.headline}\n\n${summary}\n\nRead more: ${window.location.href}`
             );
             setShareStatus("copied");
             setTimeout(() => setShareStatus("idle"), 2000);
@@ -143,7 +128,17 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                         {page && (
                             <>
                                 <span>•</span>
-                                <span>Pg. {page}</span>
+                                {onViewOriginal ? (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onViewOriginal(article); }}
+                                        className="flex items-center gap-1 hover:text-[var(--color-accent)] transition-colors"
+                                        title="View original newspaper scan"
+                                    >
+                                        <FileText size={12} /> Pg. {page}
+                                    </button>
+                                ) : (
+                                    <span>Pg. {page}</span>
+                                )}
                             </>
                         )}
                     </div>
@@ -158,16 +153,19 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                         </p>
                     )}
 
-                    <motion.p
-                        layout="position"
-                        animate={{ opacity: isExpanded ? 0 : 1 }}
-                        transition={{ duration: 0.18, ease: "easeOut" }}
-                        aria-hidden={isExpanded}
-                        style={{ visibility: isExpanded ? "hidden" : "visible" }}
-                        className="card-summary line-clamp-2 min-h-[48px] pointer-events-none"
-                    >
-                        {article.summary}
-                    </motion.p>
+                    <AnimatePresence>
+                        {!isExpanded && (
+                            <motion.p
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.18, ease: "easeOut" }}
+                                className="card-summary line-clamp-2 overflow-hidden pointer-events-none"
+                            >
+                                {summary}
+                            </motion.p>
+                        )}
+                    </AnimatePresence>
 
                     {article.continuesOnPage && (
                         <p className="text-xs font-mono uppercase tracking-widest opacity-60">
@@ -177,10 +175,10 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                 </div>
 
                 {/* Thumbnail */}
-                {article.imageUrl && (
+                {article.imageUrls.length > 0 && (
                     <div className="card-image-container w-[120px] aspect-square relative shrink-0 transition-all duration-500">
                         <Image
-                            src={article.imageUrl}
+                            src={article.imageUrls[0]}
                             alt={article.headline}
                             fill
                             className="card-image object-cover"
@@ -200,22 +198,47 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                         className="mt-6 border-t border-dashed pt-6 space-y-4"
                         style={{ borderColor: "var(--stroke-accent-soft)" }}
                     >
-                        {/* Expanded Image */}
-                        {article.imageUrl && (
-                            <div className="relative w-full aspect-video mb-6 bg-black/5">
-                                <Image
-                                    src={article.imageUrl}
-                                    alt={article.headline}
-                                    fill
-                                    className="object-contain object-left sepia-vintage mix-blend-multiply"
-                                />
-                            </div>
+                        {/* Expanded Images */}
+                        {article.imageUrls.length > 0 && (
+                            article.imageUrls.length === 1 ? (
+                                <div className="relative w-full aspect-video mb-6 bg-black/5">
+                                    <Image
+                                        src={article.imageUrls[0]}
+                                        alt={article.headline}
+                                        fill
+                                        className="object-contain object-left sepia-vintage"
+                                    />
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-3 mb-6">
+                                    {article.imageUrls.map((url, idx) => (
+                                        <div key={idx} className="relative w-full aspect-[4/3] bg-black/5">
+                                            <Image
+                                                src={url}
+                                                alt={`${article.headline} — image ${idx + 1}`}
+                                                fill
+                                                className="object-contain sepia-vintage"
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            )
                         )}
 
-                        <div
-                            className="prose prose-lg max-w-none font-body leading-relaxed prose-p:my-3 prose-li:my-1 wrap-break-word"
-                            dangerouslySetInnerHTML={{ __html: article.fullText }}
-                        />
+                        {hasFullText ? (
+                            <div
+                                className="prose prose-lg prose-invert max-w-none font-body leading-relaxed prose-p:my-3 prose-li:my-1 wrap-break-word"
+                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(fullText) }}
+                            />
+                        ) : hasSummary ? (
+                            <p className="prose prose-lg prose-invert max-w-none font-body leading-relaxed">
+                                {summary}
+                            </p>
+                        ) : (
+                            <p className="prose prose-lg prose-invert max-w-none font-body leading-relaxed italic opacity-80">
+                                Full story text unavailable for this article.
+                            </p>
+                        )}
 
                         {article.imageCaption && (
                             <p className="image-caption text-sm text-left">
