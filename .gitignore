@@ -63,20 +63,7 @@ lint_output.txt
 # Claude Code local settings
 .claude/
 
-/src/generated/prisma
+# Git worktrees
+.worktrees/
 
-# Python
-.venv/
-__pycache__/
-*.py[cod]
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Large Media
-public/editions/
-
-# Data files (scans, OCR output, editions)
-data/
