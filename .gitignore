@@ -75,3 +75,13 @@ ocr/env/
 ocr/models/.cache/
 ocr/models/*.pth
 ocr/models/*.pt
+
+# OCR Artifacts
+ocr/output/
+ocr/editions/
+ocr/models/
+public/editions/*
+!public/editions/.gitkeep
+
+# System Files
+**.DS_Store

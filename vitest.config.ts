@@ -11,14 +11,15 @@ export default defineConfig({
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     exclude: ["node_modules", "dist"],
     environmentMatchGlobs: [
-      // API tests need Node environment
-      ["tests/api/**", "node"],
       // Component tests use jsdom
       ["tests/**", "jsdom"],
     ],
   },
   resolve: {
     alias: {
+      "@/features": resolve(__dirname, "./src/features"),
+      "@/shared": resolve(__dirname, "./src/components"),
+      "@/styles": resolve(__dirname, "./src/styles"),
       "@": resolve(__dirname, "./src"),
     },
   },
