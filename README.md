@@ -185,5 +185,3 @@ We follow **Conventional Commits** for a clean git history.
 MIT License — see [LICENSE](LICENSE) for details.
 
 ---
-
-**Built with** ❤️ **for OWU's historical archive**

@@ -5,7 +5,3 @@ pydantic
 scipy
 doclayout-yolo
 huggingface_hub
-sqlalchemy
-alembic
-psycopg2-binary
-supabase

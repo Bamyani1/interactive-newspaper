@@ -30,14 +30,13 @@ python viewer.py
 ## Architecture
 
 - **convert_scans.py** - Main pipeline (OCR → extraction → curation → assembly)
-- **db/** - Database models and scripts (PostgreSQL/Supabase) - currently unused
-- **editions/** - Input: TIFF page scans
-- **output/** - Output: Structured JSON editions
+- **editions/** - Input: TIFF page scans (gitignored)
 - **models/** - ML model cache (YOLO weights, gitignored)
+- Output: `../public/editions/YYYY-MM-DD/` - Deployed with the app
 
 ## Output Format
 
-Processed editions saved to `output/YYYY-MM-DD/edition.json`:
+Processed editions are saved to `../public/editions/YYYY-MM-DD/edition.json`:
 ```json
 {
   "edition_date": "1989-04-12",
@@ -47,8 +46,4 @@ Processed editions saved to `output/YYYY-MM-DD/edition.json`:
 }
 ```
 
-Frontend loads these via API routes in `src/app/api/editions/`.
-
-## Database (Optional)
-
-The `db/` directory contains PostgreSQL/Supabase integration for persistent storage. Currently unused by the frontend, which loads directly from JSON files in `ocr/output/`.
+Edition data in `public/editions/` is automatically deployed to Vercel and loaded by the frontend via API routes in `src/app/api/editions/`.

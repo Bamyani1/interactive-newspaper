@@ -82,6 +82,8 @@ ocr/editions/
 ocr/models/
 public/editions/*
 !public/editions/.gitkeep
+!public/editions/*/
+!public/editions/*/edition.json
 
 # System Files
 **.DS_Store
