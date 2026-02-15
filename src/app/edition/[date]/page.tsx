@@ -114,7 +114,7 @@ function EditionBody({
 
         const filtered = counts.filter((item) => item.count > 0);
 
-        const result = [
+        const result: { id: SectionId; label: string; count?: number }[] = [
             { id: "Top" as SectionId, label: "Top Stories" },
             ...filtered,
         ];
