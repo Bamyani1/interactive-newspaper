@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Article } from "@/src/types";
+import type { Article, VintageAd } from "@/src/types";
 
 interface EditionResponse {
     edition: {
@@ -10,6 +10,7 @@ interface EditionResponse {
         pageCount: number;
     };
     articles: Article[];
+    ads?: { title: string; body: string }[];
     pagination?: {
         nextCursor: string | null;
         hasMore: boolean;
@@ -18,6 +19,7 @@ interface EditionResponse {
 
 interface UseEditionArticlesResult {
     articles: Article[];
+    ads: VintageAd[];
     hasActiveEdition: boolean;
     isLoading: boolean;
     error: Error | null;
@@ -31,7 +33,6 @@ const CATEGORY_LOOKUP: Record<string, Article["category"]> = {
     arts: "Arts",
     "campus life": "Campus Life",
     "campus-life": "Campus Life",
-    ads: "Ads",
 };
 
 const normalizeText = (value: unknown): string =>
@@ -56,6 +57,7 @@ const normalizeId = (
 
 export function useEditionArticles(date: string | null): UseEditionArticlesResult {
     const [articles, setArticles] = useState<Article[]>([]);
+    const [ads, setAds] = useState<VintageAd[]>([]);
     const [isLoading, setIsLoading] = useState(Boolean(date));
     const [error, setError] = useState<Error | null>(null);
 
@@ -66,6 +68,7 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
             if (!date) {
                 if (!cancelled) {
                     setArticles([]);
+                    setAds([]);
                     setError(null);
                     setIsLoading(false);
                 }
@@ -77,6 +80,7 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
 
             try {
                 const allArticles: Article[] = [];
+                const allAds: VintageAd[] = [];
                 const seenCursors = new Set<string>();
                 let cursor: string | null = null;
                 let editionDate = date;
@@ -105,6 +109,7 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
                     const data: EditionResponse = await res.json();
                     editionDate = data.edition.date;
                     allArticles.push(...data.articles);
+                    if (data.ads) allAds.push(...data.ads);
 
                     const nextCursor = data.pagination?.nextCursor ?? null;
                     const hasMore = Boolean(data.pagination?.hasMore && nextCursor);
@@ -158,6 +163,7 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
                     });
 
                     setArticles(mappedArticles);
+                    setAds(allAds);
                 }
             } catch (err) {
                 if (!cancelled) {
@@ -177,5 +183,5 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
         };
     }, [date]);
 
-    return { articles, hasActiveEdition: Boolean(date), isLoading, error };
+    return { articles, ads, hasActiveEdition: Boolean(date), isLoading, error };
 }
