@@ -88,5 +88,8 @@ public/editions/*
 !public/editions/*/images/
 !public/editions/*/images/*.jpg
 
+# Source newspaper scans (large TIFFs, not for version control)
+public/editions/*The Transcript*
+
 # System Files
 **.DS_Store
