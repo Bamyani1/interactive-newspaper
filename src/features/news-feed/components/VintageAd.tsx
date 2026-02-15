@@ -2,102 +2,203 @@
 
 import React from "react";
 import type { VintageAd as VintageAdType } from "@/src/types";
+import type { AdVariant } from "./AdsBoard";
 
 interface VintageAdProps {
     ad: VintageAdType;
-    variant?: 'cinema' | 'retail' | 'classified';
+    variant: AdVariant;
 }
 
-export const VintageAd: React.FC<VintageAdProps> = ({ ad, variant = 'retail' }) => {
-
-    // VARIANT 1: CINEMA (Inverted Black Box)
-    if (variant === 'cinema') {
-        return (
-            <div className="bg-[var(--color-bg-secondary)] text-[var(--color-text-primary)] p-4 relative shadow-sm border border-[var(--color-border-default)]">
-                {/* Starburst */}
-                <div className="absolute -top-3 -right-3 bg-[var(--color-text-primary)] text-[var(--color-text-inverse)] w-12 h-12 rounded-full flex items-center justify-center font-bold text-[8px] uppercase transform rotate-12 border-2 border-[var(--color-text-inverse)] z-10 shadow-sm leading-none text-center">
-                    Held<br />Over!
-                </div>
-
-                <div className="border border-[color-mix(in_srgb,var(--color-text-primary)_80%,transparent)] p-1 mb-3 text-center">
-                    {ad.tag && <span className="block text-[8px] uppercase tracking-widest mb-1 text-[var(--color-text-secondary)]">{ad.tag}</span>}
-                    <h4 className="font-header text-xl uppercase tracking-wider leading-none text-[var(--color-text-primary)]">
-                        {ad.title}
-                    </h4>
-                </div>
-
-                <p className="font-header italic text-xs text-center text-[var(--color-text-secondary)] mb-3 leading-tight border-b border-[var(--color-border-default)] pb-2">
-                    {ad.subtitle || 'The most exciting film of the year!'}
-                </p>
-
-                <p className="font-typewriter text-xs text-justify leading-snug mb-3 opacity-90">
-                    {ad.body}
-                </p>
-
-                <div className="text-center">
-                    {ad.price && <span className="block font-bold text-lg text-[var(--color-accent)] font-header">{ad.price}</span>}
-                    {ad.footer && <span className="text-[9px] uppercase tracking-widest text-[var(--color-text-secondary)]">{ad.footer}</span>}
-                </div>
-            </div>
-        );
+export const VintageAd: React.FC<VintageAdProps> = ({ ad, variant }) => {
+    switch (variant) {
+        case 'tiny-liner':
+            return <TinyLiner ad={ad} />;
+        case 'boxed-notice':
+            return <BoxedNotice ad={ad} />;
+        case 'mini-display':
+            return <MiniDisplay ad={ad} />;
+        case 'retail-coupon':
+            return <RetailCoupon ad={ad} />;
+        case 'service-card':
+            return <ServiceCard ad={ad} />;
+        case 'bulletin':
+            return <Bulletin ad={ad} />;
+        case 'marquee':
+            return <Marquee ad={ad} />;
+        case 'broadsheet':
+            return <Broadsheet ad={ad} />;
+        case 'editorial-style':
+            return <EditorialStyle ad={ad} />;
+        case 'showcase':
+            return <Showcase ad={ad} />;
     }
+};
 
-    // VARIANT 2: RETAIL (Double Border / Coupon)
-    if (variant === 'retail') {
-        return (
-            <div className="bg-[var(--color-bg-secondary)] border-4 border-double border-[var(--color-border-default)] shadow-sm overflow-hidden flex flex-col h-full relative">
-                <div className="absolute top-0 left-0 bg-[var(--color-accent)] text-[var(--color-text-primary)] px-1.5 py-0.5 text-[8px] font-bold uppercase">Coupon</div>
+/* ─── Template Props ────────────────────────────────────────────── */
 
-                <div className="p-4 flex flex-col flex-1 bg-[var(--color-bg-primary)]">
-                    <div className="text-center mb-3">
-                        <h4 className="font-header text-xl font-black uppercase leading-none text-[var(--color-text-primary)] mb-1">
-                            {ad.title}
-                        </h4>
-                        {ad.subtitle && (
-                            <p className="font-typewriter text-[10px] uppercase tracking-widest border-b border-[var(--color-text-primary)] pb-1 inline-block">
-                                {ad.subtitle}
-                            </p>
-                        )}
-                    </div>
+interface TemplateProps {
+    ad: VintageAdType;
+}
 
-                    <p className="font-typewriter text-xs text-justify leading-relaxed text-[var(--color-text-primary)] mb-4 flex-1">
-                        {ad.body}
-                    </p>
+/* ─── SHORT TIER ────────────────────────────────────────────────── */
 
-                    <div className="mt-auto border-t-2 border-dashed border-[color-mix(in_srgb,var(--color-text-primary)_30%,transparent)] pt-2 flex justify-between items-end">
-                        {ad.footer && (
-                            <span className="text-[9px] uppercase font-bold tracking-widest text-[var(--color-text-secondary)] max-w-[60%] leading-tight">
-                                {ad.footer}
-                            </span>
-                        )}
-                        {ad.price && (
-                            <span className="font-header text-xl font-black text-[var(--color-text-primary)] transform -rotate-2">
-                                {ad.price}
-                            </span>
-                        )}
-                    </div>
-                </div>
-            </div>
-        );
-    }
+/** 1. TinyLiner — Minimal classified listing between rules */
+const TinyLiner: React.FC<TemplateProps> = ({ ad }) => (
+    <div className="h-full border-t border-b border-[var(--color-text-primary)] p-2">
+        <p className="font-typewriter text-xs leading-snug text-[var(--color-text-primary)]">
+            <span className="font-bold uppercase font-header tracking-wide">
+                {ad.title}
+            </span>
+            {" — "}
+            <span className="whitespace-pre-line">{ad.body}</span>
+        </p>
+    </div>
+);
 
-    // VARIANT 3: CLASSIFIED (Dense Column)
-    return (
-        <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border-default)] p-3 h-full flex flex-col">
-            <div className="border-b-2 border-[var(--color-border-default)] mb-2 pb-1 flex justify-between items-end">
-                {ad.tag && <span className="font-header font-bold text-sm uppercase">{ad.tag}</span>}
-                <span className="font-serif italic text-[10px]">Sec. B-4</span>
-            </div>
+/** 2. BoxedNotice — Small bordered notice box */
+const BoxedNotice: React.FC<TemplateProps> = ({ ad }) => (
+    <div className="h-full border-[3px] border-[var(--color-text-primary)] bg-[var(--color-bg-secondary)] p-3 flex flex-col items-center justify-center text-center">
+        <h4 className="font-header text-base font-bold uppercase tracking-wider text-[var(--color-text-primary)] mb-1">
+            {ad.title}
+        </h4>
+        <p className="font-typewriter text-xs leading-snug text-[var(--color-text-secondary)] whitespace-pre-line">
+            {ad.body}
+        </p>
+    </div>
+);
 
-            <h4 className="font-bold text-base leading-tight mb-1">{ad.title}</h4>
-            <p className="font-typewriter text-[11px] leading-snug text-justify mb-2 flex-1">
-                {ad.body}
+/** 3. MiniDisplay — Dotted border display ad */
+const MiniDisplay: React.FC<TemplateProps> = ({ ad }) => (
+    <div className="h-full border-2 border-dotted border-[var(--color-border-default)] bg-[var(--color-bg-primary)] p-4 flex flex-col items-center justify-center text-center">
+        <h4 className="font-header text-sm font-bold uppercase tracking-[0.3em] text-[var(--color-text-primary)] mb-2">
+            {ad.title}
+        </h4>
+        <p className="font-typewriter text-xs leading-snug text-[var(--color-text-secondary)] whitespace-pre-line">
+            {ad.body}
+        </p>
+    </div>
+);
+
+/* ─── MEDIUM TIER ───────────────────────────────────────────────── */
+
+/** 4. RetailCoupon — Dashed coupon with rotated corner label */
+const RetailCoupon: React.FC<TemplateProps> = ({ ad }) => (
+    <div className="h-full border-2 border-dashed border-[var(--color-text-primary)] bg-[var(--color-bg-secondary)] p-5 relative overflow-hidden flex flex-col">
+        <span className="absolute -top-1 -left-6 bg-[var(--color-accent)] text-[var(--color-text-inverse)] text-[8px] font-bold uppercase tracking-wider px-8 py-0.5 rotate-[-35deg] origin-center">
+            Clip & Save
+        </span>
+        <h4 className="font-header text-xl font-black uppercase text-center text-[var(--color-text-primary)] mb-3 mt-2">
+            {ad.title}
+        </h4>
+        <p className="font-typewriter text-xs leading-relaxed text-[var(--color-text-primary)] whitespace-pre-line flex-1">
+            {ad.body}
+        </p>
+        <div className="border-t-2 border-dashed border-[var(--color-text-primary)] mt-3 pt-2">
+            <p className="font-typewriter text-[9px] uppercase tracking-widest text-center text-[var(--color-text-secondary)]">
+                Present this coupon at time of purchase
             </p>
+        </div>
+    </div>
+);
 
-            <div className="mt-auto pt-2 border-t border-[color-mix(in_srgb,var(--color-text-primary)_20%,transparent)] flex justify-between items-center">
-                {ad.price && <span className="font-bold text-sm">{ad.price}</span>}
-                {ad.footer && <span className="text-[9px] uppercase">{ad.footer}</span>}
+/** 5. ServiceCard — Professional service card with double top rule */
+const ServiceCard: React.FC<TemplateProps> = ({ ad }) => (
+    <div className="h-full border-t-4 border-double border-[var(--color-text-primary)] bg-[var(--color-bg-primary)] p-4 flex flex-col">
+        <h4 className="font-serif text-lg text-center text-[var(--color-text-primary)] mb-2">
+            {ad.title}
+        </h4>
+        <div className="border-t border-[var(--color-border-default)] mb-3" />
+        <p className="font-typewriter text-xs leading-relaxed text-[var(--color-text-primary)] whitespace-pre-line flex-1">
+            {ad.body}
+        </p>
+    </div>
+);
+
+/** 6. Bulletin — Campus bulletin board note, slightly askew */
+const Bulletin: React.FC<TemplateProps> = ({ ad }) => (
+    <div className="h-full transform rotate-[-1deg] border border-[var(--color-text-primary)] bg-[var(--color-bg-secondary)] p-4 flex flex-col relative">
+        <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-[var(--color-accent)] border-2 border-[var(--color-text-primary)] shadow-sm z-10" />
+        <h4 className="font-header text-base font-bold uppercase text-[var(--color-text-primary)] mt-2 mb-2">
+            {ad.title}
+        </h4>
+        <p className="font-typewriter text-xs leading-relaxed text-[var(--color-text-primary)] whitespace-pre-line flex-1">
+            {ad.body}
+        </p>
+    </div>
+);
+
+/** 7. Marquee — Entertainment marquee with star borders */
+const Marquee: React.FC<TemplateProps> = ({ ad }) => (
+    <div className="h-full border border-[var(--color-text-primary)] bg-[var(--color-bg-secondary)] p-4 flex flex-col text-center">
+        <p className="font-header text-xs tracking-[0.4em] text-[var(--color-text-secondary)] mb-2 select-none" aria-hidden="true">
+            &#9733; &#9733; &#9733; &#9733; &#9733;
+        </p>
+        <h4 className="font-header text-xl font-black uppercase tracking-wider text-[var(--color-text-primary)] mb-2">
+            {ad.title}
+        </h4>
+        <p className="font-typewriter text-xs leading-relaxed text-[var(--color-text-primary)] whitespace-pre-line flex-1">
+            {ad.body}
+        </p>
+        <p className="font-header text-xs tracking-[0.4em] text-[var(--color-text-secondary)] mt-3 select-none" aria-hidden="true">
+            &#9733; &#9733; &#9733; &#9733; &#9733;
+        </p>
+    </div>
+);
+
+/* ─── LONG TIER ─────────────────────────────────────────────────── */
+
+/** 8. Broadsheet — Full display ad with drop cap */
+const Broadsheet: React.FC<TemplateProps> = ({ ad }) => {
+    const firstChar = ad.body.charAt(0);
+    const restBody = ad.body.slice(1);
+
+    return (
+        <div className="h-full border-t-4 border-[var(--color-text-primary)] bg-[var(--color-bg-primary)] p-5 flex flex-col">
+            <h4 className="font-header text-2xl font-bold uppercase text-center text-[var(--color-text-primary)] mb-2 pb-2 border-b border-[var(--color-text-primary)]">
+                {ad.title}
+            </h4>
+            <div className="font-serif text-sm leading-relaxed text-justify text-[var(--color-text-primary)] whitespace-pre-line mt-2">
+                <span className="float-left text-4xl font-bold leading-none mr-1 font-header text-[var(--color-text-primary)]">
+                    {firstChar}
+                </span>
+                {restBody}
             </div>
         </div>
     );
 };
+
+/** 9. EditorialStyle — Advertorial that blends with newspaper copy */
+const EditorialStyle: React.FC<TemplateProps> = ({ ad }) => (
+    <div className="h-full border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] p-5 flex flex-col">
+        <p className="font-header text-[9px] uppercase tracking-[0.4em] text-center text-[var(--color-text-secondary)] mb-3">
+            &mdash; Advertisement &mdash;
+        </p>
+        <h4 className="font-serif text-2xl text-center text-[var(--color-text-primary)] mb-3 leading-tight">
+            {ad.title}
+        </h4>
+        <p className="font-serif text-sm leading-relaxed text-justify text-[var(--color-text-primary)] whitespace-pre-line flex-1">
+            {ad.body}
+        </p>
+    </div>
+);
+
+/** 10. Showcase — Feature display with ornamental box-drawing corners */
+const Showcase: React.FC<TemplateProps> = ({ ad }) => (
+    <div className="h-full bg-[var(--color-bg-secondary)] p-6 flex flex-col text-center relative">
+        {/* Ornamental corners */}
+        <span className="absolute top-1 left-2 font-mono text-2xl leading-none text-[var(--color-text-secondary)] select-none" aria-hidden="true">&#9556;</span>
+        <span className="absolute top-1 right-2 font-mono text-2xl leading-none text-[var(--color-text-secondary)] select-none" aria-hidden="true">&#9559;</span>
+        <span className="absolute bottom-1 left-2 font-mono text-2xl leading-none text-[var(--color-text-secondary)] select-none" aria-hidden="true">&#9562;</span>
+        <span className="absolute bottom-1 right-2 font-mono text-2xl leading-none text-[var(--color-text-secondary)] select-none" aria-hidden="true">&#9565;</span>
+
+        <h4 className="font-header text-2xl font-bold uppercase tracking-wider text-[var(--color-text-primary)] mt-3 mb-2">
+            {ad.title}
+        </h4>
+        <p className="font-mono text-xs text-[var(--color-text-secondary)] mb-3 select-none" aria-hidden="true">
+            &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;
+        </p>
+        <p className="font-typewriter text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-line flex-1">
+            {ad.body}
+        </p>
+    </div>
+);
