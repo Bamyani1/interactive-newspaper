@@ -80,10 +80,13 @@ ocr/models/*.pt
 ocr/output/
 ocr/editions/
 ocr/models/
+ocr/test_results/
 public/editions/*
 !public/editions/.gitkeep
 !public/editions/*/
 !public/editions/*/edition.json
+!public/editions/*/images/
+!public/editions/*/images/*.jpg
 
 # System Files
 **.DS_Store
