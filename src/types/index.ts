@@ -8,7 +8,7 @@
 export interface Article {
     id: string;
     date: string;
-    category: "News" | "Sports" | "Features" | "Opinion" | "Arts" | "Campus Life" | "Ads";
+    category: "News" | "Sports" | "Features" | "Opinion" | "Arts" | "Campus Life";
     headline: string;
     summary: string;
     fullText: string;
@@ -32,15 +32,10 @@ export interface EditionInfo {
 
 export interface VintageAd {
     title: string;
-    subtitle?: string;
     body: string;
-    price?: string;
-    footer?: string;
-    tag?: string;
-    imageUrl?: string;
 }
 
-export type SectionId = "Top" | Article["category"] | "All";
+export type SectionId = "Top" | Article["category"] | "Ads" | "All";
 
 // ─── OCR / Server-Side Types ────────────────────────────────────
 
