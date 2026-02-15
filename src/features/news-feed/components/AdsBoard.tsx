@@ -98,7 +98,7 @@ export const AdsBoard: React.FC<AdsBoardProps> = ({ ads, heading = "Ad Board" })
                     return (
                         <motion.div
                             key={`${ad.title}-${idx}`}
-                            className={`h-full ${isLongVariant(variant) ? 'sm:col-span-2' : ''}`}
+                            className={isLongVariant(variant) ? 'sm:col-span-2' : ''}
                             variants={cardVariants}
                             transition={TRANSITIONS.base}
                         >
