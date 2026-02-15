@@ -46,7 +46,8 @@ const itemVariants = {
 
 interface NewsFeedProps {
     articles: Article[];
-    ads: VintageAd[];
+    displayAds: VintageAd[];
+    classifiedAds: VintageAd[];
     editionDate: string | null;
     editions: string[];
     onDateChange: (date: string) => void;
@@ -56,7 +57,8 @@ interface NewsFeedProps {
 
 export const NewsFeed: React.FC<NewsFeedProps> = ({
     articles,
-    ads,
+    displayAds,
+    classifiedAds,
     editionDate,
     editions,
     onDateChange,
@@ -127,6 +129,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     const currentSection = useMemo<SectionId>(() => {
         if (activeSection === "Top") return "Top";
         if (activeSection === "Ads") return "Ads";
+        if (activeSection === "Classifieds") return "Classifieds";
         const exists = groupedArticles.some(s => s.category === activeSection);
         return exists ? activeSection : "Top";
     }, [activeSection, groupedArticles]);
@@ -267,7 +270,9 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                             </AnimatePresence>
                         </motion.div>
                     ) : currentSection === "Ads" ? (
-                        <AdsBoard ads={ads} />
+                        <AdsBoard ads={displayAds} heading="Display Ads" />
+                    ) : currentSection === "Classifieds" ? (
+                        <AdsBoard ads={classifiedAds} heading="Classifieds" />
                     ) : currentArticles.length > 0 ? (
                         <motion.div
                             key={currentSection}

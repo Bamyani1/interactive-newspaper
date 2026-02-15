@@ -31,9 +31,10 @@ function isLongVariant(variant: AdVariant): boolean {
 
 interface AdsBoardProps {
     ads: VintageAdType[];
+    heading?: string;
 }
 
-export const AdsBoard: React.FC<AdsBoardProps> = ({ ads }) => {
+export const AdsBoard: React.FC<AdsBoardProps> = ({ ads, heading = "Ad Board" }) => {
     const gridVariants = staggerContainer(0.1, 0.1);
     const cardVariants = fadeUp(14);
 
@@ -78,7 +79,7 @@ export const AdsBoard: React.FC<AdsBoardProps> = ({ ads }) => {
                         Ads & Notices
                     </p>
                     <h3 className="font-header text-2xl md:text-3xl leading-tight">
-                        Ad Board
+                        {heading}
                     </h3>
                 </div>
                 <span className="px-3 py-1 border border-[var(--color-text-primary)] text-xs uppercase tracking-widest font-semibold">

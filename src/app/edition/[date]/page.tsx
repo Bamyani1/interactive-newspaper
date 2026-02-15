@@ -105,6 +105,10 @@ function EditionBody({
     const articlesForDate = articles;
     const isLoading = isLoadingEditions || isLoadingArticles;
 
+    const CLASSIFIED_THRESHOLD = 200;
+    const displayAds = useMemo(() => ads.filter(a => a.body.length >= CLASSIFIED_THRESHOLD), [ads]);
+    const classifiedAds = useMemo(() => ads.filter(a => a.body.length < CLASSIFIED_THRESHOLD), [ads]);
+
     const sections = useMemo(() => {
         const counts = SECTION_ORDER.map((category) => ({
             id: category as SectionId,
@@ -119,12 +123,15 @@ function EditionBody({
             ...filtered,
         ];
 
-        if (ads.length > 0) {
-            result.push({ id: "Ads" as SectionId, label: "Ads", count: ads.length });
+        if (displayAds.length > 0) {
+            result.push({ id: "Ads" as SectionId, label: "Ads", count: displayAds.length });
+        }
+        if (classifiedAds.length > 0) {
+            result.push({ id: "Classifieds" as SectionId, label: "Classifieds", count: classifiedAds.length });
         }
 
         return result;
-    }, [articlesForDate, ads]);
+    }, [articlesForDate, displayAds, classifiedAds]);
 
     const handleSectionChange = (sectionId: SectionId) => {
         setActiveSection(sectionId);
@@ -164,7 +171,8 @@ function EditionBody({
                                 <NewsFeed
                                     key={currentDate ?? "no-edition"}
                                     articles={articles}
-                                    ads={ads}
+                                    displayAds={displayAds}
+                                    classifiedAds={classifiedAds}
                                     editionDate={currentDate}
                                     editions={editions}
                                     onDateChange={onDateChange}

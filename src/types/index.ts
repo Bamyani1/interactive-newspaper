@@ -35,7 +35,7 @@ export interface VintageAd {
     body: string;
 }
 
-export type SectionId = "Top" | Article["category"] | "Ads" | "All";
+export type SectionId = "Top" | Article["category"] | "Ads" | "Classifieds" | "All";
 
 // ─── OCR / Server-Side Types ────────────────────────────────────
 
