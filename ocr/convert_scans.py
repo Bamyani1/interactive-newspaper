@@ -26,9 +26,16 @@ _YOLO_MODEL_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "models", "doclayout_yolo_docstructbench_imgsz1024.pt",
 )
-_YOLO_CONF_THRESHOLD = 0.5
+_YOLO_CONF_THRESHOLD = 0.3  # Lower threshold to detect more regions
 _YOLO_FIGURE_CLASSES = {"figure"}
 _yolo_model: YOLOv10 | None = None
+
+# Image region size filtering thresholds
+_MIN_REGION_AREA_PIXELS = 15000      # ~122x122px minimum (reject tiny artifacts)
+_MAX_REGION_AREA_PERCENT = 0.80      # Reject regions > 80% of page (allow multi-photo composites)
+_MIN_ASPECT_RATIO = 0.25             # Reject very tall/thin regions (likely text columns)
+_MAX_ASPECT_RATIO = 4.0              # Reject very wide/short regions
+_YOLO_NMS_IOU_THRESHOLD = 0.3        # Lower NMS to keep more overlapping detections
 
 
 def _get_yolo_model() -> YOLOv10:
@@ -210,6 +217,7 @@ class TokenUsage:
 class CVRegionInfo:
     """Metrics from detect_image_regions."""
     total_components_found: int = 0
+    filtered_by_class: int = 0
     filtered_by_area: int = 0
     filtered_by_aspect_ratio: int = 0
     regions_kept: int = 0
@@ -857,11 +865,16 @@ def detect_image_regions(
     timer = StageTimer().start()
 
     model = _get_yolo_model()
-    results = model.predict(image, imgsz=1024, conf=_YOLO_CONF_THRESHOLD, verbose=False)
+    results = model.predict(
+        image,
+        imgsz=1024,
+        conf=_YOLO_CONF_THRESHOLD,
+        iou=_YOLO_NMS_IOU_THRESHOLD,  # Lower NMS = keep more overlapping boxes
+        verbose=False
+    )
     result = results[0]
 
     total_detections = len(result.boxes)
-    filtered_by_class = 0
     candidates = []  # (y_min, x_min, y_max, x_max, confidence)
 
     if total_detections > 0:
@@ -869,13 +882,49 @@ def detect_image_regions(
         confs = result.boxes.conf.cpu().numpy()
         classes = result.boxes.cls.cpu().numpy().astype(int)
 
+        # Calculate page dimensions and max region area
+        preprocessed_img = np.array(image)
+        page_height, page_width = preprocessed_img.shape[:2]
+        page_area = page_height * page_width
+        max_region_area = page_area * _MAX_REGION_AREA_PERCENT
+
+        filtered_by_class = 0
+        filtered_by_area = 0
+        filtered_by_aspect = 0
+
         for box, conf, cls in zip(boxes, confs, classes):
             class_name = result.names[cls]
+
+            # Filter by class (keep only figures)
             if class_name not in _YOLO_FIGURE_CLASSES:
                 filtered_by_class += 1
                 continue
 
+            # Extract coordinates
             x1, y1, x2, y2 = box
+            region_width = int(x2 - x1)
+            region_height = int(y2 - y1)
+            region_area = region_width * region_height
+            pct_of_page = (region_area / page_area) * 100
+
+            print(f"    -> YOLO detected figure: {region_width}x{region_height} ({pct_of_page:.1f}% of page, conf={conf:.2f})")
+
+            # Filter by area (reject tiny artifacts and page-covering regions)
+            if region_area < _MIN_REGION_AREA_PIXELS or region_area > max_region_area:
+                reason = "too small" if region_area < _MIN_REGION_AREA_PIXELS else f"too large (>{_MAX_REGION_AREA_PERCENT*100:.0f}%)"
+                print(f"       ❌ FILTERED: {reason}")
+                filtered_by_area += 1
+                continue
+
+            # Filter by aspect ratio (reject elongated regions)
+            aspect_ratio = region_width / region_height if region_height > 0 else 0
+            if aspect_ratio < _MIN_ASPECT_RATIO or aspect_ratio > _MAX_ASPECT_RATIO:
+                print(f"       ❌ FILTERED: aspect ratio {aspect_ratio:.2f} out of range [{_MIN_ASPECT_RATIO}-{_MAX_ASPECT_RATIO}]")
+                filtered_by_aspect += 1
+                continue
+
+            # Region passes all filters
+            print(f"       ✅ KEPT")
             candidates.append((int(y1), int(x1), int(y2), int(x2), float(conf)))
 
     # Remove near-duplicate overlapping boxes (IoU > 0.5, keep higher confidence)
@@ -899,8 +948,9 @@ def detect_image_regions(
     if diag is not None:
         diag.cv_info = CVRegionInfo(
             total_components_found=total_detections,
-            filtered_by_area=filtered_by_class,
-            filtered_by_aspect_ratio=0,
+            filtered_by_class=filtered_by_class,
+            filtered_by_area=filtered_by_area,
+            filtered_by_aspect_ratio=filtered_by_aspect,
             regions_kept=len(regions),
             bounding_boxes=list(regions),
         )
