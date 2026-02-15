@@ -2021,8 +2021,8 @@ def _process_edition(client, edition_dir: str, output_dir: str) -> None:
 
 
 def main():
-    # Use 'output' directory in the same folder as this script
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+    # Use 'public/editions' directory for deployment
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "public", "editions")
     os.makedirs(output_dir, exist_ok=True)
 
     client = genai.Client()

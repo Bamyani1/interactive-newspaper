@@ -4,7 +4,7 @@ import type { Article, EditionInfo, OcrArticle, OcrAd, OcrEdition } from '@/src/
 
 export type { Article, EditionInfo };
 
-const OCR_OUTPUT_DIR = path.join(process.cwd(), 'ocr', 'output');
+const EDITIONS_DIR = path.join(process.cwd(), 'public', 'editions');
 
 // ---------- Helpers ----------
 
@@ -115,7 +115,7 @@ export function computePageCount(edition: OcrEdition): number {
 }
 
 export async function listEditions(): Promise<EditionInfo[]> {
-  const entries = await readdir(OCR_OUTPUT_DIR, { withFileTypes: true });
+  const entries = await readdir(EDITIONS_DIR, { withFileTypes: true });
   const editions: EditionInfo[] = [];
 
   for (const entry of entries) {
@@ -123,7 +123,7 @@ export async function listEditions(): Promise<EditionInfo[]> {
 
     try {
       const raw = await readFile(
-        path.join(OCR_OUTPUT_DIR, entry.name, 'edition.json'),
+        path.join(EDITIONS_DIR, entry.name, 'edition.json'),
         'utf-8',
       );
       const edition: OcrEdition = JSON.parse(raw);
@@ -147,7 +147,7 @@ export async function loadEdition(date: string): Promise<OcrEdition | null> {
 
   try {
     const raw = await readFile(
-      path.join(OCR_OUTPUT_DIR, date, 'edition.json'),
+      path.join(EDITIONS_DIR, date, 'edition.json'),
       'utf-8',
     );
     return JSON.parse(raw);
