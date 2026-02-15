@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Article, VintageAd, SectionId } from "@/src/types";
-import { getClosestContext } from "../data/mockData";
+
 import { ArticleCard } from "./ArticleCard";
 import { FeaturedGrid } from "./FeaturedGrid";
 import { HeroSection } from "./HeroSection";
@@ -22,7 +22,6 @@ export const SECTION_ORDER: Article["category"][] = [
     "Opinion",
     "Arts",
     "Campus Life",
-    "Ads",
 ];
 
 const getScannedPages = (editionDate: string, pageCount: number): string[] => {
@@ -47,6 +46,7 @@ const itemVariants = {
 
 interface NewsFeedProps {
     articles: Article[];
+    ads: VintageAd[];
     editionDate: string | null;
     editions: string[];
     onDateChange: (date: string) => void;
@@ -56,6 +56,7 @@ interface NewsFeedProps {
 
 export const NewsFeed: React.FC<NewsFeedProps> = ({
     articles,
+    ads,
     editionDate,
     editions,
     onDateChange,
@@ -86,28 +87,8 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
         [resolvedEditionDate, maxPageNumber]
     );
 
-    const context = useMemo(
-        () => getClosestContext(resolvedEditionDate ?? ""),
-        [resolvedEditionDate]
-    );
-
-    const ads = useMemo((): VintageAd[] => {
-        const adArticles = daysArticles.filter(a => a.category === "Ads");
-        if (adArticles.length > 0) {
-            return adArticles.map(a => ({
-                title: a.headline,
-                subtitle: a.byline || undefined,
-                body: a.summary || a.fullText.substring(0, 200),
-                price: undefined,
-                footer: undefined,
-                tag: undefined,
-            }));
-        }
-        return context.ads ?? [];
-    }, [daysArticles, context]);
-
     const heroSource = useMemo(
-        () => daysArticles.filter(a => a.category !== "Ads"),
+        () => daysArticles,
         [daysArticles]
     );
 
@@ -117,7 +98,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     );
 
     const featuredArticles = useMemo(
-        () => daysArticles.filter(a => a.category !== "Ads" && a.isFeatured && a.id !== heroArticle?.id),
+        () => daysArticles.filter(a => a.isFeatured && a.id !== heroArticle?.id),
         [daysArticles, heroArticle]
     );
 
