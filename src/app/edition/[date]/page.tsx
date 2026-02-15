@@ -105,9 +105,10 @@ function EditionBody({
     const articlesForDate = articles;
     const isLoading = isLoadingEditions || isLoadingArticles;
 
+    const MIN_AD_LENGTH = 80;
     const CLASSIFIED_THRESHOLD = 200;
     const displayAds = useMemo(() => ads.filter(a => a.body.length >= CLASSIFIED_THRESHOLD), [ads]);
-    const classifiedAds = useMemo(() => ads.filter(a => a.body.length < CLASSIFIED_THRESHOLD), [ads]);
+    const classifiedAds = useMemo(() => ads.filter(a => a.body.length >= MIN_AD_LENGTH && a.body.length < CLASSIFIED_THRESHOLD), [ads]);
 
     const sections = useMemo(() => {
         const counts = SECTION_ORDER.map((category) => ({
