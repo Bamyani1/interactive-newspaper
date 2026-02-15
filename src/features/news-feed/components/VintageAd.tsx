@@ -44,7 +44,7 @@ interface TemplateProps {
 
 /** 1. TinyLiner — Minimal classified listing between rules */
 const TinyLiner: React.FC<TemplateProps> = ({ ad }) => (
-    <div className="border-t border-b border-[var(--color-text-primary)] p-2">
+    <div className="border-t border-b border-[var(--color-text-primary)] bg-[var(--color-bg-secondary)] p-2">
         <p className="font-typewriter text-xs leading-snug text-[var(--color-text-primary)]">
             <span className="font-bold uppercase font-header tracking-wide">
                 {ad.title}
