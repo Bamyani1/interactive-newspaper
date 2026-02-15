@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'fs/promises';
 import path from 'path';
-import type { Article, EditionInfo, OcrArticle, OcrEdition } from '@/src/types';
+import type { Article, EditionInfo, OcrArticle, OcrEdition, VintageAd } from '@/src/types';
 
 export type { Article, EditionInfo };
 
@@ -193,8 +193,8 @@ export function transformArticles(edition: OcrEdition): Article[] {
   return articles;
 }
 
-export function transformAds(edition: OcrEdition): { title: string; body: string }[] {
-  return edition.ads.map(ad => ({
+export function transformAds(edition: OcrEdition): VintageAd[] {
+  return (edition.ads ?? []).map(ad => ({
     title: ad.business_name,
     body: ad.body,
   }));

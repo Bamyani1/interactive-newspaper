@@ -10,7 +10,7 @@ interface EditionResponse {
         pageCount: number;
     };
     articles: Article[];
-    ads?: { title: string; body: string }[];
+    ads?: VintageAd[];
     pagination?: {
         nextCursor: string | null;
         hasMore: boolean;
