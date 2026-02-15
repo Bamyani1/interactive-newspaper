@@ -69,7 +69,7 @@ const BoxedNotice: React.FC<TemplateProps> = ({ ad }) => (
 
 /** 3. MiniDisplay — Dotted border display ad */
 const MiniDisplay: React.FC<TemplateProps> = ({ ad }) => (
-    <div className="border-2 border-dotted border-[var(--color-border-default)] bg-[var(--color-bg-primary)] p-4 flex flex-col items-center justify-center text-center">
+    <div className="border-2 border-dotted border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-4 flex flex-col items-center justify-center text-center">
         <h4 className="font-header text-sm font-bold uppercase tracking-[0.3em] text-[var(--color-text-primary)] mb-2">
             {ad.title}
         </h4>
@@ -103,7 +103,7 @@ const RetailCoupon: React.FC<TemplateProps> = ({ ad }) => (
 
 /** 5. ServiceCard — Professional service card with double top rule */
 const ServiceCard: React.FC<TemplateProps> = ({ ad }) => (
-    <div className="border-t-4 border-double border-[var(--color-text-primary)] bg-[var(--color-bg-primary)] p-4 flex flex-col">
+    <div className="border-t-4 border-double border-[var(--color-text-primary)] bg-[var(--color-bg-secondary)] p-4 flex flex-col">
         <h4 className="font-serif text-lg text-center text-[var(--color-text-primary)] mb-2">
             {ad.title}
         </h4>
@@ -153,7 +153,7 @@ const Broadsheet: React.FC<TemplateProps> = ({ ad }) => {
     const restBody = ad.body.slice(1);
 
     return (
-        <div className="border-t-4 border-[var(--color-text-primary)] bg-[var(--color-bg-primary)] p-5 flex flex-col">
+        <div className="border-t-4 border-[var(--color-text-primary)] bg-[var(--color-bg-secondary)] p-5 flex flex-col">
             <h4 className="font-header text-2xl font-bold uppercase text-center text-[var(--color-text-primary)] mb-2 pb-2 border-b border-[var(--color-text-primary)]">
                 {ad.title}
             </h4>
@@ -169,7 +169,7 @@ const Broadsheet: React.FC<TemplateProps> = ({ ad }) => {
 
 /** 9. EditorialStyle — Advertorial that blends with newspaper copy */
 const EditorialStyle: React.FC<TemplateProps> = ({ ad }) => (
-    <div className="border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] p-5 flex flex-col">
+    <div className="border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-5 flex flex-col">
         <p className="font-header text-[9px] uppercase tracking-[0.4em] text-center text-[var(--color-text-secondary)] mb-3">
             &mdash; Advertisement &mdash;
         </p>
