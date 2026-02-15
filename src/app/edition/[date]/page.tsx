@@ -8,7 +8,6 @@ import { NavigationSidebar } from "@/features/navigation";
 import { MobileNav } from "@/features/navigation/components/MobileNav";
 import {
     NewsFeed,
-    getClosestContext,
     useEditionArticles,
 } from "@/features/news-feed";
 import { ContextSidebar } from "@/features/context-panel";
@@ -98,14 +97,10 @@ function EditionBody({
     const [activeSection, setActiveSection] = useState<SectionId>("Top");
     const {
         articles,
+        ads,
         hasActiveEdition,
         isLoading: isLoadingArticles,
     } = useEditionArticles(currentDate);
-
-    const context = useMemo(
-        () => getClosestContext(currentDate ?? ""),
-        [currentDate]
-    );
 
     const articlesForDate = articles;
     const isLoading = isLoadingEditions || isLoadingArticles;
@@ -117,22 +112,19 @@ function EditionBody({
             count: articlesForDate.filter((article) => article.category === category).length,
         }));
 
-        const realAdsCount = counts.find((item) => item.id === "Ads")?.count ?? 0;
-        const adsCount = realAdsCount > 0 ? realAdsCount : (context.ads?.length ?? 0);
-
-        const filtered = counts.filter((item) => item.id !== "Ads" && item.count > 0);
+        const filtered = counts.filter((item) => item.count > 0);
 
         const result = [
             { id: "Top" as SectionId, label: "Top Stories" },
             ...filtered,
         ];
 
-        if (adsCount > 0) {
-            result.push({ id: "Ads" as SectionId, label: "Ads", count: adsCount });
+        if (ads.length > 0) {
+            result.push({ id: "Ads" as SectionId, label: "Ads", count: ads.length });
         }
 
         return result;
-    }, [articlesForDate, context]);
+    }, [articlesForDate, ads]);
 
     const handleSectionChange = (sectionId: SectionId) => {
         setActiveSection(sectionId);
@@ -172,6 +164,7 @@ function EditionBody({
                                 <NewsFeed
                                     key={currentDate ?? "no-edition"}
                                     articles={articles}
+                                    ads={ads}
                                     editionDate={currentDate}
                                     editions={editions}
                                     onDateChange={onDateChange}
