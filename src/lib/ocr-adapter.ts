@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'fs/promises';
 import path from 'path';
-import type { Article, EditionInfo, OcrArticle, OcrAd, OcrEdition } from '@/src/types';
+import type { Article, EditionInfo, OcrArticle, OcrEdition } from '@/src/types';
 
 export type { Article, EditionInfo };
 
@@ -160,7 +160,6 @@ export function transformArticles(edition: OcrEdition): Article[] {
   const articles: Article[] = [];
   const date = edition.edition_date;
 
-  // Build all articles (hero/featured assigned in a second pass)
   for (let i = 0; i < edition.articles.length; i++) {
     const a = edition.articles[i];
     articles.push({
@@ -179,31 +178,9 @@ export function transformArticles(edition: OcrEdition): Article[] {
     });
   }
 
-  // Ads
-  for (let i = 0; i < edition.ads.length; i++) {
-    const ad = edition.ads[i];
-    articles.push({
-      id: `${date}-ad-${i}`,
-      date,
-      category: 'Ads',
-      headline: ad.business_name,
-      summary: extractSummary(ad.body),
-      fullText: bodyToHtml(ad.body),
-      imageUrls: imageUrls(date, ad.image_files),
-      byline: null,
-      page: 1,
-      isHero: false,
-      isFeatured: false,
-      imageCaption: null,
-    });
-  }
-
-  // ── Assign hero & featured: prioritize articles with images ──
-  const nonAds = articles.filter(a => a.category !== 'Ads');
-  const withImages = nonAds.filter(a => a.imageUrls.length > 0);
-  const withoutImages = nonAds.filter(a => a.imageUrls.length === 0);
-
-  // Candidates: articles with images first, then the rest (preserving order)
+  // Assign hero & featured: prioritize articles with images
+  const withImages = articles.filter(a => a.imageUrls.length > 0);
+  const withoutImages = articles.filter(a => a.imageUrls.length === 0);
   const candidates = [...withImages, ...withoutImages];
 
   if (candidates.length > 0) {
@@ -214,4 +191,11 @@ export function transformArticles(edition: OcrEdition): Article[] {
   }
 
   return articles;
+}
+
+export function transformAds(edition: OcrEdition): { title: string; body: string }[] {
+  return edition.ads.map(ad => ({
+    title: ad.business_name,
+    body: ad.body,
+  }));
 }
