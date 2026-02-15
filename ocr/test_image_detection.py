@@ -25,7 +25,12 @@ import traceback
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 
+import tempfile
+
 from PIL import Image, ImageDraw, ImageFont
+
+# Allow huge scanned newspaper pages (130M+ pixels)
+Image.MAX_IMAGE_PIXELS = None
 
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -106,119 +111,62 @@ def _load_font(size: int = 18) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 def detect_ppdoclayout(image_path: str) -> list[BBox]:
     """Run PP-DocLayout-L layout detection and return BBox list."""
-    # Try the newer LayoutDetection API first, fall back to PaddleOCR
+    # PP-DocLayout doesn't support .tif — convert to PNG in a temp file
+    tmp_path = None
+    feed_path = image_path
+    if image_path.lower().endswith((".tif", ".tiff")):
+        img = Image.open(image_path).convert("RGB")
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp_path = tmp.name
+        img.save(tmp_path, "PNG")
+        feed_path = tmp_path
+
     try:
         from paddleocr import LayoutDetection
         model = LayoutDetection(model_name="PP-DocLayout-L")
-        output = model.predict(image_path, batch_size=1, layout_nms=True)
+        output = model.predict(feed_path, batch_size=1, layout_nms=True)
     except (ImportError, AttributeError, TypeError):
         from paddleocr import PaddleOCR
         model = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
-        output = model.ocr(image_path, cls=False)
+        output = model.ocr(feed_path, cls=False)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
     boxes: list[BBox] = []
 
     if output is None:
         return boxes
 
-    # The output format varies between PaddleOCR versions.  Walk every
-    # plausible structure until we find coordinate data.
-    results_list = output if isinstance(output, (list, tuple)) else [output]
+    # PaddleOCR LayoutDetection returns list[DetResult].
+    # Each DetResult is dict-like with key 'boxes' -> list of dicts
+    # Each box dict has: cls_id, label, score, coordinate [x_min, y_min, x_max, y_max]
+    for det_result in output:
+        # DetResult is dict-like — access 'boxes' key
+        box_list = []
+        if hasattr(det_result, '__getitem__'):
+            try:
+                box_list = det_result['boxes']
+            except (KeyError, TypeError):
+                pass
 
-    for result in results_list:
-        # result might be a dict-like object, a list of dicts, or a custom class
-        items = []
+        if not box_list and hasattr(det_result, 'boxes'):
+            box_list = det_result.boxes or []
 
-        # Case A: result has a .boxes attribute (LayoutDetection result object)
-        if hasattr(result, "boxes"):
-            items = result.boxes if isinstance(result.boxes, (list, tuple)) else [result.boxes]
-        # Case B: result is iterable of box-like objects
-        elif isinstance(result, (list, tuple)):
-            items = result
-        # Case C: single box-like object
-        elif hasattr(result, "coordinate") or hasattr(result, "bbox"):
-            items = [result]
-        else:
-            # Try treating the result itself as a dict
-            if isinstance(result, dict):
-                items = [result]
-            else:
+        for item in box_list:
+            if not isinstance(item, dict):
                 continue
-
-        for item in items:
-            if item is None:
+            coord = item.get("coordinate", [])
+            if len(coord) < 4:
                 continue
-
-            coord = None
-            label = "unknown"
-            score = 0.0
-
-            # Extract coordinates ------------------------------------------------
-            # Attribute-style access (custom objects from PaddleOCR)
-            if hasattr(item, "coordinate"):
-                c = item.coordinate
-                if isinstance(c, dict):
-                    coord = (c.get("x_min", c.get("xmin", 0)),
-                             c.get("y_min", c.get("ymin", 0)),
-                             c.get("x_max", c.get("xmax", 0)),
-                             c.get("y_max", c.get("ymax", 0)))
-                elif isinstance(c, (list, tuple)) and len(c) >= 4:
-                    coord = (c[0], c[1], c[2], c[3])
-            elif hasattr(item, "bbox"):
-                b = item.bbox
-                if isinstance(b, (list, tuple)) and len(b) >= 4:
-                    coord = (b[0], b[1], b[2], b[3])
-                elif isinstance(b, dict):
-                    coord = (b.get("x_min", b.get("xmin", 0)),
-                             b.get("y_min", b.get("ymin", 0)),
-                             b.get("x_max", b.get("xmax", 0)),
-                             b.get("y_max", b.get("ymax", 0)))
-            # Dict-style access
-            elif isinstance(item, dict):
-                if "coordinate" in item:
-                    c = item["coordinate"]
-                    if isinstance(c, (list, tuple)) and len(c) >= 4:
-                        coord = (c[0], c[1], c[2], c[3])
-                    elif isinstance(c, dict):
-                        coord = (c.get("x_min", 0), c.get("y_min", 0),
-                                 c.get("x_max", 0), c.get("y_max", 0))
-                elif "bbox" in item:
-                    b = item["bbox"]
-                    if isinstance(b, (list, tuple)) and len(b) >= 4:
-                        coord = (b[0], b[1], b[2], b[3])
-                # Some versions return [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
-                elif "points" in item:
-                    pts = item["points"]
-                    if isinstance(pts, (list, tuple)) and len(pts) >= 4:
-                        xs = [p[0] for p in pts]
-                        ys = [p[1] for p in pts]
-                        coord = (min(xs), min(ys), max(xs), max(ys))
-
-            # Extract label -------------------------------------------------------
-            if hasattr(item, "label"):
-                label = str(item.label)
-            elif hasattr(item, "cls_name"):
-                label = str(item.cls_name)
-            elif isinstance(item, dict):
-                label = str(item.get("label", item.get("cls_name", "unknown")))
-
-            # Extract score -------------------------------------------------------
-            if hasattr(item, "score"):
-                score = float(item.score)
-            elif hasattr(item, "confidence"):
-                score = float(item.confidence)
-            elif isinstance(item, dict):
-                score = float(item.get("score", item.get("confidence", 0)))
-
-            if coord is not None:
-                boxes.append(BBox(
-                    x_min=float(coord[0]),
-                    y_min=float(coord[1]),
-                    x_max=float(coord[2]),
-                    y_max=float(coord[3]),
-                    confidence=score,
-                    label=label,
-                ))
+            boxes.append(BBox(
+                x_min=float(coord[0]),
+                y_min=float(coord[1]),
+                x_max=float(coord[2]),
+                y_max=float(coord[3]),
+                confidence=float(item.get("score", 0)),
+                label=str(item.get("label", "unknown")),
+            ))
 
     return boxes
 
@@ -227,10 +175,11 @@ def detect_ppdoclayout(image_path: str) -> list[BBox]:
 
 
 def detect_surya(image_path: str) -> list[BBox]:
-    """Run Surya detection predictor and return BBox list."""
-    from surya.detection import DetectionPredictor
+    """Run Surya layout predictor and return BBox list."""
+    from surya.layout import FoundationPredictor, LayoutPredictor
 
-    predictor = DetectionPredictor()
+    fp = FoundationPredictor()
+    predictor = LayoutPredictor(fp)
     image = Image.open(image_path).convert("RGB")
     predictions = predictor([image])
 
@@ -335,7 +284,14 @@ def detect_surya(image_path: str) -> list[BBox]:
 
 
 def detect_docling(image_path: str) -> list[BBox]:
-    """Run Docling DocumentConverter and return BBox list."""
+    """Run Docling DocumentConverter and return BBox list.
+
+    Docling 2.x returns a DoclingDocument with typed collections:
+      doc.pictures  -> list[PictureItem]   (photos, figures, charts)
+      doc.tables    -> list[TableItem]
+      doc.texts     -> list[TextItem]      (headings, paragraphs, etc.)
+    Each item has .prov (provenance) with .bbox (l, t, r, b) coords.
+    """
     from docling.document_converter import DocumentConverter
 
     converter = DocumentConverter()
@@ -343,122 +299,61 @@ def detect_docling(image_path: str) -> list[BBox]:
 
     boxes: list[BBox] = []
 
-    if result is None:
+    if result is None or not hasattr(result, "document"):
         return boxes
 
-    # Navigate to layout predictions.  The structure is:
-    #   result.document.pages[*].predictions["layout"].clusters[*]
-    # but we try multiple paths defensively.
+    doc = result.document
 
-    pages = None
-
-    # Try result.document.pages
-    if hasattr(result, "document") and hasattr(result.document, "pages"):
-        pages_attr = result.document.pages
-        if isinstance(pages_attr, dict):
-            pages = list(pages_attr.values())
-        elif isinstance(pages_attr, (list, tuple)):
-            pages = list(pages_attr)
-
-    # Fall back to result.pages
-    if pages is None and hasattr(result, "pages"):
-        pages_attr = result.pages
-        if isinstance(pages_attr, dict):
-            pages = list(pages_attr.values())
-        elif isinstance(pages_attr, (list, tuple)):
-            pages = list(pages_attr)
-
-    if pages is None:
-        # Last resort: look for clusters directly on result
-        if hasattr(result, "clusters"):
-            pages = [result]
-        else:
-            return boxes
-
-    for page in pages:
-        clusters = []
-
-        # Standard path: page.predictions["layout"].clusters
-        if hasattr(page, "predictions"):
-            preds = page.predictions
-            if isinstance(preds, dict) and "layout" in preds:
-                layout = preds["layout"]
-                if hasattr(layout, "clusters"):
-                    clusters = layout.clusters
-                elif isinstance(layout, dict):
-                    clusters = layout.get("clusters", [])
-            elif isinstance(preds, dict):
-                # Try each prediction entry
-                for key, val in preds.items():
-                    if hasattr(val, "clusters"):
-                        clusters.extend(val.clusters)
-                    elif isinstance(val, dict) and "clusters" in val:
-                        clusters.extend(val["clusters"])
-
-        # Alternate: page.clusters
-        if not clusters and hasattr(page, "clusters"):
-            clusters = page.clusters
-
-        # Alternate: page.layout.clusters
-        if not clusters and hasattr(page, "layout"):
-            layout = page.layout
-            if hasattr(layout, "clusters"):
-                clusters = layout.clusters
-
-        for cluster in clusters:
-            if cluster is None:
+    # Helper to extract bbox from a document item's provenance
+    def _extract_boxes(items, label_name: str) -> None:
+        for item in items:
+            if not hasattr(item, "prov"):
                 continue
+            for prov in item.prov:
+                if not hasattr(prov, "bbox"):
+                    continue
+                bb = prov.bbox
+                if hasattr(bb, "l"):
+                    boxes.append(BBox(
+                        x_min=float(bb.l),
+                        y_min=float(bb.t),
+                        x_max=float(bb.r),
+                        y_max=float(bb.b),
+                        confidence=0.0,
+                        label=label_name,
+                    ))
 
-            coord = None
-            label = "unknown"
-            score = 0.0
+    # Extract pictures (this is what we care about most)
+    if hasattr(doc, "pictures"):
+        _extract_boxes(doc.pictures, "picture")
 
-            # Extract bbox -- Docling uses (l, t, r, b) format
-            if hasattr(cluster, "bbox"):
-                b = cluster.bbox
-                if hasattr(b, "l"):
-                    coord = (b.l, b.t, b.r, b.b)
-                elif isinstance(b, (list, tuple)) and len(b) >= 4:
-                    coord = (b[0], b[1], b[2], b[3])
-                elif isinstance(b, dict):
-                    coord = (b.get("l", b.get("x_min", 0)),
-                             b.get("t", b.get("y_min", 0)),
-                             b.get("r", b.get("x_max", 0)),
-                             b.get("b", b.get("y_max", 0)))
-            elif isinstance(cluster, dict) and "bbox" in cluster:
-                b = cluster["bbox"]
-                if isinstance(b, (list, tuple)) and len(b) >= 4:
-                    coord = (b[0], b[1], b[2], b[3])
-                elif isinstance(b, dict):
-                    coord = (b.get("l", 0), b.get("t", 0),
-                             b.get("r", 0), b.get("b", 0))
+    # Extract tables
+    if hasattr(doc, "tables"):
+        _extract_boxes(doc.tables, "table")
 
-            # Extract label
-            if hasattr(cluster, "label"):
-                lbl = cluster.label
-                # Docling labels can be enum-like objects
-                label = str(lbl.value) if hasattr(lbl, "value") else str(lbl)
-            elif isinstance(cluster, dict):
-                lbl = cluster.get("label", "unknown")
-                label = str(lbl.value) if hasattr(lbl, "value") else str(lbl)
-
-            # Extract confidence
-            if hasattr(cluster, "confidence"):
-                score = float(cluster.confidence)
-            elif hasattr(cluster, "score"):
-                score = float(cluster.score)
-            elif isinstance(cluster, dict):
-                score = float(cluster.get("confidence", cluster.get("score", 0)))
-
-            if coord is not None:
-                boxes.append(BBox(
-                    x_min=float(coord[0]),
-                    y_min=float(coord[1]),
-                    x_max=float(coord[2]),
-                    y_max=float(coord[3]),
-                    confidence=score,
-                    label=label,
-                ))
+    # Extract text elements (headings, paragraphs, etc.)
+    if hasattr(doc, "texts"):
+        for item in doc.texts:
+            if not hasattr(item, "prov"):
+                continue
+            # Use the item's label if available
+            label = "text"
+            if hasattr(item, "label"):
+                lbl = item.label
+                label = lbl.value if hasattr(lbl, "value") else str(lbl)
+            for prov in item.prov:
+                if not hasattr(prov, "bbox"):
+                    continue
+                bb = prov.bbox
+                if hasattr(bb, "l"):
+                    boxes.append(BBox(
+                        x_min=float(bb.l),
+                        y_min=float(bb.t),
+                        x_max=float(bb.r),
+                        y_max=float(bb.b),
+                        confidence=0.0,
+                        label=label,
+                    ))
 
     return boxes
 
@@ -516,8 +411,11 @@ def draw_boxes_on_image(
     line_width = max(2, min(w, h) // 400)
 
     for box in boxes:
+        # Normalize coordinates (some models return t > b)
+        x0, y0 = min(box.x_min, box.x_max), min(box.y_min, box.y_max)
+        x1, y1 = max(box.x_min, box.x_max), max(box.y_min, box.y_max)
         draw.rectangle(
-            [(box.x_min, box.y_min), (box.x_max, box.y_max)],
+            [(x0, y0), (x1, y1)],
             outline=color,
             width=line_width,
         )
@@ -528,12 +426,12 @@ def draw_boxes_on_image(
         pad = 2
         # Background rectangle for readability
         draw.rectangle(
-            [(box.x_min, max(0, box.y_min - text_h - 2 * pad)),
-             (box.x_min + text_w + 2 * pad, box.y_min)],
+            [(x0, max(0, y0 - text_h - 2 * pad)),
+             (x0 + text_w + 2 * pad, y0)],
             fill=color,
         )
         draw.text(
-            (box.x_min + pad, max(0, box.y_min - text_h - pad)),
+            (x0 + pad, max(0, y0 - text_h - pad)),
             text,
             fill="white",
             font=font,
