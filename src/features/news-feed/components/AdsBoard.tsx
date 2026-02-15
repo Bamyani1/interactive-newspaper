@@ -1,24 +1,55 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import { VintageAd } from "./VintageAd";
 import type { VintageAd as VintageAdType } from "@/src/types";
 import { fadeUp, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
 
+export type AdVariant =
+    | 'tiny-liner' | 'boxed-notice' | 'mini-display'
+    | 'retail-coupon' | 'service-card' | 'bulletin' | 'marquee'
+    | 'broadsheet' | 'editorial-style' | 'showcase';
+
+const SHORT_VARIANTS: AdVariant[] = ['tiny-liner', 'boxed-notice', 'mini-display'];
+const MEDIUM_VARIANTS: AdVariant[] = ['retail-coupon', 'service-card', 'bulletin', 'marquee'];
+const LONG_VARIANTS: AdVariant[] = ['broadsheet', 'editorial-style', 'showcase'];
+
+function assignVariant(bodyLength: number, indexInTier: number): AdVariant {
+    if (bodyLength < 80) {
+        return SHORT_VARIANTS[indexInTier % SHORT_VARIANTS.length];
+    }
+    if (bodyLength <= 350) {
+        return MEDIUM_VARIANTS[indexInTier % MEDIUM_VARIANTS.length];
+    }
+    return LONG_VARIANTS[indexInTier % LONG_VARIANTS.length];
+}
+
+function isLongVariant(variant: AdVariant): boolean {
+    return LONG_VARIANTS.includes(variant);
+}
+
 interface AdsBoardProps {
     ads: VintageAdType[];
 }
 
-const VARIANTS: Array<'retail' | 'cinema' | 'classified'> = [
-    "retail",
-    "cinema",
-    "classified",
-];
-
 export const AdsBoard: React.FC<AdsBoardProps> = ({ ads }) => {
     const gridVariants = staggerContainer(0.1, 0.1);
     const cardVariants = fadeUp(14);
+
+    const adVariants = useMemo(() => {
+        const tierCounters = { short: 0, medium: 0, long: 0 };
+        return ads.map((ad) => {
+            const len = ad.body.length;
+            let tier: keyof typeof tierCounters;
+            if (len < 80) tier = 'short';
+            else if (len <= 350) tier = 'medium';
+            else tier = 'long';
+            const variant = assignVariant(len, tierCounters[tier]);
+            tierCounters[tier]++;
+            return variant;
+        });
+    }, [ads]);
 
     if (!ads?.length) {
         return (
@@ -56,24 +87,24 @@ export const AdsBoard: React.FC<AdsBoardProps> = ({ ads }) => {
             </motion.div>
 
             <motion.div
-                className="grid gap-4 md:gap-6 sm:grid-cols-2"
+                className="grid gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2"
                 variants={gridVariants}
                 initial="hidden"
                 animate="show"
             >
-                {ads.map((ad, idx) => (
-                    <motion.div
-                        key={`${ad.title}-${idx}`}
-                        className="h-full"
-                        variants={cardVariants}
-                        transition={TRANSITIONS.base}
-                    >
-                        <VintageAd
-                            ad={ad}
-                            variant={VARIANTS[idx % VARIANTS.length]}
-                        />
-                    </motion.div>
-                ))}
+                {ads.map((ad, idx) => {
+                    const variant = adVariants[idx];
+                    return (
+                        <motion.div
+                            key={`${ad.title}-${idx}`}
+                            className={`h-full ${isLongVariant(variant) ? 'sm:col-span-2' : ''}`}
+                            variants={cardVariants}
+                            transition={TRANSITIONS.base}
+                        >
+                            <VintageAd ad={ad} variant={variant} />
+                        </motion.div>
+                    );
+                })}
             </motion.div>
         </section>
     );
