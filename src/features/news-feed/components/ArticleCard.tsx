@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useRef, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useRef } from "react";
 import type { Article } from "@/src/types";
 import { ChevronDown, ChevronUp, Share2, Printer, Check, FileText } from "lucide-react";
 import Image from "next/image";
@@ -106,14 +105,14 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
     };
 
     return (
-        <motion.article
+        <article
             ref={articleRef}
             onClick={handleClick}
             onKeyDown={handleKeyDown}
             tabIndex={0}
             role="button"
             className={`
-                article-card group relative overflow-hidden cursor-pointer transition-all duration-300 outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]
+                article-card group relative overflow-hidden cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]
                 px-5 md:px-6 py-6 md:py-8
                 ${isExpanded ? 'is-expanded' : ''}
             `}
@@ -153,30 +152,19 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                         </p>
                     )}
 
-                    <AnimatePresence>
-                        {!isExpanded && (
-                            <motion.p
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: "auto" }}
-                                exit={{ opacity: 0, height: 0 }}
-                                transition={{ duration: 0.18, ease: "easeOut" }}
-                                className="card-summary line-clamp-2 overflow-hidden pointer-events-none"
-                            >
+                    {hasSummary && (
+                        <div className="card-summary-grid">
+                            <p className="card-summary line-clamp-2 pointer-events-none">
                                 {summary}
-                            </motion.p>
-                        )}
-                    </AnimatePresence>
-
-                    {article.continuesOnPage && (
-                        <p className="text-xs font-mono uppercase tracking-widest opacity-60">
-                            Continued on page {article.continuesOnPage}
-                        </p>
+                            </p>
+                        </div>
                     )}
+
                 </div>
 
                 {/* Thumbnail */}
                 {article.imageUrls.length > 0 && (
-                    <div className="card-image-container w-[120px] aspect-square relative shrink-0 transition-all duration-500">
+                    <div className="card-image-container w-[120px] aspect-square relative shrink-0">
                         <Image
                             src={article.imageUrls[0]}
                             alt={article.headline}
@@ -188,112 +176,107 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
             </div>
 
             {/* Expanded Content */}
-            <AnimatePresence>
-                {isExpanded && (
-                    <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.3, ease: "easeOut" }}
-                        className="mt-6 border-t border-dashed pt-6 space-y-4"
+            <div className="card-expanded-grid">
+                <div
+                    className="card-expanded-inner mt-6 border-t border-dashed pt-6 space-y-4"
+                    style={{ borderColor: "var(--stroke-accent-soft)" }}
+                    aria-hidden={!isExpanded}
+                >
+                    {/* Expanded Images */}
+                    {article.imageUrls.length > 0 && (
+                        article.imageUrls.length === 1 ? (
+                            <div className="relative w-full aspect-video mb-6 bg-black/5">
+                                <Image
+                                    src={article.imageUrls[0]}
+                                    alt={article.headline}
+                                    fill
+                                    className="object-contain object-left sepia-vintage"
+                                />
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-3 mb-6">
+                                {article.imageUrls.map((url, idx) => (
+                                    <div key={idx} className="relative w-full aspect-[4/3] bg-black/5">
+                                        <Image
+                                            src={url}
+                                            alt={`${article.headline} — image ${idx + 1}`}
+                                            fill
+                                            className="object-contain sepia-vintage"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        )
+                    )}
+
+                    {hasFullText ? (
+                        <div
+                            className="prose prose-lg prose-invert max-w-none font-body leading-relaxed prose-p:my-3 prose-li:my-1 wrap-break-word"
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(fullText) }}
+                        />
+                    ) : hasSummary ? (
+                        <p className="prose prose-lg prose-invert max-w-none font-body leading-relaxed">
+                            {summary}
+                        </p>
+                    ) : (
+                        <p className="prose prose-lg prose-invert max-w-none font-body leading-relaxed italic opacity-80">
+                            Full story text unavailable for this article.
+                        </p>
+                    )}
+
+                    {article.imageCaption && (
+                        <p className="image-caption text-sm text-left">
+                            {article.imageCaption}
+                        </p>
+                    )}
+
+                    <div
+                        className="flex flex-wrap gap-4 mt-8 pt-4 border-t justify-end opacity-80"
                         style={{ borderColor: "var(--stroke-accent-soft)" }}
                     >
-                        {/* Expanded Images */}
-                        {article.imageUrls.length > 0 && (
-                            article.imageUrls.length === 1 ? (
-                                <div className="relative w-full aspect-video mb-6 bg-black/5">
-                                    <Image
-                                        src={article.imageUrls[0]}
-                                        alt={article.headline}
-                                        fill
-                                        className="object-contain object-left sepia-vintage"
-                                    />
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-2 gap-3 mb-6">
-                                    {article.imageUrls.map((url, idx) => (
-                                        <div key={idx} className="relative w-full aspect-[4/3] bg-black/5">
-                                            <Image
-                                                src={url}
-                                                alt={`${article.headline} — image ${idx + 1}`}
-                                                fill
-                                                className="object-contain sepia-vintage"
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                            )
+                        {onViewOriginal && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onViewOriginal(article);
+                                }}
+                                className="flex items-center gap-2 text-sm hover:opacity-100"
+                            >
+                                View Original
+                            </button>
                         )}
-
-                        {hasFullText ? (
-                            <div
-                                className="prose prose-lg prose-invert max-w-none font-body leading-relaxed prose-p:my-3 prose-li:my-1 wrap-break-word"
-                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(fullText) }}
-                            />
-                        ) : hasSummary ? (
-                            <p className="prose prose-lg prose-invert max-w-none font-body leading-relaxed">
-                                {summary}
-                            </p>
-                        ) : (
-                            <p className="prose prose-lg prose-invert max-w-none font-body leading-relaxed italic opacity-80">
-                                Full story text unavailable for this article.
-                            </p>
-                        )}
-
-                        {article.imageCaption && (
-                            <p className="image-caption text-sm text-left">
-                                {article.imageCaption}
-                            </p>
-                        )}
-
-                        <div
-                            className="flex flex-wrap gap-4 mt-8 pt-4 border-t justify-end opacity-80"
-                            style={{ borderColor: "var(--stroke-accent-soft)" }}
+                        <button
+                            type="button"
+                            onClick={handlePrint}
+                            className="flex items-center gap-2 text-sm hover:opacity-100"
                         >
-                            {onViewOriginal && (
-                                <button
-                                    type="button"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onViewOriginal(article);
-                                    }}
-                                    className="flex items-center gap-2 text-sm hover:opacity-100"
-                                >
-                                    View Original
-                                </button>
+                            <Printer size={16} /> Print
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleShare}
+                            className="flex items-center gap-2 text-sm hover:opacity-100"
+                        >
+                            {shareStatus === "copied" ? (
+                                <>
+                                    <Check size={16} className="text-green-600" /> Copied!
+                                </>
+                            ) : (
+                                <>
+                                    <Share2 size={16} /> Share
+                                </>
                             )}
-                            <button
-                                type="button"
-                                onClick={handlePrint}
-                                className="flex items-center gap-2 text-sm hover:opacity-100"
-                            >
-                                <Printer size={16} /> Print
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleShare}
-                                className="flex items-center gap-2 text-sm hover:opacity-100"
-                            >
-                                {shareStatus === "copied" ? (
-                                    <>
-                                        <Check size={16} className="text-green-600" /> Copied!
-                                    </>
-                                ) : (
-                                    <>
-                                        <Share2 size={16} /> Share
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                        </button>
+                    </div>
+                </div>
+            </div>
 
             {/* Toggle Icon Hint */}
-            <motion.div layout className="absolute top-6 right-0 opacity-40 group-hover:opacity-60 transition-opacity">
+            <div className="absolute top-6 right-0 opacity-40 group-hover:opacity-60 transition-opacity">
                 {isExpanded ? <ChevronUp /> : <ChevronDown />}
-            </motion.div>
+            </div>
 
-        </motion.article>
+        </article>
     );
 };
