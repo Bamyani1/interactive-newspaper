@@ -64,14 +64,9 @@ body {
     opacity: 0.8;
 }
 
-/* Sepia filter for vintage photo effect */
+/* Vintage photo effect (sepia removed) */
 .sepia-vintage {
-    filter: sepia(80%) contrast(110%);
     transition: filter var(--duration-slow) ease;
-}
-
-.sepia-vintage:hover {
-    filter: sepia(0%) contrast(100%);
 }
 
 /* =========================================
@@ -87,5 +82,5 @@ body {
 
 /* Hero article treatment */
 .hero-article {
-    box-shadow: 0 18px 38px -24px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }

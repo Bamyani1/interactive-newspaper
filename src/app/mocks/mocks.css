@@ -1,0 +1,437 @@
+/* =========================================
+   SIDEBAR MOCK VARIANTS — Typography-First Family
+   Scoped styles — imported ONLY by /mocks page.
+   NOT registered in src/styles/index.css.
+   ========================================= */
+
+/* ─────────────────────────────────────────
+   1. Broadsheet Compact
+   Tight, numbered, utilitarian. The quick-reference card.
+   ───────────────────────────────────────── */
+
+.mock-broadsheet-compact {
+  background: var(--color-bg-primary);
+  padding: 14px 14px 10px;
+}
+
+.mock-bc-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 0 0 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.mock-bc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  padding: 7px 0;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border-default) 40%, transparent);
+}
+
+.mock-bc-row:last-of-type {
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.mock-bc-number {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+  width: 22px;
+  flex-shrink: 0;
+}
+
+.mock-bc-name {
+  font-family: var(--font-header);
+  font-size: 13px;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+  color: var(--color-text-primary);
+  flex: 1;
+}
+
+.mock-bc-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+/* Active */
+.mock-bc-row--active .mock-bc-number {
+  opacity: 1;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.mock-bc-row--active .mock-bc-name {
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.mock-bc-row--active .mock-bc-count {
+  opacity: 0.8;
+}
+
+.mock-bc-row--active {
+  border-bottom-color: var(--color-accent);
+}
+
+.mock-bc-footer {
+  text-align: center;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  opacity: 0.3;
+  padding-top: 8px;
+}
+
+/* ─────────────────────────────────────────
+   2. Fleuron Classic (Editorial Index)
+   Double rules, fleuron, middot leaders, endmark.
+   ───────────────────────────────────────── */
+
+.mock-editorial {
+  background: var(--color-bg-primary);
+  padding: 20px 16px;
+}
+
+.mock-editorial-header {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 6px 0 8px;
+  border-top: 3px double var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.mock-editorial-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 10px 0;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  position: relative;
+}
+
+.mock-editorial-name {
+  font-family: var(--font-header);
+  font-size: 15px;
+  font-style: italic;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  transition: font-weight var(--duration-fast) var(--ease-default);
+}
+
+.mock-editorial-row--active .mock-editorial-name {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.mock-editorial-row--active::before {
+  content: "❧";
+  color: var(--color-accent);
+  font-size: 14px;
+  margin-right: 4px;
+}
+
+.mock-editorial-leaders {
+  flex: 1;
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  opacity: 0.4;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.mock-editorial-count {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.mock-editorial-row--active .mock-editorial-count {
+  color: var(--color-accent);
+}
+
+.mock-editorial-endmark {
+  text-align: center;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+  font-size: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.mock-editorial-active-rule {
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: var(--color-accent);
+  border-radius: 0 2px 2px 0;
+}
+
+/* ─────────────────────────────────────────
+   3. Dispatch Mono
+   Teleprinter log. Monospace, numbered, mechanical.
+   ───────────────────────────────────────── */
+
+.mock-dispatch {
+  background: var(--color-bg-primary);
+  padding: 20px 14px;
+}
+
+.mock-dispatch-rule {
+  height: 1px;
+  background: var(--color-text-secondary);
+  opacity: 0.4;
+}
+
+.mock-dispatch-header {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 6px 0;
+}
+
+.mock-dispatch-list {
+  padding-top: 10px;
+}
+
+.mock-dispatch-row {
+  display: flex;
+  align-items: baseline;
+  padding: 8px 2px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-primary);
+}
+
+.mock-dispatch-number {
+  width: 26px;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+}
+
+.mock-dispatch-prefix {
+  width: 18px;
+  flex-shrink: 0;
+  white-space: pre;
+  color: var(--color-accent);
+}
+
+.mock-dispatch-name {
+  flex: 1;
+}
+
+.mock-dispatch-count {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  opacity: 0.4;
+  font-size: 11px;
+}
+
+/* Active */
+.mock-dispatch-row--active .mock-dispatch-number {
+  font-weight: 700;
+  opacity: 1;
+  color: var(--color-text-primary);
+}
+
+.mock-dispatch-row--active .mock-dispatch-name {
+  color: var(--color-accent);
+}
+
+.mock-dispatch-row--active .mock-dispatch-count {
+  opacity: 0.7;
+}
+
+.mock-dispatch-footer {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--color-text-secondary);
+  opacity: 0.3;
+  text-align: center;
+  margin-top: 16px;
+  padding-top: 8px;
+}
+
+/* ─────────────────────────────────────────
+   4. Specimen Centered
+   Type foundry catalog. Centered, generous, ornamental.
+   ───────────────────────────────────────── */
+
+.mock-specimen {
+  background: var(--color-bg-primary);
+  padding: 28px 16px 20px;
+}
+
+.mock-specimen-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 8px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: center;
+}
+
+.mock-specimen-name {
+  font-family: var(--font-header);
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  letter-spacing: 0.02em;
+}
+
+.mock-specimen-star {
+  color: var(--color-accent);
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+.mock-specimen-entry--active .mock-specimen-name {
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.mock-specimen-count {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+  margin-top: 3px;
+}
+
+.mock-specimen-divider {
+  width: 36px;
+  height: 1px;
+  background: var(--color-border-default);
+  margin: 0 auto;
+}
+
+.mock-specimen-end {
+  text-align: center;
+  color: var(--color-text-secondary);
+  opacity: 0.35;
+  font-size: 11px;
+  margin-top: 12px;
+  padding-top: 4px;
+}
+
+/* ─────────────────────────────────────────
+   5. Ledger Ruled
+   Dense register. Every row ruled. Section marks.
+   ───────────────────────────────────────── */
+
+.mock-ledger {
+  background: var(--color-bg-primary);
+  padding: 16px 14px 10px;
+}
+
+.mock-ledger-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 3px 0 5px;
+  border-top: 3px solid var(--color-text-primary);
+  border-bottom: 1px solid var(--color-text-secondary);
+  margin-bottom: 0;
+}
+
+.mock-ledger-row {
+  display: flex;
+  align-items: baseline;
+  padding: 8px 0;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border-default) 60%, transparent);
+}
+
+.mock-ledger-prefix {
+  font-family: var(--font-header);
+  font-size: 13px;
+  color: var(--color-accent);
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.mock-ledger-name {
+  font-family: var(--font-header);
+  font-size: 13px;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+  color: var(--color-text-primary);
+  flex: 1;
+}
+
+.mock-ledger-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+/* Active */
+.mock-ledger-row--active {
+  border-bottom-width: 2px;
+  border-bottom-color: var(--color-accent);
+}
+
+.mock-ledger-row--active .mock-ledger-name {
+  font-weight: 700;
+}
+
+.mock-ledger-row--active .mock-ledger-count {
+  opacity: 0.8;
+}

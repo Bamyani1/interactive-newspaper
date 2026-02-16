@@ -29,3 +29,8 @@
    ========================================= */
 @import "./components/article-card.css";
 @import "./components/cinema-landing.css";
+@import "./components/edition-background.css";
+@import "./components/edition-picker.css";
+@import "./components/site-footer.css";
+@import "./components/sidebar-player.css";
+@import "./components/time-controls.css";

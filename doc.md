@@ -74,7 +74,7 @@ npm run test         # Run tests with Vitest
 │   │   └── YYYY-MM-DD/
 │   │       ├── edition.json    # Article data
 │   │       └── images/         # Edition images
-│   ├── landing-photos/         # Landing page assets
+│   ├── backgrounds/            # Landing page assets
 │   └── tiles/                  # Campus map deep zoom tiles
 │
 ├── ocr/                        # OCR Processing Pipeline (dev-only)

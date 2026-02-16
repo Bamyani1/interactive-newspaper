@@ -2,8 +2,8 @@ export interface Track {
     id: string;
     title: string;
     artist: string;
-    youtubeId: string;
-    duration: string;
+    youtubeId?: string | null;
+    duration?: string;
 }
 
 export const tracks: Track[] = [
@@ -54,9 +54,15 @@ export interface Playlist {
 export const playlists: Playlist[] = [
     {
         id: "1986-hits",
-        name: "1986 Chart Toppers",
+        name: "1986 Top Hits",
         description: "The biggest hits of 1986",
         trackIds: ["1", "2", "3", "4", "5"]
+    },
+    {
+        id: "trending",
+        name: "Trending Now",
+        description: "What's hot this week",
+        trackIds: ["1", "3", "2", "5", "4"]
     }
 ];
 

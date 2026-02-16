@@ -117,7 +117,7 @@ export interface MonthlyTrendingApiResponse {
     error?: string;
 }
 
-export type SectionId = "Top" | Article["category"] | "Ads" | "All";
+export type SectionId = "Top" | Article["category"] | "Ads" | "Classifieds" | "All";
 
 // ─── OCR / Server-Side Types ────────────────────────────────────
 
