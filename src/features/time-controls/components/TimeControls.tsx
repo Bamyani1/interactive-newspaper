@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Calendar, ChevronDown, ChevronRight } from "lucide-react";
+import { ThemeModeToggle } from "@/features/theme";
 import { motion, AnimatePresence } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { fadeDown, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
@@ -150,9 +151,8 @@ export const TimeControls = () => {
                 </h1>
             </div>
 
-            <div className="time-controls-date-group">
-                <span className="time-controls-label hidden sm:inline" aria-hidden="true">Edition</span>
-                <span className="time-controls-ornament hidden sm:inline" aria-hidden="true">·</span>
+            <div className="time-controls-date-group flex items-center gap-2">
+                <ThemeModeToggle iconOnly />
                 <div className="relative" ref={dropdownRef}>
                 <button
                     onClick={() => {
@@ -186,7 +186,7 @@ export const TimeControls = () => {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -10 }}
                             transition={TRANSITIONS.micro}
-                            className="absolute right-0 top-full z-[120] mt-1 bg-[var(--color-bg-secondary)]/95 backdrop-blur-lg rounded-sm shadow-lg border overflow-hidden min-w-[240px]"
+                            className="absolute right-0 top-full z-[120] mt-1 bg-[var(--color-bg-secondary)] rounded-sm shadow-lg border overflow-hidden min-w-[240px]"
                             style={{ borderColor: "var(--color-border-default)" }}
                             role="listbox"
                             aria-label="Available editions"

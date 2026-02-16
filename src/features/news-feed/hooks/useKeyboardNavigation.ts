@@ -117,12 +117,14 @@ export function useScrollCoordinator({
         pendingFocusRef.current = null;
 
         const timer = setTimeout(() => {
-            // Try article refs first, then fall back to topExpandedRef
-            const element =
-                articleRefs.current.get(intent.targetId) ??
-                (intent.targetId === "__top_expanded__" ? topExpandedRef.current : null);
-            element?.scrollIntoView({ behavior: "smooth", block: intent.block });
-        }, 150);
+            requestAnimationFrame(() => {
+                // Try article refs first, then fall back to topExpandedRef
+                const element =
+                    articleRefs.current.get(intent.targetId) ??
+                    (intent.targetId === "__top_expanded__" ? topExpandedRef.current : null);
+                element?.scrollIntoView({ behavior: "smooth", block: intent.block });
+            });
+        }, 250);
 
         return () => clearTimeout(timer);
     }, [currentSection, currentArticles, topExpandedArticle, expandedId, scrollIntentRef, pendingFocusRef, articleRefs, topExpandedRef]);

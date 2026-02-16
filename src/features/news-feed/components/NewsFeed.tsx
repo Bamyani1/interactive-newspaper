@@ -1,18 +1,43 @@
 "use client";
 
-import React, { useMemo, useState, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { motion } from "framer-motion";
+import { ArrowRight } from "lucide-react";
 import type { Article, VintageAd, SectionId } from "@/src/types";
 
 import { ArticleCard } from "./ArticleCard";
-import { FeaturedGrid } from "./FeaturedGrid";
-import { HeroSection } from "./HeroSection";
 import { ScanViewer } from "./ScanViewer";
-import { AdsBoard } from "./AdsBoard";
+import { AdsSection, ClassifiedsSection } from "./AdsSection";
 import { EditionMasthead } from "./EditionMasthead";
 import { EditionFooter } from "./EditionFooter";
 import { useKeyboardNavigation, useScrollCoordinator } from "../hooks/useKeyboardNavigation";
 import { fadeUp, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
+
+import type { TopStoriesVariantProps } from "./variants/TopStoriesVariantProps";
+import { TopStoriesDefault } from "./variants/TopStoriesDefault";
+import { TopStoriesTabloidStack } from "./variants/TopStoriesTabloidStack";
+import { TopStoriesFrontPage } from "./variants/TopStoriesFrontPage";
+import { TopStoriesMagazineSpread } from "./variants/TopStoriesMagazineSpread";
+import { TopStoriesTelegraph } from "./variants/TopStoriesTelegraph";
+import { TopStoriesMosaic } from "./variants/TopStoriesMosaic";
+import { TopStoriesBroadside } from "./variants/TopStoriesBroadside";
+import { TopStoriesLedgerList } from "./variants/TopStoriesLedgerList";
+import { TopStoriesScrapbook } from "./variants/TopStoriesScrapbook";
+import { TopStoriesColumnSplit } from "./variants/TopStoriesColumnSplit";
+import "./variants/top-stories-variants.css";
+
+const LAYOUT_VARIANT_MAP: Record<string, React.FC<TopStoriesVariantProps>> = {
+  default: TopStoriesDefault,
+  "tabloid-stack": TopStoriesTabloidStack,
+  "front-page": TopStoriesFrontPage,
+  "magazine-spread": TopStoriesMagazineSpread,
+  telegraph: TopStoriesTelegraph,
+  mosaic: TopStoriesMosaic,
+  broadside: TopStoriesBroadside,
+  "ledger-list": TopStoriesLedgerList,
+  scrapbook: TopStoriesScrapbook,
+  "column-split": TopStoriesColumnSplit,
+};
 
 
 export const SECTION_ORDER: Article["category"][] = [
@@ -68,6 +93,20 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [focusedIndex, setFocusedIndex] = useState<number>(-1);
     const [viewerState, setViewerState] = useState({ open: false, pageIndex: 0 });
+    const [layoutDesignId, setLayoutDesignId] = useState(() => {
+        if (typeof window !== "undefined") {
+            return localStorage.getItem("tts-layout-design") || "default";
+        }
+        return "default";
+    });
+
+    useEffect(() => {
+        const handler = () => {
+            setLayoutDesignId(localStorage.getItem("tts-layout-design") || "default");
+        };
+        window.addEventListener("layout-design-changed", handler);
+        return () => window.removeEventListener("layout-design-changed", handler);
+    }, []);
     const articleRefs = useRef<Map<string, HTMLElement>>(new Map());
     const topExpandedRef = useRef<HTMLDivElement>(null);
     const pendingFocusRef = useRef<{ id: string; category: Article["category"] } | null>(null);
@@ -165,6 +204,11 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
         } catch { return resolvedEditionDate; }
     }, [resolvedEditionDate]);
 
+    // Reset focus when switching sections to prevent stale focus state
+    useEffect(() => {
+        setFocusedIndex(-1);
+    }, [currentSection]);
+
     // ── Extracted hooks ───────────────────────────────────────────
     useScrollCoordinator({
         currentSection, currentArticles, topExpandedArticle, expandedId,
@@ -218,61 +262,35 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 
     // ── Render ────────────────────────────────────────────────────
     return (
-        <div className="w-full pb-20 bg-[var(--color-bg-primary)]">
+        <div className="edition-feed-surface w-full bg-[var(--color-bg-primary)]">
             <div className="flex flex-col gap-0 min-h-screen">
                 <EditionMasthead editionHeaderDate={editionHeaderDate} />
 
-                <div className="flex flex-col max-w-5xl mx-auto w-full px-4 md:px-6">
+                <div className="flex flex-col max-w-5xl mx-auto w-[90%] px-4 md:px-6">
                     {currentSection === "Top" ? (
-                        <motion.div
-                            key="top-section"
-                            className="flex flex-col gap-6"
-                            variants={sectionContainer}
-                            initial="hidden"
-                            animate="show"
-                        >
-                            {heroArticle && (
-                                <motion.div variants={sectionVariants} transition={TRANSITIONS.base}>
-                                    <HeroSection
-                                        article={heroArticle}
-                                        onReadMore={handleHeroReadMore}
-                                        isFocused={focusedIndex === 0 && currentSection === "Top"}
-                                    />
-                                </motion.div>
-                            )}
-                            {featuredArticles.length > 0 && (
-                                <motion.div variants={sectionVariants} transition={TRANSITIONS.base}>
-                                    <FeaturedGrid
-                                        articles={featuredArticles}
-                                        onArticleClick={handleFeaturedClick}
-                                        focusedId={currentSection === "Top" && focusedIndex > 0 ? topArticles[focusedIndex]?.id ?? null : null}
-                                    />
-                                </motion.div>
-                            )}
-                            <AnimatePresence mode="wait">
-                                {topExpandedArticle && (
-                                    <motion.div
-                                        key={topExpandedArticle.id}
-                                        ref={topExpandedRef}
-                                        initial={{ opacity: 0, y: 18 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: 18 }}
-                                        transition={TRANSITIONS.base}
-                                    >
-                                        <ArticleCard
-                                            article={topExpandedArticle}
-                                            isExpanded
-                                            onToggle={() => setExpandedId(null)}
-                                            onViewOriginal={openScanViewer}
-                                        />
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </motion.div>
+                        (() => {
+                            const LayoutVariant = LAYOUT_VARIANT_MAP[layoutDesignId] ?? TopStoriesDefault;
+                            return (
+                                <LayoutVariant
+                                    heroArticle={heroArticle}
+                                    featuredArticles={featuredArticles}
+                                    topExpandedArticle={topExpandedArticle}
+                                    expandedId={expandedId}
+                                    focusedIndex={focusedIndex}
+                                    topArticles={topArticles}
+                                    onHeroReadMore={handleHeroReadMore}
+                                    onFeaturedClick={handleFeaturedClick}
+                                    onExpandedToggle={() => setExpandedId(null)}
+                                    onViewOriginal={openScanViewer}
+                                    currentSection={currentSection}
+                                    topExpandedRef={topExpandedRef}
+                                />
+                            );
+                        })()
                     ) : currentSection === "Ads" ? (
-                        <AdsBoard ads={displayAds} heading="Display Ads" />
+                        <AdsSection displayAds={displayAds} />
                     ) : currentSection === "Classifieds" ? (
-                        <AdsBoard ads={classifiedAds} heading="Classifieds" />
+                        <ClassifiedsSection classifiedAds={classifiedAds} />
                     ) : currentArticles.length > 0 ? (
                         <motion.div
                             key={currentSection}
@@ -311,12 +329,23 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                             </button>
                         </div>
                     )}
+
+                    <div className="flex justify-center pt-8 pb-4">
+                        <button
+                            type="button"
+                            onClick={goToNextEdition}
+                            disabled={!canGoToNextEdition}
+                            className="group flex items-center gap-2 text-base font-header tracking-wide underline underline-offset-8 decoration-2 disabled:opacity-40 disabled:cursor-not-allowed px-6 pb-4 [text-decoration-color:color-mix(in_srgb,var(--color-text-primary)_22%,transparent)] hover:[text-decoration-color:var(--color-text-primary)]"
+                        >
+                            See Next Edition
+                            <span className="inline-block transition-transform group-hover:translate-x-1">
+                                <ArrowRight size={18} />
+                            </span>
+                        </button>
+                    </div>
                 </div>
 
-                <EditionFooter
-                    onNextEdition={goToNextEdition}
-                    canGoToNextEdition={canGoToNextEdition}
-                />
+                <EditionFooter />
             </div>
 
             <ScanViewer

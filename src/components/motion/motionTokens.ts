@@ -5,6 +5,7 @@ export const EASINGS = {
 } as const;
 
 export const TRANSITIONS = {
+  micro: { duration: 0.15, ease: EASINGS.smooth },
   quick: { duration: 0.2, ease: EASINGS.smooth },
   base: { duration: 0.45, ease: EASINGS.standard },
   slow: { duration: 0.6, ease: EASINGS.standard },

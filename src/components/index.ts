@@ -12,4 +12,5 @@ export { SkeletonFeed } from "./ui/Skeleton";
 
 // Landing components
 export { CinemaBackground } from "./landing/CinemaBackground";
+export { EditionPicker } from "./landing/EditionPicker";
 export { Ticker, useTickerAnimation } from "./landing/Ticker";

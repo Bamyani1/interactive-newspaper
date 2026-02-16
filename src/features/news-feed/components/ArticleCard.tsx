@@ -2,7 +2,7 @@
 
 import React, { useRef } from "react";
 import type { Article } from "@/src/types";
-import { ChevronDown, ChevronUp, Share2, Printer, Check, FileText } from "lucide-react";
+import { Share2, Printer, Check, FileText, ChevronDown } from "lucide-react";
 import Image from "next/image";
 
 /**
@@ -113,41 +113,19 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
             role="button"
             className={`
                 article-card group relative overflow-hidden cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]
-                px-5 md:px-6 py-6 md:py-8
+                px-5 md:px-6
                 ${isExpanded ? 'is-expanded' : ''}
             `}
         >
             {/* Header Section */}
-            <div className="card-header-flex flex gap-6 items-start">
-                <div className="card-content flex-1 space-y-2 pl-2 md:pl-3">
-                    <div className="card-meta flex items-center gap-2 flex-wrap">
-                        <span>{article.category}</span>
-                        <span>•</span>
-                        <span>{article.date}</span>
-                        {page && (
-                            <>
-                                <span>•</span>
-                                {onViewOriginal ? (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onViewOriginal(article); }}
-                                        className="flex items-center gap-1 hover:text-[var(--color-accent)] transition-colors"
-                                        title="View original newspaper scan"
-                                    >
-                                        <FileText size={12} /> Pg. {page}
-                                    </button>
-                                ) : (
-                                    <span>Pg. {page}</span>
-                                )}
-                            </>
-                        )}
-                    </div>
-
+            <div className="card-header-flex flex gap-6">
+                <div className="card-content flex-1">
                     <h2 className="card-headline">
                         {article.headline}
                     </h2>
 
                     {author && (
-                        <p className="text-xs uppercase tracking-[0.2em] font-semibold opacity-80">
+                        <p className="card-byline">
                             By {author}
                         </p>
                     )}
@@ -159,26 +137,55 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                             </p>
                         </div>
                     )}
-
                 </div>
 
-                {/* Thumbnail */}
+                {/* Thumbnail — right side */}
                 {article.imageUrls.length > 0 && (
-                    <div className="card-image-container w-[120px] aspect-square relative shrink-0">
-                        <Image
-                            src={article.imageUrls[0]}
-                            alt={article.headline}
-                            fill
-                            className="card-image object-cover"
-                        />
+                    <div className="card-image-column shrink-0">
+                        <div className="card-image-container relative aspect-square">
+                            <Image
+                                src={article.imageUrls[0]}
+                                alt={article.headline}
+                                fill
+                                className="card-image object-cover"
+                            />
+                        </div>
                     </div>
                 )}
+            </div>
+
+            {/* Footer — READ FULL STORY right-aligned */}
+            <div className="card-footer">
+                <span className="card-read-more">
+                    Read full story <ChevronDown size={14} className="inline align-middle" />
+                </span>
+                <div className="card-meta flex items-center gap-2 flex-wrap">
+                    <span className="card-category">{article.category}</span>
+                    <span>&middot;</span>
+                    <span>{article.date}</span>
+                    {page && (
+                        <>
+                            <span>&middot;</span>
+                            {onViewOriginal ? (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onViewOriginal(article); }}
+                                    className="flex items-center gap-1 hover:text-[var(--color-accent)] transition-colors"
+                                    title="View original newspaper scan"
+                                >
+                                    <FileText size={10} /> Pg. {page}
+                                </button>
+                            ) : (
+                                <span>Pg. {page}</span>
+                            )}
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Expanded Content */}
             <div className="card-expanded-grid">
                 <div
-                    className="card-expanded-inner mt-6 border-t border-dashed pt-6 space-y-4"
+                    className="card-expanded-inner pt-6 border-t border-dashed space-y-4"
                     style={{ borderColor: "var(--stroke-accent-soft)" }}
                     aria-hidden={!isExpanded}
                 >
@@ -270,11 +277,6 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                         </button>
                     </div>
                 </div>
-            </div>
-
-            {/* Toggle Icon Hint */}
-            <div className="absolute top-6 right-0 opacity-40 group-hover:opacity-60 transition-opacity">
-                {isExpanded ? <ChevronUp /> : <ChevronDown />}
             </div>
 
         </article>

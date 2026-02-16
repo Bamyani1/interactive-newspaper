@@ -6,8 +6,8 @@ export function CinemaBackground() {
         <div className="cinema-bg">
             <div className="cinema-map">
                 <Image
-                    src="/landing-photos/default (3).jpg"
-                    alt="Vintage Campus Scene"
+                    src="/backgrounds/background.png"
+                    alt="University Hall tower framed by cherry blossoms"
                     fill
                     style={{ objectFit: "cover" }}
                     sizes="100vw"

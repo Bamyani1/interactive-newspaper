@@ -33,7 +33,7 @@
     inset: 0;
     animation:
         mapFadeIn 2s ease-out forwards,
-        mapKenBurns 60s ease-in-out infinite;
+        mapKenBurns 30s ease-in-out 2s infinite;
     will-change: transform, opacity;
     /* Sepia filter for historical warmth */
     filter: sepia(25%) contrast(105%) brightness(0.95);
@@ -144,6 +144,8 @@
 
 .cinema-paper {
     background: var(--page-cinema-paper);
+    -webkit-backdrop-filter: blur(28px);
+    backdrop-filter: blur(28px);
     color: var(--color-text-primary);
     padding: 40px 45px;
     position: relative;
@@ -157,7 +159,6 @@
     /* Natural organic torn edges using SVG mask */
     -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 520 600'%3E%3Cpath d='M8,2 Q12,8 25,3 Q40,0 60,5 Q80,2 100,4 Q120,0 145,3 Q170,6 195,2 Q220,0 245,4 Q270,7 295,3 Q320,0 345,5 Q370,2 395,4 Q420,0 445,3 Q470,6 495,2 Q510,0 512,8 Q515,25 512,50 Q518,80 514,110 Q510,140 516,170 Q518,200 514,230 Q510,260 516,290 Q518,320 514,350 Q510,380 516,410 Q518,440 514,470 Q510,500 516,530 Q518,555 512,575 Q510,590 495,592 Q470,598 445,594 Q420,590 395,596 Q370,598 345,592 Q320,590 295,596 Q270,598 245,592 Q220,590 195,596 Q170,598 145,592 Q120,590 100,596 Q80,598 60,592 Q40,590 25,596 Q10,598 6,588 Q0,570 5,540 Q2,510 0,480 Q5,450 2,420 Q0,390 5,360 Q2,330 0,300 Q5,270 2,240 Q0,210 5,180 Q2,150 0,120 Q5,90 2,60 Q0,30 6,10 Z' fill='white'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 520 600'%3E%3Cpath d='M8,2 Q12,8 25,3 Q40,0 60,5 Q80,2 100,4 Q120,0 145,3 Q170,6 195,2 Q220,0 245,4 Q270,7 295,3 Q320,0 345,5 Q370,2 395,4 Q420,0 445,3 Q470,6 495,2 Q510,0 512,8 Q515,25 512,50 Q518,80 514,110 Q510,140 516,170 Q518,200 514,230 Q510,260 516,290 Q518,320 514,350 Q510,380 516,410 Q518,440 514,470 Q510,500 516,530 Q518,555 512,575 Q510,590 495,592 Q470,598 445,594 Q420,590 395,596 Q370,598 345,592 Q320,590 295,596 Q270,598 245,592 Q220,590 195,596 Q170,598 145,592 Q120,590 100,596 Q80,598 60,592 Q40,590 25,596 Q10,598 6,588 Q0,570 5,540 Q2,510 0,480 Q5,450 2,420 Q0,390 5,360 Q2,330 0,300 Q5,270 2,240 Q0,210 5,180 Q2,150 0,120 Q5,90 2,60 Q0,30 6,10 Z' fill='white'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
-
 }
 
 /* Paper grain texture overlay */

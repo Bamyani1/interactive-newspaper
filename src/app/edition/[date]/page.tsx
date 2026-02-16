@@ -121,9 +121,11 @@ function EditionBody({
             ...filtered,
         ];
 
-        const totalAds = displayAds.length + classifiedAds.length;
-        if (totalAds > 0) {
-            result.push({ id: "Ads" as SectionId, label: "Ads", count: totalAds });
+        if (displayAds.length > 0) {
+            result.push({ id: "Ads" as SectionId, label: "Ads", count: displayAds.length });
+        }
+        if (classifiedAds.length > 0) {
+            result.push({ id: "Classifieds" as SectionId, label: "Classifieds", count: classifiedAds.length });
         }
 
         return result;
