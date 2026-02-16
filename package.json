@@ -8,7 +8,12 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "weather:build:ohio": "node scripts/weather/build-ohio-weather-archive.mjs",
+    "weather:verify:ohio": "node scripts/weather/verify-ohio-weather-archive.mjs",
+    "music:build:us-monthly": "node scripts/music/build-us-monthly-hot100-archive.mjs",
+    "music:verify:us-monthly": "node scripts/music/verify-us-monthly-hot100-archive.mjs",
+    "music:youtube:verify": "node scripts/music/verify-youtube-map.mjs"
   },
   "dependencies": {
     "framer-motion": "^12.23.25",
@@ -20,6 +25,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
