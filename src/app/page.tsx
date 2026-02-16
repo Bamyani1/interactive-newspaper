@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
-import { PageShell, CinemaBackground, Ticker, useTickerAnimation } from "@/shared";
+import { PageShell, CinemaBackground, Ticker, useTickerAnimation, EditionPicker } from "@/shared";
 import { headlines } from "@/shared/landing/data/headlines";
 import { cardIn, TRANSITIONS } from "@/shared/motion/motionTokens";
 
@@ -17,20 +17,23 @@ export default function Home() {
     // Use the extracted animation hook
     useTickerAnimation();
 
-    const selectedEdition = editions[0] ?? null;
-
-    const selectedEditionLabel = useMemo(() => {
-        if (!selectedEdition) {
-            return "NO EDITIONS LOADED";
+    // Default to latest edition (last in sorted list)
+    const [selectedEdition, setSelectedEdition] = useState<string | null>(null);
+    const [isPickerOpen, setIsPickerOpen] = useState(false);
+    useEffect(() => {
+        if (editions.length > 0 && !selectedEdition) {
+            setSelectedEdition(editions[editions.length - 1]);
         }
+    }, [editions, selectedEdition]);
+
+    const selectedEditionCTA = useMemo(() => {
+        if (!selectedEdition) return null;
         try {
             return new Intl.DateTimeFormat("en-US", {
                 month: "short",
                 day: "2-digit",
                 year: "numeric",
-            })
-                .format(new Date(`${selectedEdition}T12:00:00`))
-                .toUpperCase();
+            }).format(new Date(`${selectedEdition}T12:00:00`));
         } catch {
             return selectedEdition;
         }
@@ -83,39 +86,39 @@ export default function Home() {
                         Experience Campus History.
                     </h2>
 
-                    <div className="cinema-date-box">
-                        <p className="cinema-date-label">Selected Edition</p>
-                        <div className="cinema-date-value">{selectedEditionLabel}</div>
-                        {!isLoading && !hasEditions && (
-                            <p className="mt-2 text-xs uppercase tracking-widest opacity-70">
-                                Run real-material import to begin.
-                            </p>
-                        )}
-                    </div>
+                    <EditionPicker
+                        editions={editions}
+                        selectedEdition={selectedEdition}
+                        onSelect={setSelectedEdition}
+                        isLoading={isLoading}
+                        onOpenChange={setIsPickerOpen}
+                    />
 
-                    <button
-                        type="button"
-                        className="cinema-btn"
-                        onClick={handleEnter}
-                        disabled={isLoading || isEntering || !hasEditions}
-                    >
-                        {isEntering ? (
-                            <>
-                                <span>Printing...</span>
-                                <Loader2 size={20} className="animate-spin" />
-                            </>
-                        ) : isLoading ? (
-                            <>
-                                <span>Loading Editions...</span>
-                                <Loader2 size={20} className="animate-spin" />
-                            </>
-                        ) : (
-                            <>
-                                <span>{hasEditions ? "Read This Edition" : "No Editions Available"}</span>
-                                <ArrowRight size={20} />
-                            </>
-                        )}
-                    </button>
+                    {!isPickerOpen && (
+                        <button
+                            type="button"
+                            className="cinema-btn"
+                            onClick={handleEnter}
+                            disabled={isLoading || isEntering || !selectedEdition}
+                        >
+                            {isEntering ? (
+                                <>
+                                    <span>Printing...</span>
+                                    <Loader2 size={20} className="animate-spin" />
+                                </>
+                            ) : isLoading ? (
+                                <>
+                                    <span>Loading Editions...</span>
+                                    <Loader2 size={20} className="animate-spin" />
+                                </>
+                            ) : (
+                                <>
+                                    <span>{selectedEditionCTA ? `Read ${selectedEditionCTA}` : "No Editions Available"}</span>
+                                    <ArrowRight size={20} />
+                                </>
+                            )}
+                        </button>
+                    )}
                 </motion.div>
             </main>
 
