@@ -1,0 +1,73 @@
+/* ─── Time Controls Header ─── Editorial Masthead Bar ─── */
+
+.time-controls-header {
+    background: color-mix(in srgb, var(--color-bg-primary) 84%, transparent);
+    backdrop-filter: saturate(110%) blur(2px);
+    border-bottom: 1px solid var(--stroke-accent-soft);
+}
+
+/* Dashed sub-rule — creates double-rule effect below solid border */
+.time-controls-header::after {
+    content: "";
+    position: absolute;
+    bottom: -3px;
+    left: var(--sidebar-nav-width);
+    right: var(--sidebar-context-width);
+    border-bottom: 1px dashed color-mix(in srgb, var(--color-accent) 25%, transparent);
+    pointer-events: none;
+}
+
+/* Left group: title with accent border */
+.time-controls-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Right group: label + middot + date picker */
+.time-controls-date-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Decorative ornaments (❧ and ·) */
+.time-controls-ornament {
+    font-size: 10px;
+    font-family: var(--font-body, Georgia, serif);
+    opacity: 0.35;
+    color: var(--color-text-header);
+    line-height: 1;
+    user-select: none;
+}
+
+/* "EDITION" micro-label — matches ContextSidebar section headers */
+.time-controls-label {
+    font-size: 10px;
+    font-family: var(--font-mono, monospace);
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    opacity: 0.5;
+    color: var(--color-text-header);
+    line-height: 1;
+}
+
+/* ─── Dark Mode (inside edition background shell) ─── */
+.edition-background-shell .time-controls-header {
+    background: color-mix(in srgb, var(--color-bg-primary) 90%, transparent);
+    backdrop-filter: saturate(108%) blur(1px);
+}
+
+/* ─── Light Mode ─── */
+[data-mode='light'] .time-controls-header {
+    background: color-mix(in srgb, var(--color-bg-primary) 88%, transparent);
+    backdrop-filter: saturate(110%) blur(2px);
+}
+
+[data-mode='light'] .time-controls-header::after {
+    border-bottom-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+[data-mode='light'] .edition-background-shell .time-controls-header {
+    background: color-mix(in srgb, var(--color-bg-primary) 92%, transparent);
+}

@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'fs/promises';
 import path from 'path';
-import type { Article, EditionInfo, OcrArticle, OcrEdition, VintageAd } from '@/src/types';
+import type { Article, AdCategory, EditionInfo, OcrArticle, OcrEdition, OcrEnrichedAd, VintageAd } from '@/src/types';
 
 export type { Article, EditionInfo };
 
@@ -194,8 +194,18 @@ export function transformArticles(edition: OcrEdition): Article[] {
 }
 
 export function transformAds(edition: OcrEdition): VintageAd[] {
-  return (edition.ads ?? []).map(ad => ({
-    title: ad.business_name,
-    body: ad.body,
-  }));
+  const source = edition.enriched_ads ?? edition.ads ?? [];
+  return source.map(ad => {
+    const base: VintageAd = { title: ad.business_name, body: ad.body };
+    if ('category' in ad) {
+      const enriched = ad as OcrEnrichedAd;
+      base.category = enriched.category as AdCategory;
+      base.adType = enriched.ad_type as VintageAd['adType'];
+      base.displayText = enriched.display_text;
+      base.phone = enriched.phone || undefined;
+      base.address = enriched.address || undefined;
+      base.price = enriched.price || undefined;
+    }
+    return base;
+  });
 }

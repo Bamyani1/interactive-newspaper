@@ -63,11 +63,11 @@
 
     /* Cinema/Landing Page */
     --page-cinema-bg: var(--color-bg-primary);
-    --page-cinema-overlay: color-mix(in srgb, var(--color-bg-primary) 88%, transparent);
+    --page-cinema-overlay: color-mix(in srgb, var(--color-bg-primary) 55%, transparent);
     --page-cinema-paper: linear-gradient(175deg,
-            var(--color-bg-secondary) 0%,
-            color-mix(in srgb, var(--color-bg-secondary) 80%, var(--color-bg-primary)) 50%,
-            var(--color-bg-primary) 100%);
+            color-mix(in srgb, var(--color-bg-secondary) 65%, transparent) 0%,
+            color-mix(in srgb, var(--color-bg-secondary) 50%, transparent) 50%,
+            color-mix(in srgb, var(--color-bg-primary) 62%, transparent) 100%);
     --page-cinema-ticker-bg: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
 
     /* Press/Printing Theme */
@@ -136,10 +136,10 @@
     --color-bg-glass: color-mix(in srgb, var(--owu-white) 80%, transparent);
 
     /* Text */
-    --color-text-primary: var(--owu-black);
-    --color-text-secondary: color-mix(in srgb, var(--owu-black) 65%, var(--owu-white));
+    --color-text-primary: color-mix(in srgb, var(--owu-black) 85%, var(--owu-white));
+    --color-text-secondary: color-mix(in srgb, var(--owu-black) 55%, var(--owu-white));
     --color-text-inverse: var(--owu-white);
-    --color-text-header: var(--owu-black);
+    --color-text-header: color-mix(in srgb, var(--owu-black) 85%, var(--owu-white));
 
     /* Accent */
     --color-accent: var(--owu-red);
@@ -155,14 +155,14 @@
     --page-cinema-bg: var(--color-bg-primary);
     --page-cinema-overlay: color-mix(in srgb, var(--owu-white) 55%, transparent);
     --page-cinema-paper: linear-gradient(175deg,
-            color-mix(in srgb, var(--owu-white) 96%, var(--owu-black)) 0%,
-            var(--owu-white) 55%,
-            color-mix(in srgb, var(--owu-white) 92%, var(--owu-black)) 100%);
+            color-mix(in srgb, var(--owu-white) 82%, transparent) 0%,
+            color-mix(in srgb, var(--owu-white) 70%, transparent) 55%,
+            color-mix(in srgb, var(--owu-white) 78%, transparent) 100%);
     --page-cinema-ticker-bg: color-mix(in srgb, var(--owu-white) 70%, transparent);
 
     /* Featured Grid */
     --featured-card-bg: var(--owu-white);
     --featured-card-border: color-mix(in srgb, var(--owu-black) 12%, transparent);
-    --featured-text-primary: var(--owu-black);
+    --featured-text-primary: var(--color-text-primary);
     --featured-text-hover: var(--owu-red);
 }

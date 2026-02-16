@@ -1,12 +1,18 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import type { SectionId } from "@/src/types";
-import { fadeLeft, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
+import { staggerContainer } from "@/shared/motion/motionTokens";
+import { BroadsheetCompact } from "./variants/BroadsheetCompact";
+import { FleuronClassic } from "./variants/FleuronClassic";
+import { DispatchMono } from "./variants/DispatchMono";
+import { SpecimenCentered } from "./variants/SpecimenCentered";
+import { LedgerRuled } from "./variants/LedgerRuled";
+import "./variants/variants.css";
 
-interface NavigationSidebarProps {
+export interface NavigationSidebarProps {
     sections: {
         id: SectionId;
         label: string;
@@ -16,17 +22,43 @@ interface NavigationSidebarProps {
     onSelect: (section: SectionId) => void;
 }
 
-export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
-    sections,
-    activeSection,
-    onSelect,
-}) => {
+const STORAGE_KEY = "tts-sidebar-design";
+
+const VARIANT_MAP: Record<string, React.FC<NavigationSidebarProps>> = {
+    default: FleuronClassic,
+    legacy: DefaultSidebar,
+    broadsheet: BroadsheetCompact,
+    dispatch: DispatchMono,
+    specimen: SpecimenCentered,
+    ledger: LedgerRuled,
+};
+
+export const NavigationSidebar: React.FC<NavigationSidebarProps> = (props) => {
+    const [designId, setDesignId] = useState(() => {
+        if (typeof window === "undefined") return "default";
+        return localStorage.getItem(STORAGE_KEY) || "default";
+    });
+
+    useEffect(() => {
+        const handler = () => {
+            setDesignId(localStorage.getItem(STORAGE_KEY) || "default");
+        };
+        window.addEventListener("sidebar-design-changed", handler);
+        return () => window.removeEventListener("sidebar-design-changed", handler);
+    }, []);
+
+    const Variant = VARIANT_MAP[designId] || FleuronClassic;
+    return <Variant {...props} />;
+};
+
+/* ── Default sidebar (original implementation) ─────────────── */
+
+function DefaultSidebar({ sections, activeSection, onSelect }: NavigationSidebarProps) {
     const containerVariants = staggerContainer(0.06, 0.08);
-    const itemVariants = fadeLeft(12);
 
     return (
         <motion.aside
-            className="h-full p-6 bg-[var(--color-bg-primary)]/50 backdrop-blur-sm hidden md:block"
+            className="edition-sidebar-surface h-full min-h-0 overflow-y-auto p-6 hidden md:block"
             initial="hidden"
             animate="show"
         >
@@ -69,4 +101,4 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
             </motion.nav>
         </motion.aside>
     );
-};
+}

@@ -39,11 +39,13 @@
      ========================================= */
 
   /* Header */
-  --header-height: 52px;
+  --header-height: 47px;
+  --header-content-gap: 0px;
+  --header-offset-total: calc(var(--header-height) + var(--header-content-gap));
 
-  /* Sidebar widths */
-  --sidebar-nav-width: 220px;
-  --sidebar-context-width: 300px;
+  /* Sidebar widths (matched so left sections and right context have same width) */
+  --sidebar-nav-width: 200px;
+  --sidebar-context-width: 257px;
 
   /* Content widths */
   --content-max-width: 1280px;
