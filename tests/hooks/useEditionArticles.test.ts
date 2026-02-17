@@ -80,11 +80,13 @@ describe("useEditionArticles pagination", () => {
         expect(fetchMock).toHaveBeenCalledTimes(2);
         expect(fetchMock).toHaveBeenNthCalledWith(
             1,
-            "/api/editions/1987-10-14?limit=100"
+            "/api/editions/1987-10-14?limit=100",
+            expect.objectContaining({ signal: expect.any(AbortSignal) })
         );
         expect(fetchMock).toHaveBeenNthCalledWith(
             2,
-            "/api/editions/1987-10-14?limit=100&cursor=cursor-100"
+            "/api/editions/1987-10-14?limit=100&cursor=cursor-100",
+            expect.objectContaining({ signal: expect.any(AbortSignal) })
         );
         expect(result.current.error).toBeNull();
         expect(result.current.articles).toHaveLength(130);

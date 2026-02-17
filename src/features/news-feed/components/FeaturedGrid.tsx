@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { TRANSITIONS } from "@/shared/motion/motionTokens";
@@ -13,6 +13,11 @@ interface FeaturedGridProps {
 }
 
 export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleClick, focusedId }) => {
+    const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
+    const handleImgError = (url: string) => {
+        setImgErrors(prev => new Set(prev).add(url));
+    };
+
     // Take first 3 articles
     const featured = articles.slice(0, 3);
 
@@ -61,13 +66,14 @@ export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleC
                                 >
 
                                     {/* Image */}
-                                    {article.imageUrls.length > 0 ? (
+                                    {article.imageUrls.length > 0 && !imgErrors.has(article.imageUrls[0]) ? (
                                         <div className="relative aspect-[4/3] w-full overflow-hidden mb-2.5 border border-[var(--color-border-default)]">
                                             <Image
                                                 src={article.imageUrls[0]}
                                                 alt={article.headline}
                                                 fill
                                                 className="object-cover transition-all duration-500"
+                                                onError={() => handleImgError(article.imageUrls[0])}
                                             />
                                             <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-[color-mix(in_srgb,var(--color-bg-primary)_80%,transparent)] text-[var(--color-text-primary)] text-[8px] uppercase tracking-widest font-bold font-typewriter backdrop-blur-sm">
                                                 {article.category}

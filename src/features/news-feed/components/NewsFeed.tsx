@@ -2,7 +2,6 @@
 
 import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
 import type { Article, VintageAd, SectionId } from "@/src/types";
 
 import { ArticleCard } from "./ArticleCard";
@@ -11,6 +10,7 @@ import { AdsSection, ClassifiedsSection } from "./AdsSection";
 import { EditionMasthead } from "./EditionMasthead";
 import { EditionFooter } from "./EditionFooter";
 import { useKeyboardNavigation, useScrollCoordinator } from "../hooks/useKeyboardNavigation";
+import { useScanViewer } from "../hooks/useScanViewer";
 import { fadeUp, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 import type { TopStoriesVariantProps } from "./variants/TopStoriesVariantProps";
@@ -24,6 +24,7 @@ import { TopStoriesBroadside } from "./variants/TopStoriesBroadside";
 import { TopStoriesLedgerList } from "./variants/TopStoriesLedgerList";
 import { TopStoriesScrapbook } from "./variants/TopStoriesScrapbook";
 import { TopStoriesColumnSplit } from "./variants/TopStoriesColumnSplit";
+import { TopStoriesPrintEdition } from "./variants/TopStoriesPrintEdition";
 import "./variants/top-stories-variants.css";
 
 const LAYOUT_VARIANT_MAP: Record<string, React.FC<TopStoriesVariantProps>> = {
@@ -37,6 +38,7 @@ const LAYOUT_VARIANT_MAP: Record<string, React.FC<TopStoriesVariantProps>> = {
   "ledger-list": TopStoriesLedgerList,
   scrapbook: TopStoriesScrapbook,
   "column-split": TopStoriesColumnSplit,
+  "print-edition": TopStoriesPrintEdition,
 };
 
 
@@ -92,17 +94,16 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 }) => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [focusedIndex, setFocusedIndex] = useState<number>(-1);
-    const [viewerState, setViewerState] = useState({ open: false, pageIndex: 0 });
     const [layoutDesignId, setLayoutDesignId] = useState(() => {
         if (typeof window !== "undefined") {
-            return localStorage.getItem("tts-layout-design") || "default";
+            return localStorage.getItem("tts-layout-design") || "print-edition";
         }
-        return "default";
+        return "print-edition";
     });
 
     useEffect(() => {
         const handler = () => {
-            setLayoutDesignId(localStorage.getItem("tts-layout-design") || "default");
+            setLayoutDesignId(localStorage.getItem("tts-layout-design") || "print-edition");
         };
         window.addEventListener("layout-design-changed", handler);
         return () => window.removeEventListener("layout-design-changed", handler);
@@ -128,14 +129,11 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
         [resolvedEditionDate, maxPageNumber]
     );
 
-    const heroSource = useMemo(
-        () => daysArticles,
-        [daysArticles]
-    );
+    const { viewerState, openScanViewer, closeScanViewer, selectPage } = useScanViewer(scannedPages);
 
     const heroArticle = useMemo(
-        () => heroSource.find(a => a.isHero) ?? heroSource[0] ?? daysArticles.find(a => a.isHero) ?? daysArticles[0],
-        [heroSource, daysArticles]
+        () => daysArticles.find(a => a.isHero) ?? daysArticles[0],
+        [daysArticles]
     );
 
     const featuredArticles = useMemo(
@@ -243,15 +241,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
         }
     };
 
-    const openScanViewer = (article: Article) => {
-        if (scannedPages.length === 0) return;
-        const page = article.page || 1;
-        const clampedIndex = Math.max(0, Math.min(scannedPages.length - 1, (page ?? 1) - 1));
-        setViewerState({ open: true, pageIndex: clampedIndex });
-    };
-
-    const closeScanViewer = () => setViewerState(prev => ({ ...prev, open: false }));
-
     const registerArticleRef = useCallback((id: string, element: HTMLElement | null) => {
         if (element) articleRefs.current.set(id, element);
         else articleRefs.current.delete(id);
@@ -260,13 +249,29 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     const sectionVariants = fadeUp(18);
     const sectionContainer = staggerContainer(0.08, 0.12);
 
+    const isPrintEditionLayout = layoutDesignId === "print-edition";
+    const strokeWrapperClass =
+        "bg-[var(--color-bg-primary)] border-x-8 border-[var(--color-accent)] px-6 py-8 md:px-10 md:py-10";
+    const strokeWrapperStyle = {
+        boxShadow: "inset 0 0 40px color-mix(in srgb, var(--color-accent) 12%, transparent)" as const,
+    };
+
     // ── Render ────────────────────────────────────────────────────
     return (
         <div className="edition-feed-surface w-full bg-[var(--color-bg-primary)]">
-            <div className="flex flex-col gap-0 min-h-screen">
+            <div
+                className={
+                    isPrintEditionLayout
+                        ? `${strokeWrapperClass} flex flex-col gap-0 min-h-screen`
+                        : "flex flex-col gap-0 min-h-screen"
+                }
+                style={isPrintEditionLayout ? strokeWrapperStyle : undefined}
+            >
                 <EditionMasthead editionHeaderDate={editionHeaderDate} />
 
-                <div className="flex flex-col max-w-5xl mx-auto w-[90%] px-4 md:px-6">
+                <div
+                    className={`flex flex-col max-w-5xl mx-auto px-4 md:px-6 ${isPrintEditionLayout ? "w-full" : "w-[90%]"}`}
+                >
                     {currentSection === "Top" ? (
                         (() => {
                             const LayoutVariant = LAYOUT_VARIANT_MAP[layoutDesignId] ?? TopStoriesDefault;
@@ -329,23 +334,12 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                             </button>
                         </div>
                     )}
-
-                    <div className="flex justify-center pt-8 pb-4">
-                        <button
-                            type="button"
-                            onClick={goToNextEdition}
-                            disabled={!canGoToNextEdition}
-                            className="group flex items-center gap-2 text-base font-header tracking-wide underline underline-offset-8 decoration-2 disabled:opacity-40 disabled:cursor-not-allowed px-6 pb-4 [text-decoration-color:color-mix(in_srgb,var(--color-text-primary)_22%,transparent)] hover:[text-decoration-color:var(--color-text-primary)]"
-                        >
-                            See Next Edition
-                            <span className="inline-block transition-transform group-hover:translate-x-1">
-                                <ArrowRight size={18} />
-                            </span>
-                        </button>
-                    </div>
                 </div>
 
-                <EditionFooter />
+                <EditionFooter
+                    onNextEdition={goToNextEdition}
+                    canGoToNextEdition={canGoToNextEdition}
+                />
             </div>
 
             <ScanViewer
@@ -353,7 +347,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                 pages={scannedPages}
                 activeIndex={viewerState.pageIndex}
                 onClose={closeScanViewer}
-                onSelectPage={(index) => setViewerState({ open: true, pageIndex: index })}
+                onSelectPage={selectPage}
             />
         </div>
     );
