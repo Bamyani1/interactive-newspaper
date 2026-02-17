@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { loadEdition, transformArticles, transformAds, computePageCount } from '@/src/lib/ocr-adapter';
+import { loadEdition, transformArticles, transformAds, transformOtherContent, computePageCount } from '@/src/lib/ocr-adapter';
 
 // Revalidate individual edition data every 60 seconds (ISR)
 export const revalidate = 60;
@@ -33,6 +33,7 @@ export async function GET(
 
   const articles = transformArticles(edition);
   const ads = transformAds(edition);
+  const otherContent = transformOtherContent(edition);
   const pageCount = computePageCount(edition);
 
   return NextResponse.json({
@@ -44,6 +45,7 @@ export async function GET(
     },
     articles,
     ads,
+    otherContent,
     pagination: {
       nextCursor: null,
       hasMore: false,

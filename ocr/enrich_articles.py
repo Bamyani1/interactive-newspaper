@@ -12,11 +12,14 @@ import argparse
 import json
 import os
 import sys
+import tempfile
+import time
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
+from gemini_utils import gemini_generate_with_retry
 
 load_dotenv()
 
@@ -68,8 +71,8 @@ Articles:
 """
 
 
-def enrich_edition(edition_path: str, client, force: bool = False) -> bool:
-    """Categorize articles for a single edition. Returns True if enrichment was performed."""
+def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool, int, float]:
+    """Categorize articles for a single edition. Returns (performed, tokens, elapsed_s)."""
     with open(edition_path, "r", encoding="utf-8") as f:
         edition = json.load(f)
 
@@ -78,12 +81,12 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> bool:
     # Check idempotency
     if not force and "categories" in edition:
         print(f"  {edition_date}: Already categorized ({len(edition['categories'])} articles), skipping")
-        return False
+        return False, 0, 0.0
 
     articles = edition.get("articles", [])
     if not articles:
         print(f"  {edition_date}: No articles to categorize")
-        return False
+        return False, 0, 0.0
 
     print(f"  {edition_date}: Categorizing {len(articles)} articles...")
 
@@ -101,7 +104,9 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> bool:
     articles_json = json.dumps(summaries, indent=2)
     prompt = CATEGORIZATION_PROMPT.format(articles_json=articles_json)
 
-    response = client.models.generate_content(
+    call_start = time.time()
+    response = gemini_generate_with_retry(
+        client,
         model=GEMINI_MODEL,
         contents=[prompt],
         config=types.GenerateContentConfig(
@@ -111,13 +116,15 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> bool:
             max_output_tokens=4096,
         ),
     )
+    call_elapsed = time.time() - call_start
 
     usage = response.usage_metadata
-    print(f"    Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out")
+    total_tokens = usage.total_token_count
+    print(f"    Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out | Time: {call_elapsed:.1f}s")
 
     if not response.parsed:
         print(f"    ERROR: Response was empty or blocked")
-        return False
+        return False, total_tokens, call_elapsed
 
     parsed: CategorizedArticlesResponse = response.parsed
 
@@ -136,13 +143,19 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> bool:
     dist = Counter(categories)
     print(f"    Categories: {', '.join(f'{k}({v})' for k, v in sorted(dist.items()))}")
 
-    # Write categories alongside original articles
+    # Write categories alongside original articles (atomic write)
     edition["categories"] = categories
-    with open(edition_path, "w", encoding="utf-8") as f:
-        json.dump(edition, f, indent=2)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(edition_path), suffix=".json")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            json.dump(edition, f, indent=2)
+        os.replace(tmp_path, edition_path)
+    except BaseException:
+        os.unlink(tmp_path)
+        raise
 
     print(f"    Written to {edition_path}")
-    return True
+    return True, total_tokens, call_elapsed
 
 
 def main():
@@ -153,22 +166,32 @@ def main():
 
     client = genai.Client()
 
+    total_tokens = 0
+    total_time = 0.0
+
     if args.date:
         edition_path = os.path.join(EDITIONS_DIR, args.date, "edition.json")
         if not os.path.exists(edition_path):
             print(f"Edition not found: {edition_path}")
             sys.exit(1)
-        enrich_edition(edition_path, client, force=args.force)
+        performed, tokens, elapsed = enrich_edition(edition_path, client, force=args.force)
+        total_tokens += tokens
+        total_time += elapsed
     else:
         # Process all editions
         enriched_count = 0
         for entry in sorted(os.listdir(EDITIONS_DIR)):
             edition_path = os.path.join(EDITIONS_DIR, entry, "edition.json")
             if os.path.isfile(edition_path):
-                if enrich_edition(edition_path, client, force=args.force):
+                performed, tokens, elapsed = enrich_edition(edition_path, client, force=args.force)
+                total_tokens += tokens
+                total_time += elapsed
+                if performed:
                     enriched_count += 1
 
         print(f"\nDone: {enriched_count} edition(s) categorized")
+
+    print(f"Total: {total_tokens} tokens, {total_time:.1f}s")
 
 
 if __name__ == "__main__":
