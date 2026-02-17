@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import type { EditionInfo } from "@/src/types";
 
 interface ArchiveContextType {
@@ -54,19 +54,24 @@ export const ArchiveProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setCurrentDate(date);
     }, []);
 
-    const editions = editionInfo.map((e) => e.date).sort((a, b) => a.localeCompare(b));
+    const editions = useMemo(
+        () => editionInfo.map((e) => e.date).sort((a, b) => a.localeCompare(b)),
+        [editionInfo]
+    );
     const hasEditions = editions.length > 0;
 
+    const value = useMemo<ArchiveContextType>(() => ({
+        currentDate,
+        setDate,
+        editions,
+        editionInfo,
+        hasEditions,
+        isLoading,
+        error,
+    }), [currentDate, setDate, editions, editionInfo, hasEditions, isLoading, error]);
+
     return (
-        <ArchiveContext.Provider value={{
-            currentDate,
-            setDate,
-            editions,
-            editionInfo,
-            hasEditions,
-            isLoading,
-            error,
-        }}>
+        <ArchiveContext.Provider value={value}>
             {children}
         </ArchiveContext.Provider>
     );

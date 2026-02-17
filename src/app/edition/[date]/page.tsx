@@ -63,6 +63,27 @@ interface EditionBodyProps {
     isLoadingEditions: boolean;
 }
 
+function ErrorState({ error }: { error: Error }) {
+    return (
+        <div className="mx-auto w-full max-w-4xl px-6 py-16">
+            <div className="border border-red-500/30 bg-[var(--color-bg-secondary)]/70 p-8">
+                <h2 className="font-header text-3xl uppercase tracking-wide mb-4">
+                    Failed to Load Edition
+                </h2>
+                <p className="text-[var(--color-text-secondary)] mb-6">
+                    {error.message || "An unexpected error occurred while loading this edition."}
+                </p>
+                <button
+                    onClick={() => window.location.reload()}
+                    className="px-6 py-3 border border-current hover:bg-[var(--color-text-primary)] hover:text-[var(--color-text-inverse)] transition-colors uppercase tracking-widest text-sm font-bold"
+                >
+                    Retry
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function EmptyState() {
     return (
         <div className="mx-auto w-full max-w-4xl px-6 py-16">
@@ -99,6 +120,7 @@ function EditionBody({
         ads,
         hasActiveEdition,
         isLoading: isLoadingArticles,
+        error,
     } = useEditionArticles(currentDate);
 
     const articlesForDate = articles;
@@ -165,6 +187,8 @@ function EditionBody({
                         <div className="lg:overflow-y-auto lg:h-full scrollbar-hide pb-20 lg:pb-0">
                             {isLoading || !hasActiveEdition ? (
                                 <SkeletonFeed count={4} />
+                            ) : error ? (
+                                <ErrorState error={error} />
                             ) : (
                                 <AnimatePresence mode="wait">
                                     <motion.div

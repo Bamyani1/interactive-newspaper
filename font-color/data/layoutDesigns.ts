@@ -15,4 +15,5 @@ export const LAYOUT_DESIGNS: LayoutDesign[] = [
   { id: "ledger-list",    name: "Ledger List",         description: "Flat ruled list like a financial register — no images" },
   { id: "scrapbook",      name: "Scrapbook",           description: "Overlapping rotated cards, tape/pin decorations, collage feel" },
   { id: "column-split",   name: "Column Split",        description: "Hero takes left 60%, featured stack vertically on right 40%" },
+  { id: "print-edition",  name: "Print Edition",       description: "Warm newspaper print layout with multi-column justified text and vintage amber styling" },
 ];

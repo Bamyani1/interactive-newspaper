@@ -1,44 +1,11 @@
 .edition-background-shell {
-    --edition-shell-bg-image:
-        linear-gradient(
-            to bottom,
-            color-mix(in srgb, var(--color-bg-primary) 38%, transparent),
-            color-mix(in srgb, var(--color-bg-primary) 56%, transparent)
-        ),
-        url("/backgrounds/edition-background.jpg");
     background-color: var(--color-bg-primary);
-    background-image: var(--edition-shell-bg-image);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
 }
 
 .edition-background-shell .edition-feed-surface {
-    background: color-mix(in srgb, var(--color-bg-primary) 86%, transparent);
+    background: var(--color-bg-primary);
 }
 
 .edition-background-shell .edition-sidebar-surface {
-    background: color-mix(in srgb, var(--color-bg-primary) 84%, transparent);
-    backdrop-filter: saturate(110%) blur(2px);
-}
-
-[data-mode='dark'] .edition-background-shell {
-    --edition-shell-bg-image:
-        linear-gradient(
-            to bottom,
-            color-mix(in srgb, var(--color-bg-primary) 52%, transparent),
-            color-mix(in srgb, var(--color-bg-primary) 70%, transparent)
-        ),
-        url("/backgrounds/edition-background.jpg");
-    background-image: var(--edition-shell-bg-image);
-}
-
-[data-mode='dark'] .edition-background-shell .edition-feed-surface {
-    background: color-mix(in srgb, var(--color-bg-primary) 92%, transparent);
-}
-
-[data-mode='dark'] .edition-background-shell .edition-sidebar-surface {
-    background: color-mix(in srgb, var(--color-bg-primary) 90%, transparent);
-    backdrop-filter: saturate(108%) blur(1px);
+    background: var(--color-bg-primary);
 }

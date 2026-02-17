@@ -3,13 +3,18 @@
 import { useState, useEffect } from "react";
 import type { Article, VintageAd } from "@/src/types";
 
+interface RawApiArticle extends Omit<Article, 'imageUrls'> {
+    imageUrls?: string[];
+    imageUrl?: string;
+}
+
 interface EditionResponse {
     edition: {
         id: string;
         date: string;
         pageCount: number;
     };
-    articles: Article[];
+    articles: RawApiArticle[];
     ads?: VintageAd[];
     pagination?: {
         nextCursor: string | null;
@@ -77,7 +82,7 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
             setError(null);
 
             try {
-                const allArticles: Article[] = [];
+                const allArticles: RawApiArticle[] = [];
                 const allAds: VintageAd[] = [];
                 const seenCursors = new Set<string>();
                 let cursor: string | null = null;
@@ -149,9 +154,9 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
                         headline: normalizeText(a.headline) || "Untitled Article",
                         summary: normalizedSummary,
                         fullText: normalizedFullText,
-                        imageUrls: Array.isArray((a as any).imageUrls)
-                            ? (a as any).imageUrls.map((u: string) => normalizeText(u)).filter(Boolean)
-                            : (normalizeText((a as any).imageUrl) ? [normalizeText((a as any).imageUrl)] : []),
+                        imageUrls: Array.isArray(a.imageUrls)
+                            ? a.imageUrls.map((u: string) => normalizeText(u)).filter(Boolean)
+                            : (a.imageUrl && normalizeText(a.imageUrl) ? [normalizeText(a.imageUrl)] : []),
                         byline: normalizeText(a.byline) || undefined,
                         imageCaption: normalizeText(a.imageCaption) || undefined,
                         page,

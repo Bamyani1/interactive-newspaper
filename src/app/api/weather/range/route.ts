@@ -11,7 +11,25 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 function isIsoDate(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(value);
+}
+
+async function processInBatches<T, R>(
+  items: T[],
+  batchSize: number,
+  fn: (item: T) => Promise<R>,
+  signal?: AbortSignal,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    if (signal?.aborted) throw new DOMException('Request timed out', 'AbortError');
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
 }
 
 function eachDateInclusive(startDate: string, endDate: string): string[] {
@@ -64,6 +82,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const MAX_RANGE_DAYS = 366;
+  if (dates.length > MAX_RANGE_DAYS) {
+    return NextResponse.json(
+      { error: `Date range too large: ${dates.length} days exceeds maximum of ${MAX_RANGE_DAYS} days.` },
+      { status: 400 },
+    );
+  }
+
   const weatherQueryBase: Omit<WeatherQuery, 'date'> = {
     location_name: params.get('location_name') ?? undefined,
     lat: parseNumericParam(params.get('lat')),
@@ -75,36 +101,21 @@ export async function GET(request: NextRequest) {
   };
 
   try {
-    const records: Array<{
-      date: string;
-      record: DailyWeatherRecord | null;
-      reason: 'INVALID_DATE' | 'NO_DATA' | null;
-    }> = [];
+    const signal = AbortSignal.timeout(30_000);
 
-    for (const date of dates) {
-      if (isDateWithinLocalArchive(date)) {
-        const localRecord = await getLocalWeatherByDate(date, scope);
-        records.push({
-          date,
-          record: localRecord,
-          reason: localRecord ? null : 'NO_DATA',
-        });
-        continue;
-      }
-
-      const lookup = await lookupHistoricalWeather(
-        {
-          ...weatherQueryBase,
-          date,
-        },
-      );
-
-      records.push({
-        date,
-        record: lookup.record,
-        reason: lookup.reason,
-      });
-    }
+    const records = await processInBatches(
+      dates,
+      10,
+      async (date) => {
+        if (isDateWithinLocalArchive(date)) {
+          const localRecord = await getLocalWeatherByDate(date, scope);
+          return { date, record: localRecord, reason: (localRecord ? null : 'NO_DATA') as 'NO_DATA' | null };
+        }
+        const lookup = await lookupHistoricalWeather({ ...weatherQueryBase, date });
+        return { date, record: lookup.record, reason: lookup.reason };
+      },
+      signal,
+    );
 
     const totalDays = records.length;
     const populatedDays = records.filter((entry) => entry.record != null).length;
@@ -123,7 +134,10 @@ export async function GET(request: NextRequest) {
       records,
     });
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return NextResponse.json({ error: 'Request timed out' }, { status: 504 });
+    }
     const message = error instanceof Error ? error.message : 'Failed to fetch weather range';
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

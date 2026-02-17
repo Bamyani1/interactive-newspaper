@@ -4,13 +4,19 @@ import { loadEdition, transformArticles, transformAds, computePageCount } from '
 // Revalidate individual edition data every 60 seconds (ISR)
 export const revalidate = 60;
 
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(value);
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ date: string }> },
 ) {
   const { date } = await params;
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!isIsoDate(date)) {
     return NextResponse.json(
       { error: 'Invalid date format' },
       { status: 400 },

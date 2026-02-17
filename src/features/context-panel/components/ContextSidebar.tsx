@@ -46,7 +46,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({ currentDate }) =
             {currentDate && (
                 <motion.div className="mb-8" variants={itemVariants} transition={TRANSITIONS.base}>
                     <h3
-                        className="uppercase font-mono text-[10px] tracking-[0.2em] mb-3 border-b border-dashed pb-1"
+                        className="uppercase font-mono text-[12px] tracking-[0.2em] mb-3 border-b border-dashed pb-1"
                         style={{ borderColor: "var(--stroke-accent-soft)" }}
                     >
                         Weather Report

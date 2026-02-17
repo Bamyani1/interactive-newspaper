@@ -91,10 +91,11 @@ export const TimeControls = () => {
             return;
         }
 
-        if (!hasCurrentEdition) {
+        // Only set default date if NOT on an edition page (edition page syncs from URL)
+        if (!hasCurrentEdition && !pathname?.startsWith("/edition")) {
             setDate(editions[editions.length - 1]);
         }
-    }, [editions, currentDate, hasCurrentEdition, hasEditions, isLoading, setDate]);
+    }, [editions, currentDate, hasCurrentEdition, hasEditions, isLoading, setDate, pathname]);
 
     const handleEditionSelect = (date: string) => {
         setDate(date);
@@ -133,7 +134,7 @@ export const TimeControls = () => {
 
     return (
         <motion.header
-            className="h-[var(--header-height)] w-full flex items-center justify-between px-6 text-[var(--color-text-header)] time-controls-header transition-colors duration-300 z-50 fixed top-0 left-0"
+            className="h-[var(--header-height)] w-full flex items-center justify-between px-6 text-[var(--color-text-header)] time-controls-header transition-colors duration-300 z-[var(--z-header)] fixed top-0 left-0"
             variants={headerVariants}
             initial="hidden"
             animate="show"
@@ -186,7 +187,7 @@ export const TimeControls = () => {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -10 }}
                             transition={TRANSITIONS.micro}
-                            className="absolute right-0 top-full z-[120] mt-1 bg-[var(--color-bg-secondary)] rounded-sm shadow-lg border overflow-hidden min-w-[240px]"
+                            className="absolute right-0 top-full z-[var(--z-max)] mt-1 bg-[var(--color-bg-secondary)] rounded-sm shadow-lg border overflow-hidden min-w-[240px]"
                             style={{ borderColor: "var(--color-border-default)" }}
                             role="listbox"
                             aria-label="Available editions"

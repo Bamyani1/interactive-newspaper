@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { ThemeModeToggle } from "@/features/theme";
 
 export interface SiteFooterProps {
     primaryAction?: React.ReactNode;
@@ -16,14 +17,20 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({
 
     return (
         <footer className={footerClassName}>
+            {primaryAction ? (
+                <div className="site-footer__primary">
+                    {primaryAction}
+                </div>
+            ) : null}
             <div className="site-footer__inner">
-                {primaryAction ? (
-                    <div className="site-footer__primary">
-                        {primaryAction}
-                    </div>
-                ) : null}
-
                 <div className="site-footer__links">
+                    <Link
+                        href="/"
+                        className="site-footer__link"
+                    >
+                        Home
+                    </Link>
+                    <span className="site-footer__separator" aria-hidden="true">•</span>
                     <Link
                         href="/about"
                         className="site-footer__link"

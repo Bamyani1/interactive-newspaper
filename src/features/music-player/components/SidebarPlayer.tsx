@@ -48,7 +48,7 @@ function MessageCard({ title, body }: { title: string; body: string }) {
   return (
     <div className="relative w-full mb-6">
       <h3
-        className="uppercase font-mono text-[10px] tracking-[0.2em] mb-3 border-b border-dashed pb-1"
+        className="uppercase font-mono text-[12px] tracking-[0.2em] mb-3 border-b border-dashed pb-1"
         style={{ borderColor: "var(--stroke-accent-soft)" }}
       >
         {title}
@@ -88,9 +88,14 @@ function TracksPlayer({
   showEmbed: boolean;
   header: React.ReactNode;
 }) {
+  const [isPlaying, setIsPlaying] = useState(false);
   const currentTrack = tracks[currentTrackIndex];
   const trackIndexClamped = Math.min(currentTrackIndex, Math.max(0, tracks.length - 1));
   const effectiveTrack = currentTrack ?? tracks[trackIndexClamped];
+  useEffect(() => {
+    setIsPlaying(false);
+  }, [effectiveTrack?.youtubeId]);
+
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const eventRafRef = useRef<number | null>(null);
   const targetRef = useRef(0);
@@ -226,7 +231,7 @@ function TracksPlayer({
   return (
     <div className="relative w-full mb-4">
       <h3
-        className="uppercase font-mono text-[9px] tracking-[0.2em] mb-2 border-b border-dashed pb-1"
+        className="uppercase font-mono text-[12px] tracking-[0.2em] mb-2 border-b border-dashed pb-1"
         style={{ borderColor: "var(--stroke-accent-soft)" }}
       >
         {header}
@@ -251,16 +256,35 @@ function TracksPlayer({
       >
         <div className="bg-black min-h-[140px]">
           {showEmbed && effectiveTrack.youtubeId ? (
-            <iframe
-              src={`https://www.youtube.com/embed/${effectiveTrack.youtubeId}?rel=0`}
-              width="100%"
-              height="140"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              loading="lazy"
-              title={`${effectiveTrack.title} - ${effectiveTrack.artist}`}
-            />
+            isPlaying ? (
+              <iframe
+                src={`https://www.youtube.com/embed/${effectiveTrack.youtubeId}?rel=0&autoplay=1`}
+                width="100%"
+                height="140"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title={`${effectiveTrack.title} - ${effectiveTrack.artist}`}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsPlaying(true)}
+                className="relative w-full h-[140px] group cursor-pointer bg-black"
+                aria-label={`Play ${effectiveTrack.title} by ${effectiveTrack.artist}`}
+              >
+                <img
+                  src={`https://img.youtube.com/vi/${effectiveTrack.youtubeId}/mqdefault.jpg`}
+                  alt=""
+                  className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                    <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
+                  </div>
+                </div>
+              </button>
+            )
           ) : (
             <div className="h-[140px] flex items-center justify-center text-center px-3 text-xs text-text-primary/70 bg-[var(--color-bg-secondary)]">
               <div>
@@ -365,7 +389,7 @@ export const SidebarPlayer: React.FC<SidebarPlayerProps> = ({ currentDate = null
   const {
     tracks: monthlyTracks,
     monthLabel,
-    monthNameOnly,
+    sourceLabel,
     isLoading,
     reason,
     error,
@@ -435,7 +459,11 @@ export const SidebarPlayer: React.FC<SidebarPlayerProps> = ({ currentDate = null
         isTrackListOpen={isTrackListOpen}
         setIsTrackListOpen={setIsTrackListOpen}
         showEmbed
-        header={<span>{monthNameOnly} Top 10 Songs</span>}
+        header={
+          <>
+            <span>{monthLabel} Top 10</span>
+          </>
+        }
       />
     );
   }

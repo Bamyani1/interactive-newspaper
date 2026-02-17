@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import type { Article } from "@/src/types";
@@ -13,6 +13,7 @@ interface HeroSectionProps {
 }
 
 export const HeroSection: React.FC<HeroSectionProps> = ({ article, onReadMore, isFocused }) => {
+    const [imgError, setImgError] = useState(false);
     const author = article.byline || null;
     const page = article.page || null;
     const hasImage = article.imageUrls.length > 0;
@@ -24,7 +25,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ article, onReadMore, i
             {/* Main Row: photo left, content right */}
             <div className="flex flex-col sm:flex-row gap-5 items-start">
                 {/* Photo + Caption */}
-                {hasImage && (
+                {hasImage && !imgError && (
                     <motion.div
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -38,6 +39,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ article, onReadMore, i
                                 fill
                                 className="object-cover"
                                 priority
+                                onError={() => setImgError(true)}
                             />
                         </div>
                         {article.imageCaption && (
