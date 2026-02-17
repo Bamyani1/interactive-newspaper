@@ -13,33 +13,8 @@ import { useKeyboardNavigation, useScrollCoordinator } from "../hooks/useKeyboar
 import { useScanViewer } from "../hooks/useScanViewer";
 import { fadeUp, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
 
-import type { TopStoriesVariantProps } from "./variants/TopStoriesVariantProps";
-import { TopStoriesDefault } from "./variants/TopStoriesDefault";
-import { TopStoriesTabloidStack } from "./variants/TopStoriesTabloidStack";
-import { TopStoriesFrontPage } from "./variants/TopStoriesFrontPage";
-import { TopStoriesMagazineSpread } from "./variants/TopStoriesMagazineSpread";
-import { TopStoriesTelegraph } from "./variants/TopStoriesTelegraph";
-import { TopStoriesMosaic } from "./variants/TopStoriesMosaic";
-import { TopStoriesBroadside } from "./variants/TopStoriesBroadside";
-import { TopStoriesLedgerList } from "./variants/TopStoriesLedgerList";
-import { TopStoriesScrapbook } from "./variants/TopStoriesScrapbook";
-import { TopStoriesColumnSplit } from "./variants/TopStoriesColumnSplit";
 import { TopStoriesPrintEdition } from "./variants/TopStoriesPrintEdition";
-import "./variants/top-stories-variants.css";
-
-const LAYOUT_VARIANT_MAP: Record<string, React.FC<TopStoriesVariantProps>> = {
-  default: TopStoriesDefault,
-  "tabloid-stack": TopStoriesTabloidStack,
-  "front-page": TopStoriesFrontPage,
-  "magazine-spread": TopStoriesMagazineSpread,
-  telegraph: TopStoriesTelegraph,
-  mosaic: TopStoriesMosaic,
-  broadside: TopStoriesBroadside,
-  "ledger-list": TopStoriesLedgerList,
-  scrapbook: TopStoriesScrapbook,
-  "column-split": TopStoriesColumnSplit,
-  "print-edition": TopStoriesPrintEdition,
-};
+import { SectionPrintEdition } from "./variants/SectionPrintEdition";
 
 
 export const SECTION_ORDER: Article["category"][] = [
@@ -94,20 +69,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 }) => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [focusedIndex, setFocusedIndex] = useState<number>(-1);
-    const [layoutDesignId, setLayoutDesignId] = useState(() => {
-        if (typeof window !== "undefined") {
-            return localStorage.getItem("tts-layout-design") || "print-edition";
-        }
-        return "print-edition";
-    });
-
-    useEffect(() => {
-        const handler = () => {
-            setLayoutDesignId(localStorage.getItem("tts-layout-design") || "print-edition");
-        };
-        window.addEventListener("layout-design-changed", handler);
-        return () => window.removeEventListener("layout-design-changed", handler);
-    }, []);
     const articleRefs = useRef<Map<string, HTMLElement>>(new Map());
     const topExpandedRef = useRef<HTMLDivElement>(null);
     const pendingFocusRef = useRef<{ id: string; category: Article["category"] } | null>(null);
@@ -249,7 +210,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     const sectionVariants = fadeUp(18);
     const sectionContainer = staggerContainer(0.08, 0.12);
 
-    const isPrintEditionLayout = layoutDesignId === "print-edition";
     const strokeWrapperClass =
         "bg-[var(--color-bg-primary)] border-x-8 border-[var(--color-accent)] px-6 py-8 md:px-10 md:py-10";
     const strokeWrapperStyle = {
@@ -260,69 +220,42 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     return (
         <div className="edition-feed-surface w-full bg-[var(--color-bg-primary)]">
             <div
-                className={
-                    isPrintEditionLayout
-                        ? `${strokeWrapperClass} flex flex-col gap-0 min-h-screen`
-                        : "flex flex-col gap-0 min-h-screen"
-                }
-                style={isPrintEditionLayout ? strokeWrapperStyle : undefined}
+                className={`${strokeWrapperClass} flex flex-col gap-0 min-h-screen`}
+                style={strokeWrapperStyle}
             >
                 <EditionMasthead editionHeaderDate={editionHeaderDate} />
 
                 <div
-                    className={`flex flex-col max-w-5xl mx-auto px-4 md:px-6 ${isPrintEditionLayout ? "w-full" : "w-[90%]"}`}
+                    className="flex flex-col max-w-5xl mx-auto px-4 md:px-6 w-full"
                 >
                     {currentSection === "Top" ? (
-                        (() => {
-                            const LayoutVariant = LAYOUT_VARIANT_MAP[layoutDesignId] ?? TopStoriesDefault;
-                            return (
-                                <LayoutVariant
-                                    heroArticle={heroArticle}
-                                    featuredArticles={featuredArticles}
-                                    topExpandedArticle={topExpandedArticle}
-                                    expandedId={expandedId}
-                                    focusedIndex={focusedIndex}
-                                    topArticles={topArticles}
-                                    onHeroReadMore={handleHeroReadMore}
-                                    onFeaturedClick={handleFeaturedClick}
-                                    onExpandedToggle={() => setExpandedId(null)}
-                                    onViewOriginal={openScanViewer}
-                                    currentSection={currentSection}
-                                    topExpandedRef={topExpandedRef}
-                                />
-                            );
-                        })()
+                        <TopStoriesPrintEdition
+                            heroArticle={heroArticle}
+                            featuredArticles={featuredArticles}
+                            topExpandedArticle={topExpandedArticle}
+                            expandedId={expandedId}
+                            focusedIndex={focusedIndex}
+                            topArticles={topArticles}
+                            onHeroReadMore={handleHeroReadMore}
+                            onFeaturedClick={handleFeaturedClick}
+                            onExpandedToggle={() => setExpandedId(null)}
+                            onViewOriginal={openScanViewer}
+                            currentSection={currentSection}
+                            topExpandedRef={topExpandedRef}
+                        />
                     ) : currentSection === "Ads" ? (
                         <AdsSection displayAds={displayAds} />
                     ) : currentSection === "Classifieds" ? (
                         <ClassifiedsSection classifiedAds={classifiedAds} />
                     ) : currentArticles.length > 0 ? (
-                        <motion.div
+                        <SectionPrintEdition
                             key={currentSection}
-                            className="flex flex-col gap-6"
-                            variants={containerVariants}
-                            initial="hidden"
-                            animate="visible"
-                        >
-                            {currentArticles.map((article, index) => (
-                                <motion.div
-                                    key={article.id}
-                                    variants={itemVariants}
-                                    ref={(el) => registerArticleRef(article.id, el)}
-                                    className={focusedIndex === index ? "ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-bg-primary)] rounded-sm" : ""}
-                                >
-                                    <ArticleCard
-                                        article={article}
-                                        isExpanded={expandedId === article.id}
-                                        onToggle={() => setExpandedId(prev => (prev === article.id ? null : article.id))}
-                                        onViewOriginal={openScanViewer}
-                                    />
-                                </motion.div>
-                            ))}
-                        </motion.div>
+                            articles={currentArticles}
+                            onViewOriginal={openScanViewer}
+                        />
                     ) : (
                         <div className="p-12 text-center opacity-60">
-                            <p className="font-serif text-2xl italic mb-4">
+                            <p className="font-body text-2xl italic mb-4">
                                 No stories found for this section.
                             </p>
                             <button
