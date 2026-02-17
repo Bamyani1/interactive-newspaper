@@ -12,11 +12,14 @@ import argparse
 import json
 import os
 import sys
+import tempfile
+import time
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
+from gemini_utils import gemini_generate_with_retry
 
 load_dotenv()
 
@@ -78,8 +81,8 @@ Ads to enrich:
 """
 
 
-def enrich_edition(edition_path: str, client, force: bool = False) -> bool:
-    """Enrich ads for a single edition. Returns True if enrichment was performed."""
+def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool, int, float]:
+    """Enrich ads for a single edition. Returns (performed, tokens, elapsed_s)."""
     with open(edition_path, "r", encoding="utf-8") as f:
         edition = json.load(f)
 
@@ -88,12 +91,12 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> bool:
     # Check idempotency
     if not force and "enriched_ads" in edition:
         print(f"  {edition_date}: Already enriched ({len(edition['enriched_ads'])} ads), skipping")
-        return False
+        return False, 0, 0.0
 
     ads = edition.get("ads", [])
     if not ads:
         print(f"  {edition_date}: No ads to enrich")
-        return False
+        return False, 0, 0.0
 
     print(f"  {edition_date}: Enriching {len(ads)} ads...")
 
@@ -101,7 +104,9 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> bool:
     ads_json = json.dumps(ads, indent=2)
     prompt = ENRICHMENT_PROMPT.format(ads_json=ads_json)
 
-    response = client.models.generate_content(
+    call_start = time.time()
+    response = gemini_generate_with_retry(
+        client,
         model=GEMINI_MODEL,
         contents=[prompt],
         config=types.GenerateContentConfig(
@@ -111,20 +116,23 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> bool:
             max_output_tokens=16384,
         ),
     )
+    call_elapsed = time.time() - call_start
 
     usage = response.usage_metadata
-    print(f"    Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out")
+    total_tokens = usage.total_token_count
+    print(f"    Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out | Time: {call_elapsed:.1f}s")
 
     if not response.parsed:
         print(f"    ERROR: Response was empty or blocked")
-        return False
+        return False, total_tokens, call_elapsed
 
     enriched: EnrichedAdsResponse = response.parsed
     enriched_list = [ad.model_dump() for ad in enriched.enriched_ads]
 
-    # Validate count matches
+    # Validate count matches — refuse to write misaligned data
     if len(enriched_list) != len(ads):
-        print(f"    WARNING: Got {len(enriched_list)} enriched ads but expected {len(ads)}")
+        print(f"    ERROR: Got {len(enriched_list)} enriched ads but expected {len(ads)}, refusing to write")
+        return False, total_tokens, call_elapsed
 
     # Print summary
     categories = {}
@@ -138,13 +146,19 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> bool:
     print(f"    Types: {types_count['display']} display, {types_count['classified']} classified")
     print(f"    Categories: {', '.join(f'{k}({v})' for k, v in sorted(categories.items()))}")
 
-    # Write enriched_ads alongside original ads
+    # Write enriched_ads alongside original ads (atomic write)
     edition["enriched_ads"] = enriched_list
-    with open(edition_path, "w", encoding="utf-8") as f:
-        json.dump(edition, f, indent=2)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(edition_path), suffix=".json")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            json.dump(edition, f, indent=2)
+        os.replace(tmp_path, edition_path)
+    except BaseException:
+        os.unlink(tmp_path)
+        raise
 
     print(f"    Written to {edition_path}")
-    return True
+    return True, total_tokens, call_elapsed
 
 
 def main():
@@ -155,22 +169,32 @@ def main():
 
     client = genai.Client()
 
+    total_tokens = 0
+    total_time = 0.0
+
     if args.date:
         edition_path = os.path.join(EDITIONS_DIR, args.date, "edition.json")
         if not os.path.exists(edition_path):
             print(f"Edition not found: {edition_path}")
             sys.exit(1)
-        enrich_edition(edition_path, client, force=args.force)
+        performed, tokens, elapsed = enrich_edition(edition_path, client, force=args.force)
+        total_tokens += tokens
+        total_time += elapsed
     else:
         # Process all editions
         enriched_count = 0
         for entry in sorted(os.listdir(EDITIONS_DIR)):
             edition_path = os.path.join(EDITIONS_DIR, entry, "edition.json")
             if os.path.isfile(edition_path):
-                if enrich_edition(edition_path, client, force=args.force):
+                performed, tokens, elapsed = enrich_edition(edition_path, client, force=args.force)
+                total_tokens += tokens
+                total_time += elapsed
+                if performed:
                     enriched_count += 1
 
         print(f"\nDone: {enriched_count} edition(s) enriched")
+
+    print(f"Total: {total_tokens} tokens, {total_time:.1f}s")
 
 
 if __name__ == "__main__":

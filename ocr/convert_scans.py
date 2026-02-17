@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
+from gemini_utils import gemini_generate_with_retry
 
 # Load environment variables
 load_dotenv()
@@ -802,21 +803,21 @@ def preprocess_image(
 ) -> Image.Image:
     """Preprocess a scanned newspaper page image for better OCR accuracy.
 
-    Pipeline: crop border → EXIF auto-rotation → grayscale → deskew → contrast → sharpen.
+    Pipeline: EXIF auto-rotation → crop border → grayscale → deskew → contrast → sharpen.
     """
     timer = StageTimer().start()
 
     if diag is not None:
         diag.original_dimensions = image.size
 
-    # 1. Crop 10% border — remove scanner border by trimming 5% from each edge
+    # 1. Fix EXIF orientation metadata FIRST (before any geometry operations)
+    image = ImageOps.exif_transpose(image)
+
+    # 2. Crop 10% border — remove scanner border by trimming 5% from each edge
     w, h = image.size
     margin_x = int(w * 0.05)
     margin_y = int(h * 0.05)
     image = image.crop((margin_x, margin_y, w - margin_x, h - margin_y))
-
-    # 2. Fix EXIF orientation metadata (common in camera scans)
-    image = ImageOps.exif_transpose(image)
 
     # 3. Convert to grayscale — removes color noise from yellowed paper
     image = ImageOps.grayscale(image)
@@ -1234,7 +1235,8 @@ def match_images_visual(
     )
 
     try:
-        response = client.models.generate_content(
+        response = gemini_generate_with_retry(
+            client,
             model=GEMINI_MODEL,
             contents=[annotated_image, prompt],
             config=types.GenerateContentConfig(
@@ -1467,7 +1469,8 @@ def merge_edition_articles(
     merge_text = "\n".join(prompt_parts)
 
     try:
-        response = client.models.generate_content(
+        response = gemini_generate_with_retry(
+            client,
             model=GEMINI_MODEL,
             contents=[merge_text],
             config=types.GenerateContentConfig(
@@ -1605,7 +1608,8 @@ def process_page(
         print(f"    -> Detected {len(regions)} image region(s) via local CV")
 
     gemini_timer = StageTimer().start()
-    response = client.models.generate_content(
+    response = gemini_generate_with_retry(
+        client,
         model=GEMINI_MODEL,
         contents=[image, "Extract all articles from this newspaper page."],
         config=types.GenerateContentConfig(
@@ -1673,7 +1677,8 @@ def process_page_chunked(
         chunk = image.crop((0, top, width, bottom))
 
         try:
-            response = client.models.generate_content(
+            response = gemini_generate_with_retry(
+                client,
                 model=GEMINI_MODEL,
                 contents=[chunk, "Extract all articles from this newspaper section."],
                 config=types.GenerateContentConfig(

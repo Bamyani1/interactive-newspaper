@@ -113,6 +113,7 @@ const editionCache = new Map<string, OcrEdition>();
 // ---------- Public API ----------
 
 export function computePageCount(edition: OcrEdition): number {
+  if (!Array.isArray(edition.articles)) return 1;
   let max = 1;
   for (const article of edition.articles) {
     for (const p of article.source_pages ?? []) {
@@ -140,7 +141,7 @@ export async function listEditions(): Promise<EditionInfo[]> {
         id: edition.edition_date,
         date: edition.edition_date,
         pageCount: computePageCount(edition),
-        articleCount: edition.articles.length + edition.ads.length,
+        articleCount: (edition.articles?.length ?? 0) + (edition.ads?.length ?? 0),
       });
     } catch {
       // Skip directories without valid edition.json
@@ -173,6 +174,7 @@ export async function loadEdition(date: string): Promise<OcrEdition | null> {
 export function transformArticles(edition: OcrEdition): Article[] {
   const articles: Article[] = [];
   const date = edition.edition_date;
+  if (!Array.isArray(edition.articles)) return articles;
 
   for (let i = 0; i < edition.articles.length; i++) {
     const a = edition.articles[i];
@@ -199,6 +201,7 @@ export function transformArticles(edition: OcrEdition): Article[] {
 
   for (let i = 0; i < Math.min(5, candidates.length); i++) {
     candidates[i].isFeatured = true;
+    if (i === 0) candidates[i].isHero = true;
   }
 
   return articles;
@@ -211,8 +214,16 @@ const VALID_AD_CATEGORIES: ReadonlySet<string> = new Set<AdCategory>([
 
 const VALID_AD_TYPES: ReadonlySet<string> = new Set<AdType>(["display", "classified"]);
 
+export function transformOtherContent(edition: OcrEdition): { title: string; body: string }[] {
+  return (edition.other_content ?? []).map(item => ({
+    title: item.title || '',
+    body: item.body || '',
+  }));
+}
+
 export function transformAds(edition: OcrEdition): VintageAd[] {
   const source = edition.enriched_ads ?? edition.ads ?? [];
+  if (!Array.isArray(source)) return [];
   return source.map(ad => {
     const base: VintageAd = { title: ad.business_name, body: ad.body };
     if ('category' in ad) {
