@@ -113,7 +113,7 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool
             response_mime_type="application/json",
             response_schema=CategorizedArticlesResponse,
             safety_settings=SAFETY_OFF,
-            max_output_tokens=4096,
+            max_output_tokens=16384,
         ),
     )
     call_elapsed = time.time() - call_start
