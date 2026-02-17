@@ -12,6 +12,8 @@ import {
   Byline,
   ArticleImage,
   ColumnText,
+  PhotoFeature,
+  ImageGallery,
   Lightbox,
 } from "./print-edition-primitives";
 
@@ -58,40 +60,66 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
           {/* Kicker */}
           <Kicker category={heroArticle.category} />
 
-          {/* Headline */}
-            <h1
-              className="text-[var(--color-text-primary)] mb-6"
-              style={{
-                fontFamily: "var(--font-header)",
-                fontSize: "clamp(18px, 3vw, 26px)",
-              fontWeight: 700,
-              lineHeight: 1.2,
-              letterSpacing: "-0.01em",
-            }}
-          >
-            {heroArticle.headline}
-          </h1>
-
-          {/* Byline left-aligned */}
-          <Byline byline={heroArticle.byline} />
-
           {/* Image + body text in columns */}
-          {heroArticle.fullText ? (
+          {!heroArticle.fullText && heroArticle.imageUrls.length > 0 ? (
+            /* ── Photo-only hero ───────────────────────── */
+            <>
+              <PhotoFeature
+                headline={heroArticle.headline}
+                imageSrc={heroArticle.imageUrls[0]}
+                alt={heroArticle.headline}
+                caption={heroArticle.imageCaptions?.[0] ?? heroArticle.imageCaption}
+                byline={heroArticle.byline}
+                onImageClick={() => setLightboxSrc(heroArticle.imageUrls[0])}
+              />
+              {heroArticle.imageUrls.length > 1 && (
+                <ImageGallery
+                  images={heroArticle.imageUrls.slice(1, 2).map((url, i) => ({
+                    src: url,
+                    caption: heroArticle.imageCaptions?.[i + 1],
+                  }))}
+                  alt={heroArticle.headline}
+                  onClick={(src) => setLightboxSrc(src)}
+                />
+              )}
+            </>
+          ) : heroArticle.fullText ? (
             <ColumnText
               paragraphs={extractParagraphs(heroArticle.fullText)}
               columns={3}
               fontSize="15px"
+              header={
+                <>
+                  <h1
+                    className="text-[var(--color-text-primary)] mb-4"
+                    style={{
+                      fontFamily: "var(--font-header)",
+                      fontSize: "clamp(18px, 3vw, 26px)",
+                      fontWeight: 700,
+                      lineHeight: 1.2,
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
+                    {heroArticle.headline}
+                  </h1>
+                  <Byline byline={heroArticle.byline} />
+                </>
+              }
               image={
-                heroArticle.imageUrls.length > 0 ? (
-                  <ArticleImage
-                    src={heroArticle.imageUrls[0]}
-                    alt={heroArticle.headline}
-                    caption={heroArticle.imageCaption}
-                    onClick={() => setLightboxSrc(heroArticle.imageUrls[0])}
-                    priority
-                    width="full"
-                  />
-                ) : undefined
+                heroArticle.imageUrls.length > 0
+                  ? heroArticle.imageUrls.slice(0, 2).map((url, i) => (
+                      <ArticleImage
+                        key={url}
+                        src={url}
+                        alt={heroArticle.headline}
+                        caption={heroArticle.imageCaptions?.[i] ?? (i === 0 ? heroArticle.imageCaption : null)}
+                        onClick={() => setLightboxSrc(url)}
+                        priority={i === 0}
+                        width="full"
+                        maxWidth={heroArticle.imageUrls.length > 1 ? "90%" : "100%"}
+                      />
+                    ))
+                  : undefined
               }
             />
           ) : (
@@ -122,6 +150,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
             const plainText = paragraphs.join(" ");
             const isLong = plainText.length > LONG_ARTICLE_THRESHOLD;
             const hasImage = article.imageUrls.length > 0;
+            const isPhotoOnly = paragraphs.length === 0 && hasImage;
 
             return (
               <React.Fragment key={article.id}>
@@ -141,39 +170,70 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                     style={{ borderTop: "2px solid var(--color-accent)" }}
                   />
 
-                  {isLong ? (
+                  {isPhotoOnly ? (
+                    /* ── Photo Feature (no body text) ───────── */
+                    <>
+                      <Kicker category={article.category} />
+                      <PhotoFeature
+                        headline={article.headline}
+                        imageSrc={article.imageUrls[0]}
+                        alt={article.headline}
+                        caption={article.imageCaptions?.[0] ?? article.imageCaption}
+                        byline={article.byline}
+                        onImageClick={() =>
+                          setLightboxSrc(article.imageUrls[0])
+                        }
+                      />
+                      {article.imageUrls.length > 1 && (
+                        <ImageGallery
+                          images={article.imageUrls.slice(1, 2).map((url, i) => ({
+                            src: url,
+                            caption: article.imageCaptions?.[i + 1],
+                          }))}
+                          alt={article.headline}
+                          onClick={(src) => setLightboxSrc(src)}
+                        />
+                      )}
+                    </>
+                  ) : isLong ? (
                     /* ── Long Featured Layout ─────────────── */
                     <>
                       <Kicker category={article.category} />
-                      <h2
-                        className="text-[var(--color-text-primary)] mb-4"
-                        style={{
-                          fontFamily: "var(--font-header)",
-                          fontSize: "clamp(22px, 3.5vw, 30px)",
-                          fontWeight: 700,
-                          lineHeight: 1.15,
-                        }}
-                      >
-                        {article.headline}
-                      </h2>
-                      <Byline byline={article.byline} />
 
                       {/* All text in 3 columns, image in column flow */}
                       <ColumnText
                         paragraphs={paragraphs}
                         columns={3}
+                        header={
+                          <>
+                            <h2
+                              className="text-[var(--color-text-primary)] mb-4"
+                              style={{
+                                fontFamily: "var(--font-header)",
+                                fontSize: "clamp(22px, 3.5vw, 30px)",
+                                fontWeight: 700,
+                                lineHeight: 1.15,
+                              }}
+                            >
+                              {article.headline}
+                            </h2>
+                            <Byline byline={article.byline} />
+                          </>
+                        }
                         image={
-                          hasImage ? (
-                            <ArticleImage
-                              src={article.imageUrls[0]}
-                              alt={article.headline}
-                              caption={article.imageCaption}
-                              onClick={() =>
-                                setLightboxSrc(article.imageUrls[0])
-                              }
-                              width="full"
-                            />
-                          ) : undefined
+                          hasImage
+                            ? article.imageUrls.slice(0, 2).map((url, i) => (
+                                <ArticleImage
+                                  key={url}
+                                  src={url}
+                                  alt={article.headline}
+                                  caption={article.imageCaptions?.[i] ?? (i === 0 ? article.imageCaption : null)}
+                                  onClick={() => setLightboxSrc(url)}
+                                  width="full"
+                                  maxWidth={article.imageUrls.length > 1 ? "90%" : "100%"}
+                                />
+                              ))
+                            : undefined
                         }
                       />
                     </>
@@ -181,35 +241,41 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                     /* ── Short Featured Layout ────────────── */
                     <>
                       <Kicker category={article.category} />
-                      <h2
-                        className="text-[var(--color-text-primary)] mb-4"
-                        style={{
-                          fontFamily: "var(--font-header)",
-                          fontSize: "clamp(18px, 3vw, 26px)",
-                          fontWeight: 700,
-                          lineHeight: 1.2,
-                        }}
-                      >
-                        {article.headline}
-                      </h2>
-                      <Byline byline={article.byline} />
 
-                      {/* All text in 2 columns, image in column flow */}
+                      {/* All text in columns, image in column flow */}
                       <ColumnText
                         paragraphs={paragraphs}
-                        columns={2}
+                        columns={hasImage ? 3 : 2}
+                        header={
+                          <>
+                            <h2
+                              className="text-[var(--color-text-primary)] mb-4"
+                              style={{
+                                fontFamily: "var(--font-header)",
+                                fontSize: "clamp(18px, 3vw, 26px)",
+                                fontWeight: 700,
+                                lineHeight: 1.2,
+                              }}
+                            >
+                              {article.headline}
+                            </h2>
+                            <Byline byline={article.byline} />
+                          </>
+                        }
                         image={
-                          hasImage ? (
-                            <ArticleImage
-                              src={article.imageUrls[0]}
-                              alt={article.headline}
-                              caption={article.imageCaption}
-                              onClick={() =>
-                                setLightboxSrc(article.imageUrls[0])
-                              }
-                              width="full"
-                            />
-                          ) : undefined
+                          hasImage
+                            ? article.imageUrls.slice(0, 2).map((url, i) => (
+                                <ArticleImage
+                                  key={url}
+                                  src={url}
+                                  alt={article.headline}
+                                  caption={article.imageCaptions?.[i] ?? (i === 0 ? article.imageCaption : null)}
+                                  onClick={() => setLightboxSrc(url)}
+                                  width="full"
+                                  maxWidth={article.imageUrls.length > 1 ? "90%" : "100%"}
+                                />
+                              ))
+                            : undefined
                         }
                       />
                     </>

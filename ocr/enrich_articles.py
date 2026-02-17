@@ -57,12 +57,17 @@ CATEGORIZATION_PROMPT = """\
 You are categorizing articles from a college newspaper (Ohio Wesleyan University).
 
 Assign each article exactly one of these categories:
-- News: Hard news — breaking events, policy changes, institutional announcements with broad impact
+- News: Hard news — breaking events, policy changes, institutional announcements, obituaries, death notices
 - Sports: Athletics, game results, player profiles, team news
-- Features: Human interest, profiles, in-depth reporting, investigative pieces, travel
-- Opinion: Editorials, letters to the editor, columns, commentary, reviews
-- Arts: Music, theater, film, visual arts, performances, exhibitions
+- Features: Human interest, profiles, in-depth reporting, investigative pieces, travel, syndicated humor columns
+- Opinion: Editorials, letters to the editor, commentary on campus/social issues
+- Arts: Music, theater, film, visual arts, performances, exhibitions, book/film/concert reviews
 - Campus Life: Student organizations, Greek life, events, social activities, campus services, daily student experience
+
+Important distinctions:
+- Film, book, or music REVIEWS are Arts, not Opinion (Opinion is for editorials/letters about issues)
+- Syndicated entertainment columns (e.g., humor columns by named syndicated writers) are Features, not Opinion
+- Short obituaries and death notices are News, not Features (Features requires extended narrative)
 
 For each article, return its 0-based index and assigned category.
 
@@ -73,8 +78,12 @@ Articles:
 
 def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool, int, float]:
     """Categorize articles for a single edition. Returns (performed, tokens, elapsed_s)."""
-    with open(edition_path, "r", encoding="utf-8") as f:
-        edition = json.load(f)
+    try:
+        with open(edition_path, "r", encoding="utf-8") as f:
+            edition = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"  ERROR: Malformed JSON in {edition_path}: {e}")
+        return False, 0, 0.0
 
     edition_date = edition.get("edition_date", os.path.basename(os.path.dirname(edition_path)))
 
@@ -119,8 +128,11 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool
     call_elapsed = time.time() - call_start
 
     usage = response.usage_metadata
-    total_tokens = usage.total_token_count
-    print(f"    Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out | Time: {call_elapsed:.1f}s")
+    total_tokens = usage.total_token_count if usage else 0
+    if usage:
+        print(f"    Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out | Time: {call_elapsed:.1f}s")
+    else:
+        print(f"    Tokens: unavailable | Time: {call_elapsed:.1f}s")
 
     if not response.parsed:
         print(f"    ERROR: Response was empty or blocked")

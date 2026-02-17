@@ -159,6 +159,7 @@ function EditionBody({
 
     return (
         <PageShell variant="default" hasHeader className="edition-background-shell">
+            <div className="paper-texture-overlay" aria-hidden="true" />
             <TimeControls />
 
             {!isLoadingEditions && !hasEditions ? (

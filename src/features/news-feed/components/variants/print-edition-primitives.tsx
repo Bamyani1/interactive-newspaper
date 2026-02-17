@@ -162,6 +162,7 @@ export function ArticleImage({
   onClick,
   priority,
   width = 240,
+  maxWidth = "100%",
 }: {
   src: string;
   alt: string;
@@ -169,11 +170,12 @@ export function ArticleImage({
   onClick: () => void;
   priority?: boolean;
   width?: number | "full";
+  maxWidth?: string;
 }) {
   return (
-    <div style={{ width: width === "full" ? "100%" : `${width}px`, maxWidth: "100%", flexShrink: 0 }}>
+    <div style={{ width: width === "full" ? "100%" : `${width}px`, maxWidth, flexShrink: 0, margin: "0 auto" }}>
       <div
-        className="relative border border-[var(--color-border-default)] overflow-hidden cursor-pointer"
+        className="relative border-3 border-[var(--color-text-primary)] overflow-hidden cursor-pointer"
         style={{ width: "100%", aspectRatio: "4/3" }}
         onClick={onClick}
       >
@@ -202,6 +204,52 @@ export function ArticleImage({
   );
 }
 
+/** Row of additional images (index 1+) displayed below the column text. */
+export function ImageGallery({
+  images,
+  alt,
+  onClick,
+}: {
+  images: { src: string; caption?: string | null }[];
+  alt: string;
+  onClick: (src: string) => void;
+}) {
+  if (images.length === 0) return null;
+  return (
+    <div className="flex gap-4 mt-4" style={{ width: "90%", margin: "0 auto" }}>
+      {images.map((img, i) => (
+        <div key={i} style={{ flex: 1, minWidth: 0 }}>
+          <div
+            className="relative border-3 border-[var(--color-text-primary)] overflow-hidden cursor-pointer"
+            style={{ width: "100%", aspectRatio: "4/3" }}
+            onClick={() => onClick(img.src)}
+          >
+            <Image
+              src={img.src}
+              alt={`${alt} — image ${i + 2}`}
+              fill
+              className="object-cover"
+            />
+          </div>
+          {img.caption && (
+            <p
+              className="mt-1"
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "12px",
+                fontStyle: "italic",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              {img.caption}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Multi-column text block for body paragraphs. */
 export function ColumnText({
   paragraphs,
@@ -209,14 +257,18 @@ export function ColumnText({
   fontSize = "14px",
   dropCap,
   image,
+  header,
 }: {
   paragraphs: string[];
   columns: 2 | 3;
   fontSize?: string;
   dropCap?: boolean;
-  image?: React.ReactNode;
+  image?: React.ReactNode | React.ReactNode[];
+  /** Rendered inside the column flow (col 1) so col 2+ starts level with it. */
+  header?: React.ReactNode;
 }) {
-  if (paragraphs.length === 0 && !image) return null;
+  const images = image ? (Array.isArray(image) ? image : [image]) : [];
+  if (paragraphs.length === 0 && images.length === 0 && !header) return null;
 
   const bodyText = paragraphs.map((p, i) =>
     dropCap && i === 0 ? (
@@ -227,33 +279,6 @@ export function ColumnText({
       </p>
     )
   );
-
-  // 2-column with image: use grid 1fr 2fr so image is ~1/3 width
-  if (columns === 2 && image) {
-    return (
-      <div
-        className="text-[var(--color-text-primary)]"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 2fr",
-          gap: "1.5rem",
-        }}
-      >
-        <div>{image}</div>
-        <div
-          style={{
-            fontFamily: "var(--font-body)",
-            fontSize,
-            lineHeight: 1.7,
-            textAlign: "justify",
-            hyphens: "auto",
-          }}
-        >
-          {bodyText}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -269,12 +294,90 @@ export function ColumnText({
         hyphens: "auto",
       }}
     >
-      {image && (
-        <div style={{ breakInside: "avoid", marginBottom: "0.75rem" }}>
-          {image}
+      {header && (
+        <div style={{ breakInside: "avoid", textAlign: "left", hyphens: "manual" }}>
+          {header}
         </div>
       )}
+      {images.map((img, i) => (
+        <div key={i} style={{ breakInside: "avoid", marginBottom: "0.75rem" }}>
+          {img}
+        </div>
+      ))}
       {bodyText}
+    </div>
+  );
+}
+
+/** Side-by-side photo-feature layout for articles with image but no body text. */
+export function PhotoFeature({
+  headline,
+  imageSrc,
+  alt,
+  caption,
+  byline,
+  onImageClick,
+}: {
+  headline: string;
+  imageSrc: string;
+  alt: string;
+  caption?: string | null;
+  byline?: string | null;
+  onImageClick: () => void;
+}) {
+  return (
+    <div className="flex gap-6 items-start">
+      {/* Left: Title + Caption */}
+      <div className="flex-1">
+        <h2
+          className="text-[var(--color-text-primary)] mb-3"
+          style={{
+            fontFamily: "var(--font-header)",
+            fontSize: "clamp(20px, 3vw, 28px)",
+            fontWeight: 700,
+            lineHeight: 1.2,
+          }}
+        >
+          {headline}
+        </h2>
+
+        {byline && <Byline byline={byline} />}
+
+        {caption && (
+          <>
+            <div
+              aria-hidden="true"
+              className="my-3"
+              style={{
+                width: "3em",
+                borderTop: "1px solid var(--color-accent-hover)",
+              }}
+            />
+            <p
+              className="text-[var(--color-text-secondary)]"
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "14px",
+                fontStyle: "italic",
+                lineHeight: 1.7,
+                textAlign: "justify",
+                hyphens: "auto",
+              }}
+            >
+              {caption}
+            </p>
+          </>
+        )}
+      </div>
+
+      {/* Right: Image */}
+      <div
+        className="relative flex-shrink-0 border-3 border-[var(--color-text-primary)] overflow-hidden cursor-pointer"
+        style={{ width: "40%", aspectRatio: "4/3" }}
+        onClick={onImageClick}
+      >
+        <Image src={imageSrc} alt={alt} fill className="object-cover" />
+      </div>
     </div>
   );
 }

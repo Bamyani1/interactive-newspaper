@@ -3,7 +3,7 @@
 .time-controls-header {
     background: color-mix(in srgb, var(--color-bg-secondary) 92%, transparent);
     backdrop-filter: saturate(110%) blur(2px);
-    border-bottom: 8px solid var(--color-border-accent);
+    border-bottom: 6.4px solid var(--color-border-accent);
 }
 
 /* Left group: title with accent border */
@@ -23,7 +23,7 @@
 /* Decorative ornaments (❧ and ·) */
 .time-controls-ornament {
     font-size: 10px;
-    font-family: var(--font-body, Georgia, serif);
+    font-family: var(--font-body);
     opacity: 0.35;
     color: var(--color-text-header);
     line-height: 1;

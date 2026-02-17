@@ -176,7 +176,7 @@ export function EditionPicker({
                                     onKeyDown={(e) => handleDecadeKeyDown(e, i)}
                                 >
                                     {hasSelection && selectedEdition ? (
-                                        <span className="ep-edition-date ep-edition-date--centered">Selected Edition {selectedEdition}</span>
+                                        <span className="ep-edition-date ep-edition-date--centered">Edition {selectedEdition}</span>
                                     ) : (
                                         <>
                                             <span className="ep-edition-date">{group.decade}</span>

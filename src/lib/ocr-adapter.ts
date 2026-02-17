@@ -25,6 +25,50 @@ function isValidImageFile(filename: string): boolean {
   return /\.(jpe?g|png|gif|webp|tiff?)$/i.test(filename);
 }
 
+/** Detect and strip OCR preamble: letter salutations and role-title lines. */
+function cleanBodyPreamble(
+  body: string,
+  hasAuthor: boolean,
+): { body: string; roleTitle: string | null } {
+  // 1. Strip letter-to-editor salutation (runs regardless of author)
+  const breakIdx1 = body.indexOf('\n\n');
+  if (breakIdx1 >= 0) {
+    const firstParagraph = body.slice(0, breakIdx1).trim();
+    if (/^Editor,?\s+the\s+Transcript:?\s*$/i.test(firstParagraph)) {
+      body = body.slice(breakIdx1 + 2);
+    }
+  }
+
+  // 2. Strip role-title line (existing logic, unchanged)
+  if (!hasAuthor) return { body, roleTitle: null };
+
+  const breakIdx2 = body.indexOf('\n\n');
+  if (breakIdx2 < 0) return { body, roleTitle: null };
+
+  const firstLine = body.slice(0, breakIdx2).trim();
+  const words = firstLine.split(/\s+/);
+
+  if (
+    words.length <= 3 &&
+    !/[.,!?;:]/.test(firstLine) &&
+    words.every((w) => /^[A-Z]/.test(w))
+  ) {
+    return { body: body.slice(breakIdx2 + 2), roleTitle: firstLine };
+  }
+
+  return { body, roleTitle: null };
+}
+
+/** True when a caption is just the author's name/mugshot label, not real content. */
+function isAuthorHeadshot(caption: string | undefined, authorName: string): boolean {
+  if (!caption || !authorName) return false;
+  const cap = caption.trim();
+  const capWords = cap.split(/\s+/);
+  if (capWords.length > 3 || /[,!?;:()]/.test(cap)) return false;
+  const nameParts = authorName.toLowerCase().split(/\s+/);
+  return capWords.some((w) => nameParts.includes(w.toLowerCase()));
+}
+
 /** Strip OCR page-break markers (e.g. "\n. 7\n") and convert paragraphs to HTML. */
 function bodyToHtml(body: string): string {
   const cleaned = body.replace(/\n\. \d+\n/g, '\n');
@@ -39,17 +83,10 @@ function bodyToHtml(body: string): string {
 function extractSummary(body: string): string {
   const cleaned = body.replace(/\n\. \d+\n/g, '\n');
   const first = cleaned.split(/\n\n/)[0]?.trim() || '';
-  return first.length > 300 ? first.slice(0, 297) + '...' : first;
-}
-
-function imageUrls(date: string, imageFiles: string[] | undefined): string[] {
-  if (!imageFiles) return [];
-  return imageFiles
-    .filter(f => isValidImageFile(f))
-    .map(f => {
-      const filename = f.replace(/^images\//, '');
-      return `/api/editions/${date}/images/${encodeURIComponent(filename)}`;
-    });
+  if (first.length <= 300) return first;
+  const lastSpace = first.lastIndexOf(' ', 300);
+  const boundary = lastSpace > 200 ? lastSpace : 297;
+  return first.slice(0, boundary).trim() + '...';
 }
 
 // Section keywords mapped to categories (used for byline tags + headline matching)
@@ -171,6 +208,8 @@ export async function loadEdition(date: string): Promise<OcrEdition | null> {
   }
 }
 
+const VALID_CATEGORIES = new Set(['News', 'Sports', 'Features', 'Opinion', 'Arts', 'Campus Life']);
+
 export function transformArticles(edition: OcrEdition): Article[] {
   const articles: Article[] = [];
   const date = edition.edition_date;
@@ -178,25 +217,88 @@ export function transformArticles(edition: OcrEdition): Article[] {
 
   for (let i = 0; i < edition.articles.length; i++) {
     const a = edition.articles[i];
+    const hasAuthor = Boolean(a.author);
+    const { body: cleanBody, roleTitle } = cleanBodyPreamble(a.body ?? '', hasAuthor);
+
+    let fullText = bodyToHtml(cleanBody);
+
+    // Build raw image arrays (valid image files only)
+    const rawEntries = (a.image_files ?? [])
+      .map((f, idx) => ({ f, idx }))
+      .filter(({ f }) => isValidImageFile(f));
+
+    const rawImageUrls = rawEntries.map(({ f }) => {
+      const filename = f.replace(/^images\//, '');
+      return `/api/editions/${date}/images/${encodeURIComponent(filename)}`;
+    });
+    const rawImageCaptions: (string | null)[] = rawEntries.map(
+      ({ idx }) => a.images?.[idx]?.caption || null,
+    );
+
+    // Filter out author headshots
+    const authorName = (a.author || '').replace(/^by\s+/i, '').trim();
+    const filtered = rawImageUrls.map((url, idx) => ({
+      url,
+      caption: rawImageCaptions[idx],
+    })).filter(({ caption }) => !isAuthorHeadshot(caption ?? undefined, authorName));
+
+    const filteredImageUrls = filtered.map(({ url }) => url);
+    const filteredImageCaptions = filtered.map(({ caption }) => caption);
+    const imageCaption = filteredImageCaptions[0] || null;
+
+    // Detect body/caption duplication: if the body text is essentially
+    // the same as the image caption, treat as photo-only by clearing fullText
+    if (imageCaption && fullText) {
+      const bodyNorm = cleanBody.replace(/\s+/g, ' ').trim().toLowerCase();
+      const capNorm = imageCaption.replace(/\s+/g, ' ').trim().toLowerCase();
+      if (bodyNorm.length < 500 && (capNorm.includes(bodyNorm) || bodyNorm.includes(capNorm))) {
+        fullText = '';
+      }
+    }
+
     articles.push({
       id: `${date}-${i}`,
       date,
-      category: (edition.categories?.[i] ?? classifyCategory(a)) as Article['category'],
-      headline: a.headline,
-      summary: extractSummary(a.body),
-      fullText: bodyToHtml(a.body),
-      imageUrls: imageUrls(date, a.image_files),
-      byline: a.author || null,
+      category: (() => {
+        const rawCat = edition.categories?.[i] ?? classifyCategory(a);
+        return VALID_CATEGORIES.has(rawCat) ? rawCat : 'News';
+      })() as Article['category'],
+      headline: a.headline ?? '',
+      summary: extractSummary(cleanBody),
+      fullText,
+      imageUrls: filteredImageUrls,
+      byline: (() => {
+        const baseName = (a.author || '').replace(/^by\s+/i, '').trim();
+        if (roleTitle && baseName) return `${baseName}, ${roleTitle}`;
+        return baseName || null;
+      })(),
       page: parseInt(a.source_pages?.[0], 10) || 1,
       isHero: false,
       isFeatured: false,
-      imageCaption: a.images?.[0]?.caption || null,
+      imageCaption,
+      imageCaptions: filteredImageCaptions,
     });
   }
 
+  // Filter out empty and very-short text-only articles
+  const filtered = articles.filter((article) => {
+    const plainText = article.fullText.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    const hasImages = article.imageUrls.length > 0;
+    const hasHeadline = article.headline.trim().length > 0;
+
+    // Remove completely empty articles (no headline, no text, no images)
+    if (!hasHeadline && !plainText && !hasImages) return false;
+
+    // Keep articles that have images (photo features)
+    if (hasImages) return true;
+
+    // Remove text-only articles that are too short (~less than 3 lines)
+    return plainText.length >= 150;
+  });
+
   // Assign hero & featured: prioritize articles with images
-  const withImages = articles.filter(a => a.imageUrls.length > 0);
-  const withoutImages = articles.filter(a => a.imageUrls.length === 0);
+  const withImages = filtered.filter(a => a.imageUrls.length > 0);
+  const withoutImages = filtered.filter(a => a.imageUrls.length === 0);
   const candidates = [...withImages, ...withoutImages];
 
   for (let i = 0; i < Math.min(5, candidates.length); i++) {
@@ -204,7 +306,7 @@ export function transformArticles(edition: OcrEdition): Article[] {
     if (i === 0) candidates[i].isHero = true;
   }
 
-  return articles;
+  return filtered;
 }
 
 const VALID_AD_CATEGORIES: ReadonlySet<string> = new Set<AdCategory>([

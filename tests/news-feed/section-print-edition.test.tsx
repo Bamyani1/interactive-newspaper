@@ -24,6 +24,7 @@ function makeArticle(overrides: Partial<Article> = {}): Article {
     summary: "Lead story summary text.",
     fullText: "<p>First paragraph of lead story.</p><p>Second paragraph.</p>",
     imageUrls: [],
+    imageCaptions: [],
     page: 1,
     isHero: false,
     isFeatured: false,

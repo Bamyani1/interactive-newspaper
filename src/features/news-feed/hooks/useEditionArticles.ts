@@ -159,6 +159,9 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
                             : (a.imageUrl && normalizeText(a.imageUrl) ? [normalizeText(a.imageUrl)] : []),
                         byline: normalizeText(a.byline) || undefined,
                         imageCaption: normalizeText(a.imageCaption) || undefined,
+                        imageCaptions: Array.isArray(a.imageCaptions)
+                            ? a.imageCaptions.map((c: string | null) => c ? normalizeText(c) : null)
+                            : [],
                         page,
                         isFeatured: Boolean(a.isFeatured),
                         isHero: Boolean(a.isHero),

@@ -89,6 +89,9 @@ async function fetchMonthlyMusic(date: string, cacheKey: string): Promise<Monthl
 
   const pending = fetch(`/api/music?date=${encodeURIComponent(date)}`)
     .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Music API error: ${response.status}`);
+      }
       const payload = (await response.json()) as MonthlyTrendingApiResponse;
       return payload;
     })

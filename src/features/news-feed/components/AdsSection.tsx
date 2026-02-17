@@ -180,7 +180,7 @@ const RetailCoupon: React.FC<TemplateProps> = ({ ad }) => (
 const ServiceCard: React.FC<TemplateProps> = ({ ad }) => (
     <div className="border-t-2 border-t-[var(--stroke-accent-soft)] border-b border-b-[var(--color-border-default)] bg-[var(--color-bg-secondary)]/60 p-4 flex flex-col gap-2">
         {ad.category && <CategoryBadge category={ad.category} />}
-        <h4 className="font-serif text-lg font-semibold text-center text-[var(--color-text-primary)]">
+        <h4 className="font-header text-lg font-semibold text-center text-[var(--color-text-primary)]">
             {ad.title}
         </h4>
         <div className="border-t border-[var(--color-border-default)]" />
@@ -244,7 +244,7 @@ const Broadsheet: React.FC<TemplateProps> = ({ ad }) => {
             <h4 className="font-header text-2xl font-bold uppercase text-center text-[var(--color-text-primary)] pb-2 border-b border-[var(--color-text-primary)]/30">
                 {ad.title}
             </h4>
-            <div className="font-serif text-sm leading-relaxed text-justify text-[var(--color-text-primary)] whitespace-pre-line">
+            <div className="font-body text-sm leading-relaxed text-justify text-[var(--color-text-primary)] whitespace-pre-line">
                 <span className="float-left text-3xl font-bold leading-none mr-1 font-header text-[var(--color-accent)]">
                     {firstChar}
                 </span>
@@ -261,10 +261,10 @@ const EditorialStyle: React.FC<TemplateProps> = ({ ad }) => (
         <p className="font-header text-[10px] uppercase tracking-[0.4em] text-center text-[var(--color-accent)] opacity-60">
             &mdash; Advertisement &mdash;
         </p>
-        <h4 className="font-serif text-2xl text-center text-[var(--color-text-primary)] leading-tight">
+        <h4 className="font-header text-2xl text-center text-[var(--color-text-primary)] leading-tight">
             {ad.title}
         </h4>
-        <p className="font-serif text-sm leading-relaxed text-justify text-[var(--color-text-primary)] whitespace-pre-line">
+        <p className="font-body text-sm leading-relaxed text-justify text-[var(--color-text-primary)] whitespace-pre-line">
             {adText(ad)}
         </p>
         {(ad.phone || ad.address || ad.price) && (

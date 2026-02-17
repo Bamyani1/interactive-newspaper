@@ -1,5 +1,23 @@
 .edition-background-shell {
     background-color: var(--color-bg-primary);
+    position: relative;
+}
+
+/* Aged paper texture overlay — use a real <div>, not ::before,
+   so it stays fixed and doesn't become a flex item in PageShell. */
+.paper-texture-overlay {
+    position: fixed;
+    inset: 0;
+    background: url('/backgrounds/edition-background.jpg') center / cover no-repeat;
+    filter: invert(1);
+    opacity: 0.12;
+    pointer-events: none;
+    z-index: 0;
+}
+
+[data-mode='light'] .paper-texture-overlay {
+    filter: none;
+    opacity: 0.2;
 }
 
 .edition-background-shell .edition-feed-surface {

@@ -92,7 +92,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
         const printWindow = window.open("", "_blank");
         if (printWindow) {
             printWindow.document.open();
-            printWindow.document.write(`<!DOCTYPE html><html><head><title>${safeHeadline} - The Transcript</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;padding:20px;line-height:1.6}h1{font-size:28px;margin-bottom:8px}.meta{font-size:12px;color:#666;margin-bottom:20px;text-transform:uppercase;letter-spacing:.1em}.content{font-size:16px}img{max-width:100%;height:auto;margin:20px 0}</style></head><body>${printContent}</body></html>`);
+            printWindow.document.write(`<!DOCTYPE html><html><head><title>${safeHeadline} - The Transcript</title><style>body{font-family:var(--font-body);max-width:700px;margin:40px auto;padding:20px;line-height:1.6}h1{font-size:28px;margin-bottom:8px}.meta{font-size:12px;color:#666;margin-bottom:20px;text-transform:uppercase;letter-spacing:.1em}.content{font-size:16px}img{max-width:100%;height:auto;margin:20px 0}</style></head><body>${printContent}</body></html>`);
             printWindow.document.close();
             printWindow.focus();
             printWindow.print();
@@ -236,31 +236,53 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                         const validUrls = article.imageUrls.filter(url => !imgErrors.has(url));
                         if (validUrls.length === 0) return null;
                         if (validUrls.length === 1) {
+                            const caption = article.imageCaptions?.[
+                                article.imageUrls.indexOf(validUrls[0])
+                            ];
                             return (
-                                <div className="relative w-full aspect-video mb-6 bg-black/5">
-                                    <Image
-                                        src={validUrls[0]}
-                                        alt={article.headline}
-                                        fill
-                                        className="object-contain object-left sepia-vintage"
-                                        onError={() => handleImgError(validUrls[0])}
-                                    />
+                                <div className="mb-6">
+                                    <div className="relative w-full aspect-video bg-black/5">
+                                        <Image
+                                            src={validUrls[0]}
+                                            alt={article.headline}
+                                            fill
+                                            className="object-contain object-left sepia-vintage"
+                                            onError={() => handleImgError(validUrls[0])}
+                                        />
+                                    </div>
+                                    {caption && (
+                                        <p className="image-caption text-sm text-left mt-1" style={{ fontStyle: "italic" }}>
+                                            {caption}
+                                        </p>
+                                    )}
                                 </div>
                             );
                         }
                         return (
                             <div className="grid grid-cols-2 gap-3 mb-6">
-                                {validUrls.map((url, idx) => (
-                                    <div key={idx} className="relative w-full aspect-[4/3] bg-black/5">
-                                        <Image
-                                            src={url}
-                                            alt={`${article.headline} — image ${idx + 1}`}
-                                            fill
-                                            className="object-contain sepia-vintage"
-                                            onError={() => handleImgError(url)}
-                                        />
-                                    </div>
-                                ))}
+                                {validUrls.map((url, idx) => {
+                                    const caption = article.imageCaptions?.[
+                                        article.imageUrls.indexOf(url)
+                                    ];
+                                    return (
+                                        <div key={idx}>
+                                            <div className="relative w-full aspect-[4/3] bg-black/5">
+                                                <Image
+                                                    src={url}
+                                                    alt={`${article.headline} — image ${idx + 1}`}
+                                                    fill
+                                                    className="object-contain sepia-vintage"
+                                                    onError={() => handleImgError(url)}
+                                                />
+                                            </div>
+                                            {caption && (
+                                                <p className="image-caption text-sm text-left mt-1" style={{ fontStyle: "italic" }}>
+                                                    {caption}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         );
                     })()}
@@ -277,12 +299,6 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                     ) : (
                         <p className="prose prose-lg prose-invert max-w-none font-body leading-relaxed italic opacity-80">
                             Full story text unavailable for this article.
-                        </p>
-                    )}
-
-                    {article.imageCaption && (
-                        <p className="image-caption text-sm text-left">
-                            {article.imageCaption}
                         </p>
                     )}
 
