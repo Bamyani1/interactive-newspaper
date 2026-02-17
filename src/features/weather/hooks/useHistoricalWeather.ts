@@ -18,6 +18,17 @@ interface UseHistoricalWeatherResult {
 const responseCache = new Map<string, WeatherApiResponse>();
 const inFlight = new Map<string, Promise<WeatherApiResponse>>();
 
+const MAX_CACHE_SIZE = 50;
+
+function cacheSet<K, V>(map: Map<K, V>, key: K, value: V): void {
+  if (map.size >= MAX_CACHE_SIZE) {
+    // Delete the oldest entry (first key in insertion order)
+    const firstKey = map.keys().next().value;
+    if (firstKey !== undefined) map.delete(firstKey);
+  }
+  map.set(key, value);
+}
+
 function toFahrenheit(valueCelsius: number): number {
   return (valueCelsius * 9) / 5 + 32;
 }
@@ -49,8 +60,8 @@ async function fetchWeather(date: string): Promise<WeatherApiResponse> {
   const pending = fetch(`/api/weather?date=${encodeURIComponent(date)}`)
     .then(async (res) => {
       const payload = (await res.json()) as WeatherApiResponse;
-      if (!res.ok && payload.record == null) {
-        return payload;
+      if (!res.ok) {
+        throw new Error(`Weather API error: ${res.status}`);
       }
       return payload;
     })
@@ -60,7 +71,9 @@ async function fetchWeather(date: string): Promise<WeatherApiResponse> {
 
   inFlight.set(cacheKey, pending);
   const result = await pending;
-  responseCache.set(cacheKey, result);
+  if (result.record != null) {
+    cacheSet(responseCache, cacheKey, result);
+  }
   return result;
 }
 

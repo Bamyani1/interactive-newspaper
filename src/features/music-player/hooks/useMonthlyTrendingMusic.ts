@@ -17,8 +17,21 @@ interface UseMonthlyTrendingMusicResult {
 const responseCache = new Map<string, MonthlyTrendingApiResponse>();
 const inFlight = new Map<string, Promise<MonthlyTrendingApiResponse>>();
 
+const MAX_CACHE_SIZE = 50;
+
+function cacheSet<K, V>(map: Map<K, V>, key: K, value: V): void {
+  if (map.size >= MAX_CACHE_SIZE) {
+    // Delete the oldest entry (first key in insertion order)
+    const firstKey = map.keys().next().value;
+    if (firstKey !== undefined) map.delete(firstKey);
+  }
+  map.set(key, value);
+}
+
 function isIsoDate(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(value);
 }
 
 function monthFromDate(date: string): string | null {
@@ -85,7 +98,9 @@ async function fetchMonthlyMusic(date: string, cacheKey: string): Promise<Monthl
 
   inFlight.set(cacheKey, pending);
   const resolved = await pending;
-  responseCache.set(cacheKey, resolved);
+  if (resolved.record != null) {
+    cacheSet(responseCache, cacheKey, resolved);
+  }
   return resolved;
 }
 

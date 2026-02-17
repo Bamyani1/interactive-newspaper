@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SidebarPlayer } from '../../src/features/music-player/components/SidebarPlayer';
 import { clearMonthlyTrendingMusicCacheForTests } from '../../src/features/music-player/hooks/useMonthlyTrendingMusic';
@@ -149,6 +149,11 @@ describe('SidebarPlayer monthly mode', () => {
     const { container } = render(<SidebarPlayer currentDate="1988-10-18" />);
 
     await screen.findByText('October 1988 Top 10');
+
+    // Auto-selects track 2 (first with youtubeId via useEffect); click play to load embed
+    const playButton = await screen.findByRole('button', { name: /Play Embedded Song by Artist 2/i });
+    fireEvent.click(playButton);
+
     await waitFor(() => {
       const iframe = container.querySelector('iframe');
       expect(iframe).toBeTruthy();

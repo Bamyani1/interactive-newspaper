@@ -13,13 +13,13 @@ export const EditionMasthead: React.FC<EditionMastheadProps> = ({ editionHeaderD
 
     return (
         <motion.div
-            className="pt-12 pb-4 px-6 text-center mb-6 max-w-5xl mx-auto w-full"
+            className="pb-4 px-6 text-center mb-6 max-w-5xl mx-auto w-full"
             variants={mastheadVariants}
             initial="hidden"
             animate="show"
             transition={TRANSITIONS.base}
         >
-            <h2 className="font-masthead text-4xl md:text-5xl uppercase tracking-tight mb-2">
+            <h2 className="font-masthead text-5xl md:text-6xl uppercase tracking-tight mb-2">
                 The Transcript
             </h2>
             <div className="flex flex-wrap justify-between gap-2 border-t border-b border-[var(--color-text-primary)]/30 py-1.5 font-mono text-xs tracking-wider uppercase">

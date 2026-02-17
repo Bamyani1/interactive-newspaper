@@ -97,6 +97,7 @@ export default function LayoutCustomizer() {
                             <button
                                 key={design.id}
                                 className={`layout-customizer-preset${activeId === design.id ? " active" : ""}`}
+                                data-layout-id={design.id}
                                 onClick={() => applyDesign(design.id)}
                             >
                                 <span className="layout-preset-name">{design.name}</span>

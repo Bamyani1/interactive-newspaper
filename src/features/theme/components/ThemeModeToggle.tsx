@@ -1,17 +1,11 @@
 "use client";
 
-import React, { useLayoutEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import { Sun, Moon } from "lucide-react";
 
 const STORAGE_KEY = "transcript-mode";
 
 type ThemeMode = "dark" | "light";
-
-const getInitialMode = (): ThemeMode => {
-    if (typeof window === "undefined") return "dark";
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored === "light" ? "light" : "dark";
-};
 
 export interface ThemeModeToggleProps {
     /** When true, show only sun/moon icon (e.g. for header). */
@@ -19,7 +13,14 @@ export interface ThemeModeToggleProps {
 }
 
 export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = false }) => {
-    const [mode, setMode] = useState<ThemeMode>(getInitialMode);
+    // Always start "dark" on both server and client to avoid hydration mismatch
+    const [mode, setMode] = useState<ThemeMode>("dark");
+
+    // Sync with localStorage after mount
+    useEffect(() => {
+        const stored = window.localStorage.getItem(STORAGE_KEY);
+        if (stored === "light") setMode("light");
+    }, []);
 
     useLayoutEffect(() => {
         document.body.dataset.mode = mode;

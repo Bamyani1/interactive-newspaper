@@ -102,7 +102,7 @@
 
 .nav-fleuron {
   background: var(--color-bg-primary);
-  padding: 24px 16px 16px;
+  padding: 24px 16px 16px 22px;
 }
 
 .nav-fleuron-header-block {
@@ -116,7 +116,7 @@
 
 .nav-fleuron-header {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.2em;
   color: var(--color-text-primary);
@@ -166,7 +166,7 @@
 
 .nav-fleuron-name {
   font-family: var(--font-header);
-  font-size: calc(14px * 1.05);
+  font-size: calc(15px * 1.05);
   font-style: italic;
   color: var(--color-text-primary);
   opacity: 0.85;
@@ -200,7 +200,7 @@
 
 .nav-fleuron-count {
   font-family: var(--font-body);
-  font-size: calc(13px * 1.05);
+  font-size: calc(14px * 1.05);
   font-style: italic;
   color: var(--color-text-secondary);
   white-space: nowrap;
@@ -216,10 +216,10 @@
 
 .nav-fleuron-active-rule {
   position: absolute;
-  left: -16px;
+  left: -22px;
   top: 0;
   bottom: 0;
-  width: 2px;
+  width: 3px;
   background: var(--color-accent);
 }
 

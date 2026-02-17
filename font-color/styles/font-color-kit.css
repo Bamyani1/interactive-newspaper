@@ -470,6 +470,28 @@
     }
 }
 
+/* ── Print Edition warm accent for layout picker ─────────── */
+.layout-customizer-preset[data-layout-id="print-edition"] {
+    background: color-mix(in srgb, #92400e 8%, var(--color-bg-primary, #15191d) 92%);
+    border-color: rgba(146, 64, 14, 0.45);
+}
+
+.layout-customizer-preset[data-layout-id="print-edition"] .layout-preset-name {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #fbbf24;
+}
+
+.layout-customizer-preset[data-layout-id="print-edition"]:hover {
+    border-color: #b45309;
+    background: color-mix(in srgb, #92400e 14%, var(--color-bg-primary, #15191d) 86%);
+}
+
+.layout-customizer-preset[data-layout-id="print-edition"].active {
+    border-color: #b45309;
+    border-width: 2px;
+    padding: 7px 9px;
+}
+
 @keyframes cc-slide-up {
     from {
         opacity: 0;

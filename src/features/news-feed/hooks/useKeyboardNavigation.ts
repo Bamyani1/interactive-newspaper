@@ -22,16 +22,20 @@ export function useKeyboardNavigation({
 }: UseKeyboardNavigationOptions) {
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
-            // Don't trigger if user is typing in an input
+            // Don't trigger if user is interacting with form elements or embedded content
+            const target = event.target as HTMLElement;
             if (
-                event.target instanceof HTMLInputElement ||
-                event.target instanceof HTMLTextAreaElement
+                target instanceof HTMLInputElement ||
+                target instanceof HTMLTextAreaElement ||
+                target instanceof HTMLSelectElement ||
+                target.isContentEditable ||
+                target.closest?.('iframe, [role="listbox"], [data-no-keyboard-nav]')
             ) {
                 return;
             }
 
             // No keyboard navigation for Ads section
-            if (currentSection === "Ads") {
+            if (currentSection === "Ads" || currentSection === "Classifieds") {
                 return;
             }
 

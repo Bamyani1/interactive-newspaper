@@ -1,20 +1,9 @@
 /* ─── Time Controls Header ─── Editorial Masthead Bar ─── */
 
 .time-controls-header {
-    background: color-mix(in srgb, var(--color-bg-primary) 84%, transparent);
+    background: color-mix(in srgb, var(--color-bg-secondary) 92%, transparent);
     backdrop-filter: saturate(110%) blur(2px);
-    border-bottom: 1px solid var(--stroke-accent-soft);
-}
-
-/* Dashed sub-rule — creates double-rule effect below solid border */
-.time-controls-header::after {
-    content: "";
-    position: absolute;
-    bottom: -3px;
-    left: var(--sidebar-nav-width);
-    right: var(--sidebar-context-width);
-    border-bottom: 1px dashed color-mix(in srgb, var(--color-accent) 25%, transparent);
-    pointer-events: none;
+    border-bottom: 8px solid var(--color-border-accent);
 }
 
 /* Left group: title with accent border */
@@ -54,20 +43,16 @@
 
 /* ─── Dark Mode (inside edition background shell) ─── */
 .edition-background-shell .time-controls-header {
-    background: color-mix(in srgb, var(--color-bg-primary) 90%, transparent);
+    background: color-mix(in srgb, var(--color-bg-secondary) 94%, transparent);
     backdrop-filter: saturate(108%) blur(1px);
 }
 
 /* ─── Light Mode ─── */
 [data-mode='light'] .time-controls-header {
-    background: color-mix(in srgb, var(--color-bg-primary) 88%, transparent);
+    background: color-mix(in srgb, var(--color-bg-secondary) 92%, transparent);
     backdrop-filter: saturate(110%) blur(2px);
 }
 
-[data-mode='light'] .time-controls-header::after {
-    border-bottom-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
-}
-
 [data-mode='light'] .edition-background-shell .time-controls-header {
-    background: color-mix(in srgb, var(--color-bg-primary) 92%, transparent);
+    background: color-mix(in srgb, var(--color-bg-secondary) 94%, transparent);
 }
