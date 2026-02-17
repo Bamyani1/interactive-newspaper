@@ -1442,7 +1442,7 @@ def merge_edition_articles(
 
         for article in page_content.articles:
             idx = len(article_data)
-            preview = article.body[:200].replace('\n', ' ')
+            preview = article.body[:400].replace('\n', ' ')
 
             article_data.append({
                 "page_label": page_label,
@@ -1477,6 +1477,7 @@ def merge_edition_articles(
                 response_mime_type="application/json",
                 response_schema=MergeDecisions,
                 safety_settings=SAFETY_OFF,
+                max_output_tokens=8192,
             ),
         )
 

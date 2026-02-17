@@ -64,7 +64,7 @@ class EnrichedAdsResponse(BaseModel):
 # ── Prompt ───────────────────────────────────────────────────────────
 
 ENRICHMENT_PROMPT = """\
-You are processing advertisements extracted from a 1980s college newspaper (Ohio Wesleyan University).
+You are processing advertisements extracted from a historical college newspaper (Ohio Wesleyan University).
 
 For each ad below, return an enriched version with:
 1. **category**: One of: Food & Drink, Entertainment, Services, Retail, Greek Life, Jobs, Housing, Education, Events, Other
