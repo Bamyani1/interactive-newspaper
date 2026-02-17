@@ -1,17 +1,14 @@
 "use client";
 
-import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import type { Article, VintageAd, SectionId } from "@/src/types";
 
-import { ArticleCard } from "./ArticleCard";
 import { ScanViewer } from "./ScanViewer";
 import { AdsSection, ClassifiedsSection } from "./AdsSection";
 import { EditionMasthead } from "./EditionMasthead";
 import { EditionFooter } from "./EditionFooter";
 import { useKeyboardNavigation, useScrollCoordinator } from "../hooks/useKeyboardNavigation";
 import { useScanViewer } from "../hooks/useScanViewer";
-import { fadeUp, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 import { TopStoriesPrintEdition } from "./variants/TopStoriesPrintEdition";
 import { SectionPrintEdition } from "./variants/SectionPrintEdition";
@@ -33,18 +30,6 @@ const getScannedPages = (editionDate: string, pageCount: number): string[] => {
     );
 };
 
-const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-        opacity: 1,
-        transition: { staggerChildren: 0.1 },
-    },
-};
-
-const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 },
-};
 
 interface NewsFeedProps {
     articles: Article[];
@@ -65,7 +50,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     editions,
     onDateChange,
     activeSection,
-    onSectionChange,
+    onSectionChange: _onSectionChange,
 }) => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [focusedIndex, setFocusedIndex] = useState<number>(-1);
@@ -180,16 +165,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     });
 
     // ── Event handlers ────────────────────────────────────────────
-    const focusArticle = (article: Article) => {
-        pendingFocusRef.current = { id: article.id, category: article.category };
-        scrollIntentRef.current = { targetId: article.id, block: "start" };
-        const sectionArticles = groupedArticles.find(g => g.category === article.category)?.articles ?? [];
-        const targetIndex = sectionArticles.findIndex(item => item.id === article.id);
-        if (targetIndex >= 0) setFocusedIndex(targetIndex);
-        setExpandedId(article.id);
-        onSectionChange(article.category);
-    };
-
     const handleFeaturedClick = (article: Article) => {
         scrollIntentRef.current = { targetId: "__top_expanded__", block: "start" };
         setExpandedId(prev => (prev === article.id ? null : article.id));
@@ -201,14 +176,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
             setExpandedId(heroArticle.id);
         }
     };
-
-    const registerArticleRef = useCallback((id: string, element: HTMLElement | null) => {
-        if (element) articleRefs.current.set(id, element);
-        else articleRefs.current.delete(id);
-    }, []);
-
-    const sectionVariants = fadeUp(18);
-    const sectionContainer = staggerContainer(0.08, 0.12);
 
     const strokeWrapperClass =
         "bg-[var(--color-bg-primary)] border-x-8 border-[var(--color-accent)] px-6 py-8 md:px-10 md:py-10";
