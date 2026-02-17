@@ -42,11 +42,11 @@ To add a new edition: place a folder at `public/editions/YYYY-MM-DD/` containing
 Each domain lives under `src/features/{name}/` with its own components, hooks, context, and barrel `index.ts`. Features:
 
 - **archive** — `ArchiveProvider` context: manages edition list, current date, loading state. Wraps the entire app.
-- **news-feed** — Main content: article cards, scan viewer, ads sections. Has ~10 "Top Stories" layout variants (stored in `components/variants/`). Layout selected via localStorage key `tts-layout-design`.
+- **news-feed** — Main content: article cards, scan viewer, ads sections. Uses the print-edition layout (`TopStoriesPrintEdition`).
 - **weather** — Historical weather sidebar widget. Local Ohio archive (1950-2000) at `public/data/weather/ohio/`, falls back to live APIs for out-of-range dates.
 - **music-player** — Sidebar vintage music player. Local Billboard Hot 100 archive (1958-2000) at `public/data/music/us/hot100/`. Date-aware: shows the month's top 10 on edition pages.
 - **time-controls** — Header date picker for navigating between editions.
-- **navigation** — Left sidebar with section navigation. Multiple visual variants matching the Top Stories layout.
+- **navigation** — Left sidebar with section navigation. Uses the FleuronClassic variant.
 - **context-panel** — Right sidebar aggregating weather + music player widgets.
 - **theme** — Dark/light mode toggle via `data-mode` attribute on `<body>`.
 

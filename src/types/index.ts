@@ -18,6 +18,7 @@ export interface Article {
     isHero: boolean;
     isFeatured: boolean;
     imageCaption?: string | null;
+    imageCaptions: (string | null)[];
 }
 
 export interface EditionInfo {
@@ -127,9 +128,9 @@ export interface OcrImage {
 }
 
 export interface OcrArticle {
-    headline: string;
-    author: string;
-    body: string;
+    headline?: string;
+    author?: string;
+    body?: string;
     images: OcrImage[];
     image_files: string[];
     source_pages: string[];
@@ -144,10 +145,10 @@ export interface OcrAd {
 export interface OcrEnrichedAd extends OcrAd {
     category: string;
     ad_type: string;
-    display_text: string;
-    phone: string;
-    address: string;
-    price: string;
+    display_text?: string;
+    phone?: string;
+    address?: string;
+    price?: string;
 }
 
 export interface OcrEdition {

@@ -42,6 +42,7 @@ function makeArticle(overrides: Partial<Article> = {}): Article {
         summary: "Heat was restored to residential halls after repairs began.",
         fullText: "<p>Full article body from hero story.</p>",
         imageUrls: [],
+        imageCaptions: [],
         page: 1,
         isHero: true,
         isFeatured: true,

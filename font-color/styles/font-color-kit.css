@@ -3,9 +3,7 @@
    Intentionally does not define global token contracts. */
 
 .color-customizer-toggle,
-.font-customizer-toggle,
-.sidebar-customizer-toggle,
-.layout-customizer-toggle {
+.font-customizer-toggle {
     position: fixed;
     right: max(12px, env(safe-area-inset-right));
     z-index: 55;
@@ -33,27 +31,15 @@
     bottom: calc(env(safe-area-inset-bottom) + 134px);
 }
 
-.sidebar-customizer-toggle {
-    bottom: calc(env(safe-area-inset-bottom) + 182px);
-}
-
-.layout-customizer-toggle {
-    bottom: calc(env(safe-area-inset-bottom) + 230px);
-}
-
 .color-customizer-toggle:hover,
-.font-customizer-toggle:hover,
-.sidebar-customizer-toggle:hover,
-.layout-customizer-toggle:hover {
+.font-customizer-toggle:hover {
     color: var(--color-accent, #da0037);
     border-color: var(--color-accent, #da0037);
     background: var(--color-bg-primary, #15191d);
 }
 
 .color-customizer-panel,
-.font-customizer-panel,
-.sidebar-customizer-panel,
-.layout-customizer-panel {
+.font-customizer-panel {
     position: fixed;
     right: max(12px, env(safe-area-inset-right));
     z-index: 55;
@@ -77,18 +63,8 @@
     bottom: calc(env(safe-area-inset-bottom) + 180px);
 }
 
-.sidebar-customizer-panel {
-    bottom: calc(env(safe-area-inset-bottom) + 228px);
-}
-
-.layout-customizer-panel {
-    bottom: calc(env(safe-area-inset-bottom) + 276px);
-}
-
 .color-customizer-header,
-.font-customizer-header,
-.sidebar-customizer-header,
-.layout-customizer-header {
+.font-customizer-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -97,9 +73,7 @@
 }
 
 .color-customizer-title,
-.font-customizer-title,
-.sidebar-customizer-title,
-.layout-customizer-title {
+.font-customizer-title {
     font-family: var(--font-mono, "Work Sans", sans-serif);
     font-size: 11px;
     font-weight: 600;
@@ -114,9 +88,7 @@
 }
 
 .color-customizer-actions button,
-.font-customizer-reset,
-.sidebar-customizer-reset,
-.layout-customizer-reset {
+.font-customizer-reset {
     border: 1px solid var(--stroke-accent-soft, rgba(218, 0, 55, 0.3));
     background: color-mix(in srgb, var(--color-bg-primary, #15191d) 82%, transparent);
     color: var(--color-text-secondary, #b8b8b8);
@@ -132,18 +104,14 @@
 }
 
 .color-customizer-actions button:hover,
-.font-customizer-reset:hover,
-.sidebar-customizer-reset:hover,
-.layout-customizer-reset:hover {
+.font-customizer-reset:hover {
     border-color: var(--color-accent, #da0037);
     color: var(--color-text-primary, #e6e6e6);
     background: color-mix(in srgb, var(--color-accent, #da0037) 10%, transparent);
 }
 
 .color-customizer-scroll,
-.font-customizer-scroll,
-.sidebar-customizer-scroll,
-.layout-customizer-scroll {
+.font-customizer-scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
@@ -344,98 +312,6 @@
     opacity: 0.8;
 }
 
-.sidebar-customizer-scroll {
-    padding: 6px 8px 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.sidebar-customizer-preset {
-    width: 100%;
-    border: 1px solid var(--stroke-accent-soft, rgba(218, 0, 55, 0.28));
-    background: color-mix(in srgb, var(--color-bg-primary, #15191d) 80%, transparent);
-    border-radius: var(--radius-default, 4px);
-    padding: 8px 10px;
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    text-align: left;
-    transition:
-        border-color var(--duration-normal, 300ms) var(--ease-default, ease),
-        background-color var(--duration-normal, 300ms) var(--ease-default, ease);
-}
-
-.sidebar-customizer-preset:hover {
-    border-color: var(--color-accent, #da0037);
-}
-
-.sidebar-customizer-preset.active {
-    border-color: var(--color-accent, #da0037);
-    border-width: 2px;
-    padding: 7px 9px;
-}
-
-.sidebar-preset-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-text-primary, #e6e6e6);
-}
-
-.sidebar-preset-desc {
-    font-family: var(--font-mono, "Work Sans", sans-serif);
-    font-size: 10px;
-    color: var(--color-text-secondary, #b8b8b8);
-    letter-spacing: 0.02em;
-}
-
-.layout-customizer-scroll {
-    padding: 6px 8px 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.layout-customizer-preset {
-    width: 100%;
-    border: 1px solid var(--stroke-accent-soft, rgba(218, 0, 55, 0.28));
-    background: color-mix(in srgb, var(--color-bg-primary, #15191d) 80%, transparent);
-    border-radius: var(--radius-default, 4px);
-    padding: 8px 10px;
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    text-align: left;
-    transition:
-        border-color var(--duration-normal, 300ms) var(--ease-default, ease),
-        background-color var(--duration-normal, 300ms) var(--ease-default, ease);
-}
-
-.layout-customizer-preset:hover {
-    border-color: var(--color-accent, #da0037);
-}
-
-.layout-customizer-preset.active {
-    border-color: var(--color-accent, #da0037);
-    border-width: 2px;
-    padding: 7px 9px;
-}
-
-.layout-preset-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-text-primary, #e6e6e6);
-}
-
-.layout-preset-desc {
-    font-family: var(--font-mono, "Work Sans", sans-serif);
-    font-size: 10px;
-    color: var(--color-text-secondary, #b8b8b8);
-    letter-spacing: 0.02em;
-}
-
 @media (min-width: 1024px) {
     .color-customizer-toggle {
         bottom: 24px;
@@ -445,14 +321,6 @@
         bottom: 72px;
     }
 
-    .sidebar-customizer-toggle {
-        bottom: 120px;
-    }
-
-    .layout-customizer-toggle {
-        bottom: 168px;
-    }
-
     .color-customizer-panel {
         bottom: 72px;
     }
@@ -460,36 +328,6 @@
     .font-customizer-panel {
         bottom: 120px;
     }
-
-    .sidebar-customizer-panel {
-        bottom: 168px;
-    }
-
-    .layout-customizer-panel {
-        bottom: 216px;
-    }
-}
-
-/* ── Print Edition warm accent for layout picker ─────────── */
-.layout-customizer-preset[data-layout-id="print-edition"] {
-    background: color-mix(in srgb, #92400e 8%, var(--color-bg-primary, #15191d) 92%);
-    border-color: rgba(146, 64, 14, 0.45);
-}
-
-.layout-customizer-preset[data-layout-id="print-edition"] .layout-preset-name {
-    font-family: Georgia, "Times New Roman", serif;
-    color: #fbbf24;
-}
-
-.layout-customizer-preset[data-layout-id="print-edition"]:hover {
-    border-color: #b45309;
-    background: color-mix(in srgb, #92400e 14%, var(--color-bg-primary, #15191d) 86%);
-}
-
-.layout-customizer-preset[data-layout-id="print-edition"].active {
-    border-color: #b45309;
-    border-width: 2px;
-    padding: 7px 9px;
 }
 
 @keyframes cc-slide-up {

@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { PRESETS, PRESET_CATEGORIES, type ColorPreset } from "../data/colorPresets";
+import {
+    PRESETS,
+    PRESET_CATEGORIES,
+    PRESET_STORAGE_KEY,
+    type ColorPreset,
+} from "../data/colorPresets";
 
 const TOKEN_GROUPS = [
     {
@@ -104,7 +109,26 @@ export default function ColorCustomizer() {
         );
     }, [open]);
 
+    // Restore persisted preset on mount
+    useEffect(() => {
+        const storedId = localStorage.getItem(PRESET_STORAGE_KEY);
+        if (!storedId) return;
+
+        const preset = PRESETS.find((p) => p.id === storedId);
+        if (!preset) {
+            localStorage.removeItem(PRESET_STORAGE_KEY);
+            return;
+        }
+
+        applyThemeMode(preset.mode);
+        for (const [token, value] of Object.entries(preset.colors)) {
+            document.documentElement.style.setProperty(token, value);
+        }
+        setColors(readCurrentTokenMap());
+    }, []);
+
     const handleChange = useCallback((tokenName: string, value: string) => {
+        localStorage.removeItem(PRESET_STORAGE_KEY);
         document.documentElement.style.setProperty(tokenName, value);
         setColors((prev) => ({ ...prev, [tokenName]: value.toLowerCase() }));
     }, []);
@@ -116,6 +140,7 @@ export default function ColorCustomizer() {
             document.documentElement.style.setProperty(token, value);
         }
 
+        localStorage.setItem(PRESET_STORAGE_KEY, preset.id);
         setColors(readCurrentTokenMap());
     }, []);
 
@@ -132,6 +157,8 @@ export default function ColorCustomizer() {
     }, [colors]);
 
     const handleReset = useCallback(() => {
+        localStorage.removeItem(PRESET_STORAGE_KEY);
+
         for (const token of ALL_TOKENS) {
             document.documentElement.style.removeProperty(token.name);
         }

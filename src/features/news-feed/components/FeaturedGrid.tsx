@@ -97,7 +97,7 @@ export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleC
                                             {article.summary}
                                         </p>
 
-                                        <div className="pt-1.5 border-t border-[var(--featured-card-border)] mt-auto flex justify-between items-center text-[9px] text-[var(--color-text-secondary)] font-sans uppercase tracking-wide">
+                                        <div className="pt-1.5 border-t border-[var(--featured-card-border)] mt-auto flex justify-between items-center text-[9px] text-[var(--color-text-secondary)] font-mono uppercase tracking-wide">
                                             <span>{article.byline?.split(",")[0] || "Staff"}</span>
                                             <span>Pg. {article.page || 1}</span>
                                         </div>

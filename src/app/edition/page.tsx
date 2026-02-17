@@ -25,6 +25,7 @@ export default function EditionRedirect() {
 
   return (
     <PageShell variant="default" hasHeader className="edition-background-shell">
+      <div className="paper-texture-overlay" aria-hidden="true" />
       <TimeControls />
       <main className="min-h-screen w-full">
         <SkeletonFeed count={4} />

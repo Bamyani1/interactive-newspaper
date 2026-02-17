@@ -76,20 +76,22 @@ ocr/models/.cache/
 ocr/models/*.pth
 ocr/models/*.pt
 
-# OCR Artifacts
+# OCR artifacts and intermediates
 ocr/output/
 ocr/editions/
 ocr/models/
 ocr/test_results/
+
+# OCR scan inputs (large TIFFs)
+ocr/scans/
+
+# Edition data (only track edition.json + images)
 public/editions/*
 !public/editions/.gitkeep
 !public/editions/*/
 !public/editions/*/edition.json
 !public/editions/*/images/
 !public/editions/*/images/*.jpg
-
-# Source newspaper scans (large TIFFs, not for version control)
-public/editions/*The Transcript*
 
 # System Files
 **.DS_Store

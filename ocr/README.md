@@ -33,30 +33,34 @@ On first execution, the DocLayout-YOLO model (~300MB) will download from Hugging
 ### Process Single Edition
 ```bash
 source .venv/bin/activate
-python convert_scans.py "../public/editions/YYYY-MM-DD The Transcript Delaware OH YYYY-MM-DD"
+python convert_scans.py "scans/YYYY-MM-DD"
 ```
 
-**Output** (in `public/editions/YYYY-MM-DD/`):
+**Output** is split between two directories:
+
+App-serving data (in `public/editions/YYYY-MM-DD/`):
 - `edition.json` - Structured article data (~200-300KB)
 - `images/` - Extracted editorial images (~2MB, 10-20 photos)
+
+OCR intermediates (in `ocr/output/YYYY-MM-DD/`):
 - `diagnostics.json` - Processing metrics
-- `*.md` - Markdown outputs (optional)
+- `*.md` - Per-page markdown outputs
+- `summary.md` - Merged edition markdown
 
 **Duration**: ~2.5 minutes per page (8-page edition = ~20 minutes)
 
 **Cost**: ~60K tokens per page = $0.01 per edition @ Gemini Flash rates
 
 ### Batch Process All Editions
+
+Place raw scan folders in `ocr/scans/YYYY-MM-DD/`, then run with no arguments:
+
 ```bash
 source .venv/bin/activate
-nohup ./batch_process.sh > batch_output.log 2>&1 &
-
-# Monitor progress (separate terminal)
-./monitor_progress.sh
-
-# Or check log
-tail -f batch_process.log
+python convert_scans.py
 ```
+
+This processes all editions in `ocr/scans/` and writes app data to `public/editions/` and intermediates to `ocr/output/`.
 
 **For 50 editions:**
 - Duration: ~16-17 hours
@@ -118,6 +122,8 @@ Checks all editions for:
 - `requirements.txt` - Python dependencies
 - `.env` - API credentials (git-ignored)
 - `models/` - YOLO model cache (git-ignored)
+- `scans/` - Raw TIF scan inputs, organized by date (git-ignored)
+- `output/` - OCR intermediates: diagnostics, markdown (git-ignored)
 
 ## Model Info
 

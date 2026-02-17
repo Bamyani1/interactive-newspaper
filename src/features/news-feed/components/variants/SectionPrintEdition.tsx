@@ -12,6 +12,8 @@ import {
   Byline,
   ArticleImage,
   ColumnText,
+  PhotoFeature,
+  ImageGallery,
   Lightbox,
 } from "./print-edition-primitives";
 
@@ -53,38 +55,65 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
       >
         <Kicker category={heroArticle.category} />
 
-        <h1
-          className="text-[var(--color-text-primary)] mb-6"
-          style={{
-            fontFamily: "var(--font-header)",
-            fontSize: "clamp(18px, 3vw, 26px)",
-            fontWeight: 700,
-            lineHeight: 1.2,
-            letterSpacing: "-0.01em",
-          }}
-        >
-          {heroArticle.headline}
-        </h1>
-
-        <Byline byline={heroArticle.byline} />
-
-        {heroArticle.fullText ? (
+        {!heroArticle.fullText && heroArticle.imageUrls.length > 0 ? (
+          /* ── Photo-only hero ───────────────────────── */
+          <>
+            <PhotoFeature
+              headline={heroArticle.headline}
+              imageSrc={heroArticle.imageUrls[0]}
+              alt={heroArticle.headline}
+              caption={heroArticle.imageCaptions?.[0] ?? heroArticle.imageCaption}
+              byline={heroArticle.byline}
+              onImageClick={() => setLightboxSrc(heroArticle.imageUrls[0])}
+            />
+            {heroArticle.imageUrls.length > 1 && (
+              <ImageGallery
+                images={heroArticle.imageUrls.slice(1, 2).map((url, i) => ({
+                  src: url,
+                  caption: heroArticle.imageCaptions?.[i + 1],
+                }))}
+                alt={heroArticle.headline}
+                onClick={(src) => setLightboxSrc(src)}
+              />
+            )}
+          </>
+        ) : heroArticle.fullText ? (
           <ColumnText
             paragraphs={extractParagraphs(heroArticle.fullText)}
             columns={3}
             fontSize="15px"
-            dropCap
+            header={
+              <>
+                <h1
+                  className="text-[var(--color-text-primary)] mb-4"
+                  style={{
+                    fontFamily: "var(--font-header)",
+                    fontSize: "clamp(18px, 3vw, 26px)",
+                    fontWeight: 700,
+                    lineHeight: 1.2,
+                    letterSpacing: "-0.01em",
+                  }}
+                >
+                  {heroArticle.headline}
+                </h1>
+                <Byline byline={heroArticle.byline} />
+              </>
+            }
             image={
-              heroArticle.imageUrls.length > 0 ? (
-                <ArticleImage
-                  src={heroArticle.imageUrls[0]}
-                  alt={heroArticle.headline}
-                  caption={heroArticle.imageCaption}
-                  onClick={() => setLightboxSrc(heroArticle.imageUrls[0])}
-                  priority
-                  width="full"
-                />
-              ) : undefined
+              heroArticle.imageUrls.length > 0
+                ? heroArticle.imageUrls.slice(0, 2).map((url, i) => (
+                    <ArticleImage
+                      key={url}
+                      src={url}
+                      alt={heroArticle.headline}
+                      caption={heroArticle.imageCaptions?.[i] ?? (i === 0 ? heroArticle.imageCaption : null)}
+                      onClick={() => setLightboxSrc(url)}
+                      priority={i === 0}
+                      width="full"
+                      maxWidth={heroArticle.imageUrls.length > 1 ? "90%" : "100%"}
+                    />
+                  ))
+                : undefined
             }
           />
         ) : (
@@ -113,6 +142,8 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
             const plainText = paragraphs.join(" ");
             const isLong = plainText.length > LONG_ARTICLE_THRESHOLD;
             const hasImage = article.imageUrls.length > 0;
+            const isPhotoOnly = paragraphs.length === 0 && hasImage;
+            const cols = hasImage || isLong ? 3 : 2;
 
             return (
               <React.Fragment key={article.id}>
@@ -134,37 +165,68 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
 
                   <Kicker category={article.category} />
 
-                  <h2
-                    className="text-[var(--color-text-primary)] mb-4"
-                    style={{
-                      fontFamily: "var(--font-header)",
-                      fontSize: isLong
-                        ? "clamp(22px, 3.5vw, 30px)"
-                        : "clamp(18px, 3vw, 26px)",
-                      fontWeight: 700,
-                      lineHeight: isLong ? 1.15 : 1.2,
-                    }}
-                  >
-                    {article.headline}
-                  </h2>
-
-                  <Byline byline={article.byline} />
-
-                  <ColumnText
-                    paragraphs={paragraphs}
-                    columns={isLong ? 3 : 2}
-                    image={
-                      hasImage ? (
-                        <ArticleImage
-                          src={article.imageUrls[0]}
+                  {isPhotoOnly ? (
+                    <>
+                      <PhotoFeature
+                        headline={article.headline}
+                        imageSrc={article.imageUrls[0]}
+                        alt={article.headline}
+                        caption={article.imageCaptions?.[0] ?? article.imageCaption}
+                        byline={article.byline}
+                        onImageClick={() =>
+                          setLightboxSrc(article.imageUrls[0])
+                        }
+                      />
+                      {article.imageUrls.length > 1 && (
+                        <ImageGallery
+                          images={article.imageUrls.slice(1, 2).map((url, i) => ({
+                            src: url,
+                            caption: article.imageCaptions?.[i + 1],
+                          }))}
                           alt={article.headline}
-                          caption={article.imageCaption}
-                          onClick={() => setLightboxSrc(article.imageUrls[0])}
-                          width="full"
+                          onClick={(src) => setLightboxSrc(src)}
                         />
-                      ) : undefined
-                    }
-                  />
+                      )}
+                    </>
+                  ) : (
+                    <ColumnText
+                      paragraphs={paragraphs}
+                      columns={cols}
+                      header={
+                        <>
+                          <h2
+                            className="text-[var(--color-text-primary)] mb-4"
+                            style={{
+                              fontFamily: "var(--font-header)",
+                              fontSize: isLong
+                                ? "clamp(22px, 3.5vw, 30px)"
+                                : "clamp(18px, 3vw, 26px)",
+                              fontWeight: 700,
+                              lineHeight: isLong ? 1.15 : 1.2,
+                            }}
+                          >
+                            {article.headline}
+                          </h2>
+                          <Byline byline={article.byline} />
+                        </>
+                      }
+                      image={
+                        hasImage
+                          ? article.imageUrls.slice(0, 2).map((url, i) => (
+                              <ArticleImage
+                                key={url}
+                                src={url}
+                                alt={article.headline}
+                                caption={article.imageCaptions?.[i] ?? (i === 0 ? article.imageCaption : null)}
+                                onClick={() => setLightboxSrc(url)}
+                                width="full"
+                                maxWidth={article.imageUrls.length > 1 ? "90%" : "100%"}
+                              />
+                            ))
+                          : undefined
+                      }
+                    />
+                  )}
                 </motion.article>
               </React.Fragment>
             );

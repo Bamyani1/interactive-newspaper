@@ -59,10 +59,10 @@ async function fetchWeather(date: string): Promise<WeatherApiResponse> {
 
   const pending = fetch(`/api/weather?date=${encodeURIComponent(date)}`)
     .then(async (res) => {
-      const payload = (await res.json()) as WeatherApiResponse;
       if (!res.ok) {
         throw new Error(`Weather API error: ${res.status}`);
       }
+      const payload = (await res.json()) as WeatherApiResponse;
       return payload;
     })
     .finally(() => {

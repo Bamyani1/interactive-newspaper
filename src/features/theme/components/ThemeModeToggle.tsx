@@ -2,10 +2,28 @@
 
 import React, { useEffect, useLayoutEffect, useState } from "react";
 import { Sun, Moon } from "lucide-react";
+import {
+    DEFAULT_LIGHT_TOKENS,
+    PRESET_STORAGE_KEY,
+} from "@/font-color/data/colorPresets";
 
 const STORAGE_KEY = "transcript-mode";
 
 type ThemeMode = "dark" | "light";
+
+function applyBrandTokens(tokens: Record<string, string>) {
+    const root = document.documentElement;
+    for (const [prop, value] of Object.entries(tokens)) {
+        root.style.setProperty(prop, value);
+    }
+}
+
+function clearBrandTokens() {
+    const root = document.documentElement;
+    for (const prop of Object.keys(DEFAULT_LIGHT_TOKENS)) {
+        root.style.removeProperty(prop);
+    }
+}
 
 export interface ThemeModeToggleProps {
     /** When true, show only sun/moon icon (e.g. for header). */
@@ -24,6 +42,14 @@ export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = fal
 
     useLayoutEffect(() => {
         document.body.dataset.mode = mode;
+        const hasPreset = !!window.localStorage.getItem(PRESET_STORAGE_KEY);
+        if (!hasPreset) {
+            if (mode === "light") {
+                applyBrandTokens(DEFAULT_LIGHT_TOKENS);
+            } else {
+                clearBrandTokens();
+            }
+        }
     }, [mode]);
 
     const handleToggle = () => {
@@ -31,6 +57,15 @@ export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = fal
         setMode(next);
         document.body.dataset.mode = next;
         window.localStorage.setItem(STORAGE_KEY, next);
+
+        const hasPreset = !!window.localStorage.getItem(PRESET_STORAGE_KEY);
+        if (!hasPreset) {
+            if (next === "light") {
+                applyBrandTokens(DEFAULT_LIGHT_TOKENS);
+            } else {
+                clearBrandTokens();
+            }
+        }
     };
 
     const label = mode === "dark" ? "Switch to light mode" : "Switch to dark mode";

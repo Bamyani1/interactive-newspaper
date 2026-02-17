@@ -83,8 +83,12 @@ Ads to enrich:
 
 def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool, int, float]:
     """Enrich ads for a single edition. Returns (performed, tokens, elapsed_s)."""
-    with open(edition_path, "r", encoding="utf-8") as f:
-        edition = json.load(f)
+    try:
+        with open(edition_path, "r", encoding="utf-8") as f:
+            edition = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"  ERROR: Malformed JSON in {edition_path}: {e}")
+        return False, 0, 0.0
 
     edition_date = edition.get("edition_date", os.path.basename(os.path.dirname(edition_path)))
 
@@ -119,8 +123,11 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool
     call_elapsed = time.time() - call_start
 
     usage = response.usage_metadata
-    total_tokens = usage.total_token_count
-    print(f"    Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out | Time: {call_elapsed:.1f}s")
+    total_tokens = usage.total_token_count if usage else 0
+    if usage:
+        print(f"    Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out | Time: {call_elapsed:.1f}s")
+    else:
+        print(f"    Tokens: unavailable | Time: {call_elapsed:.1f}s")
 
     if not response.parsed:
         print(f"    ERROR: Response was empty or blocked")

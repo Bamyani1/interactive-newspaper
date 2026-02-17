@@ -325,17 +325,17 @@ class PipelineReport:
         prompt = 0
         cand = 0
         for pd in self.page_diagnostics:
-            prompt += pd.gemini_tokens.prompt_tokens
-            cand += pd.gemini_tokens.candidates_tokens
+            prompt += pd.gemini_tokens.prompt_tokens or 0
+            cand += pd.gemini_tokens.candidates_tokens or 0
             for ct in pd.chunk_tokens:
-                prompt += ct.prompt_tokens
-                cand += ct.candidates_tokens
+                prompt += ct.prompt_tokens or 0
+                cand += ct.candidates_tokens or 0
             if pd.visual_matching.attempted:
-                prompt += pd.visual_matching.tokens.prompt_tokens
-                cand += pd.visual_matching.tokens.candidates_tokens
+                prompt += pd.visual_matching.tokens.prompt_tokens or 0
+                cand += pd.visual_matching.tokens.candidates_tokens or 0
         if self.merge_pass:
-            prompt += self.merge_pass.tokens.prompt_tokens
-            cand += self.merge_pass.tokens.candidates_tokens
+            prompt += self.merge_pass.tokens.prompt_tokens or 0
+            cand += self.merge_pass.tokens.candidates_tokens or 0
         self.total_prompt_tokens = prompt
         self.total_candidates_tokens = cand
 
@@ -539,7 +539,9 @@ def _deduplicate_ads(ads: list[Ad]) -> list[Ad]:
                 continue
             name_b = _normalize(ads[j].business_name).lower()
             if name_a != name_b:
-                continue
+                from difflib import SequenceMatcher
+                if SequenceMatcher(None, name_a, name_b).ratio() < 0.8:
+                    continue
             sents_j = _split_sentences(ads[j].body)
             if _sentence_overlap(sents_best, sents_j) > 0.6:
                 used.add(j)
@@ -606,15 +608,39 @@ _AD_SIGNALS = [
 
 
 def _normalize_byline(author: str) -> str:
-    """Ensure author field consistently uses 'By ' prefix."""
+    """Normalize author field by stripping any 'By ' prefix.
+
+    The UI layer prepends 'By ' when rendering, so we store just the name.
+    """
     if not author:
         return author
     stripped = author.strip()
-    # Remove existing "By" prefix (case-insensitive) then re-add consistently
     without_by = re.sub(r'^By\s+', '', stripped, flags=re.IGNORECASE)
-    if not without_by:
-        return ""
-    return f"By {without_by}"
+    return without_by if without_by else ""
+
+
+_BYLINE_RE = re.compile(
+    r'^(?:By\s+)(.+?)(?:\s*/\s*|\s*,\s*)?((?:Transcript|Staff|Editor|Reporter|Columnist|Reviewer|Guest|Contributing)[\w\s]*)?$',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _extract_byline_from_body(headline: str, author: str, body: str) -> tuple[str, str]:
+    """If author is empty, try to extract byline from first lines of body.
+
+    Returns (author, body) with byline moved from body to author if found.
+    """
+    if author:
+        return author, body
+    lines = body.split('\n')
+    for i, line in enumerate(lines[:3]):
+        match = _BYLINE_RE.match(line.strip())
+        if match:
+            author = _normalize_byline(line.strip())
+            lines.pop(i)
+            body = '\n'.join(lines).strip()
+            break
+    return author, body
 
 
 def _levenshtein(s1: str, s2: str) -> int:
@@ -712,13 +738,13 @@ def postprocess_page_content(
     """Apply local post-processing fixes: byline normalization, ad reclassification, noun checks."""
     timer = StageTimer().start()
 
-    # 1. Normalize bylines
+    # 1. Normalize bylines and fix literal escape sequences in bodies
     articles = []
     for art in page_content.articles:
         articles.append(Article(
             headline=art.headline,
             author=_normalize_byline(art.author),
-            body=art.body,
+            body=art.body.replace('\\n', '\n'),
             images=art.images,
             image_files=art.image_files,
         ))
@@ -1397,6 +1423,26 @@ Rules:
 """
 
 
+def _best_body(bodies: list[str]) -> str:
+    """De-duplicate near-identical bodies. Keep the longest clean version."""
+    if len(bodies) <= 1:
+        return bodies[0] if bodies else ""
+    from difflib import SequenceMatcher
+    # Sort by length descending — prefer longer (more complete) versions
+    ranked = sorted(bodies, key=len, reverse=True)
+    unique = [ranked[0]]
+    for body in ranked[1:]:
+        is_dup = False
+        for kept in unique:
+            ratio = SequenceMatcher(None, body[:500], kept[:500]).ratio()
+            if ratio > 0.7:
+                is_dup = True
+                break
+        if not is_dup:
+            unique.append(body)
+    return "\n\n".join(unique)
+
+
 _CONTINUATION_PATTERNS = [
     re.compile(p, re.IGNORECASE) for p in [
         r'\(continued (?:on|from) page \w[\w-]*\)',
@@ -1415,6 +1461,8 @@ def _strip_continuation_markers(text: str) -> str:
     """Remove continuation markers (various newspaper styles) from article text."""
     for pattern in _CONTINUATION_PATTERNS:
         text = pattern.sub('', text)
+    # Clean up orphaned parentheticals left by partial marker removal
+    text = re.sub(r'\(\s*(?:Page)?\s*\)', '', text, flags=re.IGNORECASE)
     return re.sub(r' +', ' ', text).strip()
 
 
@@ -1482,9 +1530,12 @@ def merge_edition_articles(
         )
 
         usage = response.usage_metadata
-        print(f"  Merge tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out")
+        if usage:
+            print(f"  Merge tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out")
+        else:
+            print("  Merge tokens: unavailable")
 
-        if md is not None:
+        if md is not None and usage:
             md.tokens = TokenUsage(
                 prompt_tokens=usage.prompt_token_count,
                 candidates_tokens=usage.candidates_token_count,
@@ -1506,6 +1557,11 @@ def merge_edition_articles(
         for group in decisions.groups:
             deduped_ids = []
             for aid in group.article_ids:
+                if not (0 <= aid < len(article_data)):
+                    print(f"  Warning: Article {aid} out of range (0..{len(article_data)-1}), skipping")
+                    if md is not None:
+                        md.duplicate_warnings.append(f"Article {aid} out of range")
+                    continue
                 if aid in referenced:
                     print(f"  Warning: Article {aid} appears in multiple merge groups, skipping duplicate")
                     if md is not None:
@@ -1547,11 +1603,29 @@ def merge_edition_articles(
                 if ad["page_label"] not in source_pages:
                     source_pages.append(ad["page_label"])
 
-            merged_body = "\n\n".join(bodies)
+            merged_body = _best_body(bodies)
+
+            # Try to extract byline from body if author is empty
+            merged_author = _normalize_byline(group.merged_author)
+            merged_author, merged_body = _extract_byline_from_body(
+                group.merged_headline, merged_author, merged_body,
+            )
+
+            # Warn if image metadata count doesn't match extracted file count
+            if len(all_images) != len(all_image_files):
+                print(
+                    f"  Warning: Image mismatch in '{group.merged_headline[:60]}': "
+                    f"{len(all_images)} metadata vs {len(all_image_files)} files"
+                )
+                # Pad shorter array so indices stay aligned
+                while len(all_images) < len(all_image_files):
+                    all_images.append(ArticleImage(caption="", position=""))
+                while len(all_image_files) < len(all_images):
+                    all_image_files.append("")
 
             merged_articles.append(MergedArticle(
                 headline=group.merged_headline,
-                author=_normalize_byline(group.merged_author),
+                author=merged_author,
                 body=merged_body,
                 images=all_images,
                 image_files=all_image_files,
@@ -1625,9 +1699,12 @@ def process_page(
     gemini_elapsed = gemini_timer.stop()
 
     usage = response.usage_metadata
-    print(f"    -> Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out, {usage.total_token_count} total")
+    if usage:
+        print(f"    -> Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out, {usage.total_token_count} total")
+    else:
+        print("    -> Tokens: unavailable")
 
-    if diag is not None:
+    if diag is not None and usage:
         diag.gemini_tokens = TokenUsage(
             prompt_tokens=usage.prompt_token_count,
             candidates_tokens=usage.candidates_token_count,
@@ -1638,10 +1715,10 @@ def process_page(
     if response.parsed:
         page_content = deduplicate_articles(response.parsed, diag=diag)
         page_content = postprocess_page_content(page_content, diag=diag)
-        if not page_content.page_number:
-            page_content.page_number = _extract_page_number_from_filename(
-                os.path.basename(image_path)
-            )
+        # Always prefer filename-derived page number (ground truth from scan)
+        filename_page = _extract_page_number_from_filename(os.path.basename(image_path))
+        if filename_page:
+            page_content.page_number = filename_page
         return page_content, image, regions
 
     # If we got blocked or empty, try chunked processing
@@ -1703,11 +1780,12 @@ def process_page_chunked(
                     page_num = chunk_content.page_number
                 if diag is not None:
                     cu = response.usage_metadata
-                    diag.chunk_tokens.append(TokenUsage(
-                        prompt_tokens=cu.prompt_token_count,
-                        candidates_tokens=cu.candidates_token_count,
-                        total_tokens=cu.total_token_count,
-                    ))
+                    if cu:
+                        diag.chunk_tokens.append(TokenUsage(
+                            prompt_tokens=cu.prompt_token_count,
+                            candidates_tokens=cu.candidates_token_count,
+                            total_tokens=cu.total_token_count,
+                        ))
             else:
                 print(f"    -> Chunk {i+1}/3 blocked or empty")
                 if diag is not None:
@@ -1753,8 +1831,10 @@ def process_page_chunked(
                     )
         merged_articles.append(best)
 
-    if not page_num:
-        page_num = _extract_page_number_from_filename(os.path.basename(image_path))
+    # Always prefer filename-derived page number (ground truth from scan)
+    filename_page = _extract_page_number_from_filename(os.path.basename(image_path))
+    if filename_page:
+        page_num = filename_page
 
     result = PageContent(
         articles=merged_articles,
@@ -1886,6 +1966,7 @@ def edition_to_markdown(edition_date: str, edition_content: EditionContent) -> s
 def process_image(
     client, image_path: str, output_dir: str,
     diag: PageDiagnostics | None = None,
+    ocr_output_dir: str | None = None,
 ) -> PageContent | None:
     """Process a single image, extract photos, write Markdown output, and return PageContent."""
     page_timer = StageTimer().start()
@@ -1965,13 +2046,21 @@ def process_image(
             # Collect unmatched images as standalone
             standalone_images = [saved_files[ri] for ri in unmatched if ri in saved_files]
 
+            # Assign standalone images to the page's primary article (longest body)
+            if standalone_images and page_content.articles:
+                primary = max(range(len(page_content.articles)),
+                              key=lambda i: len(page_content.articles[i].body))
+                for img_path in standalone_images:
+                    page_content.articles[primary].image_files.append(img_path)
+
             matched_article = len(region_to_article)
             matched_ad = len(region_to_ad)
             method = "visual" if used_visual else "spatial"
             print(f"    -> Images ({method}): {matched_article} to articles, {matched_ad} to ads, {len(standalone_images)} standalone")
 
         markdown = page_content_to_markdown(page_content, page_name, standalone_images)
-        output_path = os.path.join(output_dir, page_name + ".md")
+        md_dir = ocr_output_dir if ocr_output_dir else output_dir
+        output_path = os.path.join(md_dir, page_name + ".md")
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(markdown)
@@ -1995,7 +2084,7 @@ def process_image(
         return None
 
 
-def _process_edition(client, edition_dir: str, output_dir: str) -> None:
+def _process_edition(client, edition_dir: str, output_dir: str, ocr_output_dir: str | None = None) -> None:
     """Process all pages in an edition directory, then merge articles."""
     edition_date = extract_edition_date(edition_dir)
     pipeline_start = time.time()
@@ -2019,6 +2108,12 @@ def _process_edition(client, edition_dir: str, output_dir: str) -> None:
     edition_output = os.path.join(output_dir, edition_date)
     os.makedirs(edition_output, exist_ok=True)
 
+    # OCR intermediates (markdown, diagnostics) go to a separate directory
+    edition_ocr_output = None
+    if ocr_output_dir:
+        edition_ocr_output = os.path.join(ocr_output_dir, edition_date)
+        os.makedirs(edition_ocr_output, exist_ok=True)
+
     print(f"\n{'='*60}")
     print(f"Edition: {edition_date} ({len(image_files)} pages)")
     print(f"{'='*60}")
@@ -2027,7 +2122,7 @@ def _process_edition(client, edition_dir: str, output_dir: str) -> None:
     page_results = []  # (source_filename, PageContent)
     for img in image_files:
         page_diag = PageDiagnostics()
-        result = process_image(client, img, edition_output, diag=page_diag)
+        result = process_image(client, img, edition_output, diag=page_diag, ocr_output_dir=edition_ocr_output)
         report.page_diagnostics.append(page_diag)
         if result is not None:
             page_results.append((os.path.basename(img), result))
@@ -2041,12 +2136,37 @@ def _process_edition(client, edition_dir: str, output_dir: str) -> None:
     if page_results:
         print(f"\nMerging articles across pages for {edition_date}...")
         merged = merge_edition_articles(client, page_results, report=report)
+        if not merged:
+            # Fallback: build unmerged edition from raw page results
+            print("  Merge failed — falling back to unmerged edition.")
+            all_articles = []
+            all_ads = []
+            all_other = []
+            for source_filename, pc in page_results:
+                page_label = pc.page_number or source_filename
+                for art in pc.articles:
+                    all_articles.append(MergedArticle(
+                        headline=art.headline,
+                        author=art.author,
+                        body=art.body,
+                        images=list(art.images),
+                        image_files=list(art.image_files),
+                        source_pages=[str(page_label)],
+                    ))
+                all_ads.extend(pc.ads)
+                all_other.extend(pc.other_content)
+            merged = EditionContent(
+                articles=all_articles, ads=all_ads, other_content=all_other,
+            )
+            print(f"  -> {len(merged.articles)} unmerged articles")
+
         if merged:
             md = edition_to_markdown(edition_date, merged)
-            merged_path = os.path.join(output_dir, f"{edition_date}.md")
+            merged_dir = edition_ocr_output if edition_ocr_output else output_dir
+            merged_path = os.path.join(merged_dir, "summary.md")
             with open(merged_path, "w", encoding="utf-8") as f:
                 f.write(md)
-            print(f"  -> {len(merged.articles)} merged articles -> {merged_path}")
+            print(f"  -> {len(merged.articles)} articles -> {merged_path}")
 
             # Write structured JSON for frontend viewer
             pub_info = ""
@@ -2068,7 +2188,8 @@ def _process_edition(client, edition_dir: str, output_dir: str) -> None:
     report.total_time_seconds = time.time() - pipeline_start
     report.finalize()
 
-    diag_path = os.path.join(edition_output, "diagnostics.json")
+    diag_dir = edition_ocr_output if edition_ocr_output else edition_output
+    diag_path = os.path.join(diag_dir, "diagnostics.json")
     with open(diag_path, "w", encoding="utf-8") as f:
         f.write(report.to_json())
     print(f"\nDiagnostics written to {diag_path}")
@@ -2077,9 +2198,15 @@ def _process_edition(client, edition_dir: str, output_dir: str) -> None:
 
 
 def main():
-    # Use 'public/editions' directory for deployment
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "public", "editions")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # App-serving data (edition.json + images/) goes to public/editions/
+    output_dir = os.path.join(script_dir, "..", "public", "editions")
     os.makedirs(output_dir, exist_ok=True)
+
+    # OCR intermediates (diagnostics, markdown) go to ocr/output/
+    ocr_output_dir = os.path.join(script_dir, "output")
+    os.makedirs(ocr_output_dir, exist_ok=True)
 
     client = genai.Client()
 
@@ -2094,26 +2221,26 @@ def main():
                 pages_attempted=1,
             )
             page_diag = PageDiagnostics()
-            result = process_image(client, path, output_dir, diag=page_diag)
+            result = process_image(client, path, output_dir, diag=page_diag, ocr_output_dir=ocr_output_dir)
             report.page_diagnostics.append(page_diag)
             report.pages_processed = 1 if result is not None else 0
             report.total_time_seconds = time.time() - pipeline_start
             report.finalize()
 
-            diag_path = os.path.join(output_dir, "diagnostics.json")
+            diag_path = os.path.join(ocr_output_dir, "diagnostics.json")
             with open(diag_path, "w", encoding="utf-8") as f:
                 f.write(report.to_json())
             print(f"\nDiagnostics written to {diag_path}")
             report.print_summary()
         elif os.path.isdir(path):
-            _process_edition(client, path, output_dir)
+            _process_edition(client, path, output_dir, ocr_output_dir=ocr_output_dir)
         else:
             print(f"Path not found: {path}")
             return
     else:
-        editions_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "editions")
+        editions_root = os.path.join(script_dir, "scans")
         if not os.path.isdir(editions_root):
-            print(f"Editions directory not found: {editions_root}")
+            print(f"Scans directory not found: {editions_root}")
             return
 
         edition_dirs = sorted(
@@ -2127,7 +2254,7 @@ def main():
 
         print(f"Found {len(edition_dirs)} edition(s) to process.")
         for edition_dir in edition_dirs:
-            _process_edition(client, edition_dir, output_dir)
+            _process_edition(client, edition_dir, output_dir, ocr_output_dir=ocr_output_dir)
 
     print("\nAll done.")
 

@@ -178,10 +178,8 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     };
 
     const strokeWrapperClass =
-        "bg-[var(--color-bg-primary)] border-x-8 border-[var(--color-accent)] px-6 py-8 md:px-10 md:py-10";
-    const strokeWrapperStyle = {
-        boxShadow: "inset 0 0 40px color-mix(in srgb, var(--color-accent) 12%, transparent)" as const,
-    };
+        "bg-[var(--color-bg-primary)] border-x-[6.4px] border-[var(--color-accent)] px-6 py-8 md:px-10 md:py-10";
+    const strokeWrapperStyle = {};
 
     // ── Render ────────────────────────────────────────────────────
     return (

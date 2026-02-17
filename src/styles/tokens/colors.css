@@ -64,10 +64,6 @@
     /* Cinema/Landing Page */
     --page-cinema-bg: var(--color-bg-primary);
     --page-cinema-overlay: color-mix(in srgb, var(--color-bg-primary) 55%, transparent);
-    --page-cinema-paper: linear-gradient(175deg,
-            color-mix(in srgb, var(--color-bg-secondary) 65%, transparent) 0%,
-            color-mix(in srgb, var(--color-bg-secondary) 50%, transparent) 50%,
-            color-mix(in srgb, var(--color-bg-primary) 62%, transparent) 100%);
     --page-cinema-ticker-bg: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
 
     /* Art Deco Frame */
@@ -132,44 +128,33 @@
    ========================================= */
 
 [data-mode='light'] {
-    /* Backgrounds — warm parchment */
-    --color-bg-primary: #fef3c7;
-    --color-bg-secondary: color-mix(in srgb, #fef3c7 88%, #3d2209);
+    --color-bg-primary: var(--owu-white);
+    --color-bg-secondary: color-mix(in srgb, var(--owu-white) 88%, var(--owu-black));
     --color-bg-inverse: var(--owu-black);
-    --color-bg-muted: color-mix(in srgb, #fef3c7 82%, #3d2209);
-    --color-bg-glass: color-mix(in srgb, #fef3c7 80%, transparent);
+    --color-bg-muted: color-mix(in srgb, var(--owu-white) 82%, var(--owu-black));
+    --color-bg-glass: color-mix(in srgb, var(--owu-white) 80%, transparent);
 
-    /* Text — warm dark brown */
-    --color-text-primary: color-mix(in srgb, #3d2209 90%, #fef3c7);
-    --color-text-secondary: color-mix(in srgb, #3d2209 55%, #fef3c7);
+    --color-text-primary: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
+    --color-text-secondary: color-mix(in srgb, var(--owu-black) 55%, var(--owu-white));
     --color-text-inverse: var(--owu-white);
-    --color-text-header: color-mix(in srgb, #3d2209 90%, #fef3c7);
+    --color-text-header: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
 
-    /* Accent — amber-800 */
-    --color-accent: #92400e;
-    --color-accent-hover: color-mix(in srgb, #92400e 70%, #3d2209);
-    --color-accent-light: color-mix(in srgb, #92400e 20%, #fef3c7);
+    --color-accent: var(--owu-red);
+    --color-accent-hover: color-mix(in srgb, var(--owu-red) 70%, var(--owu-black));
+    --color-accent-light: color-mix(in srgb, var(--owu-red) 20%, var(--owu-white));
 
-    /* Borders & Strokes — warm brown */
-    --color-border-default: color-mix(in srgb, #3d2209 14%, transparent);
-    --color-border-accent: #92400e;
+    --color-border-default: color-mix(in srgb, var(--owu-black) 14%, transparent);
+    --color-border-accent: var(--owu-red);
     --stroke-accent-soft: color-mix(in srgb, var(--color-accent) 35%, transparent);
 
-    /* Cinema/Landing Page */
     --page-cinema-bg: var(--color-bg-primary);
-    --page-cinema-overlay: color-mix(in srgb, #fef3c7 55%, transparent);
-    --page-cinema-paper: linear-gradient(175deg,
-            color-mix(in srgb, #fef3c7 82%, transparent) 0%,
-            color-mix(in srgb, #fef3c7 70%, transparent) 55%,
-            color-mix(in srgb, #fef3c7 78%, transparent) 100%);
-    --page-cinema-ticker-bg: color-mix(in srgb, #fef3c7 70%, transparent);
+    --page-cinema-overlay: color-mix(in srgb, var(--owu-white) 55%, transparent);
+    --page-cinema-ticker-bg: color-mix(in srgb, var(--owu-white) 70%, transparent);
 
-    /* Art Deco Frame */
     --deco-frame-stroke: color-mix(in srgb, var(--color-text-primary) 20%, transparent);
 
-    /* Featured Grid */
-    --featured-card-bg: #fef3c7;
-    --featured-card-border: color-mix(in srgb, #3d2209 14%, transparent);
+    --featured-card-bg: var(--owu-white);
+    --featured-card-border: color-mix(in srgb, var(--owu-black) 14%, transparent);
     --featured-text-primary: var(--color-text-primary);
-    --featured-text-hover: #92400e;
+    --featured-text-hover: var(--owu-red);
 }

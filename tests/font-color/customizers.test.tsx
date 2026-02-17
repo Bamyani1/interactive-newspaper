@@ -121,18 +121,31 @@ describe("font-color customizers", () => {
         render(<ColorCustomizer />);
 
         fireEvent.click(screen.getByTitle("Color Customizer"));
-        fireEvent.click(screen.getByTitle("Midnight Laser"));
+        fireEvent.click(screen.getByTitle("Copper Broadsheet"));
 
         expect(document.body.dataset.mode).toBe("dark");
         expect(
             document.documentElement.style.getPropertyValue("--owu-red").trim().toLowerCase()
-        ).toBe("#ff2a6d");
+        ).toBe("#b7602d");
 
-        fireEvent.click(screen.getByTitle("Solar Pop"));
+        fireEvent.click(screen.getByTitle("Amber Parchment"));
 
         expect(document.body.dataset.mode).toBe("light");
         expect(
             document.documentElement.style.getPropertyValue("--owu-red").trim().toLowerCase()
-        ).toBe("#ff005c");
+        ).toBe("#92400e");
+    });
+
+    it("persists preset ID to localStorage and clears on reset", () => {
+        render(<ColorCustomizer />);
+
+        fireEvent.click(screen.getByTitle("Color Customizer"));
+        fireEvent.click(screen.getByTitle("Morning Edition"));
+
+        expect(localStorage.getItem("tts-color-preset")).toBe("morning-edition");
+
+        fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+        expect(localStorage.getItem("tts-color-preset")).toBeNull();
     });
 });

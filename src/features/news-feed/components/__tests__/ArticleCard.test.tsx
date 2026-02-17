@@ -13,6 +13,7 @@ const mockArticle: Article = {
     summary: 'Test summary',
     fullText: '<p>Full text content</p>',
     imageUrls: ['/test.jpg'],
+    imageCaptions: [null],
     page: 1,
     isFeatured: false,
     isHero: false
