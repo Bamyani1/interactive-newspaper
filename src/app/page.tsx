@@ -7,12 +7,13 @@ import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { PageShell, CinemaBackground, Ticker, useTickerAnimation, EditionPicker } from "@/shared";
 import { headlines } from "@/shared/landing/data/headlines";
-import { cardIn, TRANSITIONS } from "@/shared/motion/motionTokens";
+import { landingCardVariants, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 export default function Home() {
     const router = useRouter();
     const { editions, isLoading } = useArchive();
     const [isEntering, setIsEntering] = useState(false);
+    const [isExiting, setIsExiting] = useState(false);
 
     // Use the extracted animation hook
     useTickerAnimation();
@@ -29,7 +30,10 @@ export default function Home() {
     const handleEnter = () => {
         if (!selectedEdition) return;
         setIsEntering(true);
-        router.push(`/edition/${selectedEdition}`);
+        setIsExiting(true);
+        setTimeout(() => {
+            router.push(`/edition/${selectedEdition}`);
+        }, 350);
     };
 
     // Memoize ticker items to prevent recreation on every render
@@ -47,9 +51,9 @@ export default function Home() {
             <main className="cinema-content">
                 <motion.div
                     className="cinema-paper"
-                    variants={cardIn}
+                    variants={landingCardVariants}
                     initial="hidden"
-                    animate="show"
+                    animate={isExiting ? "exit" : "show"}
                     transition={TRANSITIONS.slow}
                 >
                     <header className="cinema-masthead">
