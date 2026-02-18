@@ -11,15 +11,15 @@ const STORAGE_KEY = "transcript-mode";
 
 export const ThemeModeManager = () => {
     const pathname = usePathname();
+    const isLanding = pathname === "/";
 
     useEffect(() => {
         if (typeof window === "undefined") return;
 
         const root = document.documentElement;
 
-        if (pathname === "/") {
+        if (isLanding) {
             document.body.dataset.mode = "dark";
-            // Landing page is always dark — clear any light brand tokens
             for (const prop of Object.keys(DEFAULT_LIGHT_TOKENS)) {
                 root.style.removeProperty(prop);
             }
@@ -28,7 +28,10 @@ export const ThemeModeManager = () => {
 
         const stored = window.localStorage.getItem(STORAGE_KEY);
         const next = stored === "light" ? "light" : "dark";
-        document.body.dataset.mode = next;
+
+        if (document.body.dataset.mode !== next) {
+            document.body.dataset.mode = next;
+        }
 
         const hasPreset = !!window.localStorage.getItem(PRESET_STORAGE_KEY);
         if (!hasPreset) {
@@ -42,7 +45,7 @@ export const ThemeModeManager = () => {
                 }
             }
         }
-    }, [pathname]);
+    }, [isLanding]);
 
     return null;
 };
