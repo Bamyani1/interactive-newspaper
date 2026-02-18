@@ -51,3 +51,40 @@ export const staggerContainer = (stagger = 0.08, delayChildren = 0.05) => ({
     },
   },
 });
+
+/** Crossfade page transition (pure opacity, no y-shift to avoid jarring overlap) */
+export const crossfadeVariants = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: TRANSITIONS.slow },
+  exit: { opacity: 0, transition: { duration: 0.3, ease: EASINGS.smooth } },
+};
+
+/** Directional edition swap — custom = direction: 1 forward, -1 backward */
+export const editionSwapVariants = {
+  enter: (dir: number) => ({
+    opacity: 0,
+    x: dir * 30,
+  }),
+  center: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: 0.35, ease: EASINGS.standard },
+  },
+  exit: (dir: number) => ({
+    opacity: 0,
+    x: dir * -30,
+    transition: { duration: 0.25, ease: EASINGS.smooth },
+  }),
+};
+
+/** Landing card with dramatic exit */
+export const landingCardVariants = {
+  hidden: { opacity: 0, y: 20, scale: 0.98 },
+  show: { opacity: 1, y: 0, scale: 1, transition: TRANSITIONS.slow },
+  exit: {
+    opacity: 0,
+    y: -15,
+    scale: 0.96,
+    transition: { duration: 0.35, ease: EASINGS.smooth },
+  },
+};
