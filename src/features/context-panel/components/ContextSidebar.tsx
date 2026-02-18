@@ -4,7 +4,7 @@ import React from "react";
 import { useHistoricalWeather } from "@/features/weather";
 import { SidebarPlayer } from "@/features/music-player";
 import { motion } from "framer-motion";
-import { fadeUp, TRANSITIONS } from "@/shared/motion/motionTokens";
+import { TRANSITIONS } from "@/shared/motion/motionTokens";
 
 interface ContextSidebarProps {
     currentDate: string | null;
@@ -12,13 +12,12 @@ interface ContextSidebarProps {
 
 export const ContextSidebar: React.FC<ContextSidebarProps> = ({ currentDate }) => {
     const { record, isLoading } = useHistoricalWeather(currentDate ?? null);
-    const itemVariants = fadeUp(14);
     const sidebarVariants = {
-        hidden: { opacity: 0, x: 16 },
+        hidden: { opacity: 0, x: 8 },
         show: {
             opacity: 1,
             x: 0,
-            transition: { ...TRANSITIONS.base, staggerChildren: 0.1, delayChildren: 0.1 },
+            transition: TRANSITIONS.base,
         },
     };
 
@@ -44,7 +43,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({ currentDate }) =
         >
 
             {currentDate && (
-                <motion.div className="mb-8" variants={itemVariants} transition={TRANSITIONS.base}>
+                <div className="mb-8">
                     <h3
                         className="uppercase font-mono text-[12px] tracking-[0.2em] mb-3 border-b border-dashed pb-1"
                         style={{ borderColor: "var(--stroke-accent-soft)" }}
@@ -98,12 +97,12 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({ currentDate }) =
                             </p>
                         )}
                     </div>
-                </motion.div>
+                </div>
             )}
 
-            <motion.div variants={itemVariants} transition={TRANSITIONS.base}>
+            <div>
                 <SidebarPlayer currentDate={currentDate} />
-            </motion.div>
+            </div>
 
         </motion.aside>
     );
