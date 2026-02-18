@@ -364,6 +364,7 @@ export const AdsSection: React.FC<AdsSectionProps> = ({ displayAds }) => {
             </motion.div>
 
             <motion.div
+                key={expanded ? "expanded" : "collapsed"}
                 className="columns-1 sm:columns-2 gap-4 md:gap-5 mb-8"
                 variants={gridVariants}
                 initial="hidden"
@@ -439,6 +440,7 @@ export const ClassifiedsSection: React.FC<ClassifiedsSectionProps> = ({ classifi
             </motion.div>
 
             <motion.div
+                key={expanded ? "expanded" : "collapsed"}
                 className="columns-1 sm:columns-2 gap-4 md:gap-5 mb-8"
                 variants={gridVariants}
                 initial="hidden"

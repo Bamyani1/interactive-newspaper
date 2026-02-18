@@ -6,6 +6,7 @@ import {
     PRESETS,
     PRESET_CATEGORIES,
     PRESET_STORAGE_KEY,
+    DEFAULT_DARK_TOKENS,
     type ColorPreset,
 } from "../data/colorPresets";
 
@@ -160,7 +161,10 @@ export default function ColorCustomizer() {
         localStorage.removeItem(PRESET_STORAGE_KEY);
 
         for (const token of ALL_TOKENS) {
-            document.documentElement.style.removeProperty(token.name);
+            const value = DEFAULT_DARK_TOKENS[token.name as keyof typeof DEFAULT_DARK_TOKENS];
+            if (value) {
+                document.documentElement.style.setProperty(token.name, value);
+            }
         }
 
         applyThemeMode("dark");
@@ -173,7 +177,7 @@ export default function ColorCustomizer() {
         navigator.clipboard.writeText(css);
     }, [colors]);
 
-    if (!pathname.startsWith("/edition")) {
+    if (pathname !== "/" && !pathname.startsWith("/edition")) {
         return null;
     }
 

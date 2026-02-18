@@ -13,7 +13,9 @@
     "weather:verify:ohio": "node scripts/weather/verify-ohio-weather-archive.mjs",
     "music:build:us-monthly": "node scripts/music/build-us-monthly-hot100-archive.mjs",
     "music:verify:us-monthly": "node scripts/music/verify-us-monthly-hot100-archive.mjs",
-    "music:youtube:verify": "node scripts/music/verify-youtube-map.mjs"
+    "music:youtube:verify": "node scripts/music/verify-youtube-map.mjs",
+    "glass:build": "node scripts/generate-stained-glass-svg.mjs",
+    "cherry:build": "node scripts/generate-cherry-blossom-svg.mjs"
   },
   "dependencies": {
     "framer-motion": "^12.23.25",

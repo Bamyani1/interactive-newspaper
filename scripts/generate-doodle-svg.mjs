@@ -301,6 +301,33 @@ function clusterPaths(pathsWithBBoxes) {
   return clusters;
 }
 
+/**
+ * Classify clusters into size tiers (lg/md/sm) by area terciles.
+ * Mutates each cluster to add a `.size` property.
+ */
+function classifyClusters(clusters) {
+  const sorted = clusters.slice().sort((a, b) => a.area - b.area);
+  const n = sorted.length;
+  const t1 = Math.floor(n / 3);
+  const t2 = Math.floor((2 * n) / 3);
+
+  const thresholdSm = sorted[t1] ? sorted[t1].area : 0;
+  const thresholdLg = sorted[t2] ? sorted[t2].area : 0;
+
+  for (const cluster of clusters) {
+    if (cluster.area >= thresholdLg) cluster.size = "lg";
+    else if (cluster.area >= thresholdSm) cluster.size = "md";
+    else cluster.size = "sm";
+  }
+
+  const counts = { lg: 0, md: 0, sm: 0 };
+  for (const c of clusters) counts[c.size]++;
+  console.log(
+    `  Size classification: ${counts.lg} lg, ${counts.md} md, ${counts.sm} sm` +
+      ` (thresholds: sm<${thresholdSm.toFixed(0)}, lg>=${thresholdLg.toFixed(0)})`
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Step 4: Animated SVG Assembly                                      */
 /* ------------------------------------------------------------------ */
@@ -335,7 +362,6 @@ function shuffle(arr, rand) {
 
 function buildAnimatedSVG(clusters) {
   const rand = mulberry32(42);
-  const POOL_SIZE = 1;
 
   // Hero box in viewBox coordinates — padded ~50px beyond actual hero edges
   const hero = { x1: 360, y1: 350, x2: 1560, y2: 850 };
@@ -347,21 +373,14 @@ function buildAnimatedSVG(clusters) {
   const screenCx = VIEWBOX_W / 2; // 960
   const screenCy = VIEWBOX_H / 2; // 600
 
-  // -- Compute distance + centroid + sweep direction for each cluster --
+  // -- Compute distance + centroid for each cluster --
   const enriched = clusters.map((cluster, origIdx) => {
     const cx = (cluster.bbox.minX + cluster.bbox.maxX) / 2;
     const cy = (cluster.bbox.minY + cluster.bbox.maxY) / 2;
     const dist = Math.sqrt((cx - screenCx) ** 2 + (cy - screenCy) ** 2);
     const isHidden = distToHeroEdge(cx, cy, hero) < 0; // under hero box
 
-    // Sweep direction based on bbox aspect ratio with 50% random reversal
-    const w = cluster.bbox.maxX - cluster.bbox.minX;
-    const h = cluster.bbox.maxY - cluster.bbox.minY;
-    const isHoriz = w >= h;
-    const rev = rand() > 0.5;
-    const sweep = isHoriz ? (rev ? "h-rev" : "h") : (rev ? "v-rev" : "v");
-
-    return { cluster, origIdx, cx, cy, dist, isHidden, sweep };
+    return { cluster, origIdx, cx, cy, dist, isHidden };
   });
 
   // -- Sort by distance (ascending: inside-hero first, then outward) --
@@ -385,47 +404,36 @@ function buildAnimatedSVG(clusters) {
       const hidden = item.isHidden ? 1 : 0;
 
       return `  <g id="doodle-${item.origIdx}" class="doodle-element"
-     data-delay="${item.revealDelay}" data-hidden="${hidden}" data-sweep="${item.sweep}">
+     data-delay="${item.revealDelay}" data-hidden="${hidden}" data-size="${item.cluster.size}">
 ${pathEls}
   </g>`;
     })
     .join("\n\n");
 
-  // -- Generate gradient pool defs --
-  const neonStops = `
-      <stop offset="0" stop-color="#ff6b3d"/>
-      <stop offset="0.38" stop-color="#ff6b3d"/>
-      <stop offset="0.42" stop-color="#ffaa40"/>
-      <stop offset="0.47" stop-color="#fffbe8"/>
-      <stop offset="0.52" stop-color="#ffaa40"/>
-      <stop offset="0.58" stop-color="#1a0808"/>
-      <stop offset="1" stop-color="#1a0808"/>`;
-
-  const gradientDefs = [];
-  for (let i = 0; i < POOL_SIZE; i++) {
-    gradientDefs.push(`    <linearGradient id="neonFill-${i}" gradientUnits="objectBoundingBox"
-                    x1="0" y1="0" x2="1" y2="0" gradientTransform="translate(-1.2, 0)">${neonStops}
-    </linearGradient>`);
-  }
-
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEWBOX_W} ${VIEWBOX_H}" preserveAspectRatio="xMidYMid slice">
-  <rect width="100%" height="100%" fill="#c0392b"/>
-
-  <defs>
-${gradientDefs.join("\n")}
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEWBOX_W} ${VIEWBOX_H}" preserveAspectRatio="xMidYMid meet">
+  <rect width="100%" height="100%" fill="none"/>
 
   <style>
     .doodle-element {
-      fill: #1a0808;
       opacity: 0;
-      transition: opacity 150ms ease-out, fill 400ms ease-out, filter 400ms ease-out;
     }
-    .doodle-lit {
-      fill: #ff6b3d;
-      filter: drop-shadow(0 0 6px rgba(255,107,61,0.5))
-              drop-shadow(0 0 14px rgba(255,60,30,0.25));
+    .doodle-element path {
+      fill: #1a0808;
+      fill-opacity: 0;
+      stroke: none;
+      stroke-width: 1.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .doodle-drawing path {
+      stroke: #0e0404;
+    }
+    .doodle-drawn path {
+      fill: #1a0808;
+      fill-opacity: 0.55;
+      stroke: #0e0404;
+      stroke-opacity: 0.55;
     }
   </style>
 
@@ -435,74 +443,69 @@ ${groupEls}
   <![CDATA[
     (function() {
       var groups = Array.from(document.querySelectorAll('.doodle-element'));
-      var FILL_DUR = 3000;
-      var HOLD_DUR = 1000;
-
-      // Sweep direction config: gradient orientation + translate range
-      var SWEEP_CFG = {
-        'h':     { x1: 0, y1: 0, x2: 1, y2: 0, axis: 'x', from: -1.2, to: 0.8 },
-        'h-rev': { x1: 0, y1: 0, x2: 1, y2: 0, axis: 'x', from: 0.8,  to: -1.2 },
-        'v':     { x1: 0, y1: 0, x2: 0, y2: 1, axis: 'y', from: -1.2, to: 0.8 },
-        'v-rev': { x1: 0, y1: 0, x2: 0, y2: 1, axis: 'y', from: 0.8,  to: -1.2 }
-      };
-
-      // Single gradient element (pool size = 1)
-      var gradEl = document.getElementById('neonFill-0');
+      var MAX_DRAW_MS = 2500;
+      var MIN_DRAW_MS = 1000;
+      var FILL_MAX_OPACITY = 0.55;
+      var DRAW_SPEED = 1.5; // ms per path-length unit
 
       // Ease-out cubic: fast start, gentle finish
       function easeOutCubic(t) {
         return 1 - Math.pow(1 - t, 3);
       }
 
-      // Neon sweep on a single element, calls onDone when complete
-      function startNeonFill(g, sweep, onDone) {
-        var cfg = SWEEP_CFG[sweep] || SWEEP_CFG['h'];
+      // Ease-in-out cubic: natural hand-drawing feel
+      function easeInOutCubic(t) {
+        return t < 0.5
+          ? 4 * t * t * t
+          : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      }
 
-        // Configure gradient orientation
-        gradEl.setAttribute('x1', cfg.x1);
-        gradEl.setAttribute('y1', cfg.y1);
-        gradEl.setAttribute('x2', cfg.x2);
-        gradEl.setAttribute('y2', cfg.y2);
+      // Helper: parse hex color to {r, g, b}
+      function hexToRgb(hex) {
+        return {
+          r: parseInt(hex.slice(1, 3), 16),
+          g: parseInt(hex.slice(3, 5), 16),
+          b: parseInt(hex.slice(5, 7), 16)
+        };
+      }
 
-        // Apply gradient fill
-        g.style.fill = 'url(#neonFill-0)';
-
-        var start = performance.now();
-
-        function animate(now) {
-          var elapsed = now - start;
-          var t = Math.min(1, elapsed / FILL_DUR);
-          var eased = easeOutCubic(t);
-
-          // Translate gradient along axis
-          var pos = cfg.from + (cfg.to - cfg.from) * eased;
-          if (cfg.axis === 'x') {
-            gradEl.setAttribute('gradientTransform', 'translate(' + pos.toFixed(3) + ', 0)');
-          } else {
-            gradEl.setAttribute('gradientTransform', 'translate(0, ' + pos.toFixed(3) + ')');
+      // Helper: pick next glow color (cycles through shuffled palette)
+      function nextGlowColor() {
+        var color = GLOW_COLORS[colorIdx % GLOW_COLORS.length];
+        colorIdx++;
+        if (colorIdx >= GLOW_COLORS.length) {
+          // Re-shuffle when we've used them all
+          for (var i = GLOW_COLORS.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var tmp = GLOW_COLORS[i];
+            GLOW_COLORS[i] = GLOW_COLORS[j];
+            GLOW_COLORS[j] = tmp;
           }
-
-          // Dual drop-shadow glow peaking at midpoint
-          var intensity = Math.sin(t * Math.PI);
-          var blur1 = (16 * intensity).toFixed(1);
-          var alpha1 = (0.7 * intensity).toFixed(2);
-          var blur2 = (32 * intensity).toFixed(1);
-          var alpha2 = (0.2 * intensity).toFixed(2);
-          g.style.filter = 'drop-shadow(0 0 ' + blur1 + 'px rgba(255,107,61,' + alpha1 + ')) ' +
-                           'drop-shadow(0 0 ' + blur2 + 'px rgba(255,60,30,' + alpha2 + '))';
-
-          if (t < 1) {
-            requestAnimationFrame(animate);
-          } else {
-            // Sweep complete — switch to .doodle-lit class
-            g.style.fill = '';
-            g.style.filter = '';
-            g.classList.add('doodle-lit');
-            if (onDone) onDone();
-          }
+          colorIdx = 0;
         }
+        return color;
+      }
 
-        requestAnimationFrame(animate);
+      // Helper: apply glow at given intensity (0–1) — tight 2-layer, color-aware
+      function applyGlow(g, intensity, cr, cg, cb) {
+        if (intensity <= 0) { g.style.filter = ''; return; }
+        var b1 = (3.5 * intensity).toFixed(1);
+        var a1 = (0.95 * intensity).toFixed(2);
+        var b2 = (11 * intensity).toFixed(1);
+        var a2 = (0.5 * intensity).toFixed(2);
+        g.style.filter =
+          'drop-shadow(0 0 ' + b1 + 'px rgba(' + cr + ',' + cg + ',' + cb + ',' + a1 + ')) ' +
+          'drop-shadow(0 0 ' + b2 + 'px rgba(' + cr + ',' + cg + ',' + cb + ',' + a2 + '))';
+      }
+
+      // Helper: linear interpolation between two hex colors
+      function lerpColor(a, b, t) {
+        var ar = parseInt(a.slice(1, 3), 16), ag = parseInt(a.slice(3, 5), 16), ab = parseInt(a.slice(5, 7), 16);
+        var br = parseInt(b.slice(1, 3), 16), bg = parseInt(b.slice(3, 5), 16), bb = parseInt(b.slice(5, 7), 16);
+        var r = Math.round(ar + (br - ar) * t);
+        var g = Math.round(ag + (bg - ag) * t);
+        var bl = Math.round(ab + (bb - ab) * t);
+        return '#' + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
       }
 
       // Sort groups by data-delay for reveal order
@@ -510,7 +513,74 @@ ${groupEls}
         return parseInt(a.dataset.delay) - parseInt(b.dataset.delay);
       });
 
-      // ── Phase 1: Per-element reveal (individual fades from center outward) ──
+      // ── Phase 1: Stroke-drawing reveal (center outward) ──
+      var activeDraws = []; // { path, totalLen, duration, startTime }
+      var drawLoopRunning = false;
+      var drawsCompleted = 0;
+      var totalDraws = groups.length;
+
+      // Master rAF loop — drives all active stroke draws
+      function drawLoop(now) {
+        var i = activeDraws.length;
+        while (i--) {
+          var draw = activeDraws[i];
+          var elapsed = now - draw.startTime;
+          var t = Math.min(1, elapsed / draw.duration);
+          var eased = easeInOutCubic(t);
+
+          draw.path.style.strokeDashoffset = (draw.totalLen * (1 - eased)).toFixed(1);
+          draw.path.style.fillOpacity = (eased * FILL_MAX_OPACITY).toFixed(3);
+
+          if (t >= 1) {
+            draw.path.style.strokeDasharray = '';
+            draw.path.style.strokeDashoffset = '';
+            draw.path.style.fillOpacity = String(FILL_MAX_OPACITY);
+            draw.path.style.strokeOpacity = '';
+            var g = draw.path.closest('g');
+            g.classList.remove('doodle-drawing');
+            g.classList.add('doodle-drawn');
+            activeDraws.splice(i, 1);
+            drawsCompleted++;
+          }
+        }
+
+        if (activeDraws.length > 0) {
+          requestAnimationFrame(drawLoop);
+        } else {
+          drawLoopRunning = false;
+        }
+      }
+
+      function startDraw(g) {
+        var path = g.querySelector('path');
+        if (!path) return;
+
+        var totalLen = path.getTotalLength();
+        path.style.strokeDasharray = totalLen;
+        path.style.strokeDashoffset = totalLen;
+        path.style.fillOpacity = '0';
+
+        // Make visible and add drawing class
+        g.style.opacity = '1';
+        g.classList.add('doodle-drawing');
+
+        // Duration proportional to length, clamped
+        var duration = Math.max(MIN_DRAW_MS, Math.min(MAX_DRAW_MS, totalLen * DRAW_SPEED));
+
+        activeDraws.push({
+          path: path,
+          totalLen: totalLen,
+          duration: duration,
+          startTime: performance.now()
+        });
+
+        // Start the master loop if not already running
+        if (!drawLoopRunning) {
+          drawLoopRunning = true;
+          requestAnimationFrame(drawLoop);
+        }
+      }
+
       var maxDelay = 0;
       for (var i = 0; i < groups.length; i++) {
         var delay = parseInt(groups[i].dataset.delay) || 0;
@@ -518,39 +588,158 @@ ${groupEls}
 
         (function(g, d) {
           setTimeout(function() {
-            g.style.opacity = '1';
+            startDraw(g);
           }, d);
         })(groups[i], delay);
       }
 
-      // Start Phase 2 after all reveals + 500ms settle
-      setTimeout(spotlightNext, maxDelay + 500);
+      // ── Phase 2: Random concurrent firefly glow ──
+      var GLOW_COLORS = [
+        '#ffc060',  // golden amber
+        '#ff7088',  // warm rose
+        '#60d0c0',  // soft teal
+        '#a080ff',  // lavender
+        '#ff9050',  // copper
+        '#70b8ff',  // sky blue
+      ];
+      var colorIdx = 0;
+      var REST_FILL = '#1a0808';
+      var REST_STROKE = '#0e0404';
+      var REST_OPACITY = 0.55;
+      var GLOW_UP_BASE = 1800;
+      var GLOW_HOLD = 2200;
+      var GLOW_FADE_BASE = 2000;
+      var GLOW_JITTER = 300;
+      var SPAWN_INTERVAL_BASE = 2400;
+      var SPAWN_INTERVAL_JITTER = 400;
+      var MAX_CONCURRENT = 1;
+      var PHASE2_SETTLE = 500;
 
-      // ── Phase 2: Sequential spotlight (starts after all reveals settle) ──
       var visibleGroups = groups.filter(function(g) {
         return g.dataset.hidden !== '1';
       });
 
-      var spotlightIndex = 0;
-      var prevGroup = null;
+      var activeGlows = new Set();
 
-      function spotlightNext() {
-        // Remove glow from previous (CSS transition handles smooth fade-back)
-        if (prevGroup) {
-          prevGroup.classList.remove('doodle-lit');
+      // ── Size-weighted glow targeting ──
+      // Partition visible groups into size buckets
+      var sizeBuckets = { lg: [], md: [], sm: [] };
+      for (var si = 0; si < visibleGroups.length; si++) {
+        var sz = visibleGroups[si].dataset.size || 'md';
+        if (sizeBuckets[sz]) sizeBuckets[sz].push(visibleGroups[si]);
+        else sizeBuckets.md.push(visibleGroups[si]); // fallback
+      }
+
+      // Independent shuffle-bag per size
+      var bags = { lg: [], md: [], sm: [] };
+      var bagIdx = { lg: 0, md: 0, sm: 0 };
+
+      function shuffleSizeBag(size) {
+        bags[size] = sizeBuckets[size].slice();
+        for (var i = bags[size].length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var tmp = bags[size][i];
+          bags[size][i] = bags[size][j];
+          bags[size][j] = tmp;
+        }
+        bagIdx[size] = 0;
+      }
+
+      // Initialize all bags
+      shuffleSizeBag('lg');
+      shuffleSizeBag('md');
+      shuffleSizeBag('sm');
+
+      // Weighted pattern: large glows twice as often
+      var GLOW_PATTERN = ['lg', 'lg', 'md', 'sm'];
+      var patternIdx = 0;
+
+      function nextGlowTargetFromBag(size) {
+        var bucket = sizeBuckets[size];
+        if (bucket.length === 0) return null;
+        var checked = 0;
+        while (checked < bucket.length) {
+          if (bagIdx[size] >= bags[size].length) shuffleSizeBag(size);
+          var candidate = bags[size][bagIdx[size]];
+          bagIdx[size]++;
+          checked++;
+          if (!activeGlows.has(candidate)) return candidate;
+        }
+        return null;
+      }
+
+      function nextGlowTarget() {
+        for (var attempts = 0; attempts < GLOW_PATTERN.length; attempts++) {
+          var size = GLOW_PATTERN[patternIdx % GLOW_PATTERN.length];
+          patternIdx++;
+          var target = nextGlowTargetFromBag(size);
+          if (target) return target;
+        }
+        return null;
+      }
+
+      function startGlow(g) {
+        activeGlows.add(g);
+        var path = g.querySelector('path');
+        var upDur = GLOW_UP_BASE + (Math.random() * 2 - 1) * GLOW_JITTER;
+        var fadeDur = GLOW_FADE_BASE + (Math.random() * 2 - 1) * GLOW_JITTER;
+
+        // Pick a color for this glow cycle
+        var glowHex = nextGlowColor();
+        var rgb = hexToRgb(glowHex);
+
+        // ── Glow up ──
+        var upStart = performance.now();
+        function animateUp(now) {
+          var t = Math.min(1, (now - upStart) / upDur);
+          var eased = easeOutCubic(t);
+          path.style.fill = lerpColor(REST_FILL, glowHex, eased);
+          path.style.stroke = lerpColor(REST_STROKE, glowHex, eased);
+          path.style.fillOpacity = String(REST_OPACITY + (1 - REST_OPACITY) * eased);
+          path.style.strokeOpacity = String(REST_OPACITY + (1 - REST_OPACITY) * eased);
+          applyGlow(g, eased, rgb.r, rgb.g, rgb.b);
+          if (t < 1) { requestAnimationFrame(animateUp); }
+          else { setTimeout(startGlowFade, GLOW_HOLD); }
         }
 
-        var current = visibleGroups[spotlightIndex];
-        prevGroup = current;
+        // ── Hold, then fade ──
+        function startGlowFade() {
+          var fadeStart = performance.now();
+          function animateFade(now) {
+            var t = Math.min(1, (now - fadeStart) / fadeDur);
+            var eased = easeOutCubic(t);
+            path.style.fill = lerpColor(glowHex, REST_FILL, eased);
+            path.style.stroke = lerpColor(glowHex, REST_STROKE, eased);
+            path.style.fillOpacity = String(1 - (1 - REST_OPACITY) * eased);
+            path.style.strokeOpacity = String(1 - (1 - REST_OPACITY) * eased);
+            applyGlow(g, 1 - eased, rgb.r, rgb.g, rgb.b);
+            if (t < 1) { requestAnimationFrame(animateFade); }
+            else {
+              path.style.fill = '';
+              path.style.stroke = '';
+              path.style.fillOpacity = '';
+              path.style.strokeOpacity = '';
+              g.style.filter = '';
+              activeGlows.delete(g);
+            }
+          }
+          requestAnimationFrame(animateFade);
+        }
 
-        // Start neon sweep on current element
-        startNeonFill(current, current.dataset.sweep, function() {
-          // Hold glow, then advance to next
-          setTimeout(spotlightNext, HOLD_DUR);
-        });
-
-        spotlightIndex = (spotlightIndex + 1) % visibleGroups.length;
+        requestAnimationFrame(animateUp);
       }
+
+      function scheduleNextGlow() {
+        if (activeGlows.size < MAX_CONCURRENT) {
+          var target = nextGlowTarget();
+          if (target) startGlow(target);
+        }
+        var interval = SPAWN_INTERVAL_BASE + (Math.random() * 2 - 1) * SPAWN_INTERVAL_JITTER;
+        setTimeout(scheduleNextGlow, interval);
+      }
+
+      // Start Phase 2 after all draws complete + settle
+      setTimeout(scheduleNextGlow, maxDelay + MAX_DRAW_MS + PHASE2_SETTLE);
 
     })();
   ]]>
@@ -578,6 +767,7 @@ async function main() {
   console.log(`  Paths with valid bboxes: ${pathsWithBBoxes.length}`);
 
   const clusters = clusterPaths(pathsWithBBoxes);
+  classifyClusters(clusters);
 
   console.log("Step 4: Assembling animated SVG...");
   const svg = buildAnimatedSVG(clusters);

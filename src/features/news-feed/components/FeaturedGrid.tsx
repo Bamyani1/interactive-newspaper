@@ -40,13 +40,7 @@ export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleC
                                 className={`relative flex-1 min-w-[173px] max-w-[230px] cursor-pointer group ${focusedId === article.id ? "ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-bg-primary)] rounded-sm" : ""}`}
                                 initial={{ opacity: 0, y: 20, rotate: index % 2 === 0 ? -1 : 1 }}
                                 animate={{ opacity: 1, y: 0, rotate: index % 2 === 0 ? -1 : 1 }}
-                                transition={{
-                                    delay: 0.1 * index,
-                                    type: "spring",
-                                    stiffness: 100,
-                                    damping: 18,
-                                    mass: 0.8
-                                }}
+                                transition={TRANSITIONS.base}
                                 whileHover={{
                                     y: -5,
                                     rotate: 0,
