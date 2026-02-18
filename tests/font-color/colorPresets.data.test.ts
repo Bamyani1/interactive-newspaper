@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    DEFAULT_DARK_TOKENS,
     DEFAULT_LIGHT_TOKENS,
     PRESETS,
     PRESET_STORAGE_KEY,
@@ -29,6 +30,25 @@ describe("color preset data integrity", () => {
         expect(DEFAULT_LIGHT_TOKENS).toHaveProperty("--owu-black");
         expect(DEFAULT_LIGHT_TOKENS).toHaveProperty("--owu-charcoal");
         expect(DEFAULT_LIGHT_TOKENS).toHaveProperty("--owu-white");
+    });
+
+    it("exports DEFAULT_DARK_TOKENS with all four brand tokens", () => {
+        expect(DEFAULT_DARK_TOKENS).toHaveProperty("--owu-red");
+        expect(DEFAULT_DARK_TOKENS).toHaveProperty("--owu-black");
+        expect(DEFAULT_DARK_TOKENS).toHaveProperty("--owu-charcoal");
+        expect(DEFAULT_DARK_TOKENS).toHaveProperty("--owu-white");
+    });
+
+    it("DEFAULT_DARK_TOKENS matches steel-deadline preset", () => {
+        const steelDeadline = PRESETS.find((p) => p.id === "steel-deadline");
+        expect(steelDeadline).toBeDefined();
+        expect(DEFAULT_DARK_TOKENS).toEqual(steelDeadline!.colors);
+    });
+
+    it("DEFAULT_LIGHT_TOKENS matches campus-poster preset", () => {
+        const campusPoster = PRESETS.find((p) => p.id === "campus-poster");
+        expect(campusPoster).toBeDefined();
+        expect(DEFAULT_LIGHT_TOKENS).toEqual(campusPoster!.colors);
     });
 
     it("exports PRESET_STORAGE_KEY as a string", () => {

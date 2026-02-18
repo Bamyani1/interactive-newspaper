@@ -77,10 +77,10 @@ describe("font-color customizers", () => {
         expect(document.documentElement.classList.contains("light")).toBe(false);
         expect(localStorage.getItem("transcript-mode")).toBe("dark");
         expect(localStorage.getItem("tts-theme")).toBe("dark");
-        expect(document.documentElement.style.getPropertyValue("--owu-red")).toBe("");
-        expect(document.documentElement.style.getPropertyValue("--owu-black")).toBe("");
-        expect(document.documentElement.style.getPropertyValue("--owu-charcoal")).toBe("");
-        expect(document.documentElement.style.getPropertyValue("--owu-white")).toBe("");
+        expect(document.documentElement.style.getPropertyValue("--owu-red").trim().toLowerCase()).toBe("#b80d3e");
+        expect(document.documentElement.style.getPropertyValue("--owu-black").trim().toLowerCase()).toBe("#1a1f24");
+        expect(document.documentElement.style.getPropertyValue("--owu-charcoal").trim().toLowerCase()).toBe("#4c5158");
+        expect(document.documentElement.style.getPropertyValue("--owu-white").trim().toLowerCase()).toBe("#e8e8e8");
     });
 
     it("applies a font preset and persists tts-font-preset", () => {
