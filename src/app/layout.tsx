@@ -5,11 +5,14 @@ import {
   Work_Sans,
 } from "next/font/google";
 import "./globals.css";
+import "../../font-color/styles/font-color-kit.css";
 import { ArchiveProvider } from "@/features/archive";
 import { ThemeModeManager } from "@/features/theme";
 import { MotionProvider } from "@/shared/motion/MotionProvider";
 import { PageTransition } from "@/shared/motion/PageTransition";
 import { ErrorBoundary } from "@/shared";
+import ColorCustomizer from "../../font-color/components/ColorCustomizer";
+import FontCustomizer from "../../font-color/components/FontCustomizer";
 
 const libreBaskerville = Libre_Baskerville({
   variable: "--font-libre-baskerville",
@@ -23,6 +26,7 @@ const crimsonPro = Crimson_Pro({
   variable: "--font-crimson-pro",
   subsets: ["latin"],
   display: "swap",
+  adjustFontFallback: true,
   weight: ["400", "500", "600", "700"],
   style: ["normal", "italic"],
 });
@@ -31,6 +35,7 @@ const workSans = Work_Sans({
   variable: "--font-work-sans",
   subsets: ["latin"],
   display: "swap",
+  adjustFontFallback: true,
   weight: ["400", "500", "600", "700"],
   style: ["normal", "italic"],
 });
@@ -58,6 +63,8 @@ export default function RootLayout({
             <ErrorBoundary>
               <PageTransition>{children}</PageTransition>
             </ErrorBoundary>
+            <ColorCustomizer />
+            <FontCustomizer />
           </ArchiveProvider>
         </MotionProvider>
       </body>
