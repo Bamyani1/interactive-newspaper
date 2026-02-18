@@ -130,7 +130,7 @@ export default function FontCustomizer() {
         setActiveId("owu-default");
     }, []);
 
-    if (!pathname.startsWith("/edition")) {
+    if (pathname !== "/" && !pathname.startsWith("/edition")) {
         return null;
     }
 
