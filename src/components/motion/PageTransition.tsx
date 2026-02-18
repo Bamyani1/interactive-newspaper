@@ -20,7 +20,7 @@ export const PageTransition: React.FC<PageTransitionProps> = ({ children }) => {
   }
 
   return (
-    <div style={{ display: "grid", minHeight: "100vh" }}>
+    <div style={{ display: "grid", minHeight: "100vh", overflow: "clip" }}>
       <AnimatePresence mode="sync">
         <motion.div
           key={routeKey}
