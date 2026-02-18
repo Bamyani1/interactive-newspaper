@@ -1,0 +1,16 @@
+.sidebar-player-surface {
+    opacity: var(--yt-surface-opacity, 0.35);
+    filter: brightness(var(--yt-surface-brightness, 0.7));
+}
+
+.sidebar-player-surface iframe {
+    display: block;
+    width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidebar-player-surface {
+        opacity: 1 !important;
+        filter: brightness(1) !important;
+    }
+}

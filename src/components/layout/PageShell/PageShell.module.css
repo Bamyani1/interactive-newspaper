@@ -47,7 +47,7 @@
    ========================================= */
 
 .withHeader {
-    padding-top: var(--header-height);
+    padding-top: var(--header-offset-total);
 }
 
 /* =========================================

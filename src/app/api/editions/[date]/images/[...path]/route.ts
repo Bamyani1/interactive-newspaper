@@ -4,7 +4,7 @@ import path from 'path';
 
 export const dynamic = 'force-dynamic';
 
-const OCR_OUTPUT_DIR = path.join(process.cwd(), 'ocr', 'output');
+const OCR_OUTPUT_DIR = path.join(process.cwd(), 'public', 'editions');
 
 const CONTENT_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',

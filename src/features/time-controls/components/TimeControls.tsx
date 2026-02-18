@@ -3,19 +3,56 @@
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Calendar, ChevronDown } from "lucide-react";
+import { Calendar, ChevronDown, ChevronRight } from "lucide-react";
+import { ThemeModeToggle } from "@/features/theme";
 import { motion, AnimatePresence } from "framer-motion";
 import { useArchive } from "@/features/archive";
-import { fadeDown, TRANSITIONS } from "@/shared/motion/motionTokens";
+import { fadeDown, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 const formatDisplayDate = (dateStr: string): string => {
     const date = new Date(dateStr + "T12:00:00");
     return date.toLocaleDateString("en-US", {
-        weekday: "short",
         year: "numeric",
         month: "short",
         day: "numeric",
     });
+};
+
+interface DateHierarchy {
+    year: string;
+    months: { month: string; dates: string[] }[];
+}
+
+const MONTH_NAMES = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+];
+
+const groupEditionsByHierarchy = (editions: string[]): DateHierarchy[] => {
+    const map = new Map<string, Map<string, string[]>>();
+    for (const date of editions) {
+        const [year, month] = date.split("-");
+        if (!map.has(year)) map.set(year, new Map());
+        const monthMap = map.get(year)!;
+        if (!monthMap.has(month)) monthMap.set(month, []);
+        monthMap.get(month)!.push(date);
+    }
+    return Array.from(map.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([year, monthMap]) => ({
+            year,
+            months: Array.from(monthMap.entries())
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([month, dates]) => ({ month, dates: dates.sort() })),
+        }));
+};
+
+const formatMonth = (monthNum: string): string =>
+    MONTH_NAMES[parseInt(monthNum, 10) - 1] ?? monthNum;
+
+const formatDateInPicker = (dateStr: string): string => {
+    const date = new Date(dateStr + "T12:00:00");
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
 export const TimeControls = () => {
@@ -23,10 +60,25 @@ export const TimeControls = () => {
     const pathname = usePathname();
     const { currentDate, setDate, editions, hasEditions, isLoading } = useArchive();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const [expandedYear, setExpandedYear] = useState<string | null>(null);
+    const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const canOpenDropdown = hasEditions && !isLoading;
     const hasCurrentEdition =
         Boolean(currentDate) && currentDate !== null && editions.includes(currentDate);
+    const hierarchy = groupEditionsByHierarchy(editions);
+
+    // Auto-expand current date's year+month when dropdown opens; collapse on close
+    useEffect(() => {
+        if (isDropdownOpen && currentDate) {
+            const [year, month] = currentDate.split("-");
+            setExpandedYear(year);
+            setExpandedMonth(month);
+        } else if (!isDropdownOpen) {
+            setExpandedYear(null);
+            setExpandedMonth(null);
+        }
+    }, [isDropdownOpen, currentDate]);
 
     // Set default date to first available edition when loaded
     useEffect(() => {
@@ -39,10 +91,11 @@ export const TimeControls = () => {
             return;
         }
 
-        if (!hasCurrentEdition) {
-            setDate(editions[0]);
+        // Only set default date if NOT on an edition page (edition page syncs from URL)
+        if (!hasCurrentEdition && !pathname?.startsWith("/edition")) {
+            setDate(editions[editions.length - 1]);
         }
-    }, [editions, currentDate, hasCurrentEdition, hasEditions, isLoading, setDate]);
+    }, [editions, currentDate, hasCurrentEdition, hasEditions, isLoading, setDate, pathname]);
 
     const handleEditionSelect = (date: string) => {
         setDate(date);
@@ -81,20 +134,17 @@ export const TimeControls = () => {
 
     return (
         <motion.header
-            className="h-[var(--header-height)] w-full flex items-center justify-between px-6 border-b text-[var(--owu-white)] transition-colors duration-300 z-40 fixed top-0 left-0 backdrop-blur-md bg-[var(--owu-red)]/25"
-            style={{
-                borderColor: "var(--owu-red-deep)",
-            }}
+            className="h-[var(--header-height)] w-full flex items-center justify-between px-6 text-[var(--color-text-header)] time-controls-header transition-colors duration-300 z-[var(--z-header)] fixed top-0 left-0"
             variants={headerVariants}
             initial="hidden"
             animate="show"
             transition={TRANSITIONS.quick}
         >
-            <div className="flex items-center gap-4">
-                <h1 className="text-lg font-header uppercase tracking-wider leading-none">
+            <div className="time-controls-title-group">
+                <h1 className="text-sm font-header uppercase tracking-widest leading-none opacity-80">
                     <Link
                         href="/"
-                        className="hover:text-[color-mix(in_srgb,var(--owu-white)_75%,transparent)] transition-colors"
+                        className="hover:text-[var(--color-accent)] transition-colors"
                         aria-label="Return to landing page"
                     >
                         The Transcript Archive
@@ -102,20 +152,22 @@ export const TimeControls = () => {
                 </h1>
             </div>
 
-            <div className="relative" ref={dropdownRef}>
+            <div className="time-controls-date-group flex items-center gap-2">
+                <ThemeModeToggle iconOnly />
+                <div className="relative" ref={dropdownRef}>
                 <button
                     onClick={() => {
                         if (!canOpenDropdown) return;
                         setIsDropdownOpen((prev) => !prev);
                     }}
                     disabled={!canOpenDropdown}
-                    className="flex items-center gap-2 text-lg font-bold px-3 py-2 rounded-md hover:bg-[color-mix(in_srgb,var(--owu-white)_15%,transparent)] transition-colors focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--owu-white)_60%,transparent)]"
+                    className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-sm hover:bg-[var(--color-accent)]/8 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/30"
                     aria-expanded={isDropdownOpen}
                     aria-haspopup="listbox"
                     aria-label="Select edition date"
                 >
-                    <Calendar className="w-5 h-5" />
-                    <span className="font-header tracking-wide">
+                    <Calendar className="w-4 h-4 opacity-60" />
+                    <span className="font-mono tracking-wider uppercase text-xs">
                         {isLoading
                             ? "Loading..."
                             : hasCurrentEdition && currentDate
@@ -123,7 +175,7 @@ export const TimeControls = () => {
                                 : "No editions loaded"}
                     </span>
                     <ChevronDown
-                        className={`w-4 h-4 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""
+                        className={`w-3 h-3 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""
                             }`}
                     />
                 </button>
@@ -134,50 +186,172 @@ export const TimeControls = () => {
                             initial={{ opacity: 0, y: -10 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.15 }}
-                            className="absolute right-0 top-full mt-2 bg-[var(--color-bg-secondary)] backdrop-blur-md rounded-sm shadow-xl border overflow-hidden min-w-[280px]"
-                            style={{ borderColor: "var(--stroke-accent-soft)" }}
+                            transition={TRANSITIONS.micro}
+                            className="absolute right-0 top-full z-[var(--z-max)] mt-1 bg-[var(--color-bg-secondary)] rounded-sm shadow-lg border overflow-hidden min-w-[240px]"
+                            style={{ borderColor: "var(--color-border-default)" }}
                             role="listbox"
                             aria-label="Available editions"
                         >
                             <div
-                                className="px-4 py-2 border-b border-dashed"
-                                style={{ borderColor: "var(--stroke-accent-soft)" }}
+                                className="px-4 py-2 border-b"
+                                style={{ borderColor: "var(--color-border-default)" }}
                             >
-                                <p className="text-xs font-mono text-[var(--color-accent)] uppercase tracking-widest">
-                                    Available Editions ({editions.length})
+                                <p className="text-[10px] font-mono text-[var(--color-text-secondary)] uppercase tracking-widest">
+                                    {editions.length} Editions Available
                                 </p>
                             </div>
-                            <ul className="max-h-[300px] overflow-y-auto">
-                                {editions.map((date) => {
-                                    const isSelected = date === currentDate;
+                            <div className="max-h-[400px] overflow-y-auto">
+                                {hierarchy.map(({ year, months }) => {
+                                    const isYearExpanded = expandedYear === year;
+                                    const containsCurrent = currentDate?.startsWith(year) ?? false;
                                     return (
-                                        <li key={date}>
+                                        <div key={year}>
+                                            {/* Year header */}
                                             <button
-                                                onClick={() => handleEditionSelect(date)}
-                                                className={`w-full text-left px-4 py-3 flex items-center justify-between transition-colors border-l-2 ${isSelected
-                                                    ? "border-l-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
-                                                    : "border-l-transparent text-[var(--color-text-primary)]/80 hover:bg-[var(--color-accent)]/5 hover:text-[var(--color-text-primary)]"
-                                                    }`}
-                                                role="option"
-                                                aria-selected={isSelected}
+                                                onClick={() => {
+                                                    setExpandedYear(isYearExpanded ? null : year);
+                                                    if (!isYearExpanded) setExpandedMonth(null);
+                                                }}
+                                                className={`w-full text-left px-4 py-2.5 flex items-center gap-2 transition-colors ${
+                                                    containsCurrent
+                                                        ? "text-[var(--color-accent)]"
+                                                        : "text-[var(--color-text-primary)]/80"
+                                                } hover:bg-[var(--color-accent)]/5`}
+                                                aria-expanded={isYearExpanded}
                                             >
-                                                <span className="font-medium font-header">
-                                                    {formatDisplayDate(date)}
+                                                <ChevronRight
+                                                    className={`w-3 h-3 transition-transform duration-200 ${
+                                                        isYearExpanded ? "rotate-90" : ""
+                                                    }`}
+                                                />
+                                                <span className="text-sm font-mono font-medium tracking-wide">
+                                                    {year}
                                                 </span>
-                                                {isSelected && (
-                                                    <span className="text-[10px] uppercase tracking-widest font-mono opacity-70">
-                                                        Current
-                                                    </span>
-                                                )}
                                             </button>
-                                        </li>
+
+                                            {/* Months within year */}
+                                            <AnimatePresence initial={false}>
+                                                {isYearExpanded && (
+                                                    <motion.div
+                                                        initial={{ height: 0, opacity: 0 }}
+                                                        animate={{ height: "auto", opacity: 1 }}
+                                                        exit={{ height: 0, opacity: 0 }}
+                                                        transition={TRANSITIONS.micro}
+                                                        style={{ overflow: "hidden" }}
+                                                    >
+                                                        <motion.div
+                                                            variants={staggerContainer(0.05)}
+                                                            initial="hidden"
+                                                            animate="show"
+                                                        >
+                                                            {months.map(({ month, dates }) => {
+                                                                const isMonthExpanded = expandedMonth === month;
+                                                                const monthContainsCurrent =
+                                                                    currentDate?.startsWith(`${year}-${month}`) ?? false;
+                                                                return (
+                                                                    <motion.div
+                                                                        key={month}
+                                                                        variants={fadeDown(6)}
+                                                                    >
+                                                                        {/* Month header */}
+                                                                        <button
+                                                                            onClick={() =>
+                                                                                setExpandedMonth(
+                                                                                    isMonthExpanded ? null : month
+                                                                                )
+                                                                            }
+                                                                            className={`w-full text-left px-6 py-2 flex items-center justify-between transition-colors ${
+                                                                                monthContainsCurrent
+                                                                                    ? "text-[var(--color-accent)]"
+                                                                                    : "text-[var(--color-text-primary)]/70"
+                                                                            } hover:bg-[var(--color-accent)]/5`}
+                                                                            aria-expanded={isMonthExpanded}
+                                                                        >
+                                                                            <span className="flex items-center gap-2">
+                                                                                <ChevronRight
+                                                                                    className={`w-2.5 h-2.5 transition-transform duration-200 ${
+                                                                                        isMonthExpanded ? "rotate-90" : ""
+                                                                                    }`}
+                                                                                />
+                                                                                <span className="text-xs font-mono tracking-wide">
+                                                                                    {formatMonth(month)}
+                                                                                </span>
+                                                                            </span>
+                                                                            <span className="text-[10px] font-mono text-[var(--color-text-secondary)] opacity-60">
+                                                                                {dates.length}
+                                                                            </span>
+                                                                        </button>
+
+                                                                        {/* Dates within month */}
+                                                                        <AnimatePresence initial={false}>
+                                                                            {isMonthExpanded && (
+                                                                                <motion.div
+                                                                                    initial={{ height: 0, opacity: 0 }}
+                                                                                    animate={{
+                                                                                        height: "auto",
+                                                                                        opacity: 1,
+                                                                                    }}
+                                                                                    exit={{ height: 0, opacity: 0 }}
+                                                                                    transition={TRANSITIONS.micro}
+                                                                                    style={{ overflow: "hidden" }}
+                                                                                >
+                                                                                    <motion.div
+                                                                                        variants={staggerContainer(0.03)}
+                                                                                        initial="hidden"
+                                                                                        animate="show"
+                                                                                    >
+                                                                                        {dates.map((date) => {
+                                                                                            const isSelected =
+                                                                                                date === currentDate;
+                                                                                            return (
+                                                                                                <motion.button
+                                                                                                    key={date}
+                                                                                                    variants={fadeDown(4)}
+                                                                                                    onClick={() =>
+                                                                                                        handleEditionSelect(
+                                                                                                            date
+                                                                                                        )
+                                                                                                    }
+                                                                                                    className={`w-full text-left px-8 py-2 flex items-center justify-between transition-colors ${
+                                                                                                        isSelected
+                                                                                                            ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
+                                                                                                            : "text-[var(--color-text-primary)]/70 hover:bg-[var(--color-accent)]/5 hover:text-[var(--color-text-primary)]"
+                                                                                                    }`}
+                                                                                                    role="option"
+                                                                                                    aria-selected={
+                                                                                                        isSelected
+                                                                                                    }
+                                                                                                >
+                                                                                                    <span className="text-xs font-mono tracking-wide">
+                                                                                                        {formatDateInPicker(
+                                                                                                            date
+                                                                                                        )}
+                                                                                                    </span>
+                                                                                                    {isSelected && (
+                                                                                                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)]" />
+                                                                                                    )}
+                                                                                                </motion.button>
+                                                                                            );
+                                                                                        })}
+                                                                                    </motion.div>
+                                                                                </motion.div>
+                                                                            )}
+                                                                        </AnimatePresence>
+                                                                    </motion.div>
+                                                                );
+                                                            })}
+                                                        </motion.div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
                                     );
                                 })}
-                            </ul>
+                            </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
+            </div>
             </div>
         </motion.header>
     );

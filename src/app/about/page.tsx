@@ -1,13 +1,14 @@
 import React from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
+import { SiteFooter } from "@/features/footer";
 import { Reveal } from "@/shared/motion/Reveal";
 
 export default function AboutPage() {
     return (
         <PageShell variant="default" hasHeader>
             <TimeControls />
-            <main className="w-full">
+            <main className="w-full flex-1">
                 <div className="max-w-3xl mx-auto px-6 py-10">
                     <Reveal delay={0}>
                         <p className="text-xs uppercase tracking-widest text-[var(--color-text-secondary)] mb-3">
@@ -34,6 +35,7 @@ export default function AboutPage() {
                     </Reveal>
                 </div>
             </main>
+            <SiteFooter />
         </PageShell>
     );
 }

@@ -7,18 +7,20 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    setupFiles: [],
+    setupFiles: ["./tests/setup.ts"],
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     exclude: ["node_modules", "dist"],
     environmentMatchGlobs: [
-      // API tests need Node environment
-      ["tests/api/**", "node"],
       // Component tests use jsdom
       ["tests/**", "jsdom"],
     ],
   },
   resolve: {
     alias: {
+      "@/src": resolve(__dirname, "./src"),
+      "@/features": resolve(__dirname, "./src/features"),
+      "@/shared": resolve(__dirname, "./src/components"),
+      "@/styles": resolve(__dirname, "./src/styles"),
       "@": resolve(__dirname, "./src"),
     },
   },

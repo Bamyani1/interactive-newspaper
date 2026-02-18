@@ -1,0 +1,250 @@
+/**
+ * Edition Picker Component Styles
+ * Two-step drill-down: decades → editions, with sliding panel transition.
+ * Uses ep- prefix following cinema- and time-controls- conventions.
+ */
+
+/* =========================================
+   CONTAINER
+   ========================================= */
+
+.ep-container {
+    position: relative;
+    margin-bottom: 18px;
+}
+
+.ep-heading {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    text-align: center;
+    margin-bottom: 14px;
+}
+
+/* =========================================
+   POPUP OVERLAY
+   ========================================= */
+
+.ep-popup {
+    background: var(--color-bg-secondary);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+    border-top: 2px solid var(--color-accent);
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.5),
+        0 2px 8px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+    animation: ep-popup-in 200ms var(--ease-default) both;
+    padding-top: 4px;
+    margin-bottom: 18px;
+}
+
+@keyframes ep-popup-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* =========================================
+   BACK BUTTON (edition view header)
+   ========================================= */
+
+.ep-back-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 14px;
+    margin-bottom: 8px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 15%, transparent);
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    transition: color var(--duration-normal) var(--ease-default);
+}
+
+.ep-back-btn:hover {
+    color: var(--color-text-primary);
+}
+
+.ep-back-arrow {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.ep-back-label {
+    font-family: var(--font-header);
+    font-size: 0.9rem;
+    font-weight: var(--font-bold);
+    color: var(--color-accent);
+}
+
+.ep-back-count {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
+    opacity: 0.6;
+    margin-left: auto;
+}
+
+/* =========================================
+   EDITION LIST (shared by both panels)
+   ========================================= */
+
+.ep-edition-list {
+    max-height: 240px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 2px 0;
+}
+
+/* Scrollbar styling */
+.ep-edition-list::-webkit-scrollbar {
+    width: 3px;
+}
+
+.ep-edition-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.ep-edition-list::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+    border-radius: 2px;
+}
+
+/* =========================================
+   EDITION CARD (reused for decades + editions)
+   ========================================= */
+
+.ep-edition-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+    border: none;
+    border-left: 3px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    transition:
+        background var(--duration-normal) var(--ease-default),
+        border-left-color var(--duration-normal) var(--ease-default);
+}
+
+.ep-edition-card:hover {
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    border-left-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+}
+
+.ep-edition-card[aria-selected="true"] {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    border-left-color: var(--color-accent);
+}
+
+.ep-edition-date {
+    font-family: var(--font-header);
+    font-size: 0.9rem;
+    font-weight: var(--font-bold);
+    color: var(--color-text-primary);
+    transition: color var(--duration-normal) var(--ease-default);
+}
+
+.ep-edition-card[aria-selected="true"] .ep-edition-date {
+    color: var(--color-accent);
+}
+
+.ep-edition-date--centered {
+    width: 100%;
+    text-align: center;
+}
+
+.ep-edition-weekday {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+}
+
+/* =========================================
+   LOADING & EMPTY STATES
+   ========================================= */
+
+.ep-loading {
+    text-align: center;
+    padding: 16px 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    animation: ep-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes ep-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+.ep-empty {
+    text-align: center;
+    padding: 16px 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    opacity: 0.7;
+}
+
+/* =========================================
+   LIGHT MODE TUNING
+   ========================================= */
+
+[data-mode='light'] .ep-edition-card {
+    background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+
+[data-mode='light'] .ep-edition-card:hover {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+[data-mode='light'] .ep-edition-card[aria-selected="true"] {
+    background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+
+[data-mode='light'] .ep-popup {
+    background: var(--color-bg-primary);
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.12),
+        0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+/* =========================================
+   RESPONSIVE
+   ========================================= */
+
+@media (max-width: 768px) {
+    .ep-edition-card {
+        padding: 8px 10px;
+    }
+
+    .ep-edition-date {
+        font-size: 0.82rem;
+    }
+
+    .ep-back-btn {
+        padding: 6px 10px;
+    }
+}

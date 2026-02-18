@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Article } from "@/src/types";
+import type { Article, VintageAd } from "@/src/types";
+
+interface RawApiArticle extends Omit<Article, 'imageUrls'> {
+    imageUrls?: string[];
+    imageUrl?: string;
+}
 
 interface EditionResponse {
     edition: {
@@ -9,7 +14,8 @@ interface EditionResponse {
         date: string;
         pageCount: number;
     };
-    articles: Article[];
+    articles: RawApiArticle[];
+    ads?: VintageAd[];
     pagination?: {
         nextCursor: string | null;
         hasMore: boolean;
@@ -18,6 +24,7 @@ interface EditionResponse {
 
 interface UseEditionArticlesResult {
     articles: Article[];
+    ads: VintageAd[];
     hasActiveEdition: boolean;
     isLoading: boolean;
     error: Error | null;
@@ -31,7 +38,6 @@ const CATEGORY_LOOKUP: Record<string, Article["category"]> = {
     arts: "Arts",
     "campus life": "Campus Life",
     "campus-life": "Campus Life",
-    ads: "Ads",
 };
 
 const normalizeText = (value: unknown): string =>
@@ -56,19 +62,19 @@ const normalizeId = (
 
 export function useEditionArticles(date: string | null): UseEditionArticlesResult {
     const [articles, setArticles] = useState<Article[]>([]);
+    const [ads, setAds] = useState<VintageAd[]>([]);
     const [isLoading, setIsLoading] = useState(Boolean(date));
     const [error, setError] = useState<Error | null>(null);
 
     useEffect(() => {
-        let cancelled = false;
+        const abortController = new AbortController();
 
         async function fetchArticles() {
             if (!date) {
-                if (!cancelled) {
-                    setArticles([]);
-                    setError(null);
-                    setIsLoading(false);
-                }
+                setArticles([]);
+                setAds([]);
+                setError(null);
+                setIsLoading(false);
                 return;
             }
 
@@ -76,7 +82,8 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
             setError(null);
 
             try {
-                const allArticles: Article[] = [];
+                const allArticles: RawApiArticle[] = [];
+                const allAds: VintageAd[] = [];
                 const seenCursors = new Set<string>();
                 let cursor: string | null = null;
                 let editionDate = date;
@@ -91,11 +98,12 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
                         params.set("cursor", cursor);
                     }
 
-                    const res = await fetch(`/api/editions/${date}?${params.toString()}`);
+                    const res = await fetch(`/api/editions/${date}?${params.toString()}`, {
+                        signal: abortController.signal,
+                    });
 
                     if (!res.ok) {
                         if (res.status === 404) {
-                            // No articles for this date
                             allArticles.length = 0;
                             break;
                         }
@@ -105,6 +113,7 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
                     const data: EditionResponse = await res.json();
                     editionDate = data.edition.date;
                     allArticles.push(...data.articles);
+                    if (data.ads) allAds.push(...data.ads);
 
                     const nextCursor = data.pagination?.nextCursor ?? null;
                     const hasMore = Boolean(data.pagination?.hasMore && nextCursor);
@@ -132,39 +141,42 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
                     );
                 }
 
-                if (!cancelled) {
-                    // Map API response to frontend Article format
-                    const mappedArticles: Article[] = allArticles.map((a, index) => {
-                        const normalizedSummary = normalizeText(a.summary);
-                        const normalizedFullText = normalizeText(a.fullText);
-                        const page = typeof a.page === "number" ? a.page : 1;
+                // Map API response to frontend Article format
+                const mappedArticles: Article[] = allArticles.map((a, index) => {
+                    const normalizedSummary = normalizeText(a.summary);
+                    const normalizedFullText = normalizeText(a.fullText);
+                    const page = typeof a.page === "number" ? a.page : 1;
 
-                        return {
-                            id: normalizeId(a.id, editionDate, page, index),
-                            date: editionDate,
-                            category: normalizeCategory(a.category),
-                            headline: normalizeText(a.headline) || "Untitled Article",
-                            summary: normalizedSummary,
-                            fullText: normalizedFullText,
-                            imageUrls: Array.isArray((a as any).imageUrls)
-                                ? (a as any).imageUrls.map((u: string) => normalizeText(u)).filter(Boolean)
-                                : (normalizeText((a as any).imageUrl) ? [normalizeText((a as any).imageUrl)] : []),
-                            byline: normalizeText(a.byline) || undefined,
-                            imageCaption: normalizeText(a.imageCaption) || undefined,
-                            page,
-                            isFeatured: Boolean(a.isFeatured),
-                            isHero: Boolean(a.isHero),
-                        };
-                    });
+                    return {
+                        id: normalizeId(a.id, editionDate, page, index),
+                        date: editionDate,
+                        category: normalizeCategory(a.category),
+                        headline: normalizeText(a.headline) || "Untitled Article",
+                        summary: normalizedSummary,
+                        fullText: normalizedFullText,
+                        imageUrls: Array.isArray(a.imageUrls)
+                            ? a.imageUrls.map((u: string) => normalizeText(u)).filter(Boolean)
+                            : (a.imageUrl && normalizeText(a.imageUrl) ? [normalizeText(a.imageUrl)] : []),
+                        byline: normalizeText(a.byline) || undefined,
+                        imageCaption: normalizeText(a.imageCaption) || undefined,
+                        imageCaptions: Array.isArray(a.imageCaptions)
+                            ? a.imageCaptions.map((c: string | null) => c ? normalizeText(c) : null)
+                            : [],
+                        page,
+                        isFeatured: Boolean(a.isFeatured),
+                        isHero: Boolean(a.isHero),
+                    };
+                });
 
-                    setArticles(mappedArticles);
-                }
+                setArticles(mappedArticles);
+                setAds(allAds);
             } catch (err) {
-                if (!cancelled) {
-                    setError(err instanceof Error ? err : new Error("Unknown error"));
+                if (err instanceof DOMException && err.name === "AbortError") {
+                    return;
                 }
+                setError(err instanceof Error ? err : new Error("Unknown error"));
             } finally {
-                if (!cancelled) {
+                if (!abortController.signal.aborted) {
                     setIsLoading(false);
                 }
             }
@@ -173,9 +185,9 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
         fetchArticles();
 
         return () => {
-            cancelled = true;
+            abortController.abort();
         };
     }, [date]);
 
-    return { articles, hasActiveEdition: Boolean(date), isLoading, error };
+    return { articles, ads, hasActiveEdition: Boolean(date), isLoading, error };
 }

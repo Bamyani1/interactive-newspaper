@@ -31,4 +31,5 @@
   /* Typography */
   --font-header: var(--font-header);
   --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
 }

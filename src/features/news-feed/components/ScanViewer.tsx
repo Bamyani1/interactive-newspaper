@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import { X, ZoomIn, ZoomOut } from "lucide-react";
@@ -21,6 +21,7 @@ export const ScanViewer: React.FC<ScanViewerProps> = ({
     onSelectPage,
 }) => {
     const [zoom, setZoom] = useState(1);
+    const modalRef = useRef<HTMLDivElement>(null);
 
     // Reset zoom when opening
     useEffect(() => {
@@ -42,14 +43,68 @@ export const ScanViewer: React.FC<ScanViewerProps> = ({
         return () => window.removeEventListener("keydown", handler);
     }, [isOpen, onClose]);
 
+    // Focus trap and body scroll lock
+    useEffect(() => {
+        if (!isOpen) return;
+
+        // Lock body scroll
+        const originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        // Hide background content from interaction + assistive tech
+        const appRoot = document.body.firstElementChild as HTMLElement | null;
+        appRoot?.setAttribute('inert', '');
+
+        const modalEl = modalRef.current;
+        if (!modalEl) return () => {
+            document.body.style.overflow = originalOverflow;
+            appRoot?.removeAttribute('inert');
+        };
+
+        // Focus the close button initially
+        const closeBtn = modalEl.querySelector<HTMLElement>('[data-close-btn]');
+        closeBtn?.focus();
+
+        const handleTabKey = (e: KeyboardEvent) => {
+            if (e.key !== 'Tab') return;
+
+            const focusableEls = modalEl.querySelectorAll<HTMLElement>(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            );
+            if (focusableEls.length === 0) return;
+
+            const firstEl = focusableEls[0];
+            const lastEl = focusableEls[focusableEls.length - 1];
+
+            if (e.shiftKey && document.activeElement === firstEl) {
+                e.preventDefault();
+                lastEl.focus();
+            } else if (!e.shiftKey && document.activeElement === lastEl) {
+                e.preventDefault();
+                firstEl.focus();
+            }
+        };
+
+        document.addEventListener('keydown', handleTabKey);
+        return () => {
+            document.removeEventListener('keydown', handleTabKey);
+            document.body.style.overflow = originalOverflow;
+            appRoot?.removeAttribute('inert');
+        };
+    }, [isOpen]);
+
     return (
         <AnimatePresence>
             {isOpen && (
                 <motion.div
+                    ref={modalRef}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Newspaper scan viewer"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-[60] bg-[color-mix(in_srgb,var(--color-bg-primary)_88%,transparent)] backdrop-blur-sm flex flex-col"
+                    className="fixed inset-0 z-[var(--z-max)] bg-[color-mix(in_srgb,var(--color-bg-primary)_88%,transparent)] backdrop-blur-sm flex flex-col"
                 >
                     <div className="flex items-center justify-between px-6 py-4 text-[var(--color-text-primary)] border-b border-[color-mix(in_srgb,var(--color-text-primary)_10%,transparent)]">
                         <div>
@@ -75,6 +130,7 @@ export const ScanViewer: React.FC<ScanViewerProps> = ({
                                 <ZoomIn size={16} />
                             </button>
                             <button
+                                data-close-btn
                                 className="ml-4 px-3 py-2 bg-[color-mix(in_srgb,var(--color-text-primary)_10%,transparent)] rounded hover:bg-[color-mix(in_srgb,var(--color-text-primary)_20%,transparent)] transition flex items-center gap-2"
                                 onClick={onClose}
                             >

@@ -1,8 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
+import { TRANSITIONS } from "@/shared/motion/motionTokens";
 import type { Article } from "@/src/types";
 
 interface FeaturedGridProps {
@@ -12,68 +13,76 @@ interface FeaturedGridProps {
 }
 
 export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleClick, focusedId }) => {
-    // Take first 4 articles
-    const featured = articles.slice(0, 4);
+    const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
+    const handleImgError = (url: string) => {
+        setImgErrors(prev => new Set(prev).add(url));
+    };
+
+    // Take first 3 articles
+    const featured = articles.slice(0, 3);
 
     if (featured.length === 0) return null;
 
     return (
-        <section className="mb-20 px-4 md:px-8">
-            <div className="max-w-7xl mx-auto">
+        <section className="mb-12">
+            <div>
                 <div className="relative">
 
                     {/* The String/Bar */}
-                    <div className="absolute top-0 left-6 right-6 h-[2px] bg-[var(--color-text-secondary)] shadow-sm z-10"
+                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-[var(--color-text-secondary)] shadow-sm z-10"
                         style={{ transform: "translateY(-10px)" }}></div>
 
                     {/* Container for hanging cards */}
-                    <div className="flex flex-wrap md:flex-nowrap justify-center gap-4 md:gap-6 pt-6">
+                    <div className="flex flex-wrap md:flex-nowrap justify-center gap-3.5 md:gap-5 pt-5">
                         {featured.map((article, index) => (
                             <motion.article
                                 key={article.id}
-                                className={`relative flex-1 min-w-[192px] max-w-[240px] cursor-pointer group ${focusedId === article.id ? "ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-bg-primary)] rounded-sm" : ""}`}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
+                                className={`relative flex-1 min-w-[173px] max-w-[230px] cursor-pointer group ${focusedId === article.id ? "ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-bg-primary)] rounded-sm" : ""}`}
+                                initial={{ opacity: 0, y: 20, rotate: index % 2 === 0 ? -1 : 1 }}
+                                animate={{ opacity: 1, y: 0, rotate: index % 2 === 0 ? -1 : 1 }}
                                 transition={{
                                     delay: 0.1 * index,
                                     type: "spring",
-                                    stiffness: 100
+                                    stiffness: 100,
+                                    damping: 18,
+                                    mass: 0.8
                                 }}
                                 whileHover={{
                                     y: -5,
+                                    rotate: 0,
                                     zIndex: 20,
-                                    transition: { duration: 0.2 }
+                                    transition: TRANSITIONS.quick
                                 }}
                                 onClick={() => onArticleClick(article)}
                             >
                                 {/* The Pin / Clip */}
-                                <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-20 w-4 h-8 flex flex-col items-center">
-                                    <div className="w-1 h-4 bg-[var(--color-text-secondary)]"></div>
-                                    <div className="w-4 h-4 rounded-full bg-[var(--color-accent)] shadow-md"></div>
+                                <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-20 w-3.5 h-7 flex flex-col items-center">
+                                    <div className="w-0.5 h-3.5 bg-[var(--color-text-secondary)]"></div>
+                                    <div className="w-3.5 h-3.5 rounded-full bg-[var(--color-accent)] shadow-md"></div>
                                 </div>
 
                                 {/* Card Body */}
-                                <div className="bg-[var(--featured-card-bg)] p-3 shadow-lg border border-[var(--featured-card-border)] h-full flex flex-col transform transition-transform duration-300 group-hover:rotate-0 origin-top"
-                                    style={{ transform: `rotate(${index % 2 === 0 ? '-1deg' : '1deg'})` }}
+                                <div className="bg-[var(--featured-card-bg)] p-2.5 shadow-lg border border-[var(--featured-card-border)] h-full flex flex-col origin-top"
                                 >
 
                                     {/* Image */}
-                                    {article.imageUrls.length > 0 ? (
-                                        <div className="relative aspect-[4/3] w-full overflow-hidden mb-3 border border-[var(--color-border-default)]">
+                                    {article.imageUrls.length > 0 && !imgErrors.has(article.imageUrls[0]) ? (
+                                        <div className="relative aspect-[4/3] w-full overflow-hidden mb-2.5 border border-[var(--color-border-default)]">
                                             <Image
                                                 src={article.imageUrls[0]}
                                                 alt={article.headline}
                                                 fill
-                                                className="object-cover filter sepia-[.2] contrast-110 group-hover:sepia-0 transition-all duration-500"
+                                                className="object-cover transition-all duration-500"
+                                                onError={() => handleImgError(article.imageUrls[0])}
                                             />
-                                            <div className="absolute top-2 right-2 px-2 py-0.5 bg-[color-mix(in_srgb,var(--color-bg-primary)_80%,transparent)] text-[var(--color-text-primary)] text-[9px] uppercase tracking-widest font-bold font-typewriter backdrop-blur-sm">
+                                            <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-[color-mix(in_srgb,var(--color-bg-primary)_80%,transparent)] text-[var(--color-text-primary)] text-[8px] uppercase tracking-widest font-bold font-typewriter backdrop-blur-sm">
                                                 {article.category}
                                             </div>
                                         </div>
                                     ) : (
                                         /* No Image Placeholder or different layout */
-                                        <div className="mb-3 flex justify-end">
-                                            <div className="px-2 py-0.5 bg-[var(--color-accent)] text-[var(--color-text-primary)] text-[9px] uppercase tracking-widest font-bold font-typewriter">
+                                        <div className="mb-2.5 flex justify-end">
+                                            <div className="px-1.5 py-0.5 bg-[var(--color-accent)] text-[var(--color-text-primary)] text-[8px] uppercase tracking-widest font-bold font-typewriter">
                                                 {article.category}
                                             </div>
                                         </div>
@@ -81,14 +90,14 @@ export const FeaturedGrid: React.FC<FeaturedGridProps> = ({ articles, onArticleC
 
                                     {/* Content */}
                                     <div className="flex-1 flex flex-col">
-                                        <h3 className="font-header text-lg font-bold leading-tight mb-2 text-[var(--featured-text-primary)] group-hover:text-[var(--featured-text-hover)] transition-colors line-clamp-3">
+                                        <h3 className="font-header text-base font-bold leading-tight mb-1.5 text-[var(--featured-text-primary)] group-hover:text-[var(--featured-text-hover)] transition-colors line-clamp-3">
                                             {article.headline}
                                         </h3>
-                                        <p className="font-typewriter text-xs text-[var(--color-text-secondary)] leading-normal line-clamp-3 mb-3 flex-1">
+                                        <p className="font-typewriter text-[11px] text-[var(--color-text-secondary)] leading-normal line-clamp-3 mb-2.5 flex-1">
                                             {article.summary}
                                         </p>
 
-                                        <div className="pt-2 border-t border-[var(--featured-card-border)] mt-auto flex justify-between items-center text-[10px] text-[var(--color-text-secondary)] font-sans uppercase tracking-wide">
+                                        <div className="pt-1.5 border-t border-[var(--featured-card-border)] mt-auto flex justify-between items-center text-[9px] text-[var(--color-text-secondary)] font-mono uppercase tracking-wide">
                                             <span>{article.byline?.split(",")[0] || "Staff"}</span>
                                             <span>Pg. {article.page || 1}</span>
                                         </div>

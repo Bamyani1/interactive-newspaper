@@ -1,0 +1,151 @@
+/* =========================================
+   SIDEBAR NAV — Fleuron Classic
+   Double rules, fleuron, middot leaders, endmark.
+   ========================================= */
+
+.nav-fleuron {
+  background: var(--color-bg-primary);
+  padding: 24px 16px 16px 22px;
+}
+
+.nav-fleuron-header-block {
+  margin-bottom: 4px;
+}
+
+.nav-fleuron-rule-double {
+  height: 0;
+  border-top: 1px dashed var(--stroke-accent-soft);
+}
+
+.nav-fleuron-header {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--color-text-primary);
+  text-align: left;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px dashed var(--stroke-accent-soft);
+  padding-bottom: 0.25rem;
+}
+
+.nav-fleuron-rule-single {
+  height: 0;
+  border-top: 1px dashed var(--stroke-accent-soft);
+}
+
+.nav-fleuron-ornament {
+  text-align: center;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  opacity: 0.35;
+  padding: 6px 0 2px;
+}
+
+/* ── Row layout ── */
+
+.nav-fleuron-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  padding: calc(8px * 1.05) 0;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  position: relative;
+  transition: background var(--duration-fast) var(--ease-default);
+}
+
+.nav-fleuron-row:hover {
+  background: color-mix(in srgb, var(--color-text-primary) 4%, transparent);
+}
+
+.nav-fleuron-row:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.nav-fleuron-name {
+  font-family: var(--font-header);
+  font-size: calc(15px * 1.05);
+  font-style: italic;
+  color: var(--color-text-primary);
+  opacity: 0.85;
+  white-space: nowrap;
+  transition:
+    opacity var(--duration-fast) var(--ease-default),
+    font-weight var(--duration-fast) var(--ease-default),
+    letter-spacing var(--duration-fast) var(--ease-default);
+}
+
+.nav-fleuron-row:hover .nav-fleuron-name {
+  opacity: 1;
+}
+
+.nav-fleuron-leaders {
+  flex: 1;
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-size: calc(11px * 1.05);
+  color: var(--color-text-secondary);
+  opacity: 0.3;
+  white-space: nowrap;
+  line-height: 1;
+  margin: 0 4px;
+  transition: opacity var(--duration-fast) var(--ease-default);
+}
+
+.nav-fleuron-row:hover .nav-fleuron-leaders {
+  opacity: 0.55;
+}
+
+.nav-fleuron-count {
+  font-family: var(--font-body);
+  font-size: calc(14px * 1.05);
+  font-style: italic;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color var(--duration-fast) var(--ease-default);
+}
+
+.nav-fleuron-row:hover .nav-fleuron-count {
+  color: var(--color-text-primary);
+}
+
+/* ── Active states ── */
+
+.nav-fleuron-active-rule {
+  position: absolute;
+  left: -22px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--color-accent);
+}
+
+.nav-fleuron-row--active .nav-fleuron-name {
+  font-style: normal;
+  font-weight: 700;
+  opacity: 1;
+  letter-spacing: 0.01em;
+}
+
+.nav-fleuron-row--active .nav-fleuron-count {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.nav-fleuron-row--active .nav-fleuron-leaders {
+  opacity: 0.5;
+}
+
+/* =========================================
+   Light Mode Surface Parity (Edition Page)
+   ========================================= */
+
+[data-mode='light'] .edition-background-shell .nav-fleuron {
+  background: transparent;
+}

@@ -13,19 +13,18 @@ export const EditionMasthead: React.FC<EditionMastheadProps> = ({ editionHeaderD
 
     return (
         <motion.div
-            className="p-8 text-center border-b-4 border-[var(--color-text-primary)] mb-8 max-w-5xl mx-auto w-full"
+            className="pb-4 px-6 text-center mb-6 max-w-5xl mx-auto w-full"
             variants={mastheadVariants}
             initial="hidden"
             animate="show"
             transition={TRANSITIONS.base}
         >
-            <h2 className="font-masthead text-6xl uppercase tracking-tighter mb-2">
+            <h2 className="font-masthead text-5xl md:text-6xl uppercase tracking-tight mb-2">
                 The Transcript
             </h2>
-            <div className="flex flex-wrap justify-between gap-2 border-t border-b border-[var(--color-text-primary)] py-1 font-mono text-sm uppercase">
-                <span>Vol. 120 · No. 8</span>
-                <span>{editionHeaderDate}</span>
-                <span>Price: 30¢</span>
+            <div className="flex flex-wrap justify-between gap-2 border-t border-b border-[var(--color-text-primary)]/30 py-1.5 font-mono text-xs tracking-wider uppercase">
+                <span className="opacity-60">Vol. 120 · No. 8</span>
+                <span className="opacity-80">{editionHeaderDate}</span>
             </div>
         </motion.div>
     );
