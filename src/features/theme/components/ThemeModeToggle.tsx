@@ -3,6 +3,7 @@
 import React, { useEffect, useLayoutEffect, useState } from "react";
 import { Sun, Moon } from "lucide-react";
 import {
+    DEFAULT_DARK_TOKENS,
     DEFAULT_LIGHT_TOKENS,
     PRESET_STORAGE_KEY,
 } from "@/font-color/data/colorPresets";
@@ -15,13 +16,6 @@ function applyBrandTokens(tokens: Record<string, string>) {
     const root = document.documentElement;
     for (const [prop, value] of Object.entries(tokens)) {
         root.style.setProperty(prop, value);
-    }
-}
-
-function clearBrandTokens() {
-    const root = document.documentElement;
-    for (const prop of Object.keys(DEFAULT_LIGHT_TOKENS)) {
-        root.style.removeProperty(prop);
     }
 }
 
@@ -44,11 +38,7 @@ export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = fal
         document.body.dataset.mode = mode;
         const hasPreset = !!window.localStorage.getItem(PRESET_STORAGE_KEY);
         if (!hasPreset) {
-            if (mode === "light") {
-                applyBrandTokens(DEFAULT_LIGHT_TOKENS);
-            } else {
-                clearBrandTokens();
-            }
+            applyBrandTokens(mode === "light" ? DEFAULT_LIGHT_TOKENS : DEFAULT_DARK_TOKENS);
         }
     }, [mode]);
 
@@ -60,11 +50,7 @@ export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = fal
 
         const hasPreset = !!window.localStorage.getItem(PRESET_STORAGE_KEY);
         if (!hasPreset) {
-            if (next === "light") {
-                applyBrandTokens(DEFAULT_LIGHT_TOKENS);
-            } else {
-                clearBrandTokens();
-            }
+            applyBrandTokens(next === "light" ? DEFAULT_LIGHT_TOKENS : DEFAULT_DARK_TOKENS);
         }
     };
 
