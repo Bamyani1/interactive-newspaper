@@ -1,32 +1,121 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
+import { PageShell, CinemaBackground, Ticker, useTickerAnimation, EditionPicker } from "@/shared";
+import { headlines } from "@/shared/landing/data/headlines";
+import { cardIn, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 export default function Home() {
     const router = useRouter();
     const { setDate, editions, isLoading } = useArchive();
+    const [isEntering, setIsEntering] = useState(false);
 
-    // Automatically redirect to the latest edition
+    // Use the extracted animation hook
+    useTickerAnimation();
+
+    // Default to latest edition (last in sorted list)
+    const [selectedEdition, setSelectedEdition] = useState<string | null>(null);
+    const [isPickerOpen, setIsPickerOpen] = useState(false);
     useEffect(() => {
-        if (!isLoading && editions.length > 0) {
-            const latestEdition = editions[editions.length - 1];
-            setDate(latestEdition);
-            router.push(`/edition/${latestEdition}`);
+        if (editions.length > 0 && !selectedEdition) {
+            setSelectedEdition(editions[editions.length - 1]);
         }
-    }, [editions, isLoading, router, setDate]);
+    }, [editions, selectedEdition]);
 
-    // Show a simple loading state while redirecting
+    const handleEnter = () => {
+        if (!selectedEdition) return;
+        setDate(selectedEdition);
+        setIsEntering(true);
+
+        // Navigate immediately after a tiny delay so the spinner paints
+        setTimeout(() => {
+            router.push(`/edition/${selectedEdition}`);
+        }, 0);
+    };
+
+    // Memoize ticker items to prevent recreation on every render
+    const tickerItems = useMemo(
+        () => [...headlines, ...headlines, ...headlines],
+        []
+    );
+
     return (
-        <div className="flex items-center justify-center min-h-screen bg-[var(--color-bg-primary)]">
-            <div className="flex flex-col items-center gap-4">
-                <Loader2 size={48} className="animate-spin text-[var(--color-accent)]" />
-                <p className="text-[var(--color-text-secondary)] font-mono text-sm uppercase tracking-wider">
-                    Loading The Transcript...
-                </p>
-            </div>
-        </div>
+        <PageShell variant="cinema" backgroundContent={<CinemaBackground />}>
+            {/* TOP TICKER */}
+            <Ticker items={tickerItems} />
+
+            {/* MAIN CONTENT */}
+            <main className="cinema-content">
+                <motion.div
+                    className="cinema-paper"
+                    variants={cardIn}
+                    initial="hidden"
+                    animate="show"
+                    transition={TRANSITIONS.slow}
+                >
+                    <header className="cinema-masthead">
+                        <h1 className="cinema-title">The Transcript</h1>
+                        <p className="cinema-subtitle">Student Newspaper Since 1867</p>
+                    </header>
+
+                    <div className="cinema-paper-grid">
+                        {/* LEFT: Brand */}
+                        <div className="cinema-col-brand">
+                            <h2 className="cinema-headline">
+                                Travel Back in Time.<br />
+                                Experience Campus History.
+                            </h2>
+                        </div>
+
+                        {/* DIVIDER */}
+                        <div className="cinema-divider" aria-hidden="true" />
+
+                        {/* RIGHT: Action */}
+                        <div className="cinema-col-action">
+                            <EditionPicker
+                                editions={editions}
+                                selectedEdition={selectedEdition}
+                                onSelect={setSelectedEdition}
+                                isLoading={isLoading}
+                                onOpenChange={setIsPickerOpen}
+                            />
+                        </div>
+                    </div>
+
+                    {!isPickerOpen && (
+                        <button
+                            type="button"
+                            className="cinema-btn"
+                            onClick={handleEnter}
+                            disabled={isLoading || isEntering || !selectedEdition}
+                        >
+                            {isEntering ? (
+                                <>
+                                    <span>Printing...</span>
+                                    <Loader2 size={20} className="animate-spin" />
+                                </>
+                            ) : isLoading ? (
+                                <>
+                                    <span>Loading Editions...</span>
+                                    <Loader2 size={20} className="animate-spin" />
+                                </>
+                            ) : (
+                                <>
+                                    <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
+                                    <ArrowRight size={20} />
+                                </>
+                            )}
+                        </button>
+                    )}
+                </motion.div>
+            </main>
+
+            {/* BOTTOM TICKER */}
+            <Ticker items={tickerItems} reverse />
+        </PageShell>
     );
 }

@@ -27,7 +27,7 @@
     cursor: default;
 }
 
-/* Animated doodle SVG background with fade-in entrance */
+/* Animated SVG doodle map — fast fade-in, SVG handles its own animations */
 .cinema-map {
     position: absolute;
     inset: 0;
