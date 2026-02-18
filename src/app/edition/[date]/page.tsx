@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { TimeControls } from "@/features/time-controls";
@@ -13,7 +13,7 @@ import {
 } from "@/features/news-feed";
 import { useArchive } from "@/features/archive";
 import { PageShell, SkeletonFeed } from "@/shared";
-import { TRANSITIONS } from "@/shared/motion/motionTokens";
+import { editionSwapVariants } from "@/shared/motion/motionTokens";
 
 import type { SectionId } from "@/src/types";
 import { SECTION_ORDER } from "@/features/news-feed/components/NewsFeed";
@@ -157,6 +157,16 @@ function EditionBody({
         setActiveSection(sectionId);
     };
 
+    const prevDateRef = useRef<string | null>(null);
+    const direction = (() => {
+        if (!prevDateRef.current || !currentDate) return 1;
+        return currentDate > prevDateRef.current ? 1 : -1;
+    })();
+
+    useEffect(() => {
+        if (currentDate) prevDateRef.current = currentDate;
+    }, [currentDate]);
+
     return (
         <PageShell variant="default" hasHeader className="edition-background-shell">
             <div className="paper-texture-overlay" aria-hidden="true" />
@@ -180,18 +190,35 @@ function EditionBody({
 
                         {/* Main Feed */}
                         <div className="lg:overflow-y-auto lg:h-full scrollbar-hide pb-20 lg:pb-0">
-                            {isLoading || !hasActiveEdition ? (
-                                <SkeletonFeed count={4} />
-                            ) : error ? (
-                                <ErrorState error={error} />
-                            ) : (
-                                <AnimatePresence mode="wait">
+                            <AnimatePresence mode="sync" custom={direction}>
+                                {isLoading || !hasActiveEdition ? (
                                     <motion.div
-                                        key={currentDate ?? "no-edition"}
+                                        key="skeleton"
                                         initial={{ opacity: 0 }}
                                         animate={{ opacity: 1 }}
                                         exit={{ opacity: 0 }}
-                                        transition={TRANSITIONS.quick}
+                                        transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                                    >
+                                        <SkeletonFeed count={4} />
+                                    </motion.div>
+                                ) : error ? (
+                                    <motion.div
+                                        key="error"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        transition={{ duration: 0.2 }}
+                                    >
+                                        <ErrorState error={error} />
+                                    </motion.div>
+                                ) : (
+                                    <motion.div
+                                        key={currentDate ?? "content"}
+                                        custom={direction}
+                                        variants={editionSwapVariants}
+                                        initial="enter"
+                                        animate="center"
+                                        exit="exit"
                                     >
                                         <NewsFeed
                                             articles={articles}
@@ -204,8 +231,8 @@ function EditionBody({
                                             onSectionChange={handleSectionChange}
                                         />
                                     </motion.div>
-                                </AnimatePresence>
-                            )}
+                                )}
+                            </AnimatePresence>
                         </div>
 
                         {/* Right Sidebar: Weather + Player */}
