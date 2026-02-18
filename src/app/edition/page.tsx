@@ -1,35 +1,21 @@
-"use client";
+import { redirect } from "next/navigation";
+import fs from "fs";
+import path from "path";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useArchive } from "@/features/archive";
-import { PageShell, SkeletonFeed } from "@/shared";
-import { TimeControls } from "@/features/time-controls";
-
-/**
- * /edition (no date param) → redirects to the latest available edition.
- * Keeps backward compatibility with old bookmarks.
- */
 export default function EditionRedirect() {
-  const router = useRouter();
-  const { editions, hasEditions, isLoading } = useArchive();
+  const editionsDir = path.join(process.cwd(), "public/editions");
+  let dates: string[] = [];
+  try {
+    dates = fs
+      .readdirSync(editionsDir)
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+      .sort();
+  } catch {
+    // no editions directory
+  }
 
-  useEffect(() => {
-    if (isLoading) return;
-    if (hasEditions) {
-      router.replace(`/edition/${editions[editions.length - 1]}`);
-    } else {
-      router.replace("/");
-    }
-  }, [editions, hasEditions, isLoading, router]);
-
-  return (
-    <PageShell variant="default" hasHeader className="edition-background-shell">
-      <div className="paper-texture-overlay" aria-hidden="true" />
-      <TimeControls />
-      <main className="min-h-screen w-full">
-        <SkeletonFeed count={4} />
-      </main>
-    </PageShell>
-  );
+  if (dates.length > 0) {
+    redirect(`/edition/${dates[dates.length - 1]}`);
+  }
+  redirect("/");
 }
