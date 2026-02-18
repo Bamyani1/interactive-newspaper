@@ -190,49 +190,54 @@ function EditionBody({
 
                         {/* Main Feed */}
                         <div className="lg:overflow-y-auto lg:h-full scrollbar-hide pb-20 lg:pb-0">
-                            <AnimatePresence mode="sync" custom={direction}>
-                                {isLoading || !hasActiveEdition ? (
-                                    <motion.div
-                                        key="skeleton"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        exit={{ opacity: 0 }}
-                                        transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                                    >
-                                        <SkeletonFeed count={4} />
-                                    </motion.div>
-                                ) : error ? (
-                                    <motion.div
-                                        key="error"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        exit={{ opacity: 0 }}
-                                        transition={{ duration: 0.2 }}
-                                    >
-                                        <ErrorState error={error} />
-                                    </motion.div>
-                                ) : (
-                                    <motion.div
-                                        key={currentDate ?? "content"}
-                                        custom={direction}
-                                        variants={editionSwapVariants}
-                                        initial="enter"
-                                        animate="center"
-                                        exit="exit"
-                                    >
-                                        <NewsFeed
-                                            articles={articles}
-                                            displayAds={displayAds}
-                                            classifiedAds={classifiedAds}
-                                            editionDate={currentDate}
-                                            editions={editions}
-                                            onDateChange={onDateChange}
-                                            activeSection={activeSection}
-                                            onSectionChange={handleSectionChange}
-                                        />
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
+                            <div style={{ display: "grid" }}>
+                                <AnimatePresence mode="sync" custom={direction}>
+                                    {isLoading || !hasActiveEdition ? (
+                                        <motion.div
+                                            key="skeleton"
+                                            style={{ gridArea: "1 / 1" }}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
+                                            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                                        >
+                                            <SkeletonFeed count={4} />
+                                        </motion.div>
+                                    ) : error ? (
+                                        <motion.div
+                                            key="error"
+                                            style={{ gridArea: "1 / 1" }}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
+                                            transition={{ duration: 0.2 }}
+                                        >
+                                            <ErrorState error={error} />
+                                        </motion.div>
+                                    ) : (
+                                        <motion.div
+                                            key={currentDate ?? "content"}
+                                            style={{ gridArea: "1 / 1" }}
+                                            custom={direction}
+                                            variants={editionSwapVariants}
+                                            initial="enter"
+                                            animate="center"
+                                            exit="exit"
+                                        >
+                                            <NewsFeed
+                                                articles={articles}
+                                                displayAds={displayAds}
+                                                classifiedAds={classifiedAds}
+                                                editionDate={currentDate}
+                                                editions={editions}
+                                                onDateChange={onDateChange}
+                                                activeSection={activeSection}
+                                                onSectionChange={handleSectionChange}
+                                            />
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
                         </div>
 
                         {/* Right Sidebar: Weather + Player */}
