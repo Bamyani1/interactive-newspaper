@@ -1,22 +1,22 @@
 import React from "react";
-import Image from "next/image";
 
 export function CinemaBackground() {
     return (
         <div className="cinema-bg">
             <div className="cinema-map">
-                <Image
-                    src="/landing-photos/default (3).jpg"
-                    alt="Vintage Campus Scene"
-                    fill
-                    style={{ objectFit: "cover" }}
-                    sizes="100vw"
-                    priority
-                    quality={95}
+                <object
+                    type="image/svg+xml"
+                    data="/shape/doodle-animated.svg"
+                    aria-label="OWU campus doodle pattern"
+                    className="cinema-map-svg"
                 />
             </div>
-            {/* Dark overlay for readability */}
+            {/* Dark gradient overlay */}
             <div className="cinema-overlay" />
+            {/* Heavy vignette for cinematic framing */}
+            <div className="cinema-vignette" />
+            {/* Film grain texture */}
+            <div className="cinema-grain" />
         </div>
     );
 }

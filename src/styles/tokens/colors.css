@@ -12,15 +12,15 @@
     /* =========================================
      OWU BRAND COLORS
      ========================================= */
-    --owu-red: #DA0037;
+    --owu-red: #B80D3E;
     --owu-red-deep: color-mix(in srgb, var(--owu-red) 70%, var(--owu-black));
     --owu-red-bright: color-mix(in srgb, var(--owu-red) 75%, var(--owu-white));
     --owu-red-light: color-mix(in srgb, var(--owu-red) 20%, var(--owu-white));
-    --owu-black: #15191d;
-    --owu-charcoal: #444444;
+    --owu-black: #1A1F24;
+    --owu-charcoal: #4C5158;
     --owu-dark-gray: color-mix(in srgb, var(--owu-black) 70%, var(--owu-charcoal));
     --owu-medium-gray: color-mix(in srgb, var(--owu-white) 65%, var(--owu-charcoal));
-    --owu-white: #e6e6e6;
+    --owu-white: #E8E8E8;
 
     /* Gray Scale */
     --owu-gray-100: color-mix(in srgb, var(--owu-black) 5%, var(--owu-white));
@@ -63,12 +63,12 @@
 
     /* Cinema/Landing Page */
     --page-cinema-bg: var(--color-bg-primary);
-    --page-cinema-overlay: color-mix(in srgb, var(--color-bg-primary) 88%, transparent);
-    --page-cinema-paper: linear-gradient(175deg,
-            var(--color-bg-secondary) 0%,
-            color-mix(in srgb, var(--color-bg-secondary) 80%, var(--color-bg-primary)) 50%,
-            var(--color-bg-primary) 100%);
+    --page-cinema-overlay: color-mix(in srgb, var(--color-bg-primary) 55%, transparent);
     --page-cinema-ticker-bg: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
+
+    /* Art Deco Frame */
+    --deco-frame-stroke: color-mix(in srgb, var(--color-text-primary) 25%, transparent);
+    --deco-frame-accent: var(--color-accent);
 
     /* Press/Printing Theme */
     --page-press-bg: var(--color-bg-primary);
@@ -128,41 +128,33 @@
    ========================================= */
 
 [data-mode='light'] {
-    /* Backgrounds */
     --color-bg-primary: var(--owu-white);
     --color-bg-secondary: color-mix(in srgb, var(--owu-white) 88%, var(--owu-black));
     --color-bg-inverse: var(--owu-black);
     --color-bg-muted: color-mix(in srgb, var(--owu-white) 82%, var(--owu-black));
     --color-bg-glass: color-mix(in srgb, var(--owu-white) 80%, transparent);
 
-    /* Text */
-    --color-text-primary: var(--owu-black);
-    --color-text-secondary: color-mix(in srgb, var(--owu-black) 65%, var(--owu-white));
+    --color-text-primary: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
+    --color-text-secondary: color-mix(in srgb, var(--owu-black) 55%, var(--owu-white));
     --color-text-inverse: var(--owu-white);
-    --color-text-header: var(--owu-black);
+    --color-text-header: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
 
-    /* Accent */
     --color-accent: var(--owu-red);
     --color-accent-hover: color-mix(in srgb, var(--owu-red) 70%, var(--owu-black));
     --color-accent-light: color-mix(in srgb, var(--owu-red) 20%, var(--owu-white));
 
-    /* Borders & Strokes */
-    --color-border-default: color-mix(in srgb, var(--owu-black) 12%, transparent);
+    --color-border-default: color-mix(in srgb, var(--owu-black) 14%, transparent);
     --color-border-accent: var(--owu-red);
-    --stroke-accent-soft: color-mix(in srgb, var(--color-accent) 30%, transparent);
+    --stroke-accent-soft: color-mix(in srgb, var(--color-accent) 35%, transparent);
 
-    /* Cinema/Landing Page */
     --page-cinema-bg: var(--color-bg-primary);
     --page-cinema-overlay: color-mix(in srgb, var(--owu-white) 55%, transparent);
-    --page-cinema-paper: linear-gradient(175deg,
-            color-mix(in srgb, var(--owu-white) 96%, var(--owu-black)) 0%,
-            var(--owu-white) 55%,
-            color-mix(in srgb, var(--owu-white) 92%, var(--owu-black)) 100%);
     --page-cinema-ticker-bg: color-mix(in srgb, var(--owu-white) 70%, transparent);
 
-    /* Featured Grid */
+    --deco-frame-stroke: color-mix(in srgb, var(--color-text-primary) 20%, transparent);
+
     --featured-card-bg: var(--owu-white);
-    --featured-card-border: color-mix(in srgb, var(--owu-black) 12%, transparent);
-    --featured-text-primary: var(--owu-black);
+    --featured-card-border: color-mix(in srgb, var(--owu-black) 14%, transparent);
+    --featured-text-primary: var(--color-text-primary);
     --featured-text-hover: var(--owu-red);
 }

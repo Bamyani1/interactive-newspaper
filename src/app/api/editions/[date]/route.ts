@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { loadEdition, transformArticles, computePageCount } from '@/src/lib/ocr-adapter';
+import { loadEdition, transformArticles, transformAds, transformOtherContent, computePageCount } from '@/src/lib/ocr-adapter';
 
 // Revalidate individual edition data every 60 seconds (ISR)
 export const revalidate = 60;
+
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(value);
+}
 
 export async function GET(
   _request: NextRequest,
@@ -10,7 +16,7 @@ export async function GET(
 ) {
   const { date } = await params;
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!isIsoDate(date)) {
     return NextResponse.json(
       { error: 'Invalid date format' },
       { status: 400 },
@@ -26,6 +32,8 @@ export async function GET(
   }
 
   const articles = transformArticles(edition);
+  const ads = transformAds(edition);
+  const otherContent = transformOtherContent(edition);
   const pageCount = computePageCount(edition);
 
   return NextResponse.json({
@@ -36,6 +44,8 @@ export async function GET(
       publicationInfo: edition.publication_info || '',
     },
     articles,
+    ads,
+    otherContent,
     pagination: {
       nextCursor: null,
       hasMore: false,

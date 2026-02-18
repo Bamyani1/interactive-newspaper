@@ -1,0 +1,58 @@
+/* ─── Time Controls Header ─── Editorial Masthead Bar ─── */
+
+.time-controls-header {
+    background: color-mix(in srgb, var(--color-bg-secondary) 92%, transparent);
+    backdrop-filter: saturate(110%) blur(2px);
+    border-bottom: 6.4px solid var(--color-border-accent);
+}
+
+/* Left group: title with accent border */
+.time-controls-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Right group: label + middot + date picker */
+.time-controls-date-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Decorative ornaments (❧ and ·) */
+.time-controls-ornament {
+    font-size: 10px;
+    font-family: var(--font-body);
+    opacity: 0.35;
+    color: var(--color-text-header);
+    line-height: 1;
+    user-select: none;
+}
+
+/* "EDITION" micro-label — matches ContextSidebar section headers */
+.time-controls-label {
+    font-size: 10px;
+    font-family: var(--font-mono, monospace);
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    opacity: 0.5;
+    color: var(--color-text-header);
+    line-height: 1;
+}
+
+/* ─── Dark Mode (inside edition background shell) ─── */
+.edition-background-shell .time-controls-header {
+    background: color-mix(in srgb, var(--color-bg-secondary) 94%, transparent);
+    backdrop-filter: saturate(108%) blur(1px);
+}
+
+/* ─── Light Mode ─── */
+[data-mode='light'] .time-controls-header {
+    background: color-mix(in srgb, var(--color-bg-secondary) 92%, transparent);
+    backdrop-filter: saturate(110%) blur(2px);
+}
+
+[data-mode='light'] .edition-background-shell .time-controls-header {
+    background: color-mix(in srgb, var(--color-bg-secondary) 94%, transparent);
+}

@@ -2,16 +2,15 @@
 
 import React, { useMemo, useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { TimeControls } from "@/features/time-controls";
 import { NavigationSidebar } from "@/features/navigation";
+import { ContextSidebar } from "@/features/context-panel/components/ContextSidebar";
 import { MobileNav } from "@/features/navigation/components/MobileNav";
 import {
     NewsFeed,
-    getClosestContext,
     useEditionArticles,
 } from "@/features/news-feed";
-import { ContextSidebar } from "@/features/context-panel";
 import { useArchive } from "@/features/archive";
 import { PageShell, SkeletonFeed } from "@/shared";
 import { fadeUp, TRANSITIONS } from "@/shared/motion/motionTokens";
@@ -37,7 +36,7 @@ export default function EditionDatePage() {
     useEffect(() => {
         if (isLoadingEditions || !hasEditions) return;
         if (dateParam && !editions.includes(dateParam)) {
-            router.replace(`/edition/${editions[0]}`);
+            router.replace(`/edition/${editions[editions.length - 1]}`);
         }
     }, [dateParam, editions, hasEditions, isLoadingEditions, router]);
 
@@ -47,7 +46,6 @@ export default function EditionDatePage() {
 
     return (
         <EditionBody
-            key={dateParam ?? "no-edition"}
             currentDate={dateParam}
             editions={editions}
             onDateChange={handleDateChange}
@@ -63,6 +61,27 @@ interface EditionBodyProps {
     onDateChange: (date: string) => void;
     hasEditions: boolean;
     isLoadingEditions: boolean;
+}
+
+function ErrorState({ error }: { error: Error }) {
+    return (
+        <div className="mx-auto w-full max-w-4xl px-6 py-16">
+            <div className="border border-red-500/30 bg-[var(--color-bg-secondary)]/70 p-8">
+                <h2 className="font-header text-3xl uppercase tracking-wide mb-4">
+                    Failed to Load Edition
+                </h2>
+                <p className="text-[var(--color-text-secondary)] mb-6">
+                    {error.message || "An unexpected error occurred while loading this edition."}
+                </p>
+                <button
+                    onClick={() => window.location.reload()}
+                    className="px-6 py-3 border border-current hover:bg-[var(--color-text-primary)] hover:text-[var(--color-text-inverse)] transition-colors uppercase tracking-widest text-sm font-bold"
+                >
+                    Retry
+                </button>
+            </div>
+        </div>
+    );
 }
 
 function EmptyState() {
@@ -98,17 +117,17 @@ function EditionBody({
     const [activeSection, setActiveSection] = useState<SectionId>("Top");
     const {
         articles,
+        ads,
         hasActiveEdition,
         isLoading: isLoadingArticles,
+        error,
     } = useEditionArticles(currentDate);
-
-    const context = useMemo(
-        () => getClosestContext(currentDate ?? ""),
-        [currentDate]
-    );
 
     const articlesForDate = articles;
     const isLoading = isLoadingEditions || isLoadingArticles;
+
+    const displayAds = useMemo(() => ads.filter(a => a.adType ? a.adType === "display" : a.body.length >= 200), [ads]);
+    const classifiedAds = useMemo(() => ads.filter(a => a.adType ? a.adType === "classified" : (a.body.length >= 80 && a.body.length < 200)), [ads]);
 
     const sections = useMemo(() => {
         const counts = SECTION_ORDER.map((category) => ({
@@ -117,29 +136,30 @@ function EditionBody({
             count: articlesForDate.filter((article) => article.category === category).length,
         }));
 
-        const realAdsCount = counts.find((item) => item.id === "Ads")?.count ?? 0;
-        const adsCount = realAdsCount > 0 ? realAdsCount : (context.ads?.length ?? 0);
+        const filtered = counts.filter((item) => item.count > 0);
 
-        const filtered = counts.filter((item) => item.id !== "Ads" && item.count > 0);
-
-        const result = [
+        const result: { id: SectionId; label: string; count?: number }[] = [
             { id: "Top" as SectionId, label: "Top Stories" },
             ...filtered,
         ];
 
-        if (adsCount > 0) {
-            result.push({ id: "Ads" as SectionId, label: "Ads", count: adsCount });
+        if (displayAds.length > 0) {
+            result.push({ id: "Ads" as SectionId, label: "Ads", count: displayAds.length });
+        }
+        if (classifiedAds.length > 0) {
+            result.push({ id: "Classifieds" as SectionId, label: "Classifieds", count: classifiedAds.length });
         }
 
         return result;
-    }, [articlesForDate, context]);
+    }, [articlesForDate, displayAds, classifiedAds]);
 
     const handleSectionChange = (sectionId: SectionId) => {
         setActiveSection(sectionId);
     };
 
     return (
-        <PageShell variant="default" hasHeader>
+        <PageShell variant="default" hasHeader className="edition-background-shell">
+            <div className="paper-texture-overlay" aria-hidden="true" />
             <TimeControls />
 
             {!isLoadingEditions && !hasEditions ? (
@@ -148,7 +168,7 @@ function EditionBody({
                 </main>
             ) : (
                 <motion.main
-                    className="min-h-screen w-full lg:min-h-0 lg:h-[calc(100vh-var(--header-height))] lg:overflow-hidden"
+                    className="min-h-screen w-full lg:min-h-0 lg:h-[calc(100vh-var(--header-offset-total))] lg:overflow-hidden"
                     variants={fadeUp(12)}
                     initial="hidden"
                     animate="show"
@@ -156,7 +176,7 @@ function EditionBody({
                 >
                     <div className="grid grid-cols-1 lg:grid-cols-[var(--sidebar-nav-width)_1fr_var(--sidebar-context-width)] w-full min-h-full lg:h-full">
                         {/* Left Sidebar: Navigation */}
-                        <div className="hidden lg:block lg:h-full border-r border-[var(--color-accent)]/50">
+                        <div className="hidden lg:block lg:h-full lg:overflow-y-auto lg:min-h-0 border-r border-[var(--color-accent)]/50">
                             <NavigationSidebar
                                 sections={sections}
                                 activeSection={activeSection}
@@ -164,26 +184,39 @@ function EditionBody({
                             />
                         </div>
 
-                        {/* Center: Main Feed */}
+                        {/* Main Feed */}
                         <div className="lg:overflow-y-auto lg:h-full scrollbar-hide pb-20 lg:pb-0">
                             {isLoading || !hasActiveEdition ? (
                                 <SkeletonFeed count={4} />
+                            ) : error ? (
+                                <ErrorState error={error} />
                             ) : (
-                                <NewsFeed
-                                    key={currentDate ?? "no-edition"}
-                                    articles={articles}
-                                    editionDate={currentDate}
-                                    editions={editions}
-                                    onDateChange={onDateChange}
-                                    activeSection={activeSection}
-                                    onSectionChange={handleSectionChange}
-                                />
+                                <AnimatePresence mode="wait">
+                                    <motion.div
+                                        key={currentDate ?? "no-edition"}
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        transition={TRANSITIONS.quick}
+                                    >
+                                        <NewsFeed
+                                            articles={articles}
+                                            displayAds={displayAds}
+                                            classifiedAds={classifiedAds}
+                                            editionDate={currentDate}
+                                            editions={editions}
+                                            onDateChange={onDateChange}
+                                            activeSection={activeSection}
+                                            onSectionChange={handleSectionChange}
+                                        />
+                                    </motion.div>
+                                </AnimatePresence>
                             )}
                         </div>
 
-                        {/* Right Sidebar: Context */}
-                        <div className="lg:h-full lg:border-l border-[var(--color-accent)]/50 border-t lg:border-t-0">
-                            <ContextSidebar />
+                        {/* Right Sidebar: Weather + Player */}
+                        <div className="hidden lg:block lg:h-full lg:overflow-hidden border-l border-[var(--color-accent)]/50">
+                            <ContextSidebar currentDate={currentDate} />
                         </div>
                     </div>
                 </motion.main>

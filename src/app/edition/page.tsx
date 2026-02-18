@@ -17,12 +17,15 @@ export default function EditionRedirect() {
   useEffect(() => {
     if (isLoading) return;
     if (hasEditions) {
-      router.replace(`/edition/${editions[0]}`);
+      router.replace(`/edition/${editions[editions.length - 1]}`);
+    } else {
+      router.replace("/");
     }
   }, [editions, hasEditions, isLoading, router]);
 
   return (
-    <PageShell variant="default" hasHeader>
+    <PageShell variant="default" hasHeader className="edition-background-shell">
+      <div className="paper-texture-overlay" aria-hidden="true" />
       <TimeControls />
       <main className="min-h-screen w-full">
         <SkeletonFeed count={4} />

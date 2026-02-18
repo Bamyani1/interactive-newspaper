@@ -1,0 +1,98 @@
+.site-footer {
+    width: 100%;
+    margin-top: auto;
+    padding-top: var(--space-12);
+    padding-inline: 0;
+    overflow: visible;
+}
+
+.site-footer__inner {
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0 auto;
+    border-top: 1px solid color-mix(in srgb, var(--color-border-default) 70%, transparent);
+    padding-top: var(--space-10);
+    padding-bottom: clamp(1rem, 2.4vw, 1.75rem);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    padding-inline: clamp(1rem, 3vw, 2rem);
+    text-align: center;
+}
+
+.site-footer__primary {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding-top: var(--space-4);
+    padding-bottom: var(--space-10);
+    padding-inline: clamp(1rem, 3vw, 2rem);
+    overflow: visible;
+    min-height: 3rem;
+}
+
+.site-footer__primary button {
+    color: var(--color-text-secondary);
+    font-size: 1rem;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    text-decoration: none;
+    background: none;
+    border: none;
+    padding: var(--space-2) var(--space-3);
+    cursor: pointer;
+    transition: color var(--duration-fast) var(--ease-default);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.site-footer__primary button:hover:not(:disabled) {
+    color: var(--color-text-primary);
+}
+
+.site-footer__primary button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.site-footer__links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.675rem;
+    color: var(--color-text-secondary);
+    font-size: 0.702rem;
+    letter-spacing: 0.08em;
+    text-align: center;
+}
+
+.site-footer__link {
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    transition: color var(--duration-fast) var(--ease-default);
+}
+
+.site-footer__link:hover {
+    color: var(--color-text-primary);
+}
+
+.site-footer__links button {
+    color: var(--color-text-secondary);
+    letter-spacing: 0.09em;
+    text-transform: none;
+}
+
+.site-footer__links button:hover {
+    color: var(--color-text-primary);
+}
+
+.site-footer__separator {
+    opacity: 0.5;
+}

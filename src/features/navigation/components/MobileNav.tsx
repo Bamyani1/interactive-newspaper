@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { TRANSITIONS } from "@/shared/motion/motionTokens";
 import {
   Newspaper,
   Trophy,
@@ -62,7 +63,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 lg:hidden z-50 bg-[var(--color-bg-primary)]/95 backdrop-blur-md border-t"
+      className="fixed bottom-0 left-0 right-0 lg:hidden z-[var(--z-header)] bg-[var(--color-bg-primary)]/95 backdrop-blur-md border-t"
       style={{ borderColor: "var(--stroke-accent-soft)" }}
     >
       <div className="flex items-center justify-around px-2 py-2 max-w-lg mx-auto">
@@ -125,7 +126,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 8 }}
-                  transition={{ duration: 0.15 }}
+                  transition={TRANSITIONS.micro}
                   className="absolute bottom-full right-0 mb-2 py-2 bg-[var(--color-bg-secondary)] rounded-lg shadow-xl border"
                   style={{ borderColor: "var(--stroke-accent-soft)" }}
                 >

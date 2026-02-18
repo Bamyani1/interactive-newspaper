@@ -1,0 +1,7 @@
+google-genai
+python-dotenv
+Pillow
+pydantic
+scipy
+doclayout-yolo
+huggingface_hub

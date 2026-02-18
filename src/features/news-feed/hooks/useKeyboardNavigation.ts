@@ -22,16 +22,20 @@ export function useKeyboardNavigation({
 }: UseKeyboardNavigationOptions) {
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
-            // Don't trigger if user is typing in an input
+            // Don't trigger if user is interacting with form elements or embedded content
+            const target = event.target as HTMLElement;
             if (
-                event.target instanceof HTMLInputElement ||
-                event.target instanceof HTMLTextAreaElement
+                target instanceof HTMLInputElement ||
+                target instanceof HTMLTextAreaElement ||
+                target instanceof HTMLSelectElement ||
+                target.isContentEditable ||
+                target.closest?.('iframe, [role="listbox"], [data-no-keyboard-nav]')
             ) {
                 return;
             }
 
             // No keyboard navigation for Ads section
-            if (currentSection === "Ads") {
+            if (currentSection === "Ads" || currentSection === "Classifieds") {
                 return;
             }
 
@@ -117,12 +121,14 @@ export function useScrollCoordinator({
         pendingFocusRef.current = null;
 
         const timer = setTimeout(() => {
-            // Try article refs first, then fall back to topExpandedRef
-            const element =
-                articleRefs.current.get(intent.targetId) ??
-                (intent.targetId === "__top_expanded__" ? topExpandedRef.current : null);
-            element?.scrollIntoView({ behavior: "smooth", block: intent.block });
-        }, 150);
+            requestAnimationFrame(() => {
+                // Try article refs first, then fall back to topExpandedRef
+                const element =
+                    articleRefs.current.get(intent.targetId) ??
+                    (intent.targetId === "__top_expanded__" ? topExpandedRef.current : null);
+                element?.scrollIntoView({ behavior: "smooth", block: intent.block });
+            });
+        }, 250);
 
         return () => clearTimeout(timer);
     }, [currentSection, currentArticles, topExpandedArticle, expandedId, scrollIntentRef, pendingFocusRef, articleRefs, topExpandedRef]);
