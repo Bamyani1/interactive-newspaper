@@ -13,7 +13,7 @@ import {
 } from "@/features/news-feed";
 import { useArchive } from "@/features/archive";
 import { PageShell, SkeletonFeed } from "@/shared";
-import { fadeUp, TRANSITIONS } from "@/shared/motion/motionTokens";
+import { TRANSITIONS } from "@/shared/motion/motionTokens";
 
 import type { SectionId } from "@/src/types";
 import { SECTION_ORDER } from "@/features/news-feed/components/NewsFeed";
@@ -167,13 +167,7 @@ function EditionBody({
                     <EmptyState />
                 </main>
             ) : (
-                <motion.main
-                    className="min-h-screen w-full lg:min-h-0 lg:h-[calc(100vh-var(--header-offset-total))] lg:overflow-hidden"
-                    variants={fadeUp(12)}
-                    initial="hidden"
-                    animate="show"
-                    transition={TRANSITIONS.base}
-                >
+                <main className="min-h-screen w-full lg:min-h-0 lg:h-[calc(100vh-var(--header-offset-total))] lg:overflow-hidden">
                     <div className="grid grid-cols-1 lg:grid-cols-[var(--sidebar-nav-width)_1fr_var(--sidebar-context-width)] w-full min-h-full lg:h-full">
                         {/* Left Sidebar: Navigation */}
                         <div className="hidden lg:block lg:h-full lg:overflow-y-auto lg:min-h-0 border-r border-[var(--color-accent)]/50">
@@ -219,7 +213,7 @@ function EditionBody({
                             <ContextSidebar currentDate={currentDate} />
                         </div>
                     </div>
-                </motion.main>
+                </main>
             )}
 
             {/* Mobile Bottom Navigation */}
