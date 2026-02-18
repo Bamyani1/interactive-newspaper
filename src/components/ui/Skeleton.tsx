@@ -95,14 +95,9 @@ export const SkeletonFeed: React.FC<SkeletonFeedProps> = ({ count = 4 }) => {
   return (
     <div className="flex flex-col gap-6 max-w-5xl mx-auto w-full px-4 md:px-6 py-8">
       {Array.from({ length: count }).map((_, i) => (
-        <motion.div
-          key={i}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.1, duration: 0.3 }}
-        >
+        <div key={i}>
           <SkeletonCard />
-        </motion.div>
+        </div>
       ))}
     </div>
   );
