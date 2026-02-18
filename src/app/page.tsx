@@ -31,9 +31,6 @@ export default function Home() {
         if (!selectedEdition) return;
         setIsEntering(true);
         setIsExiting(true);
-        setTimeout(() => {
-            router.push(`/edition/${selectedEdition}`);
-        }, 350);
     };
 
     // Memoize ticker items to prevent recreation on every render
@@ -115,6 +112,20 @@ export default function Home() {
 
             {/* BOTTOM TICKER */}
             <Ticker items={tickerItems} reverse />
+
+            {/* White wash-out transition */}
+            <motion.div
+                className="fixed inset-0 z-50 pointer-events-none"
+                style={{ backgroundColor: "#fff" }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: isExiting ? 1 : 0 }}
+                transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                onAnimationComplete={() => {
+                    if (isExiting && selectedEdition) {
+                        router.push(`/edition/${selectedEdition}`);
+                    }
+                }}
+            />
         </PageShell>
     );
 }

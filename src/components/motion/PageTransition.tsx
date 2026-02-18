@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { usePathname } from "next/navigation";
 import { crossfadeVariants } from "./motionTokens";
@@ -13,6 +13,10 @@ export const PageTransition: React.FC<PageTransitionProps> = ({ children }) => {
   const pathname = usePathname();
   const shouldReduceMotion = useReducedMotion();
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [pathname]);
+
   const routeKey = pathname?.startsWith("/edition") ? "/edition" : pathname;
 
   if (shouldReduceMotion) {
@@ -20,7 +24,7 @@ export const PageTransition: React.FC<PageTransitionProps> = ({ children }) => {
   }
 
   return (
-    <div style={{ display: "grid", minHeight: "100vh", overflow: "clip" }}>
+    <div style={{ display: "grid", minHeight: "100vh", background: "#fff" }}>
       <AnimatePresence mode="sync">
         <motion.div
           key={routeKey}
@@ -28,7 +32,7 @@ export const PageTransition: React.FC<PageTransitionProps> = ({ children }) => {
           initial="hidden"
           animate="show"
           exit="exit"
-          style={{ gridArea: "1 / 1", minHeight: "100vh" }}
+          style={{ gridArea: "1 / 1", minHeight: "100vh", overflow: "hidden" }}
         >
           {children}
         </motion.div>

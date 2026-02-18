@@ -157,6 +157,14 @@ function EditionBody({
         setActiveSection(sectionId);
     };
 
+    const feedRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (feedRef.current) {
+            feedRef.current.scrollTop = 0;
+        }
+    }, [activeSection, currentDate]);
+
     const prevDateRef = useRef<string | null>(null);
     const direction = (() => {
         if (!prevDateRef.current || !currentDate) return 1;
@@ -189,7 +197,7 @@ function EditionBody({
                         </div>
 
                         {/* Main Feed */}
-                        <div className="lg:overflow-y-auto lg:h-full scrollbar-hide pb-20 lg:pb-0">
+                        <div ref={feedRef} className="lg:overflow-y-auto lg:h-full scrollbar-hide pb-20 lg:pb-0">
                             <div style={{ display: "grid" }}>
                                 <AnimatePresence mode="sync" custom={direction}>
                                     {isLoading || !hasActiveEdition ? (
