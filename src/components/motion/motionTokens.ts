@@ -5,16 +5,16 @@ export const EASINGS = {
 } as const;
 
 export const TRANSITIONS = {
-  micro: { duration: 0.15, ease: EASINGS.smooth },
-  quick: { duration: 0.2, ease: EASINGS.smooth },
-  base: { duration: 0.45, ease: EASINGS.standard },
-  slow: { duration: 0.6, ease: EASINGS.standard },
+  micro: { duration: 0.1, ease: EASINGS.smooth },
+  quick: { duration: 0.15, ease: EASINGS.smooth },
+  base: { duration: 0.3, ease: EASINGS.standard },
+  slow: { duration: 0.4, ease: EASINGS.standard },
 } as const;
 
 export const pageVariants = {
-  hidden: { opacity: 0, y: 12 },
+  hidden: { opacity: 0, y: 8 },
   show: { opacity: 1, y: 0, transition: TRANSITIONS.slow },
-  exit: { opacity: 0, y: -8, transition: TRANSITIONS.quick },
+  exit: { opacity: 0, transition: TRANSITIONS.micro },
 };
 
 export const fadeUp = (distance = 16) => ({
