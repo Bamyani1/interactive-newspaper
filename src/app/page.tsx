@@ -11,7 +11,7 @@ import { cardIn, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 export default function Home() {
     const router = useRouter();
-    const { setDate, editions, isLoading } = useArchive();
+    const { editions, isLoading } = useArchive();
     const [isEntering, setIsEntering] = useState(false);
 
     // Use the extracted animation hook
@@ -28,13 +28,8 @@ export default function Home() {
 
     const handleEnter = () => {
         if (!selectedEdition) return;
-        setDate(selectedEdition);
         setIsEntering(true);
-
-        // Navigate immediately after a tiny delay so the spinner paints
-        setTimeout(() => {
-            router.push(`/edition/${selectedEdition}`);
-        }, 0);
+        router.push(`/edition/${selectedEdition}`);
     };
 
     // Memoize ticker items to prevent recreation on every render
