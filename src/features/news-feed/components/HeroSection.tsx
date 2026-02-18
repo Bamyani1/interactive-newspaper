@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion } from "framer-motion";
 import Image from "next/image";
 import type { Article } from "@/src/types";
 import { ChevronDown } from "lucide-react";
@@ -26,12 +25,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ article, onReadMore, i
             <div className="flex flex-col sm:flex-row gap-5 items-start">
                 {/* Photo + Caption */}
                 {hasImage && !imgError && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="shrink-0"
-                    >
+                    <div className="shrink-0">
                         <div className="relative w-[220px] md:w-[260px] aspect-[4/3] border border-[var(--color-border-default)] overflow-hidden">
                             <Image
                                 src={article.imageUrls[0]}
@@ -50,18 +44,13 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ article, onReadMore, i
                                 }
                             </p>
                         )}
-                    </motion.div>
+                    </div>
                 )}
 
                 {/* Content Column */}
                 <div className="flex-1 space-y-2">
                     {/* Meta Strip */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.15 }}
-                        className="flex items-center gap-2 flex-wrap font-mono text-[10px] uppercase tracking-[0.15em]"
-                    >
+                    <div className="flex items-center gap-2 flex-wrap font-mono text-[10px] uppercase tracking-[0.15em]">
                         <span className="text-[var(--color-accent)] font-bold">{article.category}</span>
                         <span aria-hidden="true" className="text-[var(--color-text-secondary)]">·</span>
                         <span className="text-[var(--color-text-secondary)]">{article.date}</span>
@@ -71,49 +60,29 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ article, onReadMore, i
                                 <span className="text-[var(--color-text-secondary)]">Pg. {page}</span>
                             </>
                         )}
-                    </motion.div>
+                    </div>
 
                     {/* Headline */}
-                    <motion.h1
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="font-header text-2xl md:text-3xl text-[var(--color-text-primary)] leading-snug"
-                    >
+                    <h1 className="font-header text-2xl md:text-3xl text-[var(--color-text-primary)] leading-snug">
                         {article.headline}
-                    </motion.h1>
+                    </h1>
 
                     {/* Byline */}
                     {author && (
-                        <motion.p
-                            initial={{ opacity: 0, y: 12 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.2 }}
-                            className="text-[11px] uppercase tracking-[0.12em] opacity-60"
-                        >
+                        <p className="text-[11px] uppercase tracking-[0.12em] opacity-60">
                             By {author}
-                        </motion.p>
+                        </p>
                     )}
 
                     {/* Summary */}
-                    <motion.p
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.25 }}
-                        className="font-body text-base md:text-lg leading-relaxed text-[var(--color-text-secondary)] line-clamp-2"
-                    >
+                    <p className="font-body text-base md:text-lg leading-relaxed text-[var(--color-text-secondary)] line-clamp-2">
                         {article.summary}
-                    </motion.p>
+                    </p>
                 </div>
             </div>
 
             {/* Read More */}
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="flex justify-end mt-3"
-            >
+            <div className="flex justify-end mt-3">
                 <button
                     onClick={onReadMore}
                     className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] transition-colors"
@@ -121,7 +90,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ article, onReadMore, i
                     Read Full Story
                     <ChevronDown size={14} />
                 </button>
-            </motion.div>
+            </div>
         </section>
     );
 };
