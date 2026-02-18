@@ -20,6 +20,13 @@ export const DEFAULT_LIGHT_TOKENS: ColorPreset["colors"] = {
     "--owu-white": "#F2F0EE",
 };
 
+export const DEFAULT_DARK_TOKENS: ColorPreset["colors"] = {
+    "--owu-red": "#B80D3E",
+    "--owu-black": "#1A1F24",
+    "--owu-charcoal": "#4C5158",
+    "--owu-white": "#E8E8E8",
+};
+
 export const PRESET_CATEGORIES = ["Broadsheet Dark", "Broadsheet Light"] as const;
 
 export const PRESETS: ColorPreset[] = [

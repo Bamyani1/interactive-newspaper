@@ -17,8 +17,8 @@ import {
   Lightbox,
 } from "./print-edition-primitives";
 
-const sectionVariants = fadeUp(18);
-const sectionContainer = staggerContainer(0.08, 0.12);
+const sectionVariants = fadeUp(10);
+const sectionContainer = staggerContainer(0.03, 0);
 
 // ─── Main Component ────────────────────────────────────────────────
 
@@ -156,12 +156,9 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
               <React.Fragment key={article.id}>
                 <motion.article
                   className="py-5"
-                  initial={{ opacity: 0, y: 16 }}
+                  initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    ...TRANSITIONS.base,
-                    delay: 0.15 + index * 0.08,
-                  }}
+                  transition={TRANSITIONS.base}
                 >
                   {/* Single rule top */}
                   <div

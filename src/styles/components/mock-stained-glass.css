@@ -1,0 +1,625 @@
+/**
+ * Cathedral Stained Glass Page Styles
+ * Immersive "cathedral ceiling" experience with volumetric light,
+ * dust motes, mouse-reactive spotlight, and gothic vignette framing.
+ *
+ * 9-Layer Architecture (bottom to top):
+ *   1. Base background (#0d0804)
+ *   2. Stained glass SVG
+ *   3. Ambient color bleed (screen)
+ *   4. Light rays / god rays (soft-light)
+ *   5. Mouse spotlight (overlay)
+ *   6. Gothic vignette
+ *   7. Dust motes (screen)
+ *   8. Content card
+ *   9. Film grain (overlay)
+ */
+
+/* =========================================
+   CUSTOM PROPERTIES
+   ========================================= */
+
+.cathedral-root {
+    --cathedral-base: #0a0604;
+    --cathedral-gold: #c09030;
+    --cathedral-gold-bright: #ffd060;
+    --mouse-x: 0.5;
+    --mouse-y: 0.5;
+
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    isolation: isolate;
+    background: var(--cathedral-base);
+    cursor: default;
+}
+
+/* =========================================
+   LAYER 1: STAINED GLASS SVG
+   ========================================= */
+
+.cathedral-glass {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    animation: cathedralGlassFadeIn 1.5s ease-out forwards;
+    will-change: opacity, transform;
+}
+
+.cathedral-glass object,
+.cathedral-glass img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+/* =========================================
+   LAYER 2: AMBIENT COLOR BLEED
+   ========================================= */
+
+.cathedral-ambient {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    mix-blend-mode: screen;
+    opacity: 0.50;
+    background:
+        radial-gradient(ellipse 50% 40% at 30% 40%, rgba(184, 48, 48, 0.60), transparent 70%),
+        radial-gradient(ellipse 45% 35% at 70% 35%, rgba(48, 144, 168, 0.60), transparent 70%),
+        radial-gradient(ellipse 40% 30% at 50% 65%, rgba(192, 144, 48, 0.65), transparent 70%),
+        radial-gradient(ellipse 35% 30% at 25% 70%, rgba(192, 96, 32, 0.55), transparent 70%);
+    animation: cathedralAmbientPulse 8s ease-in-out infinite;
+}
+
+/* =========================================
+   LAYER 3: LIGHT RAYS (GOD RAYS)
+   ========================================= */
+
+.cathedral-rays {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.cathedral-ray-1,
+.cathedral-ray-2,
+.cathedral-ray-3 {
+    position: absolute;
+    width: 200%;
+    height: 200%;
+    top: -50%;
+    left: -50%;
+    mix-blend-mode: soft-light;
+    will-change: transform;
+}
+
+.cathedral-ray-1 {
+    background: conic-gradient(
+        from 0deg,
+        transparent 0deg,
+        rgba(255, 208, 96, 0.12) 15deg,
+        transparent 30deg,
+        transparent 60deg,
+        rgba(255, 220, 130, 0.09) 75deg,
+        transparent 90deg,
+        transparent 120deg,
+        rgba(192, 144, 48, 0.10) 135deg,
+        transparent 150deg,
+        transparent 180deg,
+        rgba(255, 248, 230, 0.12) 195deg,
+        transparent 210deg,
+        transparent 240deg,
+        rgba(96, 208, 240, 0.09) 255deg,
+        transparent 270deg,
+        transparent 300deg,
+        rgba(255, 208, 96, 0.10) 315deg,
+        transparent 330deg,
+        transparent 360deg
+    );
+    animation: cathedralRayRotate 50s linear infinite;
+    transform-origin:
+        calc(50% + (var(--mouse-x) - 0.5) * 3%)
+        calc(50% + (var(--mouse-y) - 0.5) * 3%);
+}
+
+.cathedral-ray-2 {
+    background: conic-gradient(
+        from 120deg,
+        transparent 0deg,
+        rgba(255, 144, 64, 0.10) 20deg,
+        transparent 40deg,
+        transparent 80deg,
+        rgba(255, 208, 96, 0.09) 100deg,
+        transparent 120deg,
+        transparent 160deg,
+        rgba(96, 208, 240, 0.12) 180deg,
+        transparent 200deg,
+        transparent 240deg,
+        rgba(255, 220, 130, 0.10) 260deg,
+        transparent 280deg,
+        transparent 320deg,
+        rgba(184, 48, 48, 0.09) 340deg,
+        transparent 360deg
+    );
+    animation: cathedralRayRotate 65s linear infinite reverse;
+    transform-origin:
+        calc(50% + (var(--mouse-x) - 0.5) * -2%)
+        calc(50% + (var(--mouse-y) - 0.5) * -2%);
+}
+
+.cathedral-ray-3 {
+    background: conic-gradient(
+        from 240deg,
+        transparent 0deg,
+        rgba(192, 144, 48, 0.15) 10deg,
+        transparent 25deg,
+        transparent 70deg,
+        rgba(255, 248, 230, 0.09) 85deg,
+        transparent 100deg,
+        transparent 150deg,
+        rgba(255, 208, 96, 0.12) 165deg,
+        transparent 180deg,
+        transparent 220deg,
+        rgba(96, 208, 240, 0.10) 235deg,
+        transparent 250deg,
+        transparent 300deg,
+        rgba(255, 144, 64, 0.09) 315deg,
+        transparent 330deg,
+        transparent 360deg
+    );
+    animation: cathedralRayRotate 80s linear infinite;
+    transform-origin:
+        calc(50% + (var(--mouse-x) - 0.5) * 2%)
+        calc(50% + (var(--mouse-y) - 0.5) * 2%);
+}
+
+/* =========================================
+   LAYER 4: MOUSE SPOTLIGHT
+   ========================================= */
+
+.cathedral-spotlight {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    mix-blend-mode: overlay;
+    background: radial-gradient(
+        circle 250px at
+            calc(var(--mouse-x) * 100%)
+            calc(var(--mouse-y) * 100%),
+        rgba(255, 248, 230, 0.12),
+        transparent 70%
+    );
+}
+
+/* =========================================
+   LAYER 5: GOTHIC VIGNETTE
+   ========================================= */
+
+.cathedral-vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    background:
+        radial-gradient(
+            ellipse 120% 60% at 50% -10%,
+            transparent 40%,
+            rgba(13, 8, 4, 0.6) 75%,
+            rgba(13, 8, 4, 0.95) 100%
+        ),
+        linear-gradient(
+            to top,
+            rgba(13, 8, 4, 0.8) 0%,
+            transparent 40%
+        ),
+        linear-gradient(
+            to right,
+            rgba(13, 8, 4, 0.7) 0%,
+            transparent 12%,
+            transparent 88%,
+            rgba(13, 8, 4, 0.7) 100%
+        );
+}
+
+/* =========================================
+   LAYER 6: DUST MOTES
+   ========================================= */
+
+.cathedral-motes {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.cathedral-mote {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255, 240, 210, 0.7);
+    mix-blend-mode: screen;
+    will-change: transform, opacity;
+}
+
+/* =========================================
+   LAYER 7: CONTENT CARD
+   ========================================= */
+
+.cathedral-card-wrapper {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.cathedral-card {
+    position: relative;
+    max-width: 440px;
+    width: 90%;
+    padding: 48px 40px;
+    background: rgba(13, 8, 4, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(192, 144, 48, 0.25);
+    pointer-events: auto;
+    animation: cathedralCardGlow 6s ease-in-out infinite;
+}
+
+.cathedral-title {
+    font-family: var(--font-cinzel-decorative);
+    font-size: var(--text-4xl);
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--cathedral-gold-bright);
+    text-shadow: 0 0 20px rgba(255, 208, 96, 0.3);
+    text-align: center;
+    line-height: var(--leading-tight);
+    margin-bottom: 12px;
+}
+
+.cathedral-subtitle {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: var(--text-base);
+    letter-spacing: 0.1em;
+    color: rgba(232, 224, 208, 0.6);
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+/* Decorative gold rule with center diamond */
+.cathedral-rule {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 28px;
+}
+
+.cathedral-rule::before,
+.cathedral-rule::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(
+        to right,
+        transparent,
+        rgba(192, 144, 48, 0.5),
+        transparent
+    );
+}
+
+.cathedral-diamond {
+    width: 8px;
+    height: 8px;
+    background: var(--cathedral-gold);
+    transform: rotate(45deg);
+    flex-shrink: 0;
+    box-shadow: 0 0 6px rgba(255, 208, 96, 0.5);
+}
+
+/* Color swatches */
+.cathedral-swatches {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.cathedral-swatch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.cathedral-swatch-dot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--swatch-stroke);
+    box-shadow: 0 0 12px var(--swatch-glow);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.cathedral-swatch-dot:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 18px var(--swatch-glow);
+}
+
+.cathedral-swatch-label {
+    font-family: var(--font-body);
+    font-variant: small-caps;
+    font-size: 0.55rem;
+    letter-spacing: 0.08em;
+    color: rgba(232, 224, 208, 0.45);
+}
+
+/* Panel count */
+.cathedral-meta {
+    font-family: var(--font-body);
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    color: rgba(232, 224, 208, 0.35);
+    text-align: center;
+}
+
+/* Corner ornaments */
+.cathedral-corner {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    color: rgba(192, 144, 48, 0.3);
+}
+
+.cathedral-corner--tl {
+    top: 10px;
+    left: 10px;
+}
+
+.cathedral-corner--tr {
+    top: 10px;
+    right: 10px;
+    transform: scaleX(-1);
+}
+
+.cathedral-corner--bl {
+    bottom: 10px;
+    left: 10px;
+    transform: scaleY(-1);
+}
+
+.cathedral-corner--br {
+    bottom: 10px;
+    right: 10px;
+    transform: scale(-1, -1);
+}
+
+/* =========================================
+   LAYER 8: FILM GRAIN
+   ========================================= */
+
+.cathedral-grain {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    pointer-events: none;
+    opacity: 0.06;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+    mix-blend-mode: overlay;
+}
+
+/* =========================================
+   KEYFRAMES
+   ========================================= */
+
+@keyframes cathedralGlassFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(1.02);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes cathedralAmbientPulse {
+    0%, 100% {
+        opacity: 0.35;
+    }
+    50% {
+        opacity: 0.65;
+    }
+}
+
+@keyframes cathedralRayRotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes cathedralMoteFloat {
+    0% {
+        transform: translateY(0) translateX(0) scale(1);
+        opacity: var(--mote-opacity-start, 0);
+    }
+    20% {
+        opacity: var(--mote-opacity-mid, 0.6);
+    }
+    50% {
+        transform: translateY(-40vh) translateX(15px) scale(0.9);
+    }
+    80% {
+        opacity: var(--mote-opacity-mid, 0.6);
+    }
+    100% {
+        transform: translateY(-90vh) translateX(-10px) scale(0.8);
+        opacity: var(--mote-opacity-end, 0);
+    }
+}
+
+@keyframes cathedralCardGlow {
+    0%, 100% {
+        box-shadow:
+            0 0 30px rgba(192, 144, 48, 0.05),
+            inset 0 0 30px rgba(0, 0, 0, 0.2);
+    }
+    50% {
+        box-shadow:
+            0 0 40px rgba(192, 144, 48, 0.1),
+            inset 0 0 30px rgba(0, 0, 0, 0.15);
+    }
+}
+
+/* =========================================
+   RESPONSIVE (mobile)
+   ========================================= */
+
+@media (max-width: 768px) {
+    .cathedral-card {
+        max-width: 340px;
+        padding: 36px 28px;
+    }
+
+    .cathedral-title {
+        font-size: var(--text-3xl);
+        letter-spacing: 0.15em;
+    }
+
+    .cathedral-swatch-dot {
+        width: 22px;
+        height: 22px;
+    }
+
+    .cathedral-swatches {
+        gap: 10px;
+    }
+
+    .cathedral-swatch-label {
+        font-size: 0.5rem;
+    }
+}
+
+/* =========================================
+   REDUCED MOTION
+   ========================================= */
+
+@media (prefers-reduced-motion: reduce) {
+    .cathedral-glass {
+        animation: none;
+        opacity: 1;
+    }
+
+    .cathedral-ray-1,
+    .cathedral-ray-2,
+    .cathedral-ray-3 {
+        animation: none;
+    }
+
+    .cathedral-mote {
+        animation: none !important;
+        opacity: 0.3;
+    }
+
+    .cathedral-ambient {
+        animation: none;
+        opacity: 0.35;
+    }
+
+    .cathedral-card {
+        animation: none;
+        box-shadow:
+            0 0 30px rgba(192, 144, 48, 0.05),
+            inset 0 0 30px rgba(0, 0, 0, 0.2);
+    }
+}
+
+/* =========================================
+   LIGHT MODE
+   ========================================= */
+
+[data-mode='light'] .cathedral-root {
+    --cathedral-base: #f5f0e8;
+}
+
+[data-mode='light'] .cathedral-vignette {
+    background:
+        radial-gradient(
+            ellipse 120% 60% at 50% -10%,
+            transparent 40%,
+            rgba(245, 240, 232, 0.4) 75%,
+            rgba(245, 240, 232, 0.85) 100%
+        ),
+        linear-gradient(
+            to top,
+            rgba(245, 240, 232, 0.7) 0%,
+            transparent 40%
+        ),
+        linear-gradient(
+            to right,
+            rgba(245, 240, 232, 0.6) 0%,
+            transparent 12%,
+            transparent 88%,
+            rgba(245, 240, 232, 0.6) 100%
+        );
+}
+
+[data-mode='light'] .cathedral-ambient {
+    mix-blend-mode: multiply;
+    opacity: 0.2;
+}
+
+[data-mode='light'] .cathedral-card {
+    background: rgba(245, 240, 232, 0.8);
+    border-color: rgba(192, 144, 48, 0.35);
+}
+
+[data-mode='light'] .cathedral-title {
+    color: var(--cathedral-gold);
+    text-shadow: none;
+}
+
+[data-mode='light'] .cathedral-subtitle {
+    color: rgba(13, 8, 4, 0.5);
+}
+
+[data-mode='light'] .cathedral-swatch-label {
+    color: rgba(13, 8, 4, 0.4);
+}
+
+[data-mode='light'] .cathedral-meta {
+    color: rgba(13, 8, 4, 0.3);
+}
+
+[data-mode='light'] .cathedral-rule::before,
+[data-mode='light'] .cathedral-rule::after {
+    background: linear-gradient(
+        to right,
+        transparent,
+        rgba(192, 144, 48, 0.4),
+        transparent
+    );
+}
+
+[data-mode='light'] .cathedral-grain {
+    opacity: 0.03;
+}

@@ -1,17 +1,7 @@
-import "../../../font-color/styles/font-color-kit.css";
-import ColorCustomizer from "../../../font-color/components/ColorCustomizer";
-import FontCustomizer from "../../../font-color/components/FontCustomizer";
-
 export default function EditionLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return (
-    <>
-      {children}
-      <ColorCustomizer />
-      <FontCustomizer />
-    </>
-  );
+  return <>{children}</>;
 }

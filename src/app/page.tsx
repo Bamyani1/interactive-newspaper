@@ -7,12 +7,13 @@ import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { PageShell, CinemaBackground, Ticker, useTickerAnimation, EditionPicker } from "@/shared";
 import { headlines } from "@/shared/landing/data/headlines";
-import { cardIn, TRANSITIONS } from "@/shared/motion/motionTokens";
+import { landingCardVariants, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 export default function Home() {
     const router = useRouter();
-    const { setDate, editions, isLoading } = useArchive();
+    const { editions, isLoading } = useArchive();
     const [isEntering, setIsEntering] = useState(false);
+    const [isExiting, setIsExiting] = useState(false);
 
     // Use the extracted animation hook
     useTickerAnimation();
@@ -28,13 +29,8 @@ export default function Home() {
 
     const handleEnter = () => {
         if (!selectedEdition) return;
-        setDate(selectedEdition);
         setIsEntering(true);
-
-        // Navigate immediately after a tiny delay so the spinner paints
-        setTimeout(() => {
-            router.push(`/edition/${selectedEdition}`);
-        }, 0);
+        setIsExiting(true);
     };
 
     // Memoize ticker items to prevent recreation on every render
@@ -52,9 +48,9 @@ export default function Home() {
             <main className="cinema-content">
                 <motion.div
                     className="cinema-paper"
-                    variants={cardIn}
+                    variants={landingCardVariants}
                     initial="hidden"
-                    animate="show"
+                    animate={isExiting ? "exit" : "show"}
                     transition={TRANSITIONS.slow}
                 >
                     <header className="cinema-masthead">
@@ -116,6 +112,20 @@ export default function Home() {
 
             {/* BOTTOM TICKER */}
             <Ticker items={tickerItems} reverse />
+
+            {/* White wash-out transition */}
+            <motion.div
+                className="fixed inset-0 z-50 pointer-events-none"
+                style={{ backgroundColor: "#fff" }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: isExiting ? 1 : 0 }}
+                transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                onAnimationComplete={() => {
+                    if (isExiting && selectedEdition) {
+                        router.push(`/edition/${selectedEdition}`);
+                    }
+                }}
+            />
         </PageShell>
     );
 }

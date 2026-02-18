@@ -5,16 +5,16 @@ export const EASINGS = {
 } as const;
 
 export const TRANSITIONS = {
-  micro: { duration: 0.15, ease: EASINGS.smooth },
-  quick: { duration: 0.2, ease: EASINGS.smooth },
-  base: { duration: 0.45, ease: EASINGS.standard },
-  slow: { duration: 0.6, ease: EASINGS.standard },
+  micro: { duration: 0.1, ease: EASINGS.smooth },
+  quick: { duration: 0.15, ease: EASINGS.smooth },
+  base: { duration: 0.3, ease: EASINGS.standard },
+  slow: { duration: 0.4, ease: EASINGS.standard },
 } as const;
 
 export const pageVariants = {
-  hidden: { opacity: 0, y: 12 },
+  hidden: { opacity: 0, y: 8 },
   show: { opacity: 1, y: 0, transition: TRANSITIONS.slow },
-  exit: { opacity: 0, y: -8, transition: TRANSITIONS.quick },
+  exit: { opacity: 0, transition: TRANSITIONS.micro },
 };
 
 export const fadeUp = (distance = 16) => ({
@@ -51,3 +51,35 @@ export const staggerContainer = (stagger = 0.08, delayChildren = 0.05) => ({
     },
   },
 });
+
+/** Crossfade page transition (pure opacity, no y-shift to avoid jarring overlap) */
+export const crossfadeVariants = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { duration: 0.55, ease: EASINGS.smooth } },
+  exit: { opacity: 0, transition: { duration: 0.3, ease: EASINGS.smooth } },
+};
+
+/** Edition swap — pure crossfade, no positional shift */
+export const editionSwapVariants = {
+  enter: { opacity: 0 },
+  center: {
+    opacity: 1,
+    transition: { duration: 0.4, ease: EASINGS.smooth },
+  },
+  exit: {
+    opacity: 0,
+    transition: { duration: 0.3, ease: EASINGS.smooth },
+  },
+};
+
+/** Landing card with dramatic exit */
+export const landingCardVariants = {
+  hidden: { opacity: 0, y: 20, scale: 0.98 },
+  show: { opacity: 1, y: 0, scale: 1, transition: TRANSITIONS.slow },
+  exit: {
+    opacity: 0,
+    y: -15,
+    scale: 0.96,
+    transition: { duration: 0.35, ease: EASINGS.smooth },
+  },
+};
