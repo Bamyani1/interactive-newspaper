@@ -2,34 +2,20 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Moon, Sun } from "lucide-react";
+import {
+  DEFAULT_THEME,
+  THEMES,
+  type CanopyTheme,
+  type LeafDepth,
+  type ParticleDirection,
+  type ParticleShape,
+  type SkyPalette,
+} from "./themes";
+import { ThemeSelector } from "./ThemeSelector";
 
 /* ─────────────────────────────────────────────
-   SKY GRADIENT PALETTES (day / night)
+   COLOR UTILITIES
    ───────────────────────────────────────────── */
-
-const SKY_PALETTES = {
-  day: {
-    stops: ["#4a4080", "#7a5888", "#b86878"],
-    clouds: [
-      ["rgba(220,180,180,0.15)", "rgba(220,180,180,0)"],
-      ["rgba(220,180,180,0.12)", "rgba(220,180,180,0)"],
-      ["rgba(220,180,180,0.10)", "rgba(220,180,180,0)"],
-    ],
-  },
-  night: {
-    stops: ["#10102a", "#181838", "#201845"],
-    clouds: [
-      ["rgba(140,130,200,0.08)", "rgba(140,130,200,0)"],
-      ["rgba(140,130,200,0.06)", "rgba(140,130,200,0)"],
-      ["rgba(140,130,200,0.05)", "rgba(140,130,200,0)"],
-    ],
-  },
-} as const;
-
-interface SvgGradientRefs {
-  skyStops: SVGStopElement[];
-  cloudStops: SVGStopElement[][]; // [cloud1Stops, cloud2Stops, cloud3Stops]
-}
 
 function lerpHexColor(a: string, b: string, t: number): string {
   const parse = (hex: string) => {
@@ -44,13 +30,19 @@ function lerpHexColor(a: string, b: string, t: number): string {
   return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bl.toString(16).padStart(2, "0")}`;
 }
 
+function skyGradientCSS(stops: readonly [string, string, string]): string {
+  return `linear-gradient(to bottom, ${stops[0]}, ${stops[1]}, ${stops[2]})`;
+}
+
+function cloudRadialCSS(colors: readonly [string, string]): string {
+  return `radial-gradient(ellipse at center, ${colors[0]}, ${colors[1]})`;
+}
+
 /* ─────────────────────────────────────────────
-   LEAF MOTE GENERATOR (3 parallax depths)
+   PARTICLE MOTE GENERATOR
    ───────────────────────────────────────────── */
 
-type LeafDepth = "near" | "mid" | "far";
-
-interface LeafMote {
+interface ParticleMote {
   id: number;
   size: number;
   left: number;
@@ -64,37 +56,9 @@ interface LeafMote {
   depth: LeafDepth;
   blur: number;
   glowColor: string;
+  shape: ParticleShape;
+  direction: ParticleDirection;
 }
-
-const AUTUMN_COLORS = [
-  "#e01818", // crimson
-  "#e83010", // scarlet
-  "#c03010", // rust
-  "#f06000", // orange
-  "#f08010", // tangerine
-  "#e09010", // amber
-  "#e8b810", // gold
-  "#d0b020", // honey
-  "#60b818", // lime
-  "#208820", // forest
-  "#fff0c0", // highlight
-  "#f8e070", // sunlit
-];
-
-const GLOW_COLORS = [
-  "#ff2020", // crimson
-  "#ff4820", // scarlet
-  "#f05020", // rust
-  "#ff8020", // orange
-  "#ffa020", // tangerine
-  "#ffc020", // amber
-  "#ffe030", // gold
-  "#f0e030", // honey
-  "#90e830", // lime
-  "#30c830", // forest
-  "#fffef0", // highlight
-  "#fff090", // sunlit
-];
 
 function seededRandom(seed: number) {
   return () => {
@@ -106,103 +70,144 @@ function seededRandom(seed: number) {
   };
 }
 
-// Depth config: [sizeBase, sizeRange, durBase, durRange, swayBase, swayRange, opBase, opRange, blur]
-const DEPTH_CONFIG: Record<LeafDepth, [number, number, number, number, number, number, number, number, number]> = {
-  near: [8, 6, 6, 4, 25, 20, 0.5, 0.3, 0],
-  mid:  [4, 4, 8, 6, 15, 10, 0.3, 0.3, 0],
-  far:  [2, 3, 14, 6, 5, 7, 0.2, 0.2, 1],
+const DIRECTION_KEYFRAMES: Record<ParticleDirection, Record<LeafDepth, string>> = {
+  fall: { near: "canopyLeafNear", mid: "canopyLeafMid", far: "canopyLeafFar" },
+  rise: { near: "canopyRiseNear", mid: "canopyRiseMid", far: "canopyRiseFar" },
+  drift: { near: "canopyDriftNear", mid: "canopyDriftMid", far: "canopyDriftFar" },
+  rain: { near: "canopyRainNear", mid: "canopyRainMid", far: "canopyRainFar" },
+  twinkle: { near: "canopyTwinkleNear", mid: "canopyTwinkleMid", far: "canopyTwinkleFar" },
 };
 
-function generateLeafMotes(count: number): LeafMote[] {
+function generateParticles(theme: CanopyTheme): ParticleMote[] {
   const random = seededRandom(77);
+  const { colors, glowColors, count, shape, direction, depthConfig } = theme.particles;
+
   return Array.from({ length: count }, (_, i) => {
     const roll = random();
     const depth: LeafDepth = roll < 0.2 ? "near" : roll < 0.7 ? "mid" : "far";
-    const colorIdx = Math.floor(random() * AUTUMN_COLORS.length);
-    const [sB, sR, dB, dR, swB, swR, oB, oR, blur] = DEPTH_CONFIG[depth];
+    const colorIdx = Math.floor(random() * colors.length);
+    const [sB, sR, dB, dR, swB, swR, oB, oR, blur] = depthConfig[depth];
+
+    let left: number;
+    let startY: number;
+
+    if (direction === "twinkle") {
+      // Stars: random position across entire viewport
+      left = 3 + random() * 94;
+      startY = 3 + random() * 94;
+    } else if (direction === "rise") {
+      left = 3 + random() * 94;
+      startY = 105 + random() * 10;
+    } else if (direction === "drift") {
+      left = -5 - random() * 10;
+      startY = 5 + random() * 90;
+    } else {
+      // fall or rain
+      left = 3 + random() * 94;
+      startY = -5 - random() * 10;
+    }
 
     return {
       id: i,
       depth,
       size: sB + random() * sR,
-      left: 3 + random() * 94,
-      startY: -5 - random() * 10,
+      left,
+      startY,
       duration: dB + random() * dR,
       delay: random() * 12,
       rotation: random() * 360,
       sway: swB + random() * swR,
       opacity: oB + random() * oR,
-      color: AUTUMN_COLORS[colorIdx],
+      color: colors[colorIdx],
       blur,
-      glowColor: GLOW_COLORS[colorIdx],
+      glowColor: glowColors[colorIdx],
+      shape,
+      direction,
     };
   });
 }
 
-const KEYFRAME_MAP: Record<LeafDepth, string> = {
-  near: "canopyLeafNear",
-  mid: "canopyLeafMid",
-  far: "canopyLeafFar",
-};
+function particleDimensions(size: number, shape: ParticleShape): { w: number; h: number } {
+  switch (shape) {
+    case "leaf":
+      return { w: size, h: size * 0.7 };
+    case "petal":
+      return { w: size, h: size * 1.3 };
+    case "line":
+      return { w: Math.max(size * 0.2, 1.5), h: size * 2.5 };
+    case "wisp":
+      return { w: size, h: size * 0.4 };
+    default:
+      // circle, square
+      return { w: size, h: size };
+  }
+}
 
 /* ─────────────────────────────────────────────
    MAIN PAGE
    ───────────────────────────────────────────── */
 
 export default function Mock2Page() {
-  const leafMotes = useMemo(() => generateLeafMotes(45), []);
+  const [activeTheme, setActiveTheme] = useState<CanopyTheme>(DEFAULT_THEME);
   const [isDay, setIsDay] = useState(false);
+  const activeThemeRef = useRef(activeTheme);
+  useEffect(() => {
+    activeThemeRef.current = activeTheme;
+  }, [activeTheme]);
+
+  // Generate particles from current theme
+  const particles = useMemo(() => generateParticles(activeTheme), [activeTheme]);
 
   const svgObjectRef = useRef<HTMLObjectElement>(null);
-  const svgGradientsRef = useRef<SvgGradientRefs | null>(null);
+  const skyRef = useRef<HTMLDivElement>(null);
+  const cloudRefs = useRef<(HTMLDivElement | null)[]>([null, null, null]);
   const animationRef = useRef<number>(0);
 
-  // Apply sky palette (immediate, no animation)
-  const applySkyPalette = useCallback((night: boolean) => {
-    const refs = svgGradientsRef.current;
-    if (!refs) return;
-    const palette = night ? SKY_PALETTES.night : SKY_PALETTES.day;
-    refs.skyStops.forEach((stop, i) => {
-      stop.setAttribute("stop-color", palette.stops[i]);
-    });
+  /* ── Sky gradient manipulation (DOM-based) ── */
+
+  const applySkyPalette = useCallback((palette: SkyPalette) => {
+    if (skyRef.current) {
+      skyRef.current.style.background = skyGradientCSS(palette.stops);
+    }
     palette.clouds.forEach((cloudColors, ci) => {
-      refs.cloudStops[ci]?.forEach((stop, si) => {
-        stop.setAttribute("stop-color", cloudColors[si]);
-      });
+      const el = cloudRefs.current[ci];
+      if (el) {
+        el.style.background = cloudRadialCSS(cloudColors);
+      }
     });
   }, []);
 
-  // Smooth sky transition via rAF
-  const transitionSky = useCallback(
-    (toNight: boolean) => {
-      const refs = svgGradientsRef.current;
-      if (!refs) return;
-
+  const transitionSkyPalette = useCallback(
+    (from: SkyPalette, to: SkyPalette) => {
       cancelAnimationFrame(animationRef.current);
 
-      const from = toNight ? SKY_PALETTES.day : SKY_PALETTES.night;
-      const to = toNight ? SKY_PALETTES.night : SKY_PALETTES.day;
       const duration = 1200;
       const start = performance.now();
 
       const tick = (now: number) => {
         const elapsed = now - start;
         const rawT = Math.min(elapsed / duration, 1);
-        // ease-in-out
         const t = rawT < 0.5 ? 2 * rawT * rawT : 1 - Math.pow(-2 * rawT + 2, 2) / 2;
 
-        refs.skyStops.forEach((stop, i) => {
-          stop.setAttribute("stop-color", lerpHexColor(from.stops[i], to.stops[i], t));
-        });
+        // Interpolate sky gradient stops
+        const lerpedStops = from.stops.map((s, i) => lerpHexColor(s, to.stops[i], t)) as [
+          string,
+          string,
+          string,
+        ];
+        if (skyRef.current) {
+          skyRef.current.style.background = skyGradientCSS(lerpedStops);
+        }
 
         if (rawT < 1) {
           animationRef.current = requestAnimationFrame(tick);
         } else {
           // Snap clouds at end (too subtle to interpolate)
           to.clouds.forEach((cloudColors, ci) => {
-            refs.cloudStops[ci]?.forEach((stop, si) => {
-              stop.setAttribute("stop-color", cloudColors[si]);
-            });
+            const el = cloudRefs.current[ci];
+            if (el) {
+              el.style.background = cloudRadialCSS(cloudColors);
+            }
           });
         }
       };
@@ -212,37 +217,44 @@ export default function Mock2Page() {
     []
   );
 
-  // Native load listener + fallback for cached SVGs
+  const transitionSky = useCallback(
+    (toNight: boolean) => {
+      const theme = activeThemeRef.current;
+      const from = toNight ? theme.sky.day : theme.sky.night;
+      const to = toNight ? theme.sky.night : theme.sky.day;
+      transitionSkyPalette(from, to);
+    },
+    [transitionSkyPalette]
+  );
+
+  /* ── SVG load: hide background rects ── */
+
   useEffect(() => {
     const obj = svgObjectRef.current;
-    if (!obj) return;
+    if (!obj) return undefined;
+
+    let initialized = false;
 
     const tryInit = () => {
       const doc = obj.contentDocument;
-      if (!doc || svgGradientsRef.current) return false;
+      if (!doc || initialized) return false;
 
-      const skyGradient = doc.getElementById("sky");
-      const skyStops = skyGradient
-        ? Array.from(skyGradient.querySelectorAll("stop"))
-        : [];
+      // Hide the 4 background rects (sky + 3 clouds) inside the SVG
+      const rects = doc.querySelectorAll("svg > rect");
+      rects.forEach((r) => r.setAttribute("opacity", "0"));
 
-      const cloudStops = ["cloud1", "cloud2", "cloud3"].map((id) => {
-        const el = doc.getElementById(id);
-        return el ? Array.from(el.querySelectorAll("stop")) : [];
-      });
+      initialized = true;
 
-      if (skyStops.length === 0) return false;
-
-      svgGradientsRef.current = { skyStops, cloudStops };
-      applySkyPalette(document.body.dataset.mode !== "light");
+      // Apply initial DOM sky palette
+      const theme = activeThemeRef.current;
+      const night = document.body.dataset.mode !== "light";
+      applySkyPalette(night ? theme.sky.night : theme.sky.day);
       return true;
     };
 
-    // Native load event (works when SVG hasn't loaded yet)
     const onLoad = () => tryInit();
     obj.addEventListener("load", onLoad);
 
-    // Fallback: SVG may already be loaded (cached / hot reload)
     if (obj.contentDocument?.readyState === "complete") {
       tryInit();
     }
@@ -250,9 +262,18 @@ export default function Mock2Page() {
     return () => obj.removeEventListener("load", onLoad);
   }, [applySkyPalette]);
 
-  // Sync initial state with body data-mode
+  /* ── Hydrate from localStorage + body data-mode ── */
+
   useEffect(() => {
+    // Client-only hydration: reading from DOM + localStorage after mount
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-only hydration from external APIs
     setIsDay(document.body.dataset.mode === "light");
+
+    const savedId = localStorage.getItem("canopy-theme");
+    if (savedId) {
+      const found = THEMES.find((t) => t.id === savedId);
+      if (found) setActiveTheme(found);
+    }
   }, []);
 
   // Cleanup rAF on unmount
@@ -260,59 +281,122 @@ export default function Mock2Page() {
     return () => cancelAnimationFrame(animationRef.current);
   }, []);
 
+  /* ── Day/Night toggle ── */
+
   const toggleMode = useCallback(() => {
     const nextDay = !isDay;
     setIsDay(nextDay);
     document.body.dataset.mode = nextDay ? "light" : "dark";
-    transitionSky(!nextDay); // toNight = !nextDay
+    transitionSky(!nextDay);
   }, [isDay, transitionSky]);
 
+  /* ── Theme change handler ── */
+
+  const handleThemeChange = useCallback(
+    (theme: CanopyTheme) => {
+      localStorage.setItem("canopy-theme", theme.id);
+
+      // Lerp sky from current theme's palette to new theme's palette
+      const currentTheme = activeThemeRef.current;
+      const fromPalette = isDay ? currentTheme.sky.day : currentTheme.sky.night;
+      const toPalette = isDay ? theme.sky.day : theme.sky.night;
+      transitionSkyPalette(fromPalette, toPalette);
+
+      setActiveTheme(theme);
+    },
+    [isDay, transitionSkyPalette]
+  );
+
+  /* ── Derived theme values ── */
+
+  const svgFilter = isDay ? activeTheme.svgFilter.day : activeTheme.svgFilter.night;
+  const baseBg = isDay ? activeTheme.base.day : activeTheme.base.night;
+  const grainOpacity = isDay ? activeTheme.grain.opacity.day : activeTheme.grain.opacity.night;
+
+  /* ── Split particles by layer ── */
+
+  const behindParticles = activeTheme.particles.layer === "behind" ? particles : [];
+  const frontParticles = activeTheme.particles.layer === "front" ? particles : [];
+
+  /* ── Render a single mote ── */
+
+  const renderMote = (mote: ParticleMote) => {
+    const { w, h } = particleDimensions(mote.size, mote.shape);
+    return (
+      <div
+        key={mote.id}
+        className={`canopy-mote canopy-mote--${mote.shape}`}
+        style={
+          {
+            width: w,
+            height: h,
+            left: `${mote.left}%`,
+            top: `${mote.startY}%`,
+            background: mote.color,
+            mixBlendMode: activeTheme.particles.blendMode,
+            filter: mote.blur > 0 ? `blur(${mote.blur}px)` : undefined,
+            boxShadow:
+              mote.depth === "near" ? `0 0 ${mote.size * 0.6}px ${mote.glowColor}` : undefined,
+            "--leaf-sway": `${mote.sway}px`,
+            "--leaf-opacity": mote.opacity,
+            animation: `${DIRECTION_KEYFRAMES[mote.direction][mote.depth]} ${mote.duration}s ease-in-out ${mote.delay}s infinite`,
+          } as React.CSSProperties
+        }
+      />
+    );
+  };
+
   return (
-    <div className="canopy-root">
-      {/* Layer 1: Autumn canopy SVG + night overlay */}
+    <div className="canopy-root" style={{ background: baseBg }}>
+      {/* Layer 0: DOM sky gradient */}
+      <div className="canopy-sky" ref={skyRef} />
+
+      {/* Layer 1: DOM cloud overlays */}
+      <div className="canopy-clouds">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className={`canopy-cloud canopy-cloud--${i}`}
+            ref={(el) => {
+              cloudRefs.current[i] = el;
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Layer 2: Behind-tree particles (stars, fireflies, aurora) */}
+      <div className="canopy-motes--behind">{behindParticles.map(renderMote)}</div>
+
+      {/* Layer 3: Canopy SVG (tree canopy only, bg hidden) */}
       <div className="canopy-glass">
         <object
           ref={svgObjectRef}
           type="image/svg+xml"
           data="/shape/autumn-canopy-animated.svg"
-          aria-label="Autumn tree canopy animation"
+          aria-label="Tree canopy animation"
+          style={{ filter: svgFilter }}
         />
       </div>
 
-      {/* Layer 3: Falling leaf motes (3 parallax depths) */}
-      <div className="canopy-motes">
-        {leafMotes.map((leaf) => (
-          <div
-            key={leaf.id}
-            className="canopy-mote"
-            style={
-              {
-                width: leaf.size,
-                height: leaf.size * 0.7,
-                left: `${leaf.left}%`,
-                top: `${leaf.startY}%`,
-                background: leaf.color,
-                filter: leaf.blur > 0 ? `blur(${leaf.blur}px)` : undefined,
-                boxShadow:
-                  leaf.depth === "near"
-                    ? `0 0 ${leaf.size * 0.6}px ${leaf.glowColor}`
-                    : undefined,
-                "--leaf-sway": `${leaf.sway}px`,
-                "--leaf-opacity": leaf.opacity,
-                animation: `${KEYFRAME_MAP[leaf.depth]} ${leaf.duration}s ease-in-out ${leaf.delay}s infinite`,
-              } as React.CSSProperties
-            }
-          />
-        ))}
-      </div>
+      {/* Layer 6: Front particles (leaves, snow, rain, petals, embers) */}
+      <div className="canopy-motes--front">{frontParticles.map(renderMote)}</div>
 
       {/* Layer 8: Film grain */}
-      <div className="canopy-grain" />
+      <div
+        className="canopy-grain"
+        style={{
+          opacity: grainOpacity,
+          mixBlendMode: activeTheme.grain.blendMode as React.CSSProperties["mixBlendMode"],
+        }}
+      />
 
-      {/* Day/Night toggle */}
-      <button className="canopy-mode-toggle" onClick={toggleMode} aria-label="Toggle day/night mode">
-        {isDay ? <Moon size={20} /> : <Sun size={20} />}
-      </button>
+      {/* Layer 10: Controls */}
+      <div className="canopy-controls">
+        <button className="canopy-mode-toggle" onClick={toggleMode} aria-label="Toggle day/night mode">
+          {isDay ? <Moon size={20} /> : <Sun size={20} />}
+        </button>
+        <ThemeSelector activeThemeId={activeTheme.id} onThemeChange={handleThemeChange} />
+      </div>
     </div>
   );
 }

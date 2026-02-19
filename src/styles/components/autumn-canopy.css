@@ -1,16 +1,20 @@
 /**
- * Autumn Tree Canopy Page Styles
- * Immersive "looking up through autumn foliage" experience with
- * light leaks, parallax leaf motes, and film grain.
+ * Canopy Page Styles
+ * Immersive full-viewport experience with SVG canopy, particles,
+ * and film grain. Supports 10 visual themes via JS-driven inline styles.
  *
- * 3-Layer Architecture (bottom to top):
- *   1. Canopy SVG (with blue sky background baked in)
- *   2. Falling leaf motes (screen, 3 parallax depths)
- *   3. Film grain (overlay)
+ * Layers (bottom to top):
+ *   0. DOM sky gradient (replaces SVG sky rect)
+ *   1. DOM cloud overlays (replaces SVG cloud rects)
+ *   2. Behind-tree particles (stars, fireflies, aurora)
+ *   3. Canopy SVG (tree canopy only, bg hidden)
+ *   6. Front particles (leaves, snow, rain, petals, embers)
+ *   8. Film grain (overlay)
+ *  10. Controls
  */
 
 /* =========================================
-   CUSTOM PROPERTIES
+   BASE LAYOUT
    ========================================= */
 
 .canopy-root {
@@ -23,16 +27,78 @@
     isolation: isolate;
     background: var(--canopy-base);
     cursor: default;
+    transition: background 1.2s ease-in-out;
 }
 
 /* =========================================
-   LAYER 1: CANOPY SVG
+   LAYER 0: DOM SKY GRADIENT
+   ========================================= */
+
+.canopy-sky {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    transition: background 0.3s ease-in-out;
+}
+
+/* =========================================
+   LAYER 1: DOM CLOUD OVERLAYS
+   ========================================= */
+
+.canopy-clouds {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.canopy-cloud {
+    position: absolute;
+    border-radius: 50%;
+    transition: background 0.3s ease-in-out;
+}
+
+.canopy-cloud--0 {
+    left: 10%;
+    top: 5%;
+    width: 40%;
+    height: 40%;
+}
+
+.canopy-cloud--1 {
+    left: 52%;
+    top: -3%;
+    width: 36%;
+    height: 36%;
+}
+
+.canopy-cloud--2 {
+    left: 28%;
+    top: 13%;
+    width: 44%;
+    height: 44%;
+}
+
+/* =========================================
+   LAYER 2: BEHIND-TREE PARTICLES
+   ========================================= */
+
+.canopy-motes--behind {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+/* =========================================
+   LAYER 3: CANOPY SVG
    ========================================= */
 
 .canopy-glass {
     position: absolute;
     inset: 0;
-    z-index: 1;
+    z-index: 3;
     overflow: hidden;
     animation: canopyGlassFadeIn 1.5s ease-out forwards;
     will-change: opacity, transform;
@@ -47,10 +113,10 @@
 }
 
 /* =========================================
-   LAYER 3: FALLING LEAF MOTES
+   LAYER 6: FRONT PARTICLES
    ========================================= */
 
-.canopy-motes {
+.canopy-motes--front {
     position: absolute;
     inset: 0;
     z-index: 6;
@@ -58,11 +124,40 @@
     overflow: hidden;
 }
 
+/* =========================================
+   PARTICLE MOTES (shared)
+   ========================================= */
+
 .canopy-mote {
     position: absolute;
-    border-radius: 40% 60% 50% 50%;
-    mix-blend-mode: screen;
     will-change: transform, opacity;
+}
+
+/* ── Shape variants ── */
+
+.canopy-mote--leaf {
+    border-radius: 40% 60% 50% 50%;
+}
+
+.canopy-mote--circle {
+    border-radius: 50%;
+}
+
+.canopy-mote--square {
+    border-radius: 2px;
+}
+
+.canopy-mote--petal {
+    border-radius: 60% 0% 60% 0%;
+}
+
+.canopy-mote--line {
+    border-radius: 1px;
+}
+
+.canopy-mote--wisp {
+    border-radius: 50%;
+    filter: blur(20px);
 }
 
 /* =========================================
@@ -79,10 +174,11 @@
     background-repeat: repeat;
     background-size: 256px 256px;
     mix-blend-mode: overlay;
+    transition: opacity 0.8s ease-in-out;
 }
 
 /* =========================================
-   KEYFRAMES
+   KEYFRAMES — FADE IN
    ========================================= */
 
 @keyframes canopyGlassFadeIn {
@@ -96,7 +192,10 @@
     }
 }
 
-/* Near motes: large, fast, more sway */
+/* =========================================
+   KEYFRAMES — FALL (leaves, snow, petals)
+   ========================================= */
+
 @keyframes canopyLeafNear {
     0% {
         transform: translateY(0) translateX(0) rotate(0deg) scale(1);
@@ -123,7 +222,6 @@
     }
 }
 
-/* Mid motes: medium speed, standard sway */
 @keyframes canopyLeafMid {
     0% {
         transform: translateY(0) translateX(0) rotate(0deg) scale(1);
@@ -150,7 +248,6 @@
     }
 }
 
-/* Far motes: slow, gentle sway, slight blur */
 @keyframes canopyLeafFar {
     0% {
         transform: translateY(0) translateX(0) rotate(0deg) scale(1);
@@ -178,75 +275,312 @@
 }
 
 /* =========================================
-   RESPONSIVE (mobile)
+   KEYFRAMES — RISE (embers, fireflies, aurora)
    ========================================= */
 
-@media (max-width: 768px) {
-    .canopy-mote {
-        transform: scale(0.8);
+@keyframes canopyRiseNear {
+    0% {
+        transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+        opacity: 0;
+    }
+    8% {
+        opacity: var(--leaf-opacity, 0.7);
+    }
+    25% {
+        transform: translateY(-25vh) translateX(var(--leaf-sway, 25px)) rotate(-80deg) scale(0.95);
+    }
+    50% {
+        transform: translateY(-50vh) translateX(calc(var(--leaf-sway, 25px) * -0.6)) rotate(-160deg) scale(0.9);
+    }
+    75% {
+        transform: translateY(-75vh) translateX(var(--leaf-sway, 25px)) rotate(-240deg) scale(0.85);
+    }
+    92% {
+        opacity: var(--leaf-opacity, 0.7);
+    }
+    100% {
+        transform: translateY(-115vh) translateX(calc(var(--leaf-sway, 25px) * -1)) rotate(-320deg) scale(0.8);
+        opacity: 0;
+    }
+}
+
+@keyframes canopyRiseMid {
+    0% {
+        transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+        opacity: 0;
+    }
+    10% {
+        opacity: var(--leaf-opacity, 0.5);
+    }
+    25% {
+        transform: translateY(-25vh) translateX(var(--leaf-sway, 15px)) rotate(-70deg) scale(0.95);
+    }
+    50% {
+        transform: translateY(-50vh) translateX(calc(var(--leaf-sway, 15px) * -0.5)) rotate(-140deg) scale(0.9);
+    }
+    75% {
+        transform: translateY(-75vh) translateX(var(--leaf-sway, 15px)) rotate(-210deg) scale(0.85);
+    }
+    90% {
+        opacity: var(--leaf-opacity, 0.5);
+    }
+    100% {
+        transform: translateY(-115vh) translateX(calc(var(--leaf-sway, 15px) * -1)) rotate(-280deg) scale(0.8);
+        opacity: 0;
+    }
+}
+
+@keyframes canopyRiseFar {
+    0% {
+        transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+        opacity: 0;
+    }
+    12% {
+        opacity: var(--leaf-opacity, 0.3);
+    }
+    25% {
+        transform: translateY(-25vh) translateX(var(--leaf-sway, 6px)) rotate(-50deg) scale(0.97);
+    }
+    50% {
+        transform: translateY(-50vh) translateX(calc(var(--leaf-sway, 6px) * -0.4)) rotate(-100deg) scale(0.95);
+    }
+    75% {
+        transform: translateY(-75vh) translateX(var(--leaf-sway, 6px)) rotate(-160deg) scale(0.92);
+    }
+    88% {
+        opacity: var(--leaf-opacity, 0.3);
+    }
+    100% {
+        transform: translateY(-115vh) translateX(calc(var(--leaf-sway, 6px) * -1)) rotate(-220deg) scale(0.9);
+        opacity: 0;
     }
 }
 
 /* =========================================
-   REDUCED MOTION
+   KEYFRAMES — DRIFT (pollen, fog — horizontal)
    ========================================= */
 
-@media (prefers-reduced-motion: reduce) {
-    .canopy-glass {
-        animation: none;
-        opacity: 1;
+@keyframes canopyDriftNear {
+    0% {
+        transform: translateX(0) translateY(0) rotate(0deg) scale(1);
+        opacity: 0;
     }
-
-    .canopy-mote {
-        animation: none !important;
-        opacity: 0.3;
+    8% {
+        opacity: var(--leaf-opacity, 0.7);
     }
+    25% {
+        transform: translateX(25vw) translateY(var(--leaf-sway, 20px)) rotate(30deg) scale(0.95);
+    }
+    50% {
+        transform: translateX(50vw) translateY(calc(var(--leaf-sway, 20px) * -0.5)) rotate(60deg) scale(0.9);
+    }
+    75% {
+        transform: translateX(75vw) translateY(var(--leaf-sway, 20px)) rotate(90deg) scale(0.85);
+    }
+    92% {
+        opacity: var(--leaf-opacity, 0.7);
+    }
+    100% {
+        transform: translateX(110vw) translateY(calc(var(--leaf-sway, 20px) * -1)) rotate(120deg) scale(0.8);
+        opacity: 0;
+    }
+}
 
+@keyframes canopyDriftMid {
+    0% {
+        transform: translateX(0) translateY(0) rotate(0deg) scale(1);
+        opacity: 0;
+    }
+    10% {
+        opacity: var(--leaf-opacity, 0.5);
+    }
+    25% {
+        transform: translateX(25vw) translateY(var(--leaf-sway, 12px)) rotate(20deg) scale(0.95);
+    }
+    50% {
+        transform: translateX(50vw) translateY(calc(var(--leaf-sway, 12px) * -0.4)) rotate(40deg) scale(0.9);
+    }
+    75% {
+        transform: translateX(75vw) translateY(var(--leaf-sway, 12px)) rotate(60deg) scale(0.85);
+    }
+    90% {
+        opacity: var(--leaf-opacity, 0.5);
+    }
+    100% {
+        transform: translateX(110vw) translateY(calc(var(--leaf-sway, 12px) * -1)) rotate(80deg) scale(0.8);
+        opacity: 0;
+    }
+}
+
+@keyframes canopyDriftFar {
+    0% {
+        transform: translateX(0) translateY(0) rotate(0deg) scale(1);
+        opacity: 0;
+    }
+    12% {
+        opacity: var(--leaf-opacity, 0.3);
+    }
+    25% {
+        transform: translateX(25vw) translateY(var(--leaf-sway, 6px)) rotate(10deg) scale(0.97);
+    }
+    50% {
+        transform: translateX(50vw) translateY(calc(var(--leaf-sway, 6px) * -0.3)) rotate(25deg) scale(0.95);
+    }
+    75% {
+        transform: translateX(75vw) translateY(var(--leaf-sway, 6px)) rotate(40deg) scale(0.92);
+    }
+    88% {
+        opacity: var(--leaf-opacity, 0.3);
+    }
+    100% {
+        transform: translateX(110vw) translateY(calc(var(--leaf-sway, 6px) * -1)) rotate(55deg) scale(0.9);
+        opacity: 0;
+    }
 }
 
 /* =========================================
-   DAY MODE (data-mode='light')
+   KEYFRAMES — RAIN (fast downward, no rotation)
    ========================================= */
 
-[data-mode='light'] .canopy-root {
-    --canopy-base: #88c8f0;
+@keyframes canopyRainNear {
+    0% {
+        transform: translateY(0) translateX(0) scale(1);
+        opacity: 0;
+    }
+    5% {
+        opacity: var(--leaf-opacity, 0.6);
+    }
+    50% {
+        transform: translateY(55vh) translateX(var(--leaf-sway, 4px)) scale(1);
+    }
+    95% {
+        opacity: var(--leaf-opacity, 0.6);
+    }
+    100% {
+        transform: translateY(115vh) translateX(calc(var(--leaf-sway, 4px) * -0.5)) scale(1);
+        opacity: 0;
+    }
 }
 
-[data-mode='light'] .canopy-glass object,
-[data-mode='light'] .canopy-glass img {
-    filter: brightness(0.88) saturate(0.85);
+@keyframes canopyRainMid {
+    0% {
+        transform: translateY(0) translateX(0) scale(1);
+        opacity: 0;
+    }
+    6% {
+        opacity: var(--leaf-opacity, 0.4);
+    }
+    50% {
+        transform: translateY(55vh) translateX(var(--leaf-sway, 3px)) scale(1);
+    }
+    94% {
+        opacity: var(--leaf-opacity, 0.4);
+    }
+    100% {
+        transform: translateY(115vh) translateX(calc(var(--leaf-sway, 3px) * -0.5)) scale(1);
+        opacity: 0;
+    }
 }
 
-[data-mode='light'] .canopy-grain {
-    opacity: 0.02;
+@keyframes canopyRainFar {
+    0% {
+        transform: translateY(0) translateX(0) scale(1);
+        opacity: 0;
+    }
+    8% {
+        opacity: var(--leaf-opacity, 0.25);
+    }
+    50% {
+        transform: translateY(55vh) translateX(var(--leaf-sway, 2px)) scale(1);
+    }
+    92% {
+        opacity: var(--leaf-opacity, 0.25);
+    }
+    100% {
+        transform: translateY(115vh) translateX(calc(var(--leaf-sway, 2px) * -0.5)) scale(1);
+        opacity: 0;
+    }
 }
 
 /* =========================================
-   NIGHT MODE (data-mode='dark')
+   KEYFRAMES — TWINKLE (stars — static position, pulse opacity)
    ========================================= */
 
-[data-mode='dark'] .canopy-root {
-    --canopy-base: #0a1428;
+@keyframes canopyTwinkleNear {
+    0% {
+        opacity: 0;
+    }
+    15% {
+        opacity: var(--leaf-opacity, 0.8);
+    }
+    40% {
+        opacity: calc(var(--leaf-opacity, 0.8) * 0.3);
+    }
+    65% {
+        opacity: var(--leaf-opacity, 0.8);
+    }
+    85% {
+        opacity: calc(var(--leaf-opacity, 0.8) * 0.5);
+    }
+    100% {
+        opacity: 0;
+    }
 }
 
-[data-mode='dark'] .canopy-glass object,
-[data-mode='dark'] .canopy-glass img {
-    filter: brightness(0.88) saturate(0.85);
+@keyframes canopyTwinkleMid {
+    0% {
+        opacity: 0;
+    }
+    20% {
+        opacity: var(--leaf-opacity, 0.5);
+    }
+    45% {
+        opacity: calc(var(--leaf-opacity, 0.5) * 0.2);
+    }
+    70% {
+        opacity: var(--leaf-opacity, 0.5);
+    }
+    100% {
+        opacity: 0;
+    }
 }
 
-[data-mode='dark'] .canopy-grain {
-    opacity: 0.05;
+@keyframes canopyTwinkleFar {
+    0% {
+        opacity: 0;
+    }
+    25% {
+        opacity: var(--leaf-opacity, 0.3);
+    }
+    50% {
+        opacity: calc(var(--leaf-opacity, 0.3) * 0.15);
+    }
+    75% {
+        opacity: var(--leaf-opacity, 0.3);
+    }
+    100% {
+        opacity: 0;
+    }
 }
 
 /* =========================================
-   MODE TOGGLE BUTTON
+   CONTROLS CLUSTER (bottom-right)
    ========================================= */
 
-.canopy-mode-toggle {
+.canopy-controls {
     position: fixed;
     bottom: 24px;
     right: 24px;
     z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+/* ── Mode toggle button ── */
+
+.canopy-mode-toggle {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -274,4 +608,135 @@
 
 [data-mode='light'] .canopy-mode-toggle:hover {
     background: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Theme selector ── */
+
+.canopy-theme-selector {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.canopy-theme-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(255, 240, 200, 0.85);
+    cursor: pointer;
+    transition: background 0.3s, transform 0.2s;
+}
+
+.canopy-theme-trigger:hover {
+    background: rgba(0, 0, 0, 0.6);
+    transform: scale(1.1);
+}
+
+[data-mode='light'] .canopy-theme-trigger {
+    background: rgba(255, 255, 255, 0.5);
+    border-color: rgba(0, 0, 0, 0.15);
+    color: rgba(60, 40, 20, 0.85);
+}
+
+[data-mode='light'] .canopy-theme-trigger:hover {
+    background: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Theme swatch strip ── */
+
+.canopy-theme-strip {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    padding: 8px;
+    border-radius: 22px;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+    pointer-events: none;
+    transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+}
+
+.canopy-theme-strip--open {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.canopy-theme-swatch {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    cursor: pointer;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+}
+
+.canopy-theme-swatch:hover {
+    transform: scale(1.15);
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+.canopy-theme-swatch--active {
+    border-color: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+    transform: scale(1.1);
+}
+
+/* =========================================
+   RESPONSIVE (mobile)
+   ========================================= */
+
+@media (max-width: 768px) {
+    .canopy-mote {
+        transform: scale(0.8);
+    }
+
+    .canopy-controls {
+        bottom: 16px;
+        right: 16px;
+        gap: 8px;
+    }
+
+    .canopy-theme-swatch {
+        width: 24px;
+        height: 24px;
+    }
+}
+
+/* =========================================
+   REDUCED MOTION
+   ========================================= */
+
+@media (prefers-reduced-motion: reduce) {
+    .canopy-glass {
+        animation: none;
+        opacity: 1;
+    }
+
+    .canopy-mote {
+        animation: none !important;
+        opacity: 0.3;
+    }
+
+    .canopy-root {
+        transition: none;
+    }
+
+    .canopy-grain {
+        transition: none;
+    }
 }
