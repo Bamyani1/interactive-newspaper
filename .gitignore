@@ -62,6 +62,10 @@ public/data/**/raw/
 
 # Google Cloud / API Credentials
 *.json
+!public/top-10-music/*.json
+
+# Large Files
+public/GOPR0363 copy.png
 !package.json
 !package-lock.json
 !tsconfig.json
