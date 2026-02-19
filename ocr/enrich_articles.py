@@ -21,6 +21,11 @@ from google import genai
 from google.genai import types
 from gemini_utils import gemini_generate_with_retry
 
+# Load environment variables
+dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env.local")
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path=dotenv_path)
+
 load_dotenv()
 
 GEMINI_MODEL = "gemini-3-flash-preview"
