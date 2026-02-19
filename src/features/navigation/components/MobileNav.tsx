@@ -10,6 +10,7 @@ import {
   Trophy,
   Sparkles,
   MessageSquare,
+  MessageCircleQuestion,
   Palette,
   Users,
   ShoppingBag,
@@ -47,6 +48,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 }) => {
   const pathname = usePathname();
   const isSearchActive = pathname?.startsWith("/search") ?? false;
+  const isAskActive = pathname?.startsWith("/ask") ?? false;
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
 
@@ -122,6 +124,30 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             Search
           </span>
           {isSearchActive && (
+            <motion.div
+              className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--color-accent)]"
+              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+            />
+          )}
+        </Link>
+
+        {/* Ask the Archive link */}
+        <Link
+          href="/ask"
+          className={`
+            relative flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-lg transition-colors min-w-[60px]
+            ${isAskActive
+              ? "text-[var(--color-accent)]"
+              : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            }
+          `}
+          aria-label="Ask the archive"
+        >
+          <MessageCircleQuestion size={20} strokeWidth={isAskActive ? 2.5 : 2} />
+          <span className="text-[10px] font-medium uppercase tracking-wider">
+            Ask
+          </span>
+          {isAskActive && (
             <motion.div
               className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--color-accent)]"
               transition={{ type: "spring", stiffness: 500, damping: 30 }}
