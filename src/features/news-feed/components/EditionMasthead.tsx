@@ -1,24 +1,14 @@
 "use client";
 
 import React from "react";
-import { motion } from "framer-motion";
-import { fadeUp, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 interface EditionMastheadProps {
     editionHeaderDate: string;
 }
 
 export const EditionMasthead: React.FC<EditionMastheadProps> = ({ editionHeaderDate }) => {
-    const mastheadVariants = fadeUp(16);
-
     return (
-        <motion.div
-            className="pb-4 px-6 text-center mb-6 max-w-5xl mx-auto w-full"
-            variants={mastheadVariants}
-            initial="hidden"
-            animate="show"
-            transition={TRANSITIONS.base}
-        >
+        <div className="pb-4 px-6 text-center mb-6 max-w-5xl mx-auto w-full">
             <h2 className="font-masthead text-5xl md:text-6xl uppercase tracking-tight mb-2">
                 The Transcript
             </h2>
@@ -26,6 +16,6 @@ export const EditionMasthead: React.FC<EditionMastheadProps> = ({ editionHeaderD
                 <span className="opacity-60">Vol. 120 · No. 8</span>
                 <span className="opacity-80">{editionHeaderDate}</span>
             </div>
-        </motion.div>
+        </div>
     );
 };

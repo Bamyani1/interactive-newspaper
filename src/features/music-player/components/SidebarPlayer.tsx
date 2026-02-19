@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Music, Play } from "lucide-react";
-import { playlists, resolveTracks } from "../data/musicData";
 import { useMonthlyTrendingMusic } from "../hooks/useMonthlyTrendingMusic";
 
 interface SidebarPlayerProps {
@@ -376,20 +375,12 @@ function TracksPlayer({
 }
 
 export const SidebarPlayer: React.FC<SidebarPlayerProps> = ({ currentDate = null }) => {
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState(playlists[0]?.id ?? "");
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isTrackListOpen, setIsTrackListOpen] = useState(false);
-
-  const selectedPlaylist = playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? playlists[0];
-  const playlistTracks = useMemo(
-    () => (selectedPlaylist ? resolveTracks(selectedPlaylist.trackIds) : []),
-    [selectedPlaylist],
-  );
 
   const {
     tracks: monthlyTracks,
     monthLabel,
-    sourceLabel,
     isLoading,
     reason,
     error,
@@ -397,7 +388,7 @@ export const SidebarPlayer: React.FC<SidebarPlayerProps> = ({ currentDate = null
 
   const monthlyPlayerTracks = useMemo<PlayerTrack[]>(
     () => monthlyTracks.map((track) => ({
-      id: track.track_id,
+      id: String(track.rank),
       title: track.title,
       artist: track.artist,
       youtubeId: track.youtubeId,
@@ -412,98 +403,42 @@ export const SidebarPlayer: React.FC<SidebarPlayerProps> = ({ currentDate = null
 
     const firstWithVideo = monthlyPlayerTracks.findIndex((track) => Boolean(track.youtubeId));
     setCurrentTrackIndex(firstWithVideo >= 0 ? firstWithVideo : 0);
-    setIsTrackListOpen(false);
+    setIsTrackListOpen(firstWithVideo < 0);
   }, [currentDate, monthlyPlayerTracks]);
 
-  const legacyPlayerTracks = useMemo<PlayerTrack[]>(
-    () => playlistTracks.map((track) => ({
-      id: track.id,
-      title: track.title,
-      artist: track.artist,
-      youtubeId: track.youtubeId,
-    })),
-    [playlistTracks],
-  );
-
-  if (currentDate) {
-    if (isLoading) {
-      return <MessageCard title="Monthly Top 10" body="Loading monthly chart data..." />;
-    }
-
-    if (error) {
-      return <MessageCard title="Monthly Top 10" body="Unable to load monthly chart data right now." />;
-    }
-
-    if (reason === "OUT_OF_ARCHIVE_RANGE") {
-      return (
-        <MessageCard
-          title="Monthly Top 10"
-          body="No chart data is available for this month. Coverage starts at August 1958 and ends at December 2000."
-        />
-      );
-    }
-
-    if (reason === "NO_DATA") {
-      return <MessageCard title="Monthly Top 10" body="No chart data was found for this month." />;
-    }
-
-    if (monthlyPlayerTracks.length === 0) {
-      return <MessageCard title="Monthly Top 10" body="No tracks are available for this month." />;
-    }
-
-    return (
-      <TracksPlayer
-        tracks={monthlyPlayerTracks}
-        currentTrackIndex={currentTrackIndex}
-        setCurrentTrackIndex={setCurrentTrackIndex}
-        isTrackListOpen={isTrackListOpen}
-        setIsTrackListOpen={setIsTrackListOpen}
-        showEmbed
-        header={
-          <>
-            <span>{monthLabel} Top 10</span>
-          </>
-        }
-      />
-    );
+  if (!currentDate) {
+    return null;
   }
 
-  if (legacyPlayerTracks.length === 0) {
-    return null;
+  if (isLoading) {
+    return <MessageCard title="Monthly Top 10" body="Loading monthly chart data..." />;
+  }
+
+  if (error) {
+    return <MessageCard title="Monthly Top 10" body="Unable to load monthly chart data right now." />;
+  }
+
+  if (reason === "NO_DATA") {
+    return <MessageCard title="Monthly Top 10" body="No chart data was found for this month." />;
+  }
+
+  if (monthlyPlayerTracks.length === 0) {
+    return <MessageCard title="Monthly Top 10" body="No tracks are available for this month." />;
   }
 
   return (
     <TracksPlayer
-      tracks={legacyPlayerTracks}
+      tracks={monthlyPlayerTracks}
       currentTrackIndex={currentTrackIndex}
       setCurrentTrackIndex={setCurrentTrackIndex}
       isTrackListOpen={isTrackListOpen}
       setIsTrackListOpen={setIsTrackListOpen}
       showEmbed
-      header={(
+      header={
         <>
-          <label className="sr-only" htmlFor="sidebar-playlist-select">
-            Select playlist
-          </label>
-          <select
-            id="sidebar-playlist-select"
-            value={selectedPlaylistId}
-            onChange={(event) => {
-              setSelectedPlaylistId(event.target.value);
-              setCurrentTrackIndex(0);
-              setIsTrackListOpen(false);
-            }}
-            className="bg-transparent border-none cursor-pointer appearance-none pr-5 focus:outline-none focus:ring-0 py-0 font-mono text-[10px]"
-          >
-            {playlists.map((playlist) => (
-              <option key={playlist.id} value={playlist.id}>
-                {playlist.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="w-3.5 h-3.5 text-accent pointer-events-none -ml-5" aria-hidden />
+          <span>{monthLabel} Top 10</span>
         </>
-      )}
+      }
     />
   );
 };
