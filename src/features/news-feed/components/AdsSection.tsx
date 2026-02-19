@@ -1,9 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import type { VintageAd, AdCategory } from "@/src/types";
-import { fadeUp, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
 
 // ── Variant Types & Mapping ─────────────────────────────────────────
 
@@ -326,8 +324,6 @@ interface AdsSectionProps {
 
 export const AdsSection: React.FC<AdsSectionProps> = ({ displayAds }) => {
     const [expanded, setExpanded] = useState(false);
-    const gridVariants = staggerContainer(0.08, 0.1);
-    const cardVariants = fadeUp(14);
     const variants = useMemo(() => assignVariants(displayAds), [displayAds]);
     const visibleAds = expanded ? displayAds : displayAds.slice(0, INITIAL_VISIBLE);
 
@@ -343,13 +339,7 @@ export const AdsSection: React.FC<AdsSectionProps> = ({ displayAds }) => {
 
     return (
         <section className="w-full">
-            <motion.div
-                className="flex items-center justify-between border-b pb-3 mb-6"
-                variants={fadeUp(12)}
-                initial="hidden"
-                animate="show"
-                transition={TRANSITIONS.base}
-            >
+            <div className="flex items-center justify-between border-b pb-3 mb-6">
                 <div>
                     <p className="font-mono text-[11px] uppercase tracking-[0.35em] opacity-70">
                         Advertisements
@@ -361,26 +351,18 @@ export const AdsSection: React.FC<AdsSectionProps> = ({ displayAds }) => {
                 <span className="px-3 py-1 border border-[var(--color-text-primary)] text-xs uppercase tracking-widest font-semibold">
                     {displayAds.length} {displayAds.length === 1 ? "Ad" : "Ads"}
                 </span>
-            </motion.div>
+            </div>
 
-            <motion.div
-                key={expanded ? "expanded" : "collapsed"}
-                className="columns-1 sm:columns-2 gap-4 md:gap-5 mb-8"
-                variants={gridVariants}
-                initial="hidden"
-                animate="show"
-            >
+            <div className="columns-1 sm:columns-2 gap-4 md:gap-5 mb-8">
                 {visibleAds.map((ad, idx) => (
-                    <motion.div
+                    <div
                         key={`display-${ad.title}-${idx}`}
                         className="break-inside-avoid mb-4 md:mb-5"
-                        variants={cardVariants}
-                        transition={TRANSITIONS.base}
                     >
                         <DisplayAd ad={ad} variant={variants[idx]} />
-                    </motion.div>
+                    </div>
                 ))}
-            </motion.div>
+            </div>
 
             {displayAds.length > INITIAL_VISIBLE && !expanded && (
                 <button
@@ -402,8 +384,6 @@ interface ClassifiedsSectionProps {
 
 export const ClassifiedsSection: React.FC<ClassifiedsSectionProps> = ({ classifiedAds }) => {
     const [expanded, setExpanded] = useState(false);
-    const gridVariants = staggerContainer(0.08, 0.1);
-    const cardVariants = fadeUp(14);
     const variants = useMemo(() => assignVariants(classifiedAds), [classifiedAds]);
     const visibleAds = expanded ? classifiedAds : classifiedAds.slice(0, INITIAL_VISIBLE);
 
@@ -419,13 +399,7 @@ export const ClassifiedsSection: React.FC<ClassifiedsSectionProps> = ({ classifi
 
     return (
         <section className="w-full">
-            <motion.div
-                className="flex items-center justify-between border-b pb-3 mb-6"
-                variants={fadeUp(12)}
-                initial="hidden"
-                animate="show"
-                transition={TRANSITIONS.base}
-            >
+            <div className="flex items-center justify-between border-b pb-3 mb-6">
                 <div>
                     <p className="font-mono text-[11px] uppercase tracking-[0.35em] opacity-70">
                         Classifieds
@@ -437,26 +411,18 @@ export const ClassifiedsSection: React.FC<ClassifiedsSectionProps> = ({ classifi
                 <span className="px-3 py-1 border border-[var(--color-text-primary)] text-xs uppercase tracking-widest font-semibold">
                     {classifiedAds.length} {classifiedAds.length === 1 ? "Listing" : "Listings"}
                 </span>
-            </motion.div>
+            </div>
 
-            <motion.div
-                key={expanded ? "expanded" : "collapsed"}
-                className="columns-1 sm:columns-2 gap-4 md:gap-5 mb-8"
-                variants={gridVariants}
-                initial="hidden"
-                animate="show"
-            >
+            <div className="columns-1 sm:columns-2 gap-4 md:gap-5 mb-8">
                 {visibleAds.map((ad, idx) => (
-                    <motion.div
+                    <div
                         key={`classified-${ad.title}-${idx}`}
                         className="break-inside-avoid mb-4 md:mb-5"
-                        variants={cardVariants}
-                        transition={TRANSITIONS.base}
                     >
                         <DisplayAd ad={ad} variant={variants[idx]} />
-                    </motion.div>
+                    </div>
                 ))}
-            </motion.div>
+            </div>
 
             {classifiedAds.length > INITIAL_VISIBLE && !expanded && (
                 <button

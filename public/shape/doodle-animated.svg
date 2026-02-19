@@ -16,6 +16,7 @@
     }
     .doodle-drawing path {
       stroke: #0e0404;
+      stroke-opacity: 0.55;
     }
     .doodle-drawn path {
       fill: #1a0808;

@@ -78,45 +78,19 @@ export interface DailyWeatherRecord {
     raw: Record<string, unknown>;
 }
 
-export type MusicSource = "BILLBOARD_HOT100_MONTHLY_ARCHIVE";
-
-export interface MonthlyTrendingTrackCatalogItem {
-    track_id: string;
-    title: string;
-    artist: string;
-    youtubeId: string | null;
-}
-
 export interface MonthlyTrendingTrack {
     rank: number;
-    track_id: string;
     title: string;
     artist: string;
-    youtubeId: string | null;
-    points_total: number;
-    best_rank: number;
-    weeks_present: number;
+    youtubeId: string;
 }
 
 export interface MonthlyTrendingRecord {
     month: string;
-    source: MusicSource;
     tracks: MonthlyTrendingTrack[];
-    raw: Record<string, unknown>;
 }
 
-export type MonthlyTrendingReason = "INVALID_DATE" | "OUT_OF_ARCHIVE_RANGE" | "NO_DATA" | null;
-
-export interface MonthlyTrendingApiResponse {
-    query: {
-        date: string | null;
-        month: string | null;
-    };
-    record: MonthlyTrendingRecord | null;
-    reason: MonthlyTrendingReason;
-    attempts: string[];
-    error?: string;
-}
+export type MonthlyTrendingReason = "INVALID_DATE" | "NO_DATA" | null;
 
 export type SectionId = "Top" | Article["category"] | "Ads" | "Classifieds" | "All";
 
