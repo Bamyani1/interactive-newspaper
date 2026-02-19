@@ -1,31 +1,39 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { MonthlyTrendingApiResponse, MonthlyTrendingRecord } from "@/src/types";
+import type { MonthlyTrendingReason, MonthlyTrendingTrack } from "@/src/types";
 
 interface UseMonthlyTrendingMusicResult {
-  record: MonthlyTrendingRecord | null;
-  tracks: MonthlyTrendingRecord["tracks"];
-  sourceLabel: string;
+  tracks: MonthlyTrendingTrack[];
   monthLabel: string;
   monthNameOnly: string;
   isLoading: boolean;
   error: Error | null;
-  reason: MonthlyTrendingApiResponse["reason"];
+  reason: MonthlyTrendingReason;
 }
 
-const responseCache = new Map<string, MonthlyTrendingApiResponse>();
-const inFlight = new Map<string, Promise<MonthlyTrendingApiResponse>>();
+interface RawTrack {
+  rank: number;
+  title: string;
+  artist: string;
+  youtube_id: string;
+}
 
-const MAX_CACHE_SIZE = 50;
+type YearData = Record<string, RawTrack[]>;
 
-function cacheSet<K, V>(map: Map<K, V>, key: K, value: V): void {
-  if (map.size >= MAX_CACHE_SIZE) {
-    // Delete the oldest entry (first key in insertion order)
-    const firstKey = map.keys().next().value;
-    if (firstKey !== undefined) map.delete(firstKey);
+const yearCache = new Map<string, YearData>();
+const inFlight = new Map<string, Promise<YearData | null>>();
+
+const MAX_CACHE_SIZE = 20;
+const MIN_YEAR = 1960;
+const MAX_YEAR = 2000;
+
+function cacheSet(key: string, value: YearData): void {
+  if (yearCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = yearCache.keys().next().value;
+    if (firstKey !== undefined) yearCache.delete(firstKey);
   }
-  map.set(key, value);
+  yearCache.set(key, value);
 }
 
 function isIsoDate(value: string): boolean {
@@ -34,20 +42,9 @@ function isIsoDate(value: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(value);
 }
 
-function monthFromDate(date: string): string | null {
-  if (!isIsoDate(date)) {
-    return null;
-  }
-
-  return date.slice(0, 7);
-}
-
 function formatMonth(month: string): string {
   const date = new Date(`${month}-01T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) {
-    return month;
-  }
-
+  if (Number.isNaN(date.getTime())) return month;
   return new Intl.DateTimeFormat("en-US", {
     month: "long",
     year: "numeric",
@@ -57,81 +54,65 @@ function formatMonth(month: string): string {
 
 function formatMonthNameOnly(month: string): string {
   const date = new Date(`${month}-01T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) {
-    return month;
-  }
-
+  if (Number.isNaN(date.getTime())) return month;
   return new Intl.DateTimeFormat("en-US", {
     month: "long",
     timeZone: "UTC",
   }).format(date);
 }
 
-function sourceToLabel(source: MonthlyTrendingRecord["source"]): string {
-  switch (source) {
-    case "BILLBOARD_HOT100_MONTHLY_ARCHIVE":
-      return "Billboard Hot 100 (monthly)";
-    default:
-      return "Trending Music";
-  }
-}
+async function fetchYear(year: string): Promise<YearData | null> {
+  const cached = yearCache.get(year);
+  if (cached) return cached;
 
-async function fetchMonthlyMusic(date: string, cacheKey: string): Promise<MonthlyTrendingApiResponse> {
-  const cached = responseCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
+  const existing = inFlight.get(year);
+  if (existing) return existing;
 
-  const existing = inFlight.get(cacheKey);
-  if (existing) {
-    return existing;
-  }
-
-  const pending = fetch(`/api/music?date=${encodeURIComponent(date)}`)
+  const pending = fetch(`/top-10-music/${year}.json`)
     .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`Music API error: ${response.status}`);
-      }
-      const payload = (await response.json()) as MonthlyTrendingApiResponse;
-      return payload;
+      if (!response.ok) return null;
+      const data = (await response.json()) as YearData;
+      cacheSet(year, data);
+      return data;
     })
+    .catch(() => null)
     .finally(() => {
-      inFlight.delete(cacheKey);
+      inFlight.delete(year);
     });
 
-  inFlight.set(cacheKey, pending);
-  const resolved = await pending;
-  if (resolved.record != null) {
-    cacheSet(responseCache, cacheKey, resolved);
-  }
-  return resolved;
+  inFlight.set(year, pending);
+  return pending;
 }
 
 export function useMonthlyTrendingMusic(date: string | null): UseMonthlyTrendingMusicResult {
-  const [record, setRecord] = useState<MonthlyTrendingRecord | null>(null);
-  const [reason, setReason] = useState<MonthlyTrendingApiResponse["reason"]>(null);
+  const [yearData, setYearData] = useState<YearData | null>(null);
+  const [reason, setReason] = useState<MonthlyTrendingReason>(null);
   const [isLoading, setIsLoading] = useState(Boolean(date));
   const [error, setError] = useState<Error | null>(null);
+
+  const year = date && isIsoDate(date) ? date.slice(0, 4) : null;
+  const monthKey = date && isIsoDate(date) ? date.slice(5, 7) : null;
+  const monthStr = date && isIsoDate(date) ? date.slice(0, 7) : null;
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      if (!date) {
+      if (!date || !year || !monthKey) {
         if (!cancelled) {
-          setRecord(null);
-          setReason(null);
+          setYearData(null);
+          setReason(date ? "INVALID_DATE" : null);
           setError(null);
           setIsLoading(false);
         }
         return;
       }
 
-      const month = monthFromDate(date);
-      if (!month) {
+      const yearNum = parseInt(year, 10);
+      if (yearNum < MIN_YEAR || yearNum > MAX_YEAR) {
         if (!cancelled) {
-          setRecord(null);
-          setReason("INVALID_DATE");
+          setYearData(null);
+          setReason("NO_DATA");
           setError(null);
           setIsLoading(false);
         }
@@ -142,14 +123,19 @@ export function useMonthlyTrendingMusic(date: string | null): UseMonthlyTrending
       setError(null);
 
       try {
-        const payload = await fetchMonthlyMusic(date, month);
+        const data = await fetchYear(year);
         if (!cancelled) {
-          setRecord(payload.record);
-          setReason(payload.reason);
+          if (data) {
+            setYearData(data);
+            setReason(data[monthKey] ? null : "NO_DATA");
+          } else {
+            setYearData(null);
+            setReason("NO_DATA");
+          }
         }
       } catch (value) {
         if (!cancelled) {
-          setRecord(null);
+          setYearData(null);
           setReason(null);
           setError(value instanceof Error ? value : new Error("Failed to load monthly music"));
         }
@@ -165,47 +151,34 @@ export function useMonthlyTrendingMusic(date: string | null): UseMonthlyTrending
     return () => {
       cancelled = true;
     };
-  }, [date]);
+  }, [date, year, monthKey]);
 
-  const sourceLabel = useMemo(() => {
-    if (!record) {
-      return "";
-    }
-
-    return sourceToLabel(record.source);
-  }, [record]);
+  const tracks = useMemo<MonthlyTrendingTrack[]>(() => {
+    if (!yearData || !monthKey) return [];
+    const rawTracks = yearData[monthKey];
+    if (!rawTracks) return [];
+    return rawTracks.map((track) => ({
+      rank: track.rank,
+      title: track.title,
+      artist: track.artist,
+      youtubeId: track.youtube_id,
+    }));
+  }, [yearData, monthKey]);
 
   const monthLabel = useMemo(() => {
-    if (!record?.month) {
-      const month = date ? monthFromDate(date) : null;
-      return month ? formatMonth(month) : "";
-    }
-
-    return formatMonth(record.month);
-  }, [date, record]);
+    return monthStr ? formatMonth(monthStr) : "";
+  }, [monthStr]);
 
   const monthNameOnly = useMemo(() => {
-    if (!record?.month) {
-      const month = date ? monthFromDate(date) : null;
-      return month ? formatMonthNameOnly(month) : "";
-    }
-
-    return formatMonthNameOnly(record.month);
-  }, [date, record]);
+    return monthStr ? formatMonthNameOnly(monthStr) : "";
+  }, [monthStr]);
 
   return {
-    record,
-    tracks: record?.tracks ?? [],
-    sourceLabel,
+    tracks,
     monthLabel,
     monthNameOnly,
     isLoading,
     error,
     reason,
   };
-}
-
-export function clearMonthlyTrendingMusicCacheForTests(): void {
-  responseCache.clear();
-  inFlight.clear();
 }

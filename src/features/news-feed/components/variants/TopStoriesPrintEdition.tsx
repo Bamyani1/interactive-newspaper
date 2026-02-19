@@ -1,7 +1,5 @@
 "use client";
 import React, { useState, useCallback } from "react";
-import { motion } from "framer-motion";
-import { fadeUp, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
 import type { TopStoriesVariantProps } from "./TopStoriesVariantProps";
 import {
   extractParagraphs,
@@ -16,9 +14,6 @@ import {
   ImageGallery,
   Lightbox,
 } from "./print-edition-primitives";
-
-const sectionVariants = fadeUp(10);
-const sectionContainer = staggerContainer(0.03, 0);
 
 // ─── Main Component ────────────────────────────────────────────────
 
@@ -40,23 +35,13 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
   const closeLightbox = useCallback(() => setLightboxSrc(null), []);
 
   return (
-    <motion.div
-      key="print-edition"
-      className="flex flex-col"
-      variants={sectionContainer}
-      initial="hidden"
-      animate="show"
-    >
+    <div className="flex flex-col">
       {/* ── Top double rule ───────────────────────────────────── */}
       <DoubleRule />
 
       {/* ── Hero Article ──────────────────────────────────────── */}
       {heroArticle && (
-        <motion.article
-          className="mb-2"
-          variants={sectionVariants}
-          transition={TRANSITIONS.base}
-        >
+        <article className="mb-2">
           {/* Kicker */}
           <Kicker category={heroArticle.category} />
 
@@ -137,13 +122,13 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
             </p>
           )}
 
-        </motion.article>
+        </article>
       )}
 
       {/* ── Featured Articles ─────────────────────────────────── */}
       {featuredArticles.length > 0 && (
-        <motion.div variants={sectionVariants} transition={TRANSITIONS.base}>
-          {featuredArticles.map((article, index) => {
+        <div>
+          {featuredArticles.map((article, _index) => {
             const paragraphs = article.fullText
               ? extractParagraphs(article.fullText)
               : [];
@@ -154,12 +139,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
 
             return (
               <React.Fragment key={article.id}>
-                <motion.article
-                  className="py-5"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={TRANSITIONS.base}
-                >
+                <article className="py-5">
                   {/* Single rule top */}
                   <div
                     aria-hidden="true"
@@ -277,12 +257,12 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                       />
                     </>
                   )}
-                </motion.article>
+                </article>
 
               </React.Fragment>
             );
           })}
-        </motion.div>
+        </div>
       )}
 
       {/* ── Bottom Ornament ───────────────────────────────────── */}
@@ -292,6 +272,6 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
 
       {/* ── Lightbox Overlay ──────────────────────────────────── */}
       <Lightbox src={lightboxSrc} onClose={closeLightbox} />
-    </motion.div>
+    </div>
   );
 };

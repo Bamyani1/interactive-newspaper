@@ -8,6 +8,7 @@ import { ThemeModeToggle } from "@/features/theme";
 import { motion, AnimatePresence } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { fadeDown, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
+// Note: fadeDown + staggerContainer still used for dropdown year/month/date stagger animations
 
 const formatDisplayDate = (dateStr: string): string => {
     const date = new Date(dateStr + "T12:00:00");
@@ -130,15 +131,9 @@ export const TimeControls = () => {
         return () => document.removeEventListener("keydown", handleEscape);
     }, []);
 
-    const headerVariants = fadeDown(10);
-
     return (
-        <motion.header
+        <header
             className="h-[var(--header-height)] w-full flex items-center justify-between px-6 text-[var(--color-text-header)] time-controls-header transition-colors duration-300 z-[var(--z-header)] fixed top-0 left-0"
-            variants={headerVariants}
-            initial="hidden"
-            animate="show"
-            transition={TRANSITIONS.quick}
         >
             <div className="time-controls-title-group">
                 <h1 className="text-sm font-header uppercase tracking-widest leading-none opacity-80">
@@ -353,6 +348,6 @@ export const TimeControls = () => {
                 </AnimatePresence>
             </div>
             </div>
-        </motion.header>
+        </header>
     );
 };

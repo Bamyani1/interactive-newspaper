@@ -3,8 +3,6 @@
 import React from "react";
 import { useHistoricalWeather } from "@/features/weather";
 import { SidebarPlayer } from "@/features/music-player";
-import { motion } from "framer-motion";
-import { TRANSITIONS } from "@/shared/motion/motionTokens";
 
 interface ContextSidebarProps {
     currentDate: string | null;
@@ -12,14 +10,6 @@ interface ContextSidebarProps {
 
 export const ContextSidebar: React.FC<ContextSidebarProps> = ({ currentDate }) => {
     const { record, isLoading } = useHistoricalWeather(currentDate ?? null);
-    const sidebarVariants = {
-        hidden: { opacity: 0, x: 8 },
-        show: {
-            opacity: 1,
-            x: 0,
-            transition: TRANSITIONS.base,
-        },
-    };
 
     const highF = record?.tmax_c != null ? Math.round(record.tmax_c * 9 / 5 + 32) : null;
     const lowF = record?.tmin_c != null ? Math.round(record.tmin_c * 9 / 5 + 32) : null;
@@ -35,12 +25,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({ currentDate }) =
         : null;
 
     return (
-        <motion.aside
-            className="edition-sidebar-surface h-full overflow-hidden p-6"
-            variants={sidebarVariants}
-            initial="hidden"
-            animate="show"
-        >
+        <aside className="edition-sidebar-surface h-full overflow-hidden p-6">
 
             {currentDate && (
                 <div className="mb-8">
@@ -104,6 +89,6 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({ currentDate }) =
                 <SidebarPlayer currentDate={currentDate} />
             </div>
 
-        </motion.aside>
+        </aside>
     );
 };
