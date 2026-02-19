@@ -9,6 +9,8 @@ import { PageShell, CinemaBackground, Ticker, useTickerAnimation, EditionPicker 
 import { headlines } from "@/shared/landing/data/headlines";
 import { landingCardVariants, TRANSITIONS } from "@/shared/motion/motionTokens";
 
+let hasPlayedEntrance = false;
+
 export default function Home() {
     const router = useRouter();
     const { editions, isLoading } = useArchive();
@@ -49,9 +51,14 @@ export default function Home() {
                 <motion.div
                     className="cinema-paper"
                     variants={landingCardVariants}
-                    initial="hidden"
+                    initial={hasPlayedEntrance ? false : "hidden"}
                     animate={isExiting ? "exit" : "show"}
                     transition={TRANSITIONS.slow}
+                    onAnimationComplete={(definition) => {
+                        if (definition === "show") {
+                            hasPlayedEntrance = true;
+                        }
+                    }}
                 >
                     <header className="cinema-masthead">
                         <h1 className="cinema-title">The Transcript</h1>

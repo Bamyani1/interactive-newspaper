@@ -12,6 +12,7 @@
     }
   </style>
 
+
   <g id="glass-red-43" class="glass-panel"
      data-delay="491" data-fill="#b83030" data-glow="#ff6060"
      data-stroke="#802020" data-size="sm" data-hidden="1">
@@ -1649,6 +1650,10 @@
     (function() {
       var groups = Array.from(document.querySelectorAll('.glass-panel'));
       var FILL_MAX_OPACITY = 0.8;
+      var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', function(e) {
+        prefersReducedMotion = e.matches;
+      });
       var REVEAL_DURATION = 800;
 
       function easeOutCubic(t) {
@@ -1804,7 +1809,6 @@
         var rgb = hexToRgb(glowHex);
         var upDur = GLOW_UP_BASE + (Math.random() * 2 - 1) * GLOW_JITTER;
         var fadeDur = GLOW_FADE_BASE + (Math.random() * 2 - 1) * GLOW_JITTER;
-
         // ── Glow up ──
         var upStart = performance.now();
         function animateUp(now) {

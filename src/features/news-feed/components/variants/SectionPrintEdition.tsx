@@ -1,7 +1,5 @@
 "use client";
 import React, { useState, useCallback } from "react";
-import { motion } from "framer-motion";
-import { fadeUp, staggerContainer, TRANSITIONS } from "@/shared/motion/motionTokens";
 import type { Article } from "@/src/types";
 import {
   extractParagraphs,
@@ -16,9 +14,6 @@ import {
   ImageGallery,
   Lightbox,
 } from "./print-edition-primitives";
-
-const sectionVariants = fadeUp(18);
-const sectionContainer = staggerContainer(0.08, 0.12);
 
 interface SectionPrintEditionProps {
   articles: Article[];
@@ -37,22 +32,12 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
   const [heroArticle, ...remainingArticles] = articles;
 
   return (
-    <motion.div
-      key="section-print-edition"
-      className="flex flex-col"
-      variants={sectionContainer}
-      initial="hidden"
-      animate="show"
-    >
+    <div className="flex flex-col">
       {/* ── Top double rule ───────────────────────────────────── */}
       <DoubleRule />
 
       {/* ── Hero Article (first in section) ────────────────────── */}
-      <motion.article
-        className="mb-2"
-        variants={sectionVariants}
-        transition={TRANSITIONS.base}
-      >
+      <article className="mb-2">
         <Kicker category={heroArticle.category} />
 
         {!heroArticle.fullText && heroArticle.imageUrls.length > 0 ? (
@@ -130,12 +115,12 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
             {heroArticle.summary}
           </p>
         )}
-      </motion.article>
+      </article>
 
       {/* ── Remaining Articles ─────────────────────────────────── */}
       {remainingArticles.length > 0 && (
-        <motion.div variants={sectionVariants} transition={TRANSITIONS.base}>
-          {remainingArticles.map((article, index) => {
+        <div>
+          {remainingArticles.map((article, _index) => {
             const paragraphs = article.fullText
               ? extractParagraphs(article.fullText)
               : [];
@@ -147,15 +132,7 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
 
             return (
               <React.Fragment key={article.id}>
-                <motion.article
-                  className="py-5"
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    ...TRANSITIONS.base,
-                    delay: 0.15 + index * 0.08,
-                  }}
-                >
+                <article className="py-5">
                   {/* Single accent rule */}
                   <div
                     aria-hidden="true"
@@ -227,11 +204,11 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
                       }
                     />
                   )}
-                </motion.article>
+                </article>
               </React.Fragment>
             );
           })}
-        </motion.div>
+        </div>
       )}
 
       {/* ── Bottom Ornament ───────────────────────────────────── */}
@@ -241,6 +218,6 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
 
       {/* ── Lightbox Overlay ──────────────────────────────────── */}
       <Lightbox src={lightboxSrc} onClose={closeLightbox} />
-    </motion.div>
+    </div>
   );
 };
