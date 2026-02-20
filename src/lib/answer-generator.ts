@@ -11,8 +11,9 @@ import type { RetrievedArticle } from "@/src/lib/db";
 import type { Citation } from "@/src/types";
 
 const GENERATION_MODEL = "gemini-2.0-flash";
-const MAX_ANSWER_TOKENS = 1024;
+const MAX_ANSWER_TOKENS = 2560;
 const GENERATION_TIMEOUT_MS = 15_000;
+const MAX_SOURCE_CHARS = 5000;
 
 let _client: GoogleGenAI | null = null;
 
@@ -37,17 +38,35 @@ function buildSystemPrompt(): string {
     return `You are "The Archive," a research assistant for The Transcript — Ohio Wesleyan University's student newspaper from the 1960s.
 
 RULES — follow these exactly:
-1. Answer ONLY from the provided source articles. Never use outside knowledge.
-2. CITE every factual claim using the format [Source N] where N matches the article number.
-3. If the sources do not contain enough information to answer, say: "I don't have enough information in the archive to answer this question."
-4. Be concise and direct. Use 2-4 sentences for simple questions, up to a paragraph for complex ones.
-5. Use past tense when describing historical events.
-6. Preserve exact names, dates, and figures from the sources — do not paraphrase numbers or proper nouns.
-7. If multiple sources discuss the same topic, synthesize them and cite all relevant sources.
-8. Never make up quotes, statistics, or events not explicitly stated in the sources.
+1. First, assess each source's relevance to the question. Disregard any source that is not meaningfully related to what is being asked.
+2. Answer ONLY from the relevant source articles. Never use outside knowledge.
+3. CITE every factual claim using the format [Source N] where N matches the article number.
+4. If the sources do not contain enough information to answer, say: "I don't have enough information in the archive to answer this question."
+5. Provide thorough, detailed answers. Use 1-2 paragraphs for simple questions and multiple paragraphs for complex ones. Synthesize information across sources to give comprehensive context.
+6. Use past tense when describing historical events.
+7. Preserve exact names, dates, and figures from the sources — do not paraphrase numbers or proper nouns.
+8. If multiple sources discuss the same topic, synthesize them and cite all relevant sources.
+9. Never make up quotes, statistics, or events not explicitly stated in the sources.
 
 RESPONSE FORMAT:
-Write your answer as plain text with inline [Source N] citations. Do not use markdown headers or bullet points.`;
+Begin with a line: "Relevant sources: [Source N, Source M, ...]" listing only sources you will actually cite.
+Then write a blank line, followed by your answer as plain text with inline [Source N] citations. Do not use markdown headers or bullet points.
+
+EXAMPLES:
+
+Question: "What sports teams did Ohio Wesleyan have in 1965?"
+Sources: [Source 1] about the Battling Bishops football season, [Source 2] about basketball tryouts, [Source 3] about campus dining changes
+Good answer:
+Relevant sources: [Source 1, Source 2]
+
+Ohio Wesleyan's Battling Bishops competed in football during the fall 1965 season, finishing with a 5-3 record [Source 1]. The university also fielded a basketball team, with tryouts for the 1965-66 season drawing over 30 hopefuls to Branch Rickey Arena [Source 2].
+
+Question: "Did OWU have a computer science department?"
+Sources: [Source 1] about English department hiring, [Source 2] about library renovations
+Good answer:
+Relevant sources: []
+
+I don't have enough information in the archive to answer this question. The sources I found cover English department hiring and library renovations, but none mention a computer science department.`;
 }
 
 function buildUserPrompt(
@@ -64,7 +83,7 @@ Date: ${a.editionDate}
 Category: ${a.category}
 ${a.byline ? `Author: ${a.byline}` : ""}
 Content:
-${a.bodyPlain.slice(0, 3000)}`,
+${a.bodyPlain.slice(0, MAX_SOURCE_CHARS)}`,
         )
         .join("\n\n");
 
@@ -132,7 +151,10 @@ export async function generateAnswer(
 
         clearTimeout(timeout);
 
-        const rawAnswer = response.text?.trim() ?? "";
+        const rawText = response.text?.trim() ?? "";
+
+        // Strip the CoT preamble ("Relevant sources: ...") before user-facing answer
+        const rawAnswer = rawText.replace(/^Relevant sources:[^\n]*\n\n/, "").trim();
 
         if (!rawAnswer) {
             return {
@@ -143,8 +165,8 @@ export async function generateAnswer(
             };
         }
 
-        // Parse citations from the answer text
-        const citations = parseCitations(rawAnswer, sourceArticles);
+        // Parse citations from the full text (including preamble) so all referenced sources are captured
+        const citations = parseCitations(rawText, sourceArticles);
 
         // Validate: if the answer references sources but we couldn't parse any valid citations,
         // flag it as potentially unreliable

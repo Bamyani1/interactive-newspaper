@@ -11,6 +11,8 @@ import { embedQuery } from "@/src/lib/embeddings";
 import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
 import type { RetrievedArticle } from "@/src/lib/db";
 import { generateAnswer } from "@/src/lib/answer-generator";
+import { reformulateQuery } from "@/src/lib/query-reformulator";
+import { rerankArticles } from "@/src/lib/reranker";
 import type { AskResponse } from "@/src/types";
 
 const MAX_QUESTION_LENGTH = 1000;
@@ -53,10 +55,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             );
         }
 
-        // ── Step 1: Embed the question ──
+        // ── Step 1: Reformulate query for better retrieval ──
+        const { embeddingQuery, ftsQuery } = await reformulateQuery(question);
+
+        // ── Step 2: Embed the reformulated query ──
         let questionEmbedding: number[];
         try {
-            questionEmbedding = await embedQuery(question);
+            questionEmbedding = await embedQuery(embeddingQuery);
         } catch (err) {
             console.error("Failed to embed question:", err);
             return NextResponse.json(
@@ -65,7 +70,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             );
         }
 
-        // ── Step 2: Retrieve relevant articles (with timeout) ──
+        // ── Step 3: Retrieve relevant articles (with timeout) ──
         const retrievalStart = Date.now();
         const filters = body.filters ?? {};
         let articles: RetrievedArticle[];
@@ -80,7 +85,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         try {
             articles = await Promise.race([
-                hybridSearch(question, questionEmbedding, {
+                hybridSearch(ftsQuery, questionEmbedding, {
                     limit: 8,
                     category: filters.category ?? null,
                     startDate: filters.startDate ?? null,
@@ -110,11 +115,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
         const retrievalTimeMs = Date.now() - retrievalStart;
 
-        // ── Step 3: Generate answer ──
+        // ── Step 4: Re-rank articles by relevance ──
+        const rankedArticles = await rerankArticles(question, articles);
+
+        // ── Step 5: Generate answer (using ORIGINAL question, not reformulated) ──
         const generationStart = Date.now();
         const { answer, citations, confidence } = await generateAnswer(
             question,
-            articles,
+            rankedArticles,
         );
         const generationTimeMs = Date.now() - generationStart;
 
@@ -124,7 +132,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             answer,
             citations,
             confidence,
-            sourceArticles: articles.map((a) => ({
+            sourceArticles: rankedArticles.map((a) => ({
                 id: a.id,
                 headline: a.headline,
                 editionDate: a.editionDate,
@@ -140,6 +148,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 totalTimeMs: Date.now() - totalStart,
                 articlesSearched: articles.length,
                 method,
+                reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
             },
         };
 

@@ -1,0 +1,746 @@
+{
+  "01": [
+    {
+      "rank": 1,
+      "title": "The Sound Of Silence",
+      "artist": "Simon & Garfunkel",
+      "youtube_id": "bjkPQYWNTlg"
+    },
+    {
+      "rank": 2,
+      "title": "We Can Work It Out",
+      "artist": "The Beatles",
+      "youtube_id": "xedn8vp6W20"
+    },
+    {
+      "rank": 3,
+      "title": "I Got You (I Feel Good)",
+      "artist": "James Brown And The Famous Flames",
+      "youtube_id": "iSLwVaebsJg"
+    },
+    {
+      "rank": 4,
+      "title": "Turn! Turn! Turn! (To Everything There Is A Season)",
+      "artist": "The Byrds",
+      "youtube_id": "pkuBh5n_Shc"
+    },
+    {
+      "rank": 5,
+      "title": "Over And Over",
+      "artist": "The Dave Clark Five",
+      "youtube_id": "n8bSZtEWDRQ"
+    },
+    {
+      "rank": 6,
+      "title": "Let's Hang On!",
+      "artist": "The 4 Seasons Featuring the \"Sound of Frankie Valli\"",
+      "youtube_id": "-B19u9tHnIs"
+    },
+    {
+      "rank": 7,
+      "title": "Fever",
+      "artist": "The McCoys",
+      "youtube_id": "g_1dJg3sqMY"
+    },
+    {
+      "rank": 8,
+      "title": "Ebb Tide",
+      "artist": "The Righteous Brothers",
+      "youtube_id": "Glu5Z7zfY2Y"
+    },
+    {
+      "rank": 9,
+      "title": "England Swings",
+      "artist": "Roger Miller",
+      "youtube_id": "NK66IGVVE7Y"
+    },
+    {
+      "rank": 10,
+      "title": "Make The World Go Away",
+      "artist": "Eddy Arnold",
+      "youtube_id": "EeFxoL36Jac"
+    }
+  ],
+  "02": [
+    {
+      "rank": 1,
+      "title": "My Love",
+      "artist": "Petula Clark",
+      "youtube_id": "O9A1DHdRnPc"
+    },
+    {
+      "rank": 2,
+      "title": "Barbara Ann",
+      "artist": "The Beach Boys",
+      "youtube_id": "i4me2Rbz1Us"
+    },
+    {
+      "rank": 3,
+      "title": "No Matter What Shape (Your Stomach's In)",
+      "artist": "The T-Bones",
+      "youtube_id": "xfdL62ss-vQ"
+    },
+    {
+      "rank": 4,
+      "title": "We Can Work It Out",
+      "artist": "The Beatles",
+      "youtube_id": "xedn8vp6W20"
+    },
+    {
+      "rank": 5,
+      "title": "Lightnin' Strikes",
+      "artist": "Lou Christie",
+      "youtube_id": "7HGnOuyi5O0"
+    },
+    {
+      "rank": 6,
+      "title": "The Men In My Little Girl's Life",
+      "artist": "Mike Douglas",
+      "youtube_id": "zH1O-SS7KIg"
+    },
+    {
+      "rank": 7,
+      "title": "She's Just My Style",
+      "artist": "Gary Lewis And The Playboys",
+      "youtube_id": "aoL6DBhzksM"
+    },
+    {
+      "rank": 8,
+      "title": "Five O'Clock World",
+      "artist": "The Vogues",
+      "youtube_id": "PW3yj43wYUw"
+    },
+    {
+      "rank": 9,
+      "title": "A Must To Avoid",
+      "artist": "Herman's Hermits",
+      "youtube_id": "JBfFF98VczM"
+    },
+    {
+      "rank": 10,
+      "title": "Crying Time",
+      "artist": "Ray Charles",
+      "youtube_id": "zGpUeOyyps4"
+    }
+  ],
+  "03": [
+    {
+      "rank": 1,
+      "title": "The Ballad Of The Green Berets",
+      "artist": "SSgt Barry Sadler",
+      "youtube_id": "BugBwt2ESpo"
+    },
+    {
+      "rank": 2,
+      "title": "These Boots Are Made For Walkin'",
+      "artist": "Nancy Sinatra",
+      "youtube_id": "fZjrkbkeWzo"
+    },
+    {
+      "rank": 3,
+      "title": "Lightnin' Strikes",
+      "artist": "Lou Christie",
+      "youtube_id": "7HGnOuyi5O0"
+    },
+    {
+      "rank": 4,
+      "title": "Listen People",
+      "artist": "Herman's Hermits",
+      "youtube_id": "uuNhYenoTNk"
+    },
+    {
+      "rank": 5,
+      "title": "California Dreamin'",
+      "artist": "The Mamas & The Papas",
+      "youtube_id": "oU6uUEwZ8FM"
+    },
+    {
+      "rank": 6,
+      "title": "Elusive Butterfly",
+      "artist": "Bob Lind",
+      "youtube_id": "sukxmZcDGlU"
+    },
+    {
+      "rank": 7,
+      "title": "My Love",
+      "artist": "Petula Clark",
+      "youtube_id": "O9A1DHdRnPc"
+    },
+    {
+      "rank": 8,
+      "title": "Uptight (Everything's Alright)",
+      "artist": "Stevie Wonder",
+      "youtube_id": "HPPwO7OaTIc"
+    },
+    {
+      "rank": 9,
+      "title": "Working My Way Back To You",
+      "artist": "The 4 Seasons Featuring the \"Sound of Frankie Valli\"",
+      "youtube_id": "xyoaDhT-M_E"
+    },
+    {
+      "rank": 10,
+      "title": "My World Is Empty Without You",
+      "artist": "The Supremes",
+      "youtube_id": "a3YWNsHOz8U"
+    }
+  ],
+  "04": [
+    {
+      "rank": 1,
+      "title": "The Ballad Of The Green Berets",
+      "artist": "SSgt Barry Sadler",
+      "youtube_id": "BugBwt2ESpo"
+    },
+    {
+      "rank": 2,
+      "title": "19th Nervous Breakdown",
+      "artist": "The Rolling Stones",
+      "youtube_id": "b96uqlQM8F4"
+    },
+    {
+      "rank": 3,
+      "title": "(You're My) Soul And Inspiration",
+      "artist": "The Righteous Brothers",
+      "youtube_id": "mzrPs-hLKmM"
+    },
+    {
+      "rank": 4,
+      "title": "Daydream",
+      "artist": "The Lovin' Spoonful",
+      "youtube_id": "KSZZ5vEkM4o"
+    },
+    {
+      "rank": 5,
+      "title": "Homeward Bound",
+      "artist": "Simon & Garfunkel",
+      "youtube_id": "JKCVAXhVMkY"
+    },
+    {
+      "rank": 6,
+      "title": "Nowhere Man",
+      "artist": "The Beatles",
+      "youtube_id": "8scSwaKbE64"
+    },
+    {
+      "rank": 7,
+      "title": "California Dreamin'",
+      "artist": "The Mamas & The Papas",
+      "youtube_id": "oU6uUEwZ8FM"
+    },
+    {
+      "rank": 8,
+      "title": "These Boots Are Made For Walkin'",
+      "artist": "Nancy Sinatra",
+      "youtube_id": "fZjrkbkeWzo"
+    },
+    {
+      "rank": 9,
+      "title": "Bang Bang (My Baby Shot Me Down)",
+      "artist": "Cher",
+      "youtube_id": "13j8kBehIj4"
+    },
+    {
+      "rank": 10,
+      "title": "Sure Gonna Miss Her",
+      "artist": "Gary Lewis And The Playboys",
+      "youtube_id": "Adfz63746dA"
+    }
+  ],
+  "05": [
+    {
+      "rank": 1,
+      "title": "Monday, Monday",
+      "artist": "The Mamas & The Papas",
+      "youtube_id": "VsIjOKCxRSE"
+    },
+    {
+      "rank": 2,
+      "title": "Good Lovin'",
+      "artist": "The Young Rascals",
+      "youtube_id": "t3CQ-5MeRwY"
+    },
+    {
+      "rank": 3,
+      "title": "Sloop John B",
+      "artist": "The Beach Boys",
+      "youtube_id": "MKdfnyF6U0Y"
+    },
+    {
+      "rank": 4,
+      "title": "(You're My) Soul And Inspiration",
+      "artist": "The Righteous Brothers",
+      "youtube_id": "mzrPs-hLKmM"
+    },
+    {
+      "rank": 5,
+      "title": "Kicks",
+      "artist": "Paul Revere & The Raiders Featuring Mark Lindsay",
+      "youtube_id": "_mUNIGbwrNI"
+    },
+    {
+      "rank": 6,
+      "title": "Secret Agent Man",
+      "artist": "Johnny Rivers",
+      "youtube_id": "RIsgWYVXIcA"
+    },
+    {
+      "rank": 7,
+      "title": "Rainy Day Women #12 & 35",
+      "artist": "Bob Dylan",
+      "youtube_id": "-Mk18aPydAU"
+    },
+    {
+      "rank": 8,
+      "title": "Bang Bang (My Baby Shot Me Down)",
+      "artist": "Cher",
+      "youtube_id": "13j8kBehIj4"
+    },
+    {
+      "rank": 9,
+      "title": "Leaning On The Lamp Post",
+      "artist": "Herman's Hermits",
+      "youtube_id": "Uzgf1eyuLk0"
+    },
+    {
+      "rank": 10,
+      "title": "Gloria",
+      "artist": "Shadows Of Knight",
+      "youtube_id": "7xR2dEHNHvg"
+    }
+  ],
+  "06": [
+    {
+      "rank": 1,
+      "title": "When A Man Loves A Woman",
+      "artist": "Percy Sledge",
+      "youtube_id": "KwPxhWU1koE"
+    },
+    {
+      "rank": 2,
+      "title": "A Groovy Kind Of Love",
+      "artist": "The Mindbenders",
+      "youtube_id": "jinZMqbS29M"
+    },
+    {
+      "rank": 3,
+      "title": "Paint It, Black",
+      "artist": "The Rolling Stones",
+      "youtube_id": "170sceOWWXc"
+    },
+    {
+      "rank": 4,
+      "title": "Did You Ever Have To Make Up Your Mind?",
+      "artist": "The Lovin' Spoonful",
+      "youtube_id": "70cagF7j-KI"
+    },
+    {
+      "rank": 5,
+      "title": "I Am A Rock",
+      "artist": "Simon & Garfunkel",
+      "youtube_id": "O4psVQHsUq8"
+    },
+    {
+      "rank": 6,
+      "title": "Monday, Monday",
+      "artist": "The Mamas & The Papas",
+      "youtube_id": "VsIjOKCxRSE"
+    },
+    {
+      "rank": 7,
+      "title": "Rainy Day Women #12 & 35",
+      "artist": "Bob Dylan",
+      "youtube_id": "-Mk18aPydAU"
+    },
+    {
+      "rank": 8,
+      "title": "It's A Man's Man's Man's World",
+      "artist": "James Brown And The Famous Flames",
+      "youtube_id": "hK97cdbbsQw"
+    },
+    {
+      "rank": 9,
+      "title": "Green Grass",
+      "artist": "Gary Lewis And The Playboys",
+      "youtube_id": "ZNOkISxemlk"
+    },
+    {
+      "rank": 10,
+      "title": "Strangers In The Night",
+      "artist": "Frank Sinatra",
+      "youtube_id": "Fd_3EkGr0-4"
+    }
+  ],
+  "07": [
+    {
+      "rank": 1,
+      "title": "Strangers In The Night",
+      "artist": "Frank Sinatra",
+      "youtube_id": "Fd_3EkGr0-4"
+    },
+    {
+      "rank": 2,
+      "title": "Paperback Writer",
+      "artist": "The Beatles",
+      "youtube_id": "gBcdOFehNCg"
+    },
+    {
+      "rank": 3,
+      "title": "Red Rubber Ball",
+      "artist": "The Cyrkle",
+      "youtube_id": "rxRfbJvjsN8"
+    },
+    {
+      "rank": 4,
+      "title": "Paint It, Black",
+      "artist": "The Rolling Stones",
+      "youtube_id": "170sceOWWXc"
+    },
+    {
+      "rank": 5,
+      "title": "You Don't Have To Say You Love Me",
+      "artist": "Dusty Springfield",
+      "youtube_id": "bRKMwMHZqos"
+    },
+    {
+      "rank": 6,
+      "title": "Hanky Panky",
+      "artist": "Tommy James And The Shondells",
+      "youtube_id": "DCnXFePGGmU"
+    },
+    {
+      "rank": 7,
+      "title": "Cool Jerk",
+      "artist": "The Capitols",
+      "youtube_id": "R73iEOvkr10"
+    },
+    {
+      "rank": 8,
+      "title": "I Am A Rock",
+      "artist": "Simon & Garfunkel",
+      "youtube_id": "O4psVQHsUq8"
+    },
+    {
+      "rank": 9,
+      "title": "Did You Ever Have To Make Up Your Mind?",
+      "artist": "The Lovin' Spoonful",
+      "youtube_id": "70cagF7j-KI"
+    },
+    {
+      "rank": 10,
+      "title": "Barefootin'",
+      "artist": "Robert Parker",
+      "youtube_id": "2VZakvxRD44"
+    }
+  ],
+  "08": [
+    {
+      "rank": 1,
+      "title": "Wild Thing",
+      "artist": "The Troggs",
+      "youtube_id": "bLJkrOYHNw8"
+    },
+    {
+      "rank": 2,
+      "title": "Lil' Red Riding Hood",
+      "artist": "Sam The Sham and the Pharaohs",
+      "youtube_id": "BaTIg1mwq8Q"
+    },
+    {
+      "rank": 3,
+      "title": "Summer In The City",
+      "artist": "The Lovin' Spoonful",
+      "youtube_id": "QT9_CJOw7E4"
+    },
+    {
+      "rank": 4,
+      "title": "The Pied Piper",
+      "artist": "Crispian St. Peters",
+      "youtube_id": "RFdSOppmkNw"
+    },
+    {
+      "rank": 5,
+      "title": "They're Coming To Take Me Away, Ha-Haaa!",
+      "artist": "Napoleon XIV",
+      "youtube_id": "eQNI1KfGXBA"
+    },
+    {
+      "rank": 6,
+      "title": "I Saw Her Again",
+      "artist": "The Mamas & The Papas",
+      "youtube_id": "clKHbwOT6lc"
+    },
+    {
+      "rank": 7,
+      "title": "Hanky Panky",
+      "artist": "Tommy James And The Shondells",
+      "youtube_id": "DCnXFePGGmU"
+    },
+    {
+      "rank": 8,
+      "title": "Sweet Pea",
+      "artist": "Tommy Roe",
+      "youtube_id": "v9Li_P9A5_Q"
+    },
+    {
+      "rank": 9,
+      "title": "Mothers Little Helper",
+      "artist": "The Rolling Stones",
+      "youtube_id": "QAszapI0unE"
+    },
+    {
+      "rank": 10,
+      "title": "Somewhere, My Love",
+      "artist": "Ray Conniff And The Singers",
+      "youtube_id": "1thos17eJ0c"
+    }
+  ],
+  "09": [
+    {
+      "rank": 1,
+      "title": "Sunshine Superman",
+      "artist": "Donovan",
+      "youtube_id": "9OGUO3Oc84I"
+    },
+    {
+      "rank": 2,
+      "title": "Summer In The City",
+      "artist": "The Lovin' Spoonful",
+      "youtube_id": "QT9_CJOw7E4"
+    },
+    {
+      "rank": 3,
+      "title": "See You In September",
+      "artist": "The Happenings",
+      "youtube_id": "5lTPmV2hLqo"
+    },
+    {
+      "rank": 4,
+      "title": "You Can't Hurry Love",
+      "artist": "The Supremes",
+      "youtube_id": "uZj032MNIx4"
+    },
+    {
+      "rank": 5,
+      "title": "Yellow Submarine",
+      "artist": "The Beatles",
+      "youtube_id": "RhoprlMxteE"
+    },
+    {
+      "rank": 6,
+      "title": "Sunny",
+      "artist": "Bobby Hebb",
+      "youtube_id": "J-5xGXpNt74"
+    },
+    {
+      "rank": 7,
+      "title": "Land Of 1000 Dances",
+      "artist": "Wilson Pickett",
+      "youtube_id": "FchOg9kXbHo"
+    },
+    {
+      "rank": 8,
+      "title": "Working In The Coal Mine",
+      "artist": "Lee Dorsey",
+      "youtube_id": "H7ND17Zf68s"
+    },
+    {
+      "rank": 9,
+      "title": "Blowin In The Wind",
+      "artist": "Stevie Wonder",
+      "youtube_id": "8G3XaWX9vqs"
+    },
+    {
+      "rank": 10,
+      "title": "Summertime",
+      "artist": "Billy Stewart",
+      "youtube_id": "ZvpnIOXna0Y"
+    }
+  ],
+  "10": [
+    {
+      "rank": 1,
+      "title": "Cherish",
+      "artist": "The Association",
+      "youtube_id": "b9tAdPN3FZ4"
+    },
+    {
+      "rank": 2,
+      "title": "You Can't Hurry Love",
+      "artist": "The Supremes",
+      "youtube_id": "uZj032MNIx4"
+    },
+    {
+      "rank": 3,
+      "title": "Beauty Is Only Skin Deep",
+      "artist": "The Temptations",
+      "youtube_id": "tm8J_RgjWLo"
+    },
+    {
+      "rank": 4,
+      "title": "Black Is Black",
+      "artist": "Los Bravos",
+      "youtube_id": "_CcdzkSlw2s"
+    },
+    {
+      "rank": 5,
+      "title": "Bus Stop",
+      "artist": "The Hollies",
+      "youtube_id": "040XXYx6_5E"
+    },
+    {
+      "rank": 6,
+      "title": "96 Tears",
+      "artist": "? (Question Mark) & The Mysterians",
+      "youtube_id": "ni29X-AbYdg"
+    },
+    {
+      "rank": 7,
+      "title": "Reach Out I'll Be There",
+      "artist": "Four Tops",
+      "youtube_id": "1v4twH9KbnU"
+    },
+    {
+      "rank": 8,
+      "title": "Yellow Submarine",
+      "artist": "The Beatles",
+      "youtube_id": "RhoprlMxteE"
+    },
+    {
+      "rank": 9,
+      "title": "Sunshine Superman",
+      "artist": "Donovan",
+      "youtube_id": "9OGUO3Oc84I"
+    },
+    {
+      "rank": 10,
+      "title": "Cherry, Cherry",
+      "artist": "Neil Diamond",
+      "youtube_id": "qL9PaTwwsUE"
+    }
+  ],
+  "11": [
+    {
+      "rank": 1,
+      "title": "Last Train To Clarksville",
+      "artist": "The Monkees",
+      "youtube_id": "OA-KO04_KgM"
+    },
+    {
+      "rank": 2,
+      "title": "96 Tears",
+      "artist": "? (Question Mark) & The Mysterians",
+      "youtube_id": "ni29X-AbYdg"
+    },
+    {
+      "rank": 3,
+      "title": "Poor Side Of Town",
+      "artist": "Johnny Rivers",
+      "youtube_id": "vAI24i825_E"
+    },
+    {
+      "rank": 4,
+      "title": "Reach Out I'll Be There",
+      "artist": "Four Tops",
+      "youtube_id": "1v4twH9KbnU"
+    },
+    {
+      "rank": 5,
+      "title": "Dandy",
+      "artist": "Herman's Hermits",
+      "youtube_id": "SQRAN8euAEM"
+    },
+    {
+      "rank": 6,
+      "title": "Hooray For Hazel",
+      "artist": "Tommy Roe",
+      "youtube_id": "4zLYpn1U8I8"
+    },
+    {
+      "rank": 7,
+      "title": "What Becomes Of The Brokenhearted",
+      "artist": "Jimmy Ruffin",
+      "youtube_id": "SZfnKqAGlfY"
+    },
+    {
+      "rank": 8,
+      "title": "If I Were A Carpenter",
+      "artist": "Bobby Darin",
+      "youtube_id": "Bl1ERC6WgVE"
+    },
+    {
+      "rank": 9,
+      "title": "Have You Seen Your Mother, Baby, Standing In The Shadow?",
+      "artist": "The Rolling Stones",
+      "youtube_id": "IU-PbEYhI8I"
+    },
+    {
+      "rank": 10,
+      "title": "Walk Away Renee",
+      "artist": "The Left Banke",
+      "youtube_id": "qDfrW5cWqMU"
+    }
+  ],
+  "12": [
+    {
+      "rank": 1,
+      "title": "Winchester Cathedral",
+      "artist": "The New Vaudeville Band",
+      "youtube_id": "VRcr_GFm3rw"
+    },
+    {
+      "rank": 2,
+      "title": "Good Vibrations",
+      "artist": "The Beach Boys",
+      "youtube_id": "rQ-UFKxDq5o"
+    },
+    {
+      "rank": 3,
+      "title": "You Keep Me Hangin' On",
+      "artist": "The Supremes",
+      "youtube_id": "oqGlBOUowpI"
+    },
+    {
+      "rank": 4,
+      "title": "Devil With A Blue Dress On & Good Golly Miss Molly",
+      "artist": "Mitch Ryder And The Detroit Wheels",
+      "youtube_id": "y1PE_YsSNkQ"
+    },
+    {
+      "rank": 5,
+      "title": "Mellow Yellow",
+      "artist": "Donovan",
+      "youtube_id": "NLjyUySZAc4"
+    },
+    {
+      "rank": 6,
+      "title": "I'm Your Puppet",
+      "artist": "James & Bobby Purify",
+      "youtube_id": "rYyCdHUJfb4"
+    },
+    {
+      "rank": 7,
+      "title": "Lady Godiva",
+      "artist": "Peter And Gordon",
+      "youtube_id": "vm6L0hWuZsk"
+    },
+    {
+      "rank": 8,
+      "title": "Born Free",
+      "artist": "Roger Williams",
+      "youtube_id": "5FAQ4hd0gEI"
+    },
+    {
+      "rank": 9,
+      "title": "Poor Side Of Town",
+      "artist": "Johnny Rivers",
+      "youtube_id": "vAI24i825_E"
+    },
+    {
+      "rank": 10,
+      "title": "Last Train To Clarksville",
+      "artist": "The Monkees",
+      "youtube_id": "OA-KO04_KgM"
+    }
+  ]
+}

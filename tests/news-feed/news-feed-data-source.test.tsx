@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { NewsFeed } from "../../src/features/news-feed/components/NewsFeed";
 import { ArticleCard } from "../../src/features/news-feed/components/ArticleCard";
 import type { Article } from "../../src/features/news-feed/data/mockData";
@@ -62,6 +62,8 @@ function renderNewsFeed({
     return render(
         <NewsFeed
             articles={articles}
+            displayAds={[]}
+            classifiedAds={[]}
             editionDate={editionDate}
             editions={["1987-10-14"]}
             onDateChange={vi.fn()}
@@ -77,35 +79,33 @@ describe("NewsFeed data source and full-story rendering", () => {
         Element.prototype.scrollIntoView = vi.fn();
     });
 
-    it("renders hero content when editionDate is null and articles are present", () => {
+    it("renders hero headline and full text in print edition layout", () => {
         renderNewsFeed({
             editionDate: null,
             articles: [makeArticle()],
         });
 
         expect(screen.getByText("Cracked pipe cools campus")).toBeDefined();
-        expect(
-            screen.getByText("Heat was restored to residential halls after repairs began.")
-        ).toBeDefined();
+        // TopStoriesPrintEdition renders fullText directly (no summary card)
+        expect(screen.getByText("Full article body from hero story.")).toBeDefined();
     });
 
-    it("opens full story inline from Top Stories", () => {
+    it("renders hero fullText inline without needing expansion", () => {
         renderNewsFeed({
             articles: [makeArticle()],
         });
 
-        fireEvent.click(screen.getByRole("button", { name: "Read Full Story" }));
-
+        // In print edition layout, the full text is displayed directly
+        expect(screen.getByText("Cracked pipe cools campus")).toBeDefined();
         expect(screen.getByText("Full article body from hero story.")).toBeDefined();
     });
 
-    it("opens full story inline even when article id is empty", () => {
+    it("renders hero fullText even when article id is empty", () => {
         renderNewsFeed({
             articles: [makeArticle({ id: "" })],
         });
 
-        fireEvent.click(screen.getByRole("button", { name: "Read Full Story" }));
-
+        expect(screen.getByText("Cracked pipe cools campus")).toBeDefined();
         expect(screen.getByText("Full article body from hero story.")).toBeDefined();
     });
 
@@ -130,7 +130,7 @@ describe("NewsFeed data source and full-story rendering", () => {
         ).toBeDefined();
     });
 
-    it("remains interactive after opening inline story and switching to section view", () => {
+    it("remains interactive when switching from Top Stories to section view", () => {
         const hero = makeArticle();
         const secondaryNews = makeArticle({
             id: "news-2",
@@ -145,6 +145,8 @@ describe("NewsFeed data source and full-story rendering", () => {
         const { rerender } = render(
             <NewsFeed
                 articles={[hero, secondaryNews]}
+                displayAds={[]}
+                classifiedAds={[]}
                 editionDate={null}
                 editions={["1987-10-14"]}
                 onDateChange={vi.fn()}
@@ -153,12 +155,14 @@ describe("NewsFeed data source and full-story rendering", () => {
             />
         );
 
-        fireEvent.click(screen.getByRole("button", { name: "Read Full Story" }));
+        // Full text is shown directly in print edition layout
         expect(screen.getByText("Full article body from hero story.")).toBeDefined();
 
         rerender(
             <NewsFeed
                 articles={[hero, secondaryNews]}
+                displayAds={[]}
+                classifiedAds={[]}
                 editionDate={null}
                 editions={["1987-10-14"]}
                 onDateChange={vi.fn()}

@@ -14,10 +14,20 @@ vi.mock("@/src/lib/answer-generator", () => ({
   generateAnswer: vi.fn(),
 }));
 
+vi.mock("@/src/lib/query-reformulator", () => ({
+  reformulateQuery: vi.fn(),
+}));
+
+vi.mock("@/src/lib/reranker", () => ({
+  rerankArticles: vi.fn(),
+}));
+
 import { POST } from "@/src/app/api/ask/route";
 import { embedQuery } from "@/src/lib/embeddings";
 import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
 import { generateAnswer } from "@/src/lib/answer-generator";
+import { reformulateQuery } from "@/src/lib/query-reformulator";
+import { rerankArticles } from "@/src/lib/reranker";
 
 function makeRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest("http://localhost:3000/api/ask", {
@@ -42,8 +52,15 @@ const mockArticle = {
 describe("POST /api/ask", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "What happened at OWU?",
+      ftsQuery: "What happened at OWU?",
+    });
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
     (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer: "Test answer [Source 1]",
       citations: [
@@ -125,8 +142,9 @@ describe("POST /api/ask", () => {
 
   it("includes bodySnippet in sourceArticles (truncated with ellipsis if > 300 chars)", async () => {
     const longBody = "x".repeat(400);
-    const articleWithLongBody = { ...mockArticle, bodyPlain: longBody };
+    const articleWithLongBody = { ...mockArticle, bodyPlain: longBody, relevanceScore: 8 };
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([articleWithLongBody]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([articleWithLongBody]);
 
     const response = await POST(makeRequest({ question: "What happened?" }));
     const body = await response.json();
@@ -137,8 +155,9 @@ describe("POST /api/ask", () => {
     expect(snippet.slice(0, 300)).toBe("x".repeat(300));
 
     // Short body should not have ellipsis
-    const shortArticle = { ...mockArticle, bodyPlain: "Short body" };
+    const shortArticle = { ...mockArticle, bodyPlain: "Short body", relevanceScore: 8 };
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
 
     const response2 = await POST(makeRequest({ question: "What happened?" }));
     const body2 = await response2.json();
@@ -157,5 +176,73 @@ describe("POST /api/ask", () => {
     expect(body.meta.retrievalTimeMs).toBeGreaterThanOrEqual(0);
     expect(body.meta.generationTimeMs).toBeGreaterThanOrEqual(0);
     expect(body.meta.totalTimeMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("calls reformulateQuery before embedding", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "expanded OWU query",
+      ftsQuery: "OWU OR Ohio Wesleyan",
+    });
+
+    await POST(makeRequest({ question: "What happened at OWU?" }));
+
+    expect(reformulateQuery).toHaveBeenCalledWith("What happened at OWU?");
+    expect(embedQuery).toHaveBeenCalledWith("expanded OWU query");
+    expect(hybridSearch).toHaveBeenCalledWith(
+      "OWU OR Ohio Wesleyan",
+      expect.any(Array),
+      expect.objectContaining({ limit: 8 }),
+    );
+  });
+
+  it("passes original question (not reformulated) to generateAnswer", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "reformulated for embedding",
+      ftsQuery: "reformulated for fts",
+    });
+
+    await POST(makeRequest({ question: "Original question?" }));
+
+    expect(generateAnswer).toHaveBeenCalledWith(
+      "Original question?",
+      expect.any(Array),
+    );
+  });
+
+  it("calls rerankArticles between retrieval and generation", async () => {
+    const retrieved = [mockArticle, { ...mockArticle, id: "1960-01-07-1" }];
+    const reranked = [{ ...mockArticle, relevanceScore: 9 }];
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue(retrieved);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue(reranked);
+
+    await POST(makeRequest({ question: "Test?" }));
+
+    expect(rerankArticles).toHaveBeenCalledWith("Test?", retrieved);
+    expect(generateAnswer).toHaveBeenCalledWith("Test?", reranked);
+  });
+
+  it("includes reformulatedQuery in meta when query was reformulated", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "reformulated query",
+      ftsQuery: "reformulated fts",
+    });
+
+    const response = await POST(makeRequest({ question: "What sports existed?" }));
+    const body = await response.json();
+
+    expect(body.meta.reformulatedQuery).toBe("reformulated query");
+  });
+
+  it("omits reformulatedQuery in meta when query was not changed", async () => {
+    const question = "What happened at OWU?";
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: question,
+      ftsQuery: question,
+    });
+
+    const response = await POST(makeRequest({ question }));
+    const body = await response.json();
+
+    expect(body.meta.reformulatedQuery).toBeUndefined();
   });
 });

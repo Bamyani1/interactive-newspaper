@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 export default function EditionError({
   error,
   reset,
@@ -23,12 +25,12 @@ export default function EditionError({
           >
             Try Again
           </button>
-          <a
+          <Link
             href="/"
             className="px-6 py-2.5 border border-[var(--color-border-default)] text-sm uppercase tracking-widest hover:border-[var(--color-text-primary)] transition-colors"
           >
             Home
-          </a>
+          </Link>
         </div>
       </div>
     </div>

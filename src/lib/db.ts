@@ -148,7 +148,7 @@ export async function searchArticles(
 
   const countResult = await sql`
     SELECT COUNT(*)::int as total
-    FROM articles a, plainto_tsquery('english', ${query}) q
+    FROM articles a, websearch_to_tsquery('english', ${query}) q
     WHERE a.search_vector @@ q
       AND (${category}::text IS NULL OR a.category = ${category})
       AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
@@ -161,7 +161,7 @@ export async function searchArticles(
         'StartSel=<mark>, StopSel=</mark>, MaxFragments=3, MaxWords=30'
       ) as snippet,
       ts_rank(a.search_vector, q) as rank
-    FROM articles a, plainto_tsquery('english', ${query}) q
+    FROM articles a, websearch_to_tsquery('english', ${query}) q
     WHERE a.search_vector @@ q
       AND (${category}::text IS NULL OR a.category = ${category})
       AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
@@ -453,7 +453,7 @@ async function searchArticlesForRag(
     SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
            a.byline, a.body_plain,
            ts_rank(a.search_vector, q) as rank
-    FROM articles a, plainto_tsquery('english', ${query}) q
+    FROM articles a, websearch_to_tsquery('english', ${query}) q
     WHERE a.search_vector @@ q
       AND (${category}::text IS NULL OR a.category = ${category})
       AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
