@@ -165,13 +165,12 @@ function EditionBody({
         }
     }, [activeSection, currentDate]);
 
+    const [direction, setDirection] = useState(1);
     const prevDateRef = useRef<string | null>(null);
-    const direction = (() => {
-        if (!prevDateRef.current || !currentDate) return 1;
-        return currentDate > prevDateRef.current ? 1 : -1;
-    })();
-
     useEffect(() => {
+        if (prevDateRef.current && currentDate) {
+            setDirection(currentDate > prevDateRef.current ? 1 : -1);
+        }
         if (currentDate) prevDateRef.current = currentDate;
     }, [currentDate]);
 

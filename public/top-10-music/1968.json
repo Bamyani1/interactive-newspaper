@@ -1,0 +1,746 @@
+{
+  "01": [
+    {
+      "rank": 1,
+      "title": "Hello Goodbye",
+      "artist": "The Beatles",
+      "youtube_id": "ywZqBGHDTlA"
+    },
+    {
+      "rank": 2,
+      "title": "Daydream Believer",
+      "artist": "The Monkees",
+      "youtube_id": "K3syk2VOmRw"
+    },
+    {
+      "rank": 3,
+      "title": "Judy In Disguise (With Glasses)",
+      "artist": "John Fred And The Playboys",
+      "youtube_id": "I0bLoaVFpTQ"
+    },
+    {
+      "rank": 4,
+      "title": "I Heard It Through The Grapevine",
+      "artist": "Gladys Knight And The Pips",
+      "youtube_id": "dNKDCkLcRj0"
+    },
+    {
+      "rank": 5,
+      "title": "Woman, Woman",
+      "artist": "The Union Gap Featuring Gary Puckett",
+      "youtube_id": "e52B4FElxYA"
+    },
+    {
+      "rank": 6,
+      "title": "I Second That Emotion",
+      "artist": "Smokey Robinson & The Miracles",
+      "youtube_id": "zp32JdgG6hg"
+    },
+    {
+      "rank": 7,
+      "title": "Chain Of Fools",
+      "artist": "Aretha Franklin",
+      "youtube_id": "K7s4h88BeOo"
+    },
+    {
+      "rank": 8,
+      "title": "Bend Me, Shape Me",
+      "artist": "The American Breed",
+      "youtube_id": "PSHo146tQjQ"
+    },
+    {
+      "rank": 9,
+      "title": "Boogaloo Down Broadway",
+      "artist": "The Fantastic Johnny C",
+      "youtube_id": "78Ofkpgy_ko"
+    },
+    {
+      "rank": 10,
+      "title": "Skinny Legs And All",
+      "artist": "Joe Tex",
+      "youtube_id": "ng5R3PKyaPI"
+    }
+  ],
+  "02": [
+    {
+      "rank": 1,
+      "title": "Green Tambourine",
+      "artist": "The Lemon Pipers",
+      "youtube_id": "o6IEgrQ4lrk"
+    },
+    {
+      "rank": 2,
+      "title": "Judy In Disguise (With Glasses)",
+      "artist": "John Fred And The Playboys",
+      "youtube_id": "I0bLoaVFpTQ"
+    },
+    {
+      "rank": 3,
+      "title": "Chain Of Fools",
+      "artist": "Aretha Franklin",
+      "youtube_id": "K7s4h88BeOo"
+    },
+    {
+      "rank": 4,
+      "title": "Spooky",
+      "artist": "Classics IV",
+      "youtube_id": "NJZQFlGPrwA"
+    },
+    {
+      "rank": 5,
+      "title": "Bend Me, Shape Me",
+      "artist": "The American Breed",
+      "youtube_id": "PSHo146tQjQ"
+    },
+    {
+      "rank": 6,
+      "title": "Woman, Woman",
+      "artist": "The Union Gap Featuring Gary Puckett",
+      "youtube_id": "e52B4FElxYA"
+    },
+    {
+      "rank": 7,
+      "title": "Love Is Blue (L'amour Est Bleu)",
+      "artist": "Paul Mauriat And His Orchestra",
+      "youtube_id": "Y_tPE3o5NWk"
+    },
+    {
+      "rank": 8,
+      "title": "Nobody But Me",
+      "artist": "The Human Beinz",
+      "youtube_id": "f3HpZNE1Z9k"
+    },
+    {
+      "rank": 9,
+      "title": "Goin' Out Of My Head/Can't Take My Eyes Off You",
+      "artist": "The Lettermen",
+      "youtube_id": "xJeObmbDiO0"
+    },
+    {
+      "rank": 10,
+      "title": "I Wish It Would Rain",
+      "artist": "The Temptations",
+      "youtube_id": "keDpxp892Og"
+    }
+  ],
+  "03": [
+    {
+      "rank": 1,
+      "title": "Love Is Blue (L'amour Est Bleu)",
+      "artist": "Paul Mauriat And His Orchestra",
+      "youtube_id": "Y_tPE3o5NWk"
+    },
+    {
+      "rank": 2,
+      "title": "(Theme From) Valley Of The Dolls",
+      "artist": "Dionne Warwick",
+      "youtube_id": "GUO8UC1gSBg"
+    },
+    {
+      "rank": 3,
+      "title": "(Sittin' On) The Dock Of The Bay",
+      "artist": "Otis Redding",
+      "youtube_id": "Zu5chXCp1Ag"
+    },
+    {
+      "rank": 4,
+      "title": "I Wish It Would Rain",
+      "artist": "The Temptations",
+      "youtube_id": "keDpxp892Og"
+    },
+    {
+      "rank": 5,
+      "title": "Simon Says",
+      "artist": "1910 Fruitgum Co.",
+      "youtube_id": "yxQrTwLUGo0"
+    },
+    {
+      "rank": 6,
+      "title": "Spooky",
+      "artist": "Classics IV",
+      "youtube_id": "NJZQFlGPrwA"
+    },
+    {
+      "rank": 7,
+      "title": "Just Dropped In (To See What Condition My Condition Was In)",
+      "artist": "The First Edition",
+      "youtube_id": "oTr72tmN7Os"
+    },
+    {
+      "rank": 8,
+      "title": "I Wonder What She's Doing Tonite",
+      "artist": "Tommy Boyce & Bobby Hart",
+      "youtube_id": "Hm7HL05RFPg"
+    },
+    {
+      "rank": 9,
+      "title": "Bottle Of Wine",
+      "artist": "The Fireballs",
+      "youtube_id": "I0UVZePwlg0"
+    },
+    {
+      "rank": 10,
+      "title": "Everything That Touches You",
+      "artist": "The Association",
+      "youtube_id": "5OhKqaw5UWU"
+    }
+  ],
+  "04": [
+    {
+      "rank": 1,
+      "title": "(Sittin' On) The Dock Of The Bay",
+      "artist": "Otis Redding",
+      "youtube_id": "Zu5chXCp1Ag"
+    },
+    {
+      "rank": 2,
+      "title": "Young Girl",
+      "artist": "The Union Gap Featuring Gary Puckett",
+      "youtube_id": "wdpJFWwNbGk"
+    },
+    {
+      "rank": 3,
+      "title": "Valleri",
+      "artist": "The Monkees",
+      "youtube_id": "wKGwiH2bw9s"
+    },
+    {
+      "rank": 4,
+      "title": "La - La - Means I Love You",
+      "artist": "The Delfonics",
+      "youtube_id": "Fy5vuLFfsxU"
+    },
+    {
+      "rank": 5,
+      "title": "(Sweet Sweet Baby) Since You've Been Gone",
+      "artist": "Aretha Franklin",
+      "youtube_id": "gcDtxGPr9SA"
+    },
+    {
+      "rank": 6,
+      "title": "Cry Like A Baby",
+      "artist": "The Box Tops",
+      "youtube_id": "dmhtxLSUhYU"
+    },
+    {
+      "rank": 7,
+      "title": "Lady Madonna",
+      "artist": "The Beatles",
+      "youtube_id": "C56lDvKV8tk"
+    },
+    {
+      "rank": 8,
+      "title": "The Ballad Of Bonnie And Clyde",
+      "artist": "Georgie Fame",
+      "youtube_id": "xEMBlJpjWqY"
+    },
+    {
+      "rank": 9,
+      "title": "Love Is Blue (L'amour Est Bleu)",
+      "artist": "Paul Mauriat And His Orchestra",
+      "youtube_id": "Y_tPE3o5NWk"
+    },
+    {
+      "rank": 10,
+      "title": "Honey",
+      "artist": "Bobby Goldsboro",
+      "youtube_id": "hDqqAp11wgI"
+    }
+  ],
+  "05": [
+    {
+      "rank": 1,
+      "title": "Honey",
+      "artist": "Bobby Goldsboro",
+      "youtube_id": "hDqqAp11wgI"
+    },
+    {
+      "rank": 2,
+      "title": "Cry Like A Baby",
+      "artist": "The Box Tops",
+      "youtube_id": "dmhtxLSUhYU"
+    },
+    {
+      "rank": 3,
+      "title": "Young Girl",
+      "artist": "The Union Gap Featuring Gary Puckett",
+      "youtube_id": "wdpJFWwNbGk"
+    },
+    {
+      "rank": 4,
+      "title": "Lady Madonna",
+      "artist": "The Beatles",
+      "youtube_id": "C56lDvKV8tk"
+    },
+    {
+      "rank": 5,
+      "title": "Tighten Up",
+      "artist": "Archie Bell & The Drells",
+      "youtube_id": "pvVL1KNvems"
+    },
+    {
+      "rank": 6,
+      "title": "I Got The Feelin'",
+      "artist": "James Brown And The Famous Flames",
+      "youtube_id": "Cda0twzCMC4"
+    },
+    {
+      "rank": 7,
+      "title": "Cowboys To Girls",
+      "artist": "The Intruders",
+      "youtube_id": "qYxF8Gp9JP8"
+    },
+    {
+      "rank": 8,
+      "title": "The Good, The Bad And The Ugly",
+      "artist": "Hugo Montenegro, His Orchestra And Chorus",
+      "youtube_id": "i4IgJnhVAPM"
+    },
+    {
+      "rank": 9,
+      "title": "A Beautiful Morning",
+      "artist": "The Rascals",
+      "youtube_id": "-GKGTynFTV8"
+    },
+    {
+      "rank": 10,
+      "title": "The Unicorn",
+      "artist": "The Irish Rovers",
+      "youtube_id": "qfhZ4rw6R4g"
+    }
+  ],
+  "06": [
+    {
+      "rank": 1,
+      "title": "Mrs. Robinson",
+      "artist": "Simon & Garfunkel",
+      "youtube_id": "_C2vqI9FVwg"
+    },
+    {
+      "rank": 2,
+      "title": "The Good, The Bad And The Ugly",
+      "artist": "Hugo Montenegro, His Orchestra And Chorus",
+      "youtube_id": "i4IgJnhVAPM"
+    },
+    {
+      "rank": 3,
+      "title": "A Beautiful Morning",
+      "artist": "The Rascals",
+      "youtube_id": "-GKGTynFTV8"
+    },
+    {
+      "rank": 4,
+      "title": "Tighten Up",
+      "artist": "Archie Bell & The Drells",
+      "youtube_id": "pvVL1KNvems"
+    },
+    {
+      "rank": 5,
+      "title": "Honey",
+      "artist": "Bobby Goldsboro",
+      "youtube_id": "hDqqAp11wgI"
+    },
+    {
+      "rank": 6,
+      "title": "Yummy Yummy Yummy",
+      "artist": "Ohio Express",
+      "youtube_id": "VECljlG--gE"
+    },
+    {
+      "rank": 7,
+      "title": "Mony Mony",
+      "artist": "Tommy James And The Shondells",
+      "youtube_id": "qdrx9F6WEzM"
+    },
+    {
+      "rank": 8,
+      "title": "Ain't Nothing Like The Real Thing",
+      "artist": "Marvin Gaye & Tammi Terrell",
+      "youtube_id": "6AkIFa_wvwU"
+    },
+    {
+      "rank": 9,
+      "title": "Cowboys To Girls",
+      "artist": "The Intruders",
+      "youtube_id": "qYxF8Gp9JP8"
+    },
+    {
+      "rank": 10,
+      "title": "Do You Know The Way To San Jos\u00e9",
+      "artist": "Dionne Warwick",
+      "youtube_id": "FZLa-1q-lkw"
+    }
+  ],
+  "07": [
+    {
+      "rank": 1,
+      "title": "This Guy's In Love With You",
+      "artist": "Herb Alpert",
+      "youtube_id": "pvQMyVoefNI"
+    },
+    {
+      "rank": 2,
+      "title": "The Horse",
+      "artist": "Cliff Nobles & Co.",
+      "youtube_id": "H7g-b1ZaCPA"
+    },
+    {
+      "rank": 3,
+      "title": "Jumpin' Jack Flash",
+      "artist": "The Rolling Stones",
+      "youtube_id": "0cPXwc-5Kw8"
+    },
+    {
+      "rank": 4,
+      "title": "The Look Of Love",
+      "artist": "Sergio Mendes & Brasil '66",
+      "youtube_id": "suBz6-6CYks"
+    },
+    {
+      "rank": 5,
+      "title": "Grazing In The Grass",
+      "artist": "Hugh Masekela",
+      "youtube_id": "b_V3mg_7xlE"
+    },
+    {
+      "rank": 6,
+      "title": "Lady Willpower",
+      "artist": "Gary Puckett And The Union Gap",
+      "youtube_id": "2aAnaw9z0EU"
+    },
+    {
+      "rank": 7,
+      "title": "Angel Of The Morning",
+      "artist": "Merrilee Rush & The Turnabouts",
+      "youtube_id": "stngGiMrn5U"
+    },
+    {
+      "rank": 8,
+      "title": "Here Comes The Judge",
+      "artist": "Shorty Long",
+      "youtube_id": "eyoUkHEpK-4"
+    },
+    {
+      "rank": 9,
+      "title": "MacArthur Park",
+      "artist": "Richard Harris",
+      "youtube_id": "sD-zTwi3_GU"
+    },
+    {
+      "rank": 10,
+      "title": "Reach Out Of The Darkness",
+      "artist": "Friend And Lover",
+      "youtube_id": "RBjQhEME0LQ"
+    }
+  ],
+  "08": [
+    {
+      "rank": 1,
+      "title": "Hello, I Love You",
+      "artist": "The Doors",
+      "youtube_id": "IsbIXm30c8k"
+    },
+    {
+      "rank": 2,
+      "title": "Classical Gas",
+      "artist": "Mason Williams",
+      "youtube_id": "Bel7WcHeUXY"
+    },
+    {
+      "rank": 3,
+      "title": "Stoned Soul Picnic",
+      "artist": "The 5th Dimension",
+      "youtube_id": "WYNsiwchfT4"
+    },
+    {
+      "rank": 4,
+      "title": "Grazing In The Grass",
+      "artist": "Hugh Masekela",
+      "youtube_id": "b_V3mg_7xlE"
+    },
+    {
+      "rank": 5,
+      "title": "Hurdy Gurdy Man",
+      "artist": "Donovan",
+      "youtube_id": "Cpcye9GhCRc"
+    },
+    {
+      "rank": 6,
+      "title": "Jumpin' Jack Flash",
+      "artist": "The Rolling Stones",
+      "youtube_id": "0cPXwc-5Kw8"
+    },
+    {
+      "rank": 7,
+      "title": "Lady Willpower",
+      "artist": "Gary Puckett And The Union Gap",
+      "youtube_id": "2aAnaw9z0EU"
+    },
+    {
+      "rank": 8,
+      "title": "The Horse",
+      "artist": "Cliff Nobles & Co.",
+      "youtube_id": "H7g-b1ZaCPA"
+    },
+    {
+      "rank": 9,
+      "title": "Turn Around, Look At Me",
+      "artist": "The Vogues",
+      "youtube_id": "xEvZwRJnOnI"
+    },
+    {
+      "rank": 10,
+      "title": "Sunshine Of Your Love",
+      "artist": "Cream",
+      "youtube_id": "f3y8jf01UY8"
+    }
+  ],
+  "09": [
+    {
+      "rank": 1,
+      "title": "People Got To Be Free",
+      "artist": "The Rascals",
+      "youtube_id": "PGUhdwTyziM"
+    },
+    {
+      "rank": 2,
+      "title": "Born To Be Wild",
+      "artist": "Steppenwolf",
+      "youtube_id": "igvP806798U"
+    },
+    {
+      "rank": 3,
+      "title": "Light My Fire",
+      "artist": "Jose Feliciano",
+      "youtube_id": "rKn446XQ3G0"
+    },
+    {
+      "rank": 4,
+      "title": "Harper Valley P.T.A.",
+      "artist": "Jeannie C. Riley",
+      "youtube_id": "o_sfYqVzUZU"
+    },
+    {
+      "rank": 5,
+      "title": "Hello, I Love You",
+      "artist": "The Doors",
+      "youtube_id": "IsbIXm30c8k"
+    },
+    {
+      "rank": 6,
+      "title": "The House That Jack Built",
+      "artist": "Aretha Franklin",
+      "youtube_id": "XmUXnQ_35-U"
+    },
+    {
+      "rank": 7,
+      "title": "1, 2, 3, Red Light",
+      "artist": "1910 Fruitgum Co.",
+      "youtube_id": "texFBizK8Hc"
+    },
+    {
+      "rank": 8,
+      "title": "You're All I Need To Get By",
+      "artist": "Marvin Gaye & Tammi Terrell",
+      "youtube_id": "PLjv0-ec-eU"
+    },
+    {
+      "rank": 9,
+      "title": "I Can't Stop Dancing",
+      "artist": "Archie Bell & The Drells",
+      "youtube_id": "ZdIHrhj-8AE"
+    },
+    {
+      "rank": 10,
+      "title": "Stay In My Corner",
+      "artist": "The Dells",
+      "youtube_id": "sxp34VnqrwI"
+    }
+  ],
+  "10": [
+    {
+      "rank": 1,
+      "title": "Hey Jude",
+      "artist": "The Beatles",
+      "youtube_id": "mQER0A0ej0M"
+    },
+    {
+      "rank": 2,
+      "title": "Harper Valley P.T.A.",
+      "artist": "Jeannie C. Riley",
+      "youtube_id": "o_sfYqVzUZU"
+    },
+    {
+      "rank": 3,
+      "title": "Fire",
+      "artist": "The Crazy World Of Arthur Brown",
+      "youtube_id": "TysIkGtf_a8"
+    },
+    {
+      "rank": 4,
+      "title": "Little Green Apples",
+      "artist": "O.C. Smith",
+      "youtube_id": "HnhrBGzcN3Q"
+    },
+    {
+      "rank": 5,
+      "title": "Girl Watcher",
+      "artist": "The O'Kaysions",
+      "youtube_id": "NPm9Miy5QNc"
+    },
+    {
+      "rank": 6,
+      "title": "Slip Away",
+      "artist": "Clarence Carter",
+      "youtube_id": "HNjClF-vP64"
+    },
+    {
+      "rank": 7,
+      "title": "People Got To Be Free",
+      "artist": "The Rascals",
+      "youtube_id": "PGUhdwTyziM"
+    },
+    {
+      "rank": 8,
+      "title": "I've Gotta Get A Message To You",
+      "artist": "Bee Gees",
+      "youtube_id": "KdBpm7o1E88"
+    },
+    {
+      "rank": 9,
+      "title": "1, 2, 3, Red Light",
+      "artist": "1910 Fruitgum Co.",
+      "youtube_id": "texFBizK8Hc"
+    },
+    {
+      "rank": 10,
+      "title": "I Say A Little Prayer",
+      "artist": "Aretha Franklin",
+      "youtube_id": "2t5VNI0XlwY"
+    }
+  ],
+  "11": [
+    {
+      "rank": 1,
+      "title": "Hey Jude",
+      "artist": "The Beatles",
+      "youtube_id": "mQER0A0ej0M"
+    },
+    {
+      "rank": 2,
+      "title": "Those Were The Days",
+      "artist": "Mary Hopkin",
+      "youtube_id": "1DQepQaporY"
+    },
+    {
+      "rank": 3,
+      "title": "Little Green Apples",
+      "artist": "O.C. Smith",
+      "youtube_id": "HnhrBGzcN3Q"
+    },
+    {
+      "rank": 4,
+      "title": "Fire",
+      "artist": "The Crazy World Of Arthur Brown",
+      "youtube_id": "TysIkGtf_a8"
+    },
+    {
+      "rank": 5,
+      "title": "Midnight Confessions",
+      "artist": "The Grass Roots",
+      "youtube_id": "w369aBf5SF4"
+    },
+    {
+      "rank": 6,
+      "title": "Elenore",
+      "artist": "The Turtles",
+      "youtube_id": "_NCd0Y776VQ"
+    },
+    {
+      "rank": 7,
+      "title": "Over You",
+      "artist": "Gary Puckett And The Union Gap",
+      "youtube_id": "QJ7J6iEFbvs"
+    },
+    {
+      "rank": 8,
+      "title": "Hold Me Tight",
+      "artist": "Johnny Nash",
+      "youtube_id": "VpfW-FS-mew"
+    },
+    {
+      "rank": 9,
+      "title": "Love Child",
+      "artist": "Diana Ross & The Supremes",
+      "youtube_id": "RNCkah42w6Q"
+    },
+    {
+      "rank": 10,
+      "title": "White Room",
+      "artist": "Cream",
+      "youtube_id": "xGxhECBbw08"
+    }
+  ],
+  "12": [
+    {
+      "rank": 1,
+      "title": "Love Child",
+      "artist": "Diana Ross & The Supremes",
+      "youtube_id": "RNCkah42w6Q"
+    },
+    {
+      "rank": 2,
+      "title": "Hey Jude",
+      "artist": "The Beatles",
+      "youtube_id": "mQER0A0ej0M"
+    },
+    {
+      "rank": 3,
+      "title": "For Once In My Life",
+      "artist": "Stevie Wonder",
+      "youtube_id": "l3qi3E40aWE"
+    },
+    {
+      "rank": 4,
+      "title": "I Heard It Through The Grapevine",
+      "artist": "Marvin Gaye",
+      "youtube_id": "VWG3npfEoHo"
+    },
+    {
+      "rank": 5,
+      "title": "Who's Making Love",
+      "artist": "Johnnie Taylor",
+      "youtube_id": "KeSZPqvE2Ks"
+    },
+    {
+      "rank": 6,
+      "title": "Magic Carpet Ride",
+      "artist": "Steppenwolf",
+      "youtube_id": "eGkGNCUQtWY"
+    },
+    {
+      "rank": 7,
+      "title": "Abraham, Martin And John",
+      "artist": "Dion",
+      "youtube_id": "rwn8hIyiHvI"
+    },
+    {
+      "rank": 8,
+      "title": "Wichita Lineman",
+      "artist": "Glen Campbell",
+      "youtube_id": "Q8P_xTBpAcY"
+    },
+    {
+      "rank": 9,
+      "title": "Stormy",
+      "artist": "Classics IV Featuring Dennis Yost",
+      "youtube_id": "4XrWESC7dsA"
+    },
+    {
+      "rank": 10,
+      "title": "Those Were The Days",
+      "artist": "Mary Hopkin",
+      "youtube_id": "1DQepQaporY"
+    }
+  ]
+}

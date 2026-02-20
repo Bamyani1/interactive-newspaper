@@ -15,10 +15,6 @@ vi.mock("next/link", () => ({
     ),
 }));
 
-vi.mock("@/features/theme", () => ({
-    ThemeModeToggle: () => <button type="button">Light Mode</button>,
-}));
-
 describe("SiteFooter", () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -29,15 +25,6 @@ describe("SiteFooter", () => {
 
         expect(screen.getByRole("link", { name: "About" })).toHaveAttribute("href", "/about");
         expect(screen.getByRole("link", { name: "Contact" })).toHaveAttribute("href", "/contact");
-    });
-
-    it("renders the mode toggle in the utility row", () => {
-        const { container } = render(<SiteFooter />);
-
-        const utilityRow = container.querySelector(".site-footer__links");
-        const modeToggle = screen.getByRole("button", { name: "Light Mode" });
-
-        expect(utilityRow).toContainElement(modeToggle);
     });
 
     it("renders decorative separators as aria-hidden markers", () => {

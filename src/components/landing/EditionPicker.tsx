@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 
 /* ─── Types ────────────────────────────────── */
 
@@ -13,8 +13,8 @@ interface EditionPickerProps {
 }
 
 interface DecadeGroup {
-    decade: string;   // e.g. "1980s"
-    prefix: string;   // e.g. "198"
+    decade: string;   // e.g. "1960s"
+    prefix: string;   // e.g. "196"
     editions: string[];
 }
 
@@ -23,7 +23,7 @@ interface DecadeGroup {
 function groupEditionsByDecade(editions: string[]): DecadeGroup[] {
     const map = new Map<string, string[]>();
     for (const date of editions) {
-        const prefix = date.slice(0, 3); // "198" from "1988-04-13"
+        const prefix = date.slice(0, 3);
         if (!map.has(prefix)) map.set(prefix, []);
         map.get(prefix)!.push(date);
     }
@@ -36,18 +36,18 @@ function groupEditionsByDecade(editions: string[]): DecadeGroup[] {
         }));
 }
 
-function formatEditionLabel(dateStr: string): string {
-    const date = new Date(dateStr + "T12:00:00");
-    return date.toLocaleDateString("en-US", {
+function formatEditionDate(dateStr: string): string {
+    const d = new Date(dateStr + "T12:00:00");
+    return d.toLocaleDateString("en-US", {
         month: "short",
-        day: "2-digit",
+        day: "numeric",
         year: "numeric",
     });
 }
 
 function formatWeekday(dateStr: string): string {
-    const date = new Date(dateStr + "T12:00:00");
-    return date.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
+    const d = new Date(dateStr + "T12:00:00");
+    return d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
 }
 
 function getDecadePrefix(dateStr: string): string {
@@ -63,79 +63,46 @@ export function EditionPicker({
     isLoading = false,
     onOpenChange,
 }: EditionPickerProps) {
+    const [isOpen, setIsOpen] = useState(false);
     const groups = useMemo(() => groupEditionsByDecade(editions), [editions]);
 
-    // null = decade view, string = edition view for that decade prefix
+    // Default to the decade of the selected edition, or the first decade
+    const selectedDecadePrefix = selectedEdition ? getDecadePrefix(selectedEdition) : null;
     const [activeDecade, setActiveDecade] = useState<string | null>(null);
 
-    useEffect(() => {
-        onOpenChange?.(activeDecade !== null);
-    }, [activeDecade, onOpenChange]);
-
-    // Which decade holds the current selection?
-    const selectedDecadePrefix = selectedEdition ? getDecadePrefix(selectedEdition) : null;
-
-    // Find the active group for step 2
+    // Resolve which decade to show in the picker
+    const currentDecade = activeDecade ?? selectedDecadePrefix ?? (groups[0]?.prefix ?? null);
     const activeGroup = useMemo(
-        () => groups.find((g) => g.prefix === activeDecade) ?? null,
-        [groups, activeDecade],
+        () => groups.find((g) => g.prefix === currentDecade) ?? null,
+        [groups, currentDecade],
     );
 
-    // Refs for keyboard navigation
-    const decadeRefs = useRef<(HTMLButtonElement | null)[]>([]);
-    const editionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+    const openPicker = useCallback(() => {
+        // Start at the selected edition's decade
+        if (selectedDecadePrefix) {
+            setActiveDecade(selectedDecadePrefix);
+        } else if (groups.length > 0) {
+            setActiveDecade(groups[0].prefix);
+        }
+        setIsOpen(true);
+        onOpenChange?.(true);
+    }, [selectedDecadePrefix, groups, onOpenChange]);
 
-    // Reset edition refs when switching decades
-    useEffect(() => {
-        editionRefs.current = [];
-    }, [activeDecade]);
+    const closePicker = useCallback(() => {
+        setIsOpen(false);
+        onOpenChange?.(false);
+    }, [onOpenChange]);
 
-    // Keyboard: arrow keys in decade list
-    const handleDecadeKeyDown = useCallback(
-        (e: React.KeyboardEvent, index: number) => {
-            let next = index;
-            if (e.key === "ArrowDown") next = Math.min(index + 1, groups.length - 1);
-            else if (e.key === "ArrowUp") next = Math.max(index - 1, 0);
-            else if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setActiveDecade(groups[index].prefix);
-                return;
-            } else return;
-            e.preventDefault();
-            decadeRefs.current[next]?.focus();
-        },
-        [groups],
-    );
-
-    // Keyboard: arrow keys in edition list, Escape to go back
-    const handleEditionKeyDown = useCallback(
-        (e: React.KeyboardEvent, index: number, editionCount: number) => {
-            if (e.key === "Escape") {
-                e.preventDefault();
-                setActiveDecade(null);
-                // Focus the decade that was active
-                const decadeIndex = groups.findIndex((g) => g.prefix === activeDecade);
-                requestAnimationFrame(() => {
-                    decadeRefs.current[decadeIndex]?.focus();
-                });
-                return;
-            }
-            let next = index;
-            if (e.key === "ArrowDown") next = Math.min(index + 1, editionCount - 1);
-            else if (e.key === "ArrowUp") next = Math.max(index - 1, 0);
-            else return;
-            e.preventDefault();
-            editionRefs.current[next]?.focus();
-        },
-        [groups, activeDecade],
-    );
+    const handleSelect = useCallback((date: string) => {
+        onSelect(date);
+        closePicker();
+    }, [onSelect, closePicker]);
 
     /* ── Loading ────────────── */
     if (isLoading && editions.length === 0) {
         return (
             <div className="ep-container">
-                <p className="ep-heading">Select an Edition</p>
-                <p className="ep-loading">Loading archive...</p>
+                <p className="ep-loading">Loading archive…</p>
             </div>
         );
     }
@@ -144,96 +111,84 @@ export function EditionPicker({
     if (!isLoading && editions.length === 0) {
         return (
             <div className="ep-container">
-                <p className="ep-heading">Select an Edition</p>
                 <p className="ep-empty">No editions available</p>
             </div>
         );
     }
 
-    /* ── Main ──────────────── */
-    return (
-        <div className="ep-container">
-            {/* Decade view (hidden when edition list is open) */}
-            {!activeGroup && (
-                <>
-                    <p className="ep-heading">Select an Edition</p>
-                    <div
-                        role="listbox"
-                        aria-label={`${groups.length} decade${groups.length !== 1 ? "s" : ""} available`}
-                        className="ep-edition-list"
-                    >
-                        {groups.map((group, i) => {
-                            const hasSelection = selectedDecadePrefix === group.prefix;
-                            return (
-                                <button
-                                    key={group.prefix}
-                                    ref={(el) => { decadeRefs.current[i] = el; }}
-                                    type="button"
-                                    role="option"
-                                    aria-selected={hasSelection}
-                                    className="ep-edition-card"
-                                    onClick={() => setActiveDecade(group.prefix)}
-                                    onKeyDown={(e) => handleDecadeKeyDown(e, i)}
-                                >
-                                    {hasSelection && selectedEdition ? (
-                                        <span className="ep-edition-date ep-edition-date--centered">Edition {selectedEdition}</span>
-                                    ) : (
-                                        <>
-                                            <span className="ep-edition-date">{group.decade}</span>
-                                            <span className="ep-edition-weekday">
-                                                {group.editions.length} edition{group.editions.length !== 1 ? "s" : ""}
-                                            </span>
-                                        </>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </>
-            )}
+    /* ── Closed state: "Pick Edition" button ── */
+    if (!isOpen) {
+        return (
+            <div className="ep-container ep-container--closed">
+                {selectedEdition && (
+                    <p className="ep-selected-label">
+                        {formatEditionDate(selectedEdition)}
+                    </p>
+                )}
+                <button
+                    type="button"
+                    className="ep-pick-btn"
+                    onClick={openPicker}
+                >
+                    Pick Edition
+                </button>
+            </div>
+        );
+    }
 
-            {/* Edition view (replaces decade view) */}
-            {activeGroup && (
-                <div className="ep-popup">
+    /* ── Open state: Decade tabs + date list ── */
+    return (
+        <div className="ep-container ep-container--open">
+            {/* Decade tabs */}
+            <div className="ep-decade-tabs" role="tablist" aria-label="Select decade">
+                {groups.map((group) => (
                     <button
+                        key={group.prefix}
                         type="button"
-                        className="ep-back-btn"
-                        aria-label="Back to decade list"
-                        onClick={() => setActiveDecade(null)}
+                        role="tab"
+                        aria-selected={currentDecade === group.prefix}
+                        className={`ep-decade-tab ${currentDecade === group.prefix ? "ep-decade-tab--active" : ""}`}
+                        onClick={() => setActiveDecade(group.prefix)}
                     >
-                        <span className="ep-back-arrow">&larr;</span>
-                        <span className="ep-back-label">{activeGroup.decade}</span>
-                        <span className="ep-back-count">
-                            {activeGroup.editions.length} edition{activeGroup.editions.length !== 1 ? "s" : ""}
-                        </span>
+                        {group.decade}
                     </button>
-                    <div
-                        role="listbox"
-                        aria-label={`Editions from the ${activeGroup.decade}`}
-                        className="ep-edition-list"
-                    >
-                        {activeGroup.editions.map((date, i) => (
+                ))}
+            </div>
+
+            {/* Edition list for selected decade */}
+            {activeGroup && (
+                <div className="ep-date-list" role="listbox" aria-label={`Editions from the ${activeGroup.decade}`}>
+                    {activeGroup.editions.map((date) => {
+                        const isSelected = selectedEdition === date;
+                        return (
                             <button
                                 key={date}
-                                ref={(el) => { editionRefs.current[i] = el; }}
                                 type="button"
                                 role="option"
-                                aria-selected={selectedEdition === date}
-                                className="ep-edition-card"
-                                onClick={() => onSelect(date)}
-                                onKeyDown={(e) => handleEditionKeyDown(e, i, activeGroup.editions.length)}
+                                aria-selected={isSelected}
+                                className={`ep-date-item ${isSelected ? "ep-date-item--selected" : ""}`}
+                                onClick={() => handleSelect(date)}
                             >
-                                <span className="ep-edition-date">
-                                    {formatEditionLabel(date)}
+                                <span className="ep-date-item-date">
+                                    {formatEditionDate(date)}
                                 </span>
-                                <span className="ep-edition-weekday">
+                                <span className="ep-date-item-weekday">
                                     {formatWeekday(date)}
                                 </span>
                             </button>
-                        ))}
-                    </div>
+                        );
+                    })}
                 </div>
             )}
+
+            {/* Close */}
+            <button
+                type="button"
+                className="ep-close-btn"
+                onClick={closePicker}
+            >
+                ✕ Close
+            </button>
         </div>
     );
 }

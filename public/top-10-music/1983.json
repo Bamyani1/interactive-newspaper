@@ -1,0 +1,746 @@
+{
+  "01": [
+    {
+      "rank": 1,
+      "title": "Maneater",
+      "artist": "Daryl Hall  John Oates",
+      "youtube_id": "wAeDVL-SBbU"
+    },
+    {
+      "rank": 2,
+      "title": "Mickey",
+      "artist": "Toni Basil",
+      "youtube_id": "F8j1KVppRtc"
+    },
+    {
+      "rank": 3,
+      "title": "The Girl Is Mine",
+      "artist": "Michael Jackson And Paul McCartney",
+      "youtube_id": "oQG0Dyfugg4"
+    },
+    {
+      "rank": 4,
+      "title": "Dirty Laundry",
+      "artist": "Don Henley",
+      "youtube_id": "bsRTsiKPI2M"
+    },
+    {
+      "rank": 5,
+      "title": "Gloria",
+      "artist": "Laura Branigan",
+      "youtube_id": "fxf2y8Tl9Ts"
+    },
+    {
+      "rank": 6,
+      "title": "Steppin' Out",
+      "artist": "Joe Jackson",
+      "youtube_id": "OH4r2adqw3s"
+    },
+    {
+      "rank": 7,
+      "title": "Sexual Healing",
+      "artist": "Marvin Gaye",
+      "youtube_id": "9LxPoJ4QoSk"
+    },
+    {
+      "rank": 8,
+      "title": "Down Under",
+      "artist": "Men at Work",
+      "youtube_id": "hfmxO-HQ5rU"
+    },
+    {
+      "rank": 9,
+      "title": "Rock This Town",
+      "artist": "Stray Cats",
+      "youtube_id": "4xmLyPZVaXQ"
+    },
+    {
+      "rank": 10,
+      "title": "Truly",
+      "artist": "Lionel Richie",
+      "youtube_id": "kX-uh1MqAI4"
+    }
+  ],
+  "02": [
+    {
+      "rank": 1,
+      "title": "Africa",
+      "artist": "Toto",
+      "youtube_id": "QAo_Ycocl1E"
+    },
+    {
+      "rank": 2,
+      "title": "Down Under",
+      "artist": "Men at Work",
+      "youtube_id": "hfmxO-HQ5rU"
+    },
+    {
+      "rank": 3,
+      "title": "Sexual Healing",
+      "artist": "Marvin Gaye",
+      "youtube_id": "9LxPoJ4QoSk"
+    },
+    {
+      "rank": 4,
+      "title": "Baby, Come To Me",
+      "artist": "Patti Austin A Duet With James Ingram",
+      "youtube_id": "6eJ5LoVpyvQ"
+    },
+    {
+      "rank": 5,
+      "title": "Shame On The Moon",
+      "artist": "Bob Seger & The Silver Bullet Band",
+      "youtube_id": "wppm2GtsKN8"
+    },
+    {
+      "rank": 6,
+      "title": "Maneater",
+      "artist": "Daryl Hall  John Oates",
+      "youtube_id": "wAeDVL-SBbU"
+    },
+    {
+      "rank": 7,
+      "title": "Dirty Laundry",
+      "artist": "Don Henley",
+      "youtube_id": "bsRTsiKPI2M"
+    },
+    {
+      "rank": 8,
+      "title": "Rock The Casbah",
+      "artist": "The Clash",
+      "youtube_id": "0pCFVX6lzHU"
+    },
+    {
+      "rank": 9,
+      "title": "You And I",
+      "artist": "Eddie Rabbitt With Crystal Gayle",
+      "youtube_id": "C_lm_stCNP4"
+    },
+    {
+      "rank": 10,
+      "title": "You Can't Hurry Love",
+      "artist": "Phil Collins",
+      "youtube_id": "cJQwYntOotY"
+    }
+  ],
+  "03": [
+    {
+      "rank": 1,
+      "title": "Billie Jean",
+      "artist": "Michael Jackson",
+      "youtube_id": "7CTJcHjkq0E"
+    },
+    {
+      "rank": 2,
+      "title": "Shame On The Moon",
+      "artist": "Bob Seger & The Silver Bullet Band",
+      "youtube_id": "wppm2GtsKN8"
+    },
+    {
+      "rank": 3,
+      "title": "Stray Cat Strut",
+      "artist": "Stray Cats",
+      "youtube_id": "hU7fSPaunWw"
+    },
+    {
+      "rank": 4,
+      "title": "Do You Really Want To Hurt Me",
+      "artist": "Culture Club",
+      "youtube_id": "DLZtqLrzbfs"
+    },
+    {
+      "rank": 5,
+      "title": "Hungry Like The Wolf",
+      "artist": "Duran Duran",
+      "youtube_id": "qumO-vBey2Q"
+    },
+    {
+      "rank": 6,
+      "title": "Baby, Come To Me",
+      "artist": "Patti Austin A Duet With James Ingram",
+      "youtube_id": "6eJ5LoVpyvQ"
+    },
+    {
+      "rank": 7,
+      "title": "You And I",
+      "artist": "Eddie Rabbitt With Crystal Gayle",
+      "youtube_id": "C_lm_stCNP4"
+    },
+    {
+      "rank": 8,
+      "title": "We've Got Tonight",
+      "artist": "Kenny Rogers And Sheena Easton",
+      "youtube_id": "uJ7v-QOzZEI"
+    },
+    {
+      "rank": 9,
+      "title": "Back On The Chain Gang",
+      "artist": "Pretenders",
+      "youtube_id": "ReR901Tzvvc"
+    },
+    {
+      "rank": 10,
+      "title": "Pass The Dutchie",
+      "artist": "Musical Youth",
+      "youtube_id": "s7-B-JXmhOs"
+    }
+  ],
+  "04": [
+    {
+      "rank": 1,
+      "title": "Billie Jean",
+      "artist": "Michael Jackson",
+      "youtube_id": "7CTJcHjkq0E"
+    },
+    {
+      "rank": 2,
+      "title": "Do You Really Want To Hurt Me",
+      "artist": "Culture Club",
+      "youtube_id": "DLZtqLrzbfs"
+    },
+    {
+      "rank": 3,
+      "title": "Hungry Like The Wolf",
+      "artist": "Duran Duran",
+      "youtube_id": "qumO-vBey2Q"
+    },
+    {
+      "rank": 4,
+      "title": "You Are",
+      "artist": "Lionel Richie",
+      "youtube_id": "iM5Rd6oM-C4"
+    },
+    {
+      "rank": 5,
+      "title": "Back On The Chain Gang",
+      "artist": "Pretenders",
+      "youtube_id": "ReR901Tzvvc"
+    },
+    {
+      "rank": 6,
+      "title": "We've Got Tonight",
+      "artist": "Kenny Rogers And Sheena Easton",
+      "youtube_id": "uJ7v-QOzZEI"
+    },
+    {
+      "rank": 7,
+      "title": "Mr. Roboto",
+      "artist": "Styx",
+      "youtube_id": "3n_7acSpvuo"
+    },
+    {
+      "rank": 8,
+      "title": "Separate Ways (Worlds Apart)",
+      "artist": "Journey",
+      "youtube_id": "UsdGgRL1xHc"
+    },
+    {
+      "rank": 9,
+      "title": "One On One",
+      "artist": "Daryl Hall  John Oates",
+      "youtube_id": "KtPjIWwpIIs"
+    },
+    {
+      "rank": 10,
+      "title": "Twilight Zone",
+      "artist": "Golden Earring",
+      "youtube_id": "z2xsbmBn09g"
+    }
+  ],
+  "05": [
+    {
+      "rank": 1,
+      "title": "Beat It",
+      "artist": "Michael Jackson",
+      "youtube_id": "WlTlUseVt7E"
+    },
+    {
+      "rank": 2,
+      "title": "Jeopardy",
+      "artist": "Greg Kihn Band",
+      "youtube_id": "EegMDcV_xhU"
+    },
+    {
+      "rank": 3,
+      "title": "Let's Dance",
+      "artist": "David Bowie",
+      "youtube_id": "gHlwJvPv9C0"
+    },
+    {
+      "rank": 4,
+      "title": "Come On Eileen",
+      "artist": "Dexys Midnight Runners",
+      "youtube_id": "GbpnAGajyMc"
+    },
+    {
+      "rank": 5,
+      "title": "Der Kommissar",
+      "artist": "After The Fire",
+      "youtube_id": "-nuSGdQ4UT4"
+    },
+    {
+      "rank": 6,
+      "title": "Overkill",
+      "artist": "Men at Work",
+      "youtube_id": "N2kN4DGyWag"
+    },
+    {
+      "rank": 7,
+      "title": "She Blinded Me With Science",
+      "artist": "Thomas Dolby",
+      "youtube_id": "wdSUnV2fJGk"
+    },
+    {
+      "rank": 8,
+      "title": "Mr. Roboto",
+      "artist": "Styx",
+      "youtube_id": "3n_7acSpvuo"
+    },
+    {
+      "rank": 9,
+      "title": "Little Red Corvette",
+      "artist": "Prince",
+      "youtube_id": "jP349u3DTx4"
+    },
+    {
+      "rank": 10,
+      "title": "I Won't Hold You Back",
+      "artist": "Toto",
+      "youtube_id": "rQysrhYnWHg"
+    }
+  ],
+  "06": [
+    {
+      "rank": 1,
+      "title": "Flashdance...What A Feeling",
+      "artist": "Irene Cara",
+      "youtube_id": "xuHwv07G3qE"
+    },
+    {
+      "rank": 2,
+      "title": "Let's Dance",
+      "artist": "David Bowie",
+      "youtube_id": "gHlwJvPv9C0"
+    },
+    {
+      "rank": 3,
+      "title": "Overkill",
+      "artist": "Men at Work",
+      "youtube_id": "N2kN4DGyWag"
+    },
+    {
+      "rank": 4,
+      "title": "Time (Clock Of The Heart)",
+      "artist": "Culture Club",
+      "youtube_id": "AcblFCVKcn4"
+    },
+    {
+      "rank": 5,
+      "title": "She Blinded Me With Science",
+      "artist": "Thomas Dolby",
+      "youtube_id": "wdSUnV2fJGk"
+    },
+    {
+      "rank": 6,
+      "title": "Beat It",
+      "artist": "Michael Jackson",
+      "youtube_id": "WlTlUseVt7E"
+    },
+    {
+      "rank": 7,
+      "title": "My Love",
+      "artist": "Lionel Richie",
+      "youtube_id": "8BvIh6C3MZQ"
+    },
+    {
+      "rank": 8,
+      "title": "Little Red Corvette",
+      "artist": "Prince",
+      "youtube_id": "jP349u3DTx4"
+    },
+    {
+      "rank": 9,
+      "title": "Solitaire",
+      "artist": "Laura Branigan",
+      "youtube_id": "Y_EPGSE5PJI"
+    },
+    {
+      "rank": 10,
+      "title": "Straight From The Heart",
+      "artist": "Bryan Adams",
+      "youtube_id": "rHvGwXCgqmE"
+    }
+  ],
+  "07": [
+    {
+      "rank": 1,
+      "title": "Flashdance...What A Feeling",
+      "artist": "Irene Cara",
+      "youtube_id": "xuHwv07G3qE"
+    },
+    {
+      "rank": 2,
+      "title": "Electric Avenue",
+      "artist": "Eddy Grant",
+      "youtube_id": "-1QZLkPSz6s"
+    },
+    {
+      "rank": 3,
+      "title": "Every Breath You Take",
+      "artist": "The Police",
+      "youtube_id": "-SaUrDhp034"
+    },
+    {
+      "rank": 4,
+      "title": "Time (Clock Of The Heart)",
+      "artist": "Culture Club",
+      "youtube_id": "AcblFCVKcn4"
+    },
+    {
+      "rank": 5,
+      "title": "Never Gonna Let You Go",
+      "artist": "Sergio Mendes",
+      "youtube_id": "GQ_NAXaiI2Q"
+    },
+    {
+      "rank": 6,
+      "title": "Don't Let It End",
+      "artist": "Styx",
+      "youtube_id": "oKUOy-Tam70"
+    },
+    {
+      "rank": 7,
+      "title": "Too Shy",
+      "artist": "Kajagoogoo",
+      "youtube_id": "ixshJIg2hPs"
+    },
+    {
+      "rank": 8,
+      "title": "Family Man",
+      "artist": "Daryl Hall  John Oates",
+      "youtube_id": "cptMnXiHfNc"
+    },
+    {
+      "rank": 9,
+      "title": "Wanna Be Startin' Somethin'",
+      "artist": "Michael Jackson",
+      "youtube_id": "8KWf_-ofYgI"
+    },
+    {
+      "rank": 10,
+      "title": "She's A Beauty",
+      "artist": "The Tubes",
+      "youtube_id": "k6YzNrA6Elk"
+    }
+  ],
+  "08": [
+    {
+      "rank": 1,
+      "title": "Every Breath You Take",
+      "artist": "The Police",
+      "youtube_id": "-SaUrDhp034"
+    },
+    {
+      "rank": 2,
+      "title": "Sweet Dreams (Are Made Of This)",
+      "artist": "Eurythmics",
+      "youtube_id": "i5_asj1BGFs"
+    },
+    {
+      "rank": 3,
+      "title": "She Works Hard For The Money",
+      "artist": "Donna Summer",
+      "youtube_id": "tuUEpbGVV2Y"
+    },
+    {
+      "rank": 4,
+      "title": "Is There Something I Should Know",
+      "artist": "Duran Duran",
+      "youtube_id": "q-x0PFEBcDo"
+    },
+    {
+      "rank": 5,
+      "title": "Flashdance...What A Feeling",
+      "artist": "Irene Cara",
+      "youtube_id": "xuHwv07G3qE"
+    },
+    {
+      "rank": 6,
+      "title": "Electric Avenue",
+      "artist": "Eddy Grant",
+      "youtube_id": "-1QZLkPSz6s"
+    },
+    {
+      "rank": 7,
+      "title": "Maniac",
+      "artist": "Michael Sembello",
+      "youtube_id": "6GCNUeTFSbA"
+    },
+    {
+      "rank": 8,
+      "title": "Never Gonna Let You Go",
+      "artist": "Sergio Mendes",
+      "youtube_id": "GQ_NAXaiI2Q"
+    },
+    {
+      "rank": 9,
+      "title": "Stand Back",
+      "artist": "Stevie Nicks",
+      "youtube_id": "q3jrhQvoCSc"
+    },
+    {
+      "rank": 10,
+      "title": "Wanna Be Startin' Somethin'",
+      "artist": "Michael Jackson",
+      "youtube_id": "8KWf_-ofYgI"
+    }
+  ],
+  "09": [
+    {
+      "rank": 1,
+      "title": "Sweet Dreams (Are Made Of This)",
+      "artist": "Eurythmics",
+      "youtube_id": "i5_asj1BGFs"
+    },
+    {
+      "rank": 2,
+      "title": "Maniac",
+      "artist": "Michael Sembello",
+      "youtube_id": "6GCNUeTFSbA"
+    },
+    {
+      "rank": 3,
+      "title": "Every Breath You Take",
+      "artist": "The Police",
+      "youtube_id": "-SaUrDhp034"
+    },
+    {
+      "rank": 4,
+      "title": "Puttin' On The Ritz",
+      "artist": "Taco",
+      "youtube_id": "3gt4weva-Xg"
+    },
+    {
+      "rank": 5,
+      "title": "She Works Hard For The Money",
+      "artist": "Donna Summer",
+      "youtube_id": "tuUEpbGVV2Y"
+    },
+    {
+      "rank": 6,
+      "title": "The Safety Dance",
+      "artist": "Men Without Hats",
+      "youtube_id": "PWAYjbEEv8U"
+    },
+    {
+      "rank": 7,
+      "title": "Tell Her About It",
+      "artist": "Billy Joel",
+      "youtube_id": "xCnLyOYD1k0"
+    },
+    {
+      "rank": 8,
+      "title": "It's A Mistake",
+      "artist": "Men at Work",
+      "youtube_id": "1j9DfYtJkgk"
+    },
+    {
+      "rank": 9,
+      "title": "I'll Tumble 4 Ya",
+      "artist": "Culture Club",
+      "youtube_id": "gt89G9Dkcx8"
+    },
+    {
+      "rank": 10,
+      "title": "Human Nature",
+      "artist": "Michael Jackson",
+      "youtube_id": "oqLpko9Gprs"
+    }
+  ],
+  "10": [
+    {
+      "rank": 1,
+      "title": "Total Eclipse Of The Heart",
+      "artist": "Bonnie Tyler",
+      "youtube_id": "fSeFxzeo5Ts"
+    },
+    {
+      "rank": 2,
+      "title": "Tell Her About It",
+      "artist": "Billy Joel",
+      "youtube_id": "xCnLyOYD1k0"
+    },
+    {
+      "rank": 3,
+      "title": "The Safety Dance",
+      "artist": "Men Without Hats",
+      "youtube_id": "PWAYjbEEv8U"
+    },
+    {
+      "rank": 4,
+      "title": "Making Love Out Of Nothing At All",
+      "artist": "Air Supply",
+      "youtube_id": "HFmnzRjcAfY"
+    },
+    {
+      "rank": 5,
+      "title": "(she's) Sexy + 17",
+      "artist": "Stray Cats",
+      "youtube_id": "ByhUGnUn4es"
+    },
+    {
+      "rank": 6,
+      "title": "King Of Pain",
+      "artist": "The Police",
+      "youtube_id": "A70_sRBsQqE"
+    },
+    {
+      "rank": 7,
+      "title": "True",
+      "artist": "Spandau Ballet",
+      "youtube_id": "ITX-SEsyGRg"
+    },
+    {
+      "rank": 8,
+      "title": "Maniac",
+      "artist": "Michael Sembello",
+      "youtube_id": "6GCNUeTFSbA"
+    },
+    {
+      "rank": 9,
+      "title": "Islands In The Stream",
+      "artist": "Kenny Rogers Duet With Dolly Parton",
+      "youtube_id": "Cvq6lHDatNs"
+    },
+    {
+      "rank": 10,
+      "title": "Far From Over",
+      "artist": "Frank Stallone",
+      "youtube_id": "1G-y78tM1Aw"
+    }
+  ],
+  "11": [
+    {
+      "rank": 1,
+      "title": "Islands In The Stream",
+      "artist": "Kenny Rogers Duet With Dolly Parton",
+      "youtube_id": "Cvq6lHDatNs"
+    },
+    {
+      "rank": 2,
+      "title": "All Night Long (All Night)",
+      "artist": "Lionel Richie",
+      "youtube_id": "BBaZEnYv-HM"
+    },
+    {
+      "rank": 3,
+      "title": "Total Eclipse Of The Heart",
+      "artist": "Bonnie Tyler",
+      "youtube_id": "fSeFxzeo5Ts"
+    },
+    {
+      "rank": 4,
+      "title": "One Thing Leads To Another",
+      "artist": "The Fixx",
+      "youtube_id": "-Cm8XfpnOVY"
+    },
+    {
+      "rank": 5,
+      "title": "Uptown Girl",
+      "artist": "Billy Joel",
+      "youtube_id": "H6M0EulApMM"
+    },
+    {
+      "rank": 6,
+      "title": "Say Say Say",
+      "artist": "Paul McCartney And Michael Jackson",
+      "youtube_id": "3oKC-XZN7L4"
+    },
+    {
+      "rank": 7,
+      "title": "Making Love Out Of Nothing At All",
+      "artist": "Air Supply",
+      "youtube_id": "HFmnzRjcAfY"
+    },
+    {
+      "rank": 8,
+      "title": "Delirious",
+      "artist": "Prince",
+      "youtube_id": "ilP0dGXFNgw"
+    },
+    {
+      "rank": 9,
+      "title": "Telefone (long Distance Love Affair)",
+      "artist": "Sheena Easton",
+      "youtube_id": "xBmYdNVf4h0"
+    },
+    {
+      "rank": 10,
+      "title": "True",
+      "artist": "Spandau Ballet",
+      "youtube_id": "ITX-SEsyGRg"
+    }
+  ],
+  "12": [
+    {
+      "rank": 1,
+      "title": "All Night Long (All Night)",
+      "artist": "Lionel Richie",
+      "youtube_id": "BBaZEnYv-HM"
+    },
+    {
+      "rank": 2,
+      "title": "Say Say Say",
+      "artist": "Paul McCartney And Michael Jackson",
+      "youtube_id": "3oKC-XZN7L4"
+    },
+    {
+      "rank": 3,
+      "title": "Uptown Girl",
+      "artist": "Billy Joel",
+      "youtube_id": "H6M0EulApMM"
+    },
+    {
+      "rank": 4,
+      "title": "Islands In The Stream",
+      "artist": "Kenny Rogers Duet With Dolly Parton",
+      "youtube_id": "Cvq6lHDatNs"
+    },
+    {
+      "rank": 5,
+      "title": "Say It Isn't So",
+      "artist": "Daryl Hall  John Oates",
+      "youtube_id": "RXaUmxqivIc"
+    },
+    {
+      "rank": 6,
+      "title": "Love Is A Battlefield",
+      "artist": "Pat Benatar",
+      "youtube_id": "vo6PgC0cP4c"
+    },
+    {
+      "rank": 7,
+      "title": "Cum On Feel The Noize",
+      "artist": "Quiet Riot",
+      "youtube_id": "XQ5mygB97nM"
+    },
+    {
+      "rank": 8,
+      "title": "Heart And Soul",
+      "artist": "Huey Lewis & The News",
+      "youtube_id": "JD2yrrY_ePo"
+    },
+    {
+      "rank": 9,
+      "title": "Crumblin' Down",
+      "artist": "John Cougar Mellencamp",
+      "youtube_id": "ILDKiLMq7UQ"
+    },
+    {
+      "rank": 10,
+      "title": "Church Of The Poison Mind",
+      "artist": "Culture Club",
+      "youtube_id": "3qHlKJJjwxc"
+    }
+  ]
+}

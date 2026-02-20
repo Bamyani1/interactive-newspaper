@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Calendar, ChevronDown, ChevronRight, Search } from "lucide-react";
+import { Calendar, ChevronDown, ChevronRight, MessageCircleQuestion, Search } from "lucide-react";
 import { ThemeModeToggle } from "@/features/theme";
 import { motion, AnimatePresence } from "framer-motion";
 import { useArchive } from "@/features/archive";
@@ -148,6 +148,17 @@ export const TimeControls = () => {
             </div>
 
             <div className="time-controls-date-group flex items-center gap-2">
+                <Link
+                    href="/ask"
+                    className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-sm transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/30 ${
+                        pathname?.startsWith("/ask")
+                            ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
+                            : "opacity-70 hover:opacity-100 hover:bg-[var(--color-accent)]/8"
+                    }`}
+                    aria-label="Ask the archive"
+                >
+                    <MessageCircleQuestion className="w-4 h-4" />
+                </Link>
                 <Link
                     href="/search"
                     className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-sm transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/30 ${

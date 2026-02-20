@@ -21,6 +21,7 @@ export default defineConfig({
       "@/features": resolve(__dirname, "./src/features"),
       "@/shared": resolve(__dirname, "./src/components"),
       "@/styles": resolve(__dirname, "./src/styles"),
+      "@/font-color": resolve(__dirname, "./font-color"),
       "@": resolve(__dirname, "./src"),
     },
   },

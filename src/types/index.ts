@@ -182,5 +182,6 @@ export interface AskResponse {
         totalTimeMs: number;
         articlesSearched: number;
         method: "hybrid" | "vector";
+        reformulatedQuery?: string;
     };
 }
