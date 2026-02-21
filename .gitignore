@@ -85,6 +85,9 @@ ocr/.venv/
 ocr/venv/
 ocr/env/
 
+# Python bytecode
+__pycache__/
+
 # OCR Model Cache
 ocr/models/.cache/
 ocr/models/*.pth
