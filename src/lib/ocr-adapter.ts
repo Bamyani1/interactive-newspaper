@@ -1,18 +1,8 @@
-import { readdir, readFile } from 'fs/promises';
-import path from 'path';
-import type { Article, AdCategory, AdType, EditionInfo, OcrArticle, OcrEdition, OcrEnrichedAd, VintageAd } from '@/src/types';
+import type { Article, AdCategory, AdType, OcrArticle, OcrEdition, OcrEnrichedAd, VintageAd } from '@/src/types';
 
-export type { Article, EditionInfo };
-
-const EDITIONS_DIR = path.join(process.cwd(), 'public', 'editions');
+export type { Article };
 
 // ---------- Helpers ----------
-
-function isIsoDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const d = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(value);
-}
 
 function escapeHtml(text: string): string {
   return text
@@ -151,11 +141,6 @@ function classifyCategory(article: OcrArticle): string {
   return 'Campus News';
 }
 
-// ---------- Module-level caches (editions are immutable, safe to cache indefinitely) ----------
-
-let editionListCache: EditionInfo[] | null = null;
-const editionCache = new Map<string, OcrEdition>();
-
 // ---------- Public API ----------
 
 export function computePageCount(edition: OcrEdition): number {
@@ -168,53 +153,6 @@ export function computePageCount(edition: OcrEdition): number {
     }
   }
   return max;
-}
-
-export async function listEditions(): Promise<EditionInfo[]> {
-  if (editionListCache) return editionListCache;
-
-  const entries = await readdir(EDITIONS_DIR, { withFileTypes: true });
-  const editions: EditionInfo[] = [];
-
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !isIsoDate(entry.name)) continue;
-
-    try {
-      const edition = await loadEdition(entry.name); // Reuse loadEdition to also populate editionCache
-      if (!edition) continue;
-
-      editions.push({
-        id: edition.edition_date,
-        date: edition.edition_date,
-        pageCount: computePageCount(edition),
-        articleCount: edition.articles?.length ?? 0,
-      });
-    } catch {
-      // Skip directories without valid edition.json
-    }
-  }
-
-  editionListCache = editions.sort((a, b) => b.date.localeCompare(a.date));
-  return editionListCache;
-}
-
-export async function loadEdition(date: string): Promise<OcrEdition | null> {
-  if (!isIsoDate(date)) return null;
-
-  const cached = editionCache.get(date);
-  if (cached) return cached;
-
-  try {
-    const raw = await readFile(
-      path.join(EDITIONS_DIR, date, 'edition.json'),
-      'utf-8',
-    );
-    const edition: OcrEdition = JSON.parse(raw);
-    editionCache.set(date, edition);
-    return edition;
-  } catch {
-    return null;
-  }
 }
 
 const VALID_CATEGORIES = new Set(['Campus News', 'News', 'Sports', 'Arts & Entertainment', 'Opinion']);

@@ -38,7 +38,7 @@ node scripts/cleanup-images.mjs [--apply]              # Dry-run image relevance
 
 ### Tech Stack
 
-Next.js 16 (App Router) + React 19 + TypeScript 5 + Tailwind CSS 4. Animation via Framer Motion and GSAP. Testing with Vitest + Testing Library (jsdom). Icons from lucide-react. Tailwind v4 uses the PostCSS plugin (`@tailwindcss/postcss`) — there is no `tailwind.config.ts` file.
+Next.js 16 (App Router) + React 19 + TypeScript 5 + Tailwind CSS 4. Animation via Framer Motion. Testing with Vitest + Testing Library (jsdom). Icons from lucide-react. Tailwind v4 uses the PostCSS plugin (`@tailwindcss/postcss`) — there is no `tailwind.config.ts` file.
 
 ### Data Flow: Editions Pipeline
 
@@ -49,7 +49,7 @@ Editions are static JSON files (source of truth), seeded into a Neon PostgreSQL 
 3. **Seed script** (`scripts/db/seed.mjs`) reads JSON files, transforms via ocr-adapter, inserts into Neon PostgreSQL with FTS vectors
 4. **Embed script** (`scripts/db/embed.mjs`) generates 768-dim embeddings via `gemini-embedding-001` for articles missing them
 5. **Database layer** (`src/lib/db.ts`) provides typed query functions using `@neondatabase/serverless` HTTP driver
-6. **API routes** (`/api/editions`, `/api/editions/[date]`, `/api/search`, `/api/articles`, `/api/ask`, `/api/weather/range`) query the database
+6. **API routes** (`/api/editions`, `/api/editions/[date]`, `/api/search`, `/api/ask`) query the database
 7. **Client hooks** (`useEditionArticles`, `useArchive`, `useSearch`, `useAskArchive`) fetch from API and normalize into component-ready state
 
 To add a new edition: place a folder at `public/editions/YYYY-MM-DD/` containing `edition.json` (matching the `OcrEdition` interface from `src/types/index.ts`) and optionally `images/` and `scanned-newspaper/page{N}.jpg`. Then run `npm run db:seed && npm run db:embed`.

@@ -66,12 +66,12 @@ export async function queryEditionByDate(date: string): Promise<{
   const [articleRows, adRows] = await sql.transaction([
     sql`
       SELECT id, edition_date, position, category, headline, summary, full_text,
-             byline, page, is_hero, is_featured, image_urls, image_caption, image_captions
+             byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions
       FROM articles WHERE edition_date = ${date}
       ORDER BY position
     `,
     sql`
-      SELECT position, title, body, category, ad_type, display_text, phone, address, price
+      SELECT position, title, body, category, ad_type, display_text, phone, address, price, image_urls
       FROM ads WHERE edition_date = ${date}
       ORDER BY position
     `,
@@ -86,6 +86,7 @@ export async function queryEditionByDate(date: string): Promise<{
     fullText: r.full_text,
     imageUrls: r.image_urls ?? [],
     byline: r.byline ?? null,
+    writerPosition: r.writer_position ?? null,
     page: r.page,
     isHero: r.is_hero,
     isFeatured: r.is_featured,
@@ -102,6 +103,7 @@ export async function queryEditionByDate(date: string): Promise<{
     phone: r.phone ?? undefined,
     address: r.address ?? undefined,
     price: r.price ?? undefined,
+    imageUrls: r.image_urls?.length ? r.image_urls : undefined,
   }));
 
   return {
@@ -127,7 +129,7 @@ interface SearchOptions {
   offset?: number;
 }
 
-export interface SearchResultRow {
+interface SearchResultRow {
   id: string;
   editionDate: string;
   category: string;
@@ -185,71 +187,9 @@ export async function searchArticles(
   };
 }
 
-// ─── Browse Queries (cross-edition) ──────────────────────────────
-
-interface BrowseOptions {
-  category?: string | null;
-  author?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
-  limit?: number;
-  offset?: number;
-}
-
-export async function browseArticles(options: BrowseOptions = {}): Promise<{
-  articles: (Article & { editionDate: string })[];
-  total: number;
-}> {
-  const { limit = 20, offset = 0 } = options;
-  const category = options.category ?? null;
-  const author = options.author ?? null;
-  const startDate = options.startDate ?? null;
-  const endDate = options.endDate ?? null;
-
-  const countResult = await sql`
-    SELECT COUNT(*)::int as total
-    FROM articles
-    WHERE (${category}::text IS NULL OR category = ${category})
-      AND (${author}::text IS NULL OR byline ILIKE '%' || ${author} || '%')
-      AND (${startDate}::text IS NULL OR edition_date >= ${startDate})
-      AND (${endDate}::text IS NULL OR edition_date <= ${endDate})
-  `;
-
-  const rows = await sql`
-    SELECT id, edition_date, position, category, headline, summary, full_text,
-           byline, page, is_hero, is_featured, image_urls, image_caption, image_captions
-    FROM articles
-    WHERE (${category}::text IS NULL OR category = ${category})
-      AND (${author}::text IS NULL OR byline ILIKE '%' || ${author} || '%')
-      AND (${startDate}::text IS NULL OR edition_date >= ${startDate})
-      AND (${endDate}::text IS NULL OR edition_date <= ${endDate})
-    ORDER BY edition_date DESC, position
-    LIMIT ${limit} OFFSET ${offset}
-  `;
-
-  const articles = rows.map((r) => ({
-    id: r.id,
-    date: r.edition_date,
-    editionDate: r.edition_date,
-    category: r.category as Article["category"],
-    headline: r.headline,
-    summary: r.summary,
-    fullText: r.full_text,
-    imageUrls: r.image_urls ?? [],
-    byline: r.byline ?? null,
-    page: r.page,
-    isHero: r.is_hero,
-    isFeatured: r.is_featured,
-    imageCaption: r.image_caption ?? null,
-    imageCaptions: r.image_captions ?? [],
-  }));
-
-  return { articles, total: countResult[0].total };
-}
-
 // ─── Weather Queries ─────────────────────────────────────────────
 
-export interface WeatherRow {
+interface WeatherRow {
   date: string;
   scope: string;
   tmax_c: number | null;
@@ -285,7 +225,7 @@ export async function queryWeatherByDate(
 
 // ─── Music Queries ───────────────────────────────────────────────
 
-export interface MusicRow {
+interface MusicRow {
   year: number;
   month: string;
   rank: number;

@@ -24,7 +24,6 @@
     "@google/genai": "^1.42.0",
     "@neondatabase/serverless": "^1.0.2",
     "framer-motion": "^12.23.25",
-    "gsap": "^3.13.0",
     "lucide-react": "^0.556.0",
     "next": "^16.1.4",
     "react": "19.2.0",
