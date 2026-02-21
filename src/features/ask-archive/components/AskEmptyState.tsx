@@ -9,7 +9,7 @@ export const AskEmptyState: React.FC = () => {
         grounded in articles from The Transcript archive, with sources you can
         verify.
       </p>
-      <p className="ask-empty-stats">278 articles &middot; 5 editions &middot; 1960</p>
+      <p className="ask-empty-stats">Powered by The Transcript Archive</p>
     </div>
   );
 };

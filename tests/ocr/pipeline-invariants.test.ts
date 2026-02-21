@@ -15,12 +15,9 @@ const editionDirs = existsSync(EDITIONS_DIR)
 // Pre-existing data issues in legacy editions — tracked here so tests pass
 // while still catching regressions in newly processed editions.
 // Remove entries as editions are re-processed through the improved pipeline.
-const KNOWN_EMPTY_ARTICLES: Record<string, number[]> = {
-  "1980-01-24": [7],
-  "1980-03-06": [0],
-};
+const KNOWN_EMPTY_ARTICLES: Record<string, number[]> = {};
 
-const KNOWN_DUPLICATE_EDITIONS = new Set(["1960-02-10", "1960-11-22"]);
+const KNOWN_DUPLICATE_EDITIONS = new Set<string>();
 
 if (editionDirs.length === 0) {
   it("no editions to validate", () => {
