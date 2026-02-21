@@ -16,7 +16,9 @@
     "db:seed": "node --import tsx scripts/db/seed.mjs",
     "db:reset": "node --import tsx scripts/db/seed.mjs --reset",
     "db:embed": "node --import tsx scripts/db/embed.mjs",
-    "db:embed:force": "node --import tsx scripts/db/embed.mjs --force"
+    "db:embed:force": "node --import tsx scripts/db/embed.mjs --force",
+    "test:golden": "vitest run tests/ocr/pipeline-golden.test.ts",
+    "test:invariants": "vitest run tests/ocr/pipeline-invariants.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.42.0",
@@ -40,7 +42,6 @@
     "eslint-config-next": "16.0.7",
     "jsdom": "^24.0.0",
     "oslllo-potrace": "^5.0.0",
-    "svg-path-properties": "^2.0.1",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5",

@@ -6,10 +6,3 @@
  */
 
 export type { Article } from "@/src/types";
-
-export const getClosestContext = (_date: string) => {
-    return {
-        weather: "Cloudy, 55°F",
-        history: [] as string[],
-    };
-};

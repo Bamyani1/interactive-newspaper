@@ -21,6 +21,11 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;');
 }
 
+/** Rejoin words split by hyphens across line/paragraph breaks (OCR artifact). */
+function dehyphenate(text: string): string {
+  return text.replace(/(\w)-\n+\s*([a-z])/g, "$1$2");
+}
+
 function isValidImageFile(filename: string): boolean {
   return /\.(jpe?g|png|gif|webp|tiff?)$/i.test(filename);
 }
@@ -71,7 +76,8 @@ function isAuthorHeadshot(caption: string | undefined, authorName: string): bool
 
 /** Strip OCR page-break markers (e.g. "\n. 7\n") and convert paragraphs to HTML. */
 function bodyToHtml(body: string): string {
-  const cleaned = body.replace(/\n\. \d+\n/g, '\n');
+  const dehyphenated = dehyphenate(body);
+  const cleaned = dehyphenated.replace(/\n\. \d+\n/g, '\n');
   return cleaned
     .split(/\n\n+/)
     .map(p => p.trim())
@@ -81,7 +87,8 @@ function bodyToHtml(body: string): string {
 }
 
 function extractSummary(body: string): string {
-  const cleaned = body.replace(/\n\. \d+\n/g, '\n');
+  const dehyphenated = dehyphenate(body);
+  const cleaned = dehyphenated.replace(/\n\. \d+\n/g, '\n');
   const first = cleaned.split(/\n\n/)[0]?.trim() || '';
   if (first.length <= 300) return first;
   const lastSpace = first.lastIndexOf(' ', 300);
@@ -92,21 +99,22 @@ function extractSummary(body: string): string {
 // Section keywords mapped to categories (used for byline tags + headline matching)
 const SECTION_MAP: Record<string, string> = {
   sports: 'Sports',
-  arts: 'Arts',
-  entertainment: 'Arts',
-  features: 'Features',
-  feature: 'Features',
+  arts: 'Arts & Entertainment',
+  entertainment: 'Arts & Entertainment',
   opinion: 'Opinion',
   editorial: 'Opinion',
-  academics: 'News',
+  academics: 'Campus News',
   news: 'News',
 };
 
 const SPORTS_RE =
   /\b(basketball|football|baseball|soccer|track|tennis|swim|lacrosse|hoopster|cager|gridder|bishop[s ].*(?:slam|win|beat|fall|host)|intramural|sports? brief|v-ball|field hockey|wrestling|golf)\b/i;
 
-const ARTS_RE =
+const ARTS_ENTERTAINMENT_RE =
   /\b(album|film|movie|theater|theatre|concert|exhibit|gallery|sculpture|play\b.*(?:about|loyalty|love)|review|rock and roll|VCR|ceramics|photography|dance alloy|artist)\b/i;
+
+const NEWS_RE =
+  /\b(congress|senator|president(?!.*student)|pentagon|vietnam|soviet|nato|united nations|washington\s+d\.?c|national guard|federal|supreme court|AP|UPI)\b/i;
 
 /** Classify an OCR article into a frontend category using layered heuristics. */
 function classifyCategory(article: OcrArticle): string {
@@ -136,10 +144,11 @@ function classifyCategory(article: OcrArticle): string {
 
   // 3. Headline keyword matching
   if (SPORTS_RE.test(headline)) return 'Sports';
-  if (ARTS_RE.test(headline)) return 'Arts';
+  if (ARTS_ENTERTAINMENT_RE.test(headline)) return 'Arts & Entertainment';
+  if (NEWS_RE.test(headline)) return 'News';
 
   // 4. Default
-  return 'News';
+  return 'Campus News';
 }
 
 // ---------- Module-level caches (editions are immutable, safe to cache indefinitely) ----------
@@ -178,7 +187,7 @@ export async function listEditions(): Promise<EditionInfo[]> {
         id: edition.edition_date,
         date: edition.edition_date,
         pageCount: computePageCount(edition),
-        articleCount: (edition.articles?.length ?? 0) + (edition.ads?.length ?? 0),
+        articleCount: edition.articles?.length ?? 0,
       });
     } catch {
       // Skip directories without valid edition.json
@@ -208,7 +217,7 @@ export async function loadEdition(date: string): Promise<OcrEdition | null> {
   }
 }
 
-const VALID_CATEGORIES = new Set(['News', 'Sports', 'Features', 'Opinion', 'Arts', 'Campus Life']);
+const VALID_CATEGORIES = new Set(['Campus News', 'News', 'Sports', 'Arts & Entertainment', 'Opinion']);
 
 export function transformArticles(edition: OcrEdition): Article[] {
   const articles: Article[] = [];
@@ -219,7 +228,7 @@ export function transformArticles(edition: OcrEdition): Article[] {
     const a = edition.articles[i];
     const authorRaw = a.author === "null" ? "" : (a.author || "");
     const hasAuthor = Boolean(authorRaw);
-    const { body: cleanBody, roleTitle } = cleanBodyPreamble(a.body ?? '', hasAuthor);
+    let { body: cleanBody, roleTitle } = cleanBodyPreamble(a.body ?? '', hasAuthor);
 
     let fullText = bodyToHtml(cleanBody);
 
@@ -248,12 +257,38 @@ export function transformArticles(edition: OcrEdition): Article[] {
     const imageCaption = filteredImageCaptions[0] || null;
 
     // Detect body/caption duplication: if the body text is essentially
-    // the same as the image caption, treat as photo-only by clearing fullText
+    // the same as the image caption, treat as photo-only by clearing fullText.
+    // Requires >80% overlap AND body < 200 chars to avoid clearing real content.
     if (imageCaption && fullText) {
       const bodyNorm = cleanBody.replace(/\s+/g, ' ').trim().toLowerCase();
       const capNorm = imageCaption.replace(/\s+/g, ' ').trim().toLowerCase();
-      if (bodyNorm.length < 500 && (capNorm.includes(bodyNorm) || bodyNorm.includes(capNorm))) {
-        fullText = '';
+      if (bodyNorm.length < 200 && bodyNorm.length > 0) {
+        const shorter = bodyNorm.length <= capNorm.length ? bodyNorm : capNorm;
+        const longer = bodyNorm.length <= capNorm.length ? capNorm : bodyNorm;
+        if (longer.includes(shorter) && shorter.length / longer.length > 0.8) {
+          fullText = '';
+        }
+      }
+    }
+
+    // Strip trailing caption text from body (OCR often appends captions as body paragraphs)
+    if (filteredImageCaptions.length > 0 && cleanBody) {
+      const paragraphs = cleanBody.split(/\n\n+/);
+      if (paragraphs.length > 1) {
+        const lastPara = paragraphs[paragraphs.length - 1].replace(/\s+/g, ' ').trim().toLowerCase();
+        const captionMatch = filteredImageCaptions.some(cap => {
+          if (!cap) return false;
+          const capNorm = cap.replace(/\s+/g, ' ').trim().toLowerCase();
+          if (capNorm.length < 20) return false;
+          const shorter = lastPara.length <= capNorm.length ? lastPara : capNorm;
+          const longer = lastPara.length <= capNorm.length ? capNorm : lastPara;
+          return longer.includes(shorter) && shorter.length / longer.length > 0.7;
+        });
+        if (captionMatch) {
+          paragraphs.pop();
+          cleanBody = paragraphs.join('\n\n');
+          fullText = bodyToHtml(cleanBody);
+        }
       }
     }
 
@@ -262,23 +297,31 @@ export function transformArticles(edition: OcrEdition): Article[] {
       date,
       category: (() => {
         const rawCat = edition.categories?.[i] ?? classifyCategory(a);
-        return VALID_CATEGORIES.has(rawCat) ? rawCat : 'News';
+        return VALID_CATEGORIES.has(rawCat) ? rawCat : 'Campus News';
       })() as Article['category'],
       headline: a.headline ?? '',
       summary: extractSummary(cleanBody),
       fullText,
       imageUrls: filteredImageUrls,
-      byline: (() => {
-        const baseName = authorRaw.replace(/^by\s+/i, '').trim();
-        if (roleTitle && baseName) return `${baseName}, ${roleTitle}`;
-        return baseName || null;
-      })(),
+      byline: authorRaw.replace(/^by\s+/i, '').trim() || null,
+      writerPosition: a.writer_position || roleTitle || null,
       page: parseInt(a.source_pages?.[0], 10) || 1,
       isHero: false,
       isFeatured: false,
       imageCaption,
       imageCaptions: filteredImageCaptions,
     });
+  }
+
+  // Reclassify photo-only items as Arts & Entertainment
+  for (const article of articles) {
+    const plainText = article.fullText.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    const hasHeadline = article.headline.trim().length > 0;
+    const hasBody = plainText.length > 0;
+    const hasImages = article.imageUrls.length > 0;
+    if (!hasHeadline && !hasBody && hasImages) {
+      article.category = "Arts & Entertainment";
+    }
   }
 
   // Filter out empty and very-short text-only articles
@@ -297,8 +340,9 @@ export function transformArticles(edition: OcrEdition): Article[] {
     return plainText.length >= 150;
   });
 
-  // Assign hero & featured: prioritize articles with images
-  const withImages = filtered.filter(a => a.imageUrls.length > 0);
+  // Assign hero & featured: prioritize articles with images (excluding photo-only items)
+  const isPhotoOnly = (a: Article) => a.imageUrls.length > 0 && !a.headline.trim() && !a.fullText.replace(/<[^>]+>/g, "").trim();
+  const withImages = filtered.filter(a => a.imageUrls.length > 0 && !isPhotoOnly(a));
   const withoutImages = filtered.filter(a => a.imageUrls.length === 0);
   const candidates = [...withImages, ...withoutImages];
 
@@ -317,18 +361,22 @@ const VALID_AD_CATEGORIES: ReadonlySet<string> = new Set<AdCategory>([
 
 const VALID_AD_TYPES: ReadonlySet<string> = new Set<AdType>(["display", "classified"]);
 
-export function transformOtherContent(edition: OcrEdition): { title: string; body: string }[] {
-  return (edition.other_content ?? []).map(item => ({
-    title: item.title || '',
-    body: item.body || '',
-  }));
-}
-
 export function transformAds(edition: OcrEdition): VintageAd[] {
+  const date = edition.edition_date;
   const source = edition.enriched_ads ?? edition.ads ?? [];
   if (!Array.isArray(source)) return [];
   return source.map(ad => {
     const base: VintageAd = { title: ad.business_name, body: ad.body };
+
+    // Build image URLs from ad.image_files (same pattern as transformArticles)
+    const imageUrls = (ad.image_files ?? [])
+      .filter(f => isValidImageFile(f))
+      .map(f => {
+        const filename = f.replace(/^images\//, '');
+        return `/api/editions/${date}/images/${encodeURIComponent(filename)}`;
+      });
+    if (imageUrls.length > 0) base.imageUrls = imageUrls;
+
     if ('category' in ad) {
       const enriched = ad as OcrEnrichedAd;
       base.category = VALID_AD_CATEGORIES.has(enriched.category)
