@@ -106,5 +106,8 @@ ocr/scans/
 public/editions/*/
 !public/editions/.gitkeep
 
+# Debug output
+debug/
+
 # System Files
 **.DS_Store
