@@ -1,7 +1,5 @@
 import type { Article, AdCategory, AdType, OcrArticle, OcrEdition, OcrEnrichedAd, VintageAd } from '@/src/types';
 
-export type { Article };
-
 // ---------- Helpers ----------
 
 function escapeHtml(text: string): string {
