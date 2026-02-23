@@ -94,6 +94,24 @@ export type MonthlyTrendingReason = "INVALID_DATE" | "NO_DATA" | null;
 
 export type SectionId = "Top" | Article["category"] | "Ads" | "Classifieds" | "All";
 
+export interface SearchResult {
+    id: string;
+    editionDate: string;
+    category: Article["category"];
+    headline: string;
+    summary: string;
+    byline: string | null;
+    snippet: string;
+    rank: number;
+}
+
+export interface PaginationInfo {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+}
+
 // ─── OCR / Server-Side Types ────────────────────────────────────
 
 export interface OcrImage {
@@ -133,4 +151,37 @@ export interface OcrEdition {
     enriched_ads?: OcrEnrichedAd[];
     categories?: string[];   // parallel to articles[], added by enrich_articles.py
     other_content: { title: string; body: string }[];
+}
+
+// ─── RAG / "Ask the Archive" Types ──────────────────────────────
+
+export interface Citation {
+    articleId: string;
+    headline: string;
+    editionDate: string;
+}
+
+export interface AskResponse {
+    question: string;
+    answer: string;
+    citations: Citation[];
+    confidence: "low" | "medium" | "high";
+    sourceArticles: {
+        id: string;
+        headline: string;
+        editionDate: string;
+        category: string;
+        summary: string;
+        byline: string | null;
+        bodySnippet: string;
+        distance: number;
+    }[];
+    meta: {
+        retrievalTimeMs: number;
+        generationTimeMs: number;
+        totalTimeMs: number;
+        articlesSearched: number;
+        method: "hybrid" | "vector";
+        reformulatedQuery?: string;
+    };
 }

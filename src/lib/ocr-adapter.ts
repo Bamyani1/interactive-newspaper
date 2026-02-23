@@ -217,7 +217,8 @@ export function transformArticles(edition: OcrEdition): Article[] {
 
   for (let i = 0; i < edition.articles.length; i++) {
     const a = edition.articles[i];
-    const hasAuthor = Boolean(a.author);
+    const authorRaw = a.author === "null" ? "" : (a.author || "");
+    const hasAuthor = Boolean(authorRaw);
     const { body: cleanBody, roleTitle } = cleanBodyPreamble(a.body ?? '', hasAuthor);
 
     let fullText = bodyToHtml(cleanBody);
@@ -236,7 +237,7 @@ export function transformArticles(edition: OcrEdition): Article[] {
     );
 
     // Filter out author headshots
-    const authorName = (a.author || '').replace(/^by\s+/i, '').trim();
+    const authorName = authorRaw.replace(/^by\s+/i, '').trim();
     const filtered = rawImageUrls.map((url, idx) => ({
       url,
       caption: rawImageCaptions[idx],
@@ -268,7 +269,7 @@ export function transformArticles(edition: OcrEdition): Article[] {
       fullText,
       imageUrls: filteredImageUrls,
       byline: (() => {
-        const baseName = (a.author || '').replace(/^by\s+/i, '').trim();
+        const baseName = authorRaw.replace(/^by\s+/i, '').trim();
         if (roleTitle && baseName) return `${baseName}, ${roleTitle}`;
         return baseName || null;
       })(),

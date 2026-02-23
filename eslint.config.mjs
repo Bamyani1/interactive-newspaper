@@ -20,6 +20,8 @@ const eslintConfig = defineConfig([
       ],
       // Enforce consistent return statements
       "consistent-return": "warn",
+      // Downgrade to warn: many legitimate patterns (hydration sync, state reset)
+      "react-hooks/set-state-in-effect": "warn",
     },
   },
   // Override default ignores of eslint-config-next.
@@ -29,6 +31,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "ocr/**",
+    "font-color/**",
+    "scripts/**",
   ]),
 ]);
 

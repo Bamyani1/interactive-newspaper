@@ -1,0 +1,746 @@
+{
+  "01": [
+    {
+      "rank": 1,
+      "title": "You're So Vain",
+      "artist": "Carly Simon",
+      "youtube_id": "cleCtBP0o5Y"
+    },
+    {
+      "rank": 2,
+      "title": "Clair",
+      "artist": "Gilbert O'Sullivan",
+      "youtube_id": "dtOXFlJX-Xw"
+    },
+    {
+      "rank": 3,
+      "title": "Me And Mrs. Jones",
+      "artist": "Billy Paul",
+      "youtube_id": "mhDsz2HSKwU"
+    },
+    {
+      "rank": 4,
+      "title": "Superstition",
+      "artist": "Stevie Wonder",
+      "youtube_id": "egqv1mtos6A"
+    },
+    {
+      "rank": 5,
+      "title": "Funny Face",
+      "artist": "Donna Fargo",
+      "youtube_id": "cEv6HmGPRJU"
+    },
+    {
+      "rank": 6,
+      "title": "It Never Rains In Southern California",
+      "artist": "Albert Hammond",
+      "youtube_id": "iT71sSy4aWE"
+    },
+    {
+      "rank": 7,
+      "title": "Rockin' Pneumonia - Boogie Woogie Flu",
+      "artist": "Johnny Rivers",
+      "youtube_id": "5Ra1DEd1ueA"
+    },
+    {
+      "rank": 8,
+      "title": "Your Mama Don't Dance",
+      "artist": "Kenny Loggins & Jim Messina",
+      "youtube_id": "VTu4yQH8KBs"
+    },
+    {
+      "rank": 9,
+      "title": "Superfly",
+      "artist": "Curtis Mayfield",
+      "youtube_id": "muLcm3_JSR4"
+    },
+    {
+      "rank": 10,
+      "title": "You Ought To Be With Me",
+      "artist": "Al Green",
+      "youtube_id": "BWXuLHzj8JM"
+    }
+  ],
+  "02": [
+    {
+      "rank": 1,
+      "title": "Crocodile Rock",
+      "artist": "Elton John",
+      "youtube_id": "75r0nQu-hMs"
+    },
+    {
+      "rank": 2,
+      "title": "You're So Vain",
+      "artist": "Carly Simon",
+      "youtube_id": "cleCtBP0o5Y"
+    },
+    {
+      "rank": 3,
+      "title": "Superstition",
+      "artist": "Stevie Wonder",
+      "youtube_id": "egqv1mtos6A"
+    },
+    {
+      "rank": 4,
+      "title": "Why Can't We Live Together",
+      "artist": "Timmy Thomas",
+      "youtube_id": "hULALx9PuXA"
+    },
+    {
+      "rank": 5,
+      "title": "Your Mama Don't Dance",
+      "artist": "Kenny Loggins & Jim Messina",
+      "youtube_id": "VTu4yQH8KBs"
+    },
+    {
+      "rank": 6,
+      "title": "Oh, Babe, What Would You Say?",
+      "artist": "Hurricane Smith",
+      "youtube_id": "fK2Izt8wIy8"
+    },
+    {
+      "rank": 7,
+      "title": "Trouble Man",
+      "artist": "Marvin Gaye",
+      "youtube_id": "vY81s1d3_L4"
+    },
+    {
+      "rank": 8,
+      "title": "The World Is A Ghetto",
+      "artist": "War",
+      "youtube_id": "VIIbT89V7EI"
+    },
+    {
+      "rank": 9,
+      "title": "Do It Again",
+      "artist": "Steely Dan",
+      "youtube_id": "yCgHTmv4YU8"
+    },
+    {
+      "rank": 10,
+      "title": "Hi, Hi, Hi",
+      "artist": "Wings",
+      "youtube_id": "CoNjhN6unM4"
+    }
+  ],
+  "03": [
+    {
+      "rank": 1,
+      "title": "Killing Me Softly With His Song",
+      "artist": "Roberta Flack",
+      "youtube_id": "l2n167F0eBc"
+    },
+    {
+      "rank": 2,
+      "title": "Dueling Banjos",
+      "artist": "Deliverance/Eric Weissberg & Steve Mandell",
+      "youtube_id": "J6UG1Jlwiow"
+    },
+    {
+      "rank": 3,
+      "title": "Last Song",
+      "artist": "Edward Bear",
+      "youtube_id": "ch_Fb0AnzC0"
+    },
+    {
+      "rank": 4,
+      "title": "Could It Be I'm Falling In Love",
+      "artist": "The Spinners",
+      "youtube_id": "NaMmX7OCyCA"
+    },
+    {
+      "rank": 5,
+      "title": "Crocodile Rock",
+      "artist": "Elton John",
+      "youtube_id": "75r0nQu-hMs"
+    },
+    {
+      "rank": 6,
+      "title": "You're So Vain",
+      "artist": "Carly Simon",
+      "youtube_id": "cleCtBP0o5Y"
+    },
+    {
+      "rank": 7,
+      "title": "Love Train",
+      "artist": "The O'Jays",
+      "youtube_id": "CycuOJZbRvQ"
+    },
+    {
+      "rank": 8,
+      "title": "Also Sprach Zarathustra (2001)",
+      "artist": "Deodato",
+      "youtube_id": "Ge0vaqnijB0"
+    },
+    {
+      "rank": 9,
+      "title": "Rocky Mountain High",
+      "artist": "John Denver",
+      "youtube_id": "DcPbEV9SngM"
+    },
+    {
+      "rank": 10,
+      "title": "Don't Expect Me To Be Your Friend",
+      "artist": "Lobo",
+      "youtube_id": "srRgSahT6lU"
+    }
+  ],
+  "04": [
+    {
+      "rank": 1,
+      "title": "The Night The Lights Went Out In Georgia",
+      "artist": "Vicki Lawrence",
+      "youtube_id": "K-qK7oVXVRQ"
+    },
+    {
+      "rank": 2,
+      "title": "Neither One Of Us (Wants To Be The First To Say Goodbye)",
+      "artist": "Gladys Knight And The Pips",
+      "youtube_id": "veCMzbksKec"
+    },
+    {
+      "rank": 3,
+      "title": "Killing Me Softly With His Song",
+      "artist": "Roberta Flack",
+      "youtube_id": "l2n167F0eBc"
+    },
+    {
+      "rank": 4,
+      "title": "Ain't No Woman (Like The One I've Got)",
+      "artist": "Four Tops",
+      "youtube_id": "kWGp6HVMnMg"
+    },
+    {
+      "rank": 5,
+      "title": "Break Up To Make Up",
+      "artist": "The Stylistics",
+      "youtube_id": "PHvpbKpy7d4"
+    },
+    {
+      "rank": 6,
+      "title": "Tie A Yellow Ribbon Round The Ole Oak Tree",
+      "artist": "Dawn Featuring Tony Orlando",
+      "youtube_id": "tf2a_mQ7xX4"
+    },
+    {
+      "rank": 7,
+      "title": "Sing",
+      "artist": "Carpenters",
+      "youtube_id": "1kvc_dWs1f4"
+    },
+    {
+      "rank": 8,
+      "title": "Danny's Song",
+      "artist": "Anne Murray",
+      "youtube_id": "IS0AvH8pMto"
+    },
+    {
+      "rank": 9,
+      "title": "Also Sprach Zarathustra (2001)",
+      "artist": "Deodato",
+      "youtube_id": "Ge0vaqnijB0"
+    },
+    {
+      "rank": 10,
+      "title": "The Cisco Kid",
+      "artist": "War",
+      "youtube_id": "_86iwnPKzBY"
+    }
+  ],
+  "05": [
+    {
+      "rank": 1,
+      "title": "Tie A Yellow Ribbon Round The Ole Oak Tree",
+      "artist": "Dawn Featuring Tony Orlando",
+      "youtube_id": "tf2a_mQ7xX4"
+    },
+    {
+      "rank": 2,
+      "title": "The Cisco Kid",
+      "artist": "War",
+      "youtube_id": "_86iwnPKzBY"
+    },
+    {
+      "rank": 3,
+      "title": "Little Willy",
+      "artist": "The Sweet",
+      "youtube_id": "jirwGpwWvCQ"
+    },
+    {
+      "rank": 4,
+      "title": "You Are The Sunshine Of My Life",
+      "artist": "Stevie Wonder",
+      "youtube_id": "sp6hzycBsTI"
+    },
+    {
+      "rank": 5,
+      "title": "The Night The Lights Went Out In Georgia",
+      "artist": "Vicki Lawrence",
+      "youtube_id": "K-qK7oVXVRQ"
+    },
+    {
+      "rank": 6,
+      "title": "Drift Away",
+      "artist": "Dobie Gray",
+      "youtube_id": "OnDu1HHOo78"
+    },
+    {
+      "rank": 7,
+      "title": "Stuck In The Middle With You",
+      "artist": "Stealers Wheel",
+      "youtube_id": "ln7Vn_WKkWU"
+    },
+    {
+      "rank": 8,
+      "title": "The Twelfth Of Never",
+      "artist": "Donny Osmond",
+      "youtube_id": "e4ZnX3RvkGg"
+    },
+    {
+      "rank": 9,
+      "title": "Sing",
+      "artist": "Carpenters",
+      "youtube_id": "1kvc_dWs1f4"
+    },
+    {
+      "rank": 10,
+      "title": "Frankenstein",
+      "artist": "Edgar Winter Group",
+      "youtube_id": "juVZ1dbn_t0"
+    }
+  ],
+  "06": [
+    {
+      "rank": 1,
+      "title": "My Love",
+      "artist": "Paul McCartney And Wings",
+      "youtube_id": "PA9XLa2ARfs"
+    },
+    {
+      "rank": 2,
+      "title": "Daniel",
+      "artist": "Elton John",
+      "youtube_id": "-9xib-hCm6c"
+    },
+    {
+      "rank": 3,
+      "title": "Frankenstein",
+      "artist": "Edgar Winter Group",
+      "youtube_id": "juVZ1dbn_t0"
+    },
+    {
+      "rank": 4,
+      "title": "Pillow Talk",
+      "artist": "Sylvia (R&B)",
+      "youtube_id": "YIg5I1xU-Uc"
+    },
+    {
+      "rank": 5,
+      "title": "Tie A Yellow Ribbon Round The Ole Oak Tree",
+      "artist": "Dawn Featuring Tony Orlando",
+      "youtube_id": "tf2a_mQ7xX4"
+    },
+    {
+      "rank": 6,
+      "title": "You Are The Sunshine Of My Life",
+      "artist": "Stevie Wonder",
+      "youtube_id": "sp6hzycBsTI"
+    },
+    {
+      "rank": 7,
+      "title": "I'm Gonna Love You Just A Little More Baby",
+      "artist": "Barry White",
+      "youtube_id": "dELXCjSWYIg"
+    },
+    {
+      "rank": 8,
+      "title": "Little Willy",
+      "artist": "The Sweet",
+      "youtube_id": "jirwGpwWvCQ"
+    },
+    {
+      "rank": 9,
+      "title": "Hocus Pocus",
+      "artist": "Focus",
+      "youtube_id": "i00s_m5SOCI"
+    },
+    {
+      "rank": 10,
+      "title": "Playground In My Mind",
+      "artist": "Clint Holmes",
+      "youtube_id": "qG10uhcN8go"
+    }
+  ],
+  "07": [
+    {
+      "rank": 1,
+      "title": "Will It Go Round In Circles",
+      "artist": "Billy Preston",
+      "youtube_id": "FFHMdY9HijM"
+    },
+    {
+      "rank": 2,
+      "title": "Kodachrome",
+      "artist": "Paul Simon",
+      "youtube_id": "JD6Zq505pnM"
+    },
+    {
+      "rank": 3,
+      "title": "My Love",
+      "artist": "Paul McCartney And Wings",
+      "youtube_id": "PA9XLa2ARfs"
+    },
+    {
+      "rank": 4,
+      "title": "Give Me Love - (Give Me Peace On Earth)",
+      "artist": "George Harrison",
+      "youtube_id": "WMof20FwaOs"
+    },
+    {
+      "rank": 5,
+      "title": "Bad, Bad Leroy Brown",
+      "artist": "Jim Croce",
+      "youtube_id": "JzYf6qskdfA"
+    },
+    {
+      "rank": 6,
+      "title": "Playground In My Mind",
+      "artist": "Clint Holmes",
+      "youtube_id": "qG10uhcN8go"
+    },
+    {
+      "rank": 7,
+      "title": "Shambala",
+      "artist": "Three Dog Night",
+      "youtube_id": "SlWrMpV1vy0"
+    },
+    {
+      "rank": 8,
+      "title": "Yesterday Once More",
+      "artist": "Carpenters",
+      "youtube_id": "wawbhXQX2TQ"
+    },
+    {
+      "rank": 9,
+      "title": "Right Place Wrong Time",
+      "artist": "Dr. John",
+      "youtube_id": "zw-2CTx4YgY"
+    },
+    {
+      "rank": 10,
+      "title": "I'm Gonna Love You Just A Little More Baby",
+      "artist": "Barry White",
+      "youtube_id": "dELXCjSWYIg"
+    }
+  ],
+  "08": [
+    {
+      "rank": 1,
+      "title": "The Morning After",
+      "artist": "Maureen McGovern",
+      "youtube_id": "fgjZJwXUAMY"
+    },
+    {
+      "rank": 2,
+      "title": "Bad, Bad Leroy Brown",
+      "artist": "Jim Croce",
+      "youtube_id": "JzYf6qskdfA"
+    },
+    {
+      "rank": 3,
+      "title": "Live And Let Die",
+      "artist": "Wings",
+      "youtube_id": "NR0UmZcf89E"
+    },
+    {
+      "rank": 4,
+      "title": "Smoke On The Water",
+      "artist": "Deep Purple",
+      "youtube_id": "aA3JiN7zZGY"
+    },
+    {
+      "rank": 5,
+      "title": "Yesterday Once More",
+      "artist": "Carpenters",
+      "youtube_id": "wawbhXQX2TQ"
+    },
+    {
+      "rank": 6,
+      "title": "Diamond Girl",
+      "artist": "Seals & Crofts",
+      "youtube_id": "tNtOYomo4Qg"
+    },
+    {
+      "rank": 7,
+      "title": "Touch Me In The Morning",
+      "artist": "Diana Ross",
+      "youtube_id": "nvZfQzlS9t8"
+    },
+    {
+      "rank": 8,
+      "title": "Brother Louie",
+      "artist": "Stories",
+      "youtube_id": "GHQXDcIKO6s"
+    },
+    {
+      "rank": 9,
+      "title": "Will It Go Round In Circles",
+      "artist": "Billy Preston",
+      "youtube_id": "FFHMdY9HijM"
+    },
+    {
+      "rank": 10,
+      "title": "Shambala",
+      "artist": "Three Dog Night",
+      "youtube_id": "SlWrMpV1vy0"
+    }
+  ],
+  "09": [
+    {
+      "rank": 1,
+      "title": "Brother Louie",
+      "artist": "Stories",
+      "youtube_id": "GHQXDcIKO6s"
+    },
+    {
+      "rank": 2,
+      "title": "Let's Get It On",
+      "artist": "Marvin Gaye",
+      "youtube_id": "tQj1kPmQXwE"
+    },
+    {
+      "rank": 3,
+      "title": "Delta Dawn",
+      "artist": "Helen Reddy",
+      "youtube_id": "n5SOZ_6sHFY"
+    },
+    {
+      "rank": 4,
+      "title": "Touch Me In The Morning",
+      "artist": "Diana Ross",
+      "youtube_id": "nvZfQzlS9t8"
+    },
+    {
+      "rank": 5,
+      "title": "Live And Let Die",
+      "artist": "Wings",
+      "youtube_id": "NR0UmZcf89E"
+    },
+    {
+      "rank": 6,
+      "title": "Say, Has Anybody Seen My Sweet Gypsy Rose",
+      "artist": "Dawn Featuring Tony Orlando",
+      "youtube_id": "yBEER06xrx8"
+    },
+    {
+      "rank": 7,
+      "title": "The Morning After",
+      "artist": "Maureen McGovern",
+      "youtube_id": "fgjZJwXUAMY"
+    },
+    {
+      "rank": 8,
+      "title": "Get Down",
+      "artist": "Gilbert O'Sullivan",
+      "youtube_id": "Jr1bQ9g4xZc"
+    },
+    {
+      "rank": 9,
+      "title": "Loves Me Like A Rock",
+      "artist": "Paul Simon (with The Dixie Hummingbirds)",
+      "youtube_id": "EgzuEntH8t8"
+    },
+    {
+      "rank": 10,
+      "title": "Feelin' Stronger Every Day",
+      "artist": "Chicago",
+      "youtube_id": "DljvkWj_siY"
+    }
+  ],
+  "10": [
+    {
+      "rank": 1,
+      "title": "Half-Breed",
+      "artist": "Cher",
+      "youtube_id": "RQ0lpiXQ__Y"
+    },
+    {
+      "rank": 2,
+      "title": "Loves Me Like A Rock",
+      "artist": "Paul Simon (with The Dixie Hummingbirds)",
+      "youtube_id": "EgzuEntH8t8"
+    },
+    {
+      "rank": 3,
+      "title": "Let's Get It On",
+      "artist": "Marvin Gaye",
+      "youtube_id": "tQj1kPmQXwE"
+    },
+    {
+      "rank": 4,
+      "title": "We're An American Band",
+      "artist": "Grand Funk",
+      "youtube_id": "QxNXFNCTr2I"
+    },
+    {
+      "rank": 5,
+      "title": "Higher Ground",
+      "artist": "Stevie Wonder",
+      "youtube_id": "1esf0efHbjM"
+    },
+    {
+      "rank": 6,
+      "title": "That Lady (Part 1)",
+      "artist": "The Isley Brothers",
+      "youtube_id": "5cs_W9w6dhQ"
+    },
+    {
+      "rank": 7,
+      "title": "Ramblin Man",
+      "artist": "The Allman Brothers Band",
+      "youtube_id": "A-bSe0i69yA"
+    },
+    {
+      "rank": 8,
+      "title": "Angie",
+      "artist": "The Rolling Stones",
+      "youtube_id": "aVLBF-UKevY"
+    },
+    {
+      "rank": 9,
+      "title": "Delta Dawn",
+      "artist": "Helen Reddy",
+      "youtube_id": "n5SOZ_6sHFY"
+    },
+    {
+      "rank": 10,
+      "title": "Keep On Truckin' (Part 1)",
+      "artist": "Eddie Kendricks",
+      "youtube_id": "UjKwmlH0EJE"
+    }
+  ],
+  "11": [
+    {
+      "rank": 1,
+      "title": "Midnight Train To Georgia",
+      "artist": "Gladys Knight And The Pips",
+      "youtube_id": "uw_t_o-LluM"
+    },
+    {
+      "rank": 2,
+      "title": "Angie",
+      "artist": "The Rolling Stones",
+      "youtube_id": "aVLBF-UKevY"
+    },
+    {
+      "rank": 3,
+      "title": "Keep On Truckin' (Part 1)",
+      "artist": "Eddie Kendricks",
+      "youtube_id": "UjKwmlH0EJE"
+    },
+    {
+      "rank": 4,
+      "title": "Half-Breed",
+      "artist": "Cher",
+      "youtube_id": "RQ0lpiXQ__Y"
+    },
+    {
+      "rank": 5,
+      "title": "Paper Roses",
+      "artist": "Marie Osmond",
+      "youtube_id": "1lQHJZ259QU"
+    },
+    {
+      "rank": 6,
+      "title": "Heartbeat - It's A Lovebeat",
+      "artist": "The DeFranco Family featuring Tony DeFranco",
+      "youtube_id": "Yf2YDaOoOJY"
+    },
+    {
+      "rank": 7,
+      "title": "Ramblin Man",
+      "artist": "The Allman Brothers Band",
+      "youtube_id": "A-bSe0i69yA"
+    },
+    {
+      "rank": 8,
+      "title": "Let's Get It On",
+      "artist": "Marvin Gaye",
+      "youtube_id": "tQj1kPmQXwE"
+    },
+    {
+      "rank": 9,
+      "title": "Space Race",
+      "artist": "Billy Preston",
+      "youtube_id": "yn5Sov5sdc4"
+    },
+    {
+      "rank": 10,
+      "title": "All I Know",
+      "artist": "Garfunkel",
+      "youtube_id": "eIUEFUSimmY"
+    }
+  ],
+  "12": [
+    {
+      "rank": 1,
+      "title": "Top Of The World",
+      "artist": "Carpenters",
+      "youtube_id": "vupwAFMXLkA"
+    },
+    {
+      "rank": 2,
+      "title": "Photograph",
+      "artist": "Ringo Starr",
+      "youtube_id": "nevdSt_2PIM"
+    },
+    {
+      "rank": 3,
+      "title": "Goodbye Yellow Brick Road",
+      "artist": "Elton John",
+      "youtube_id": "wy709iNG6i8"
+    },
+    {
+      "rank": 4,
+      "title": "Space Race",
+      "artist": "Billy Preston",
+      "youtube_id": "yn5Sov5sdc4"
+    },
+    {
+      "rank": 5,
+      "title": "Keep On Truckin' (Part 1)",
+      "artist": "Eddie Kendricks",
+      "youtube_id": "UjKwmlH0EJE"
+    },
+    {
+      "rank": 6,
+      "title": "Just You 'n' Me",
+      "artist": "Chicago",
+      "youtube_id": "iUpNxxkkaBQ"
+    },
+    {
+      "rank": 7,
+      "title": "Midnight Train To Georgia",
+      "artist": "Gladys Knight And The Pips",
+      "youtube_id": "uw_t_o-LluM"
+    },
+    {
+      "rank": 8,
+      "title": "The Love I Lost (Part 1)",
+      "artist": "Harold Melvin And The Blue Notes",
+      "youtube_id": "b1UkbZebiXQ"
+    },
+    {
+      "rank": 9,
+      "title": "Heartbeat - It's A Lovebeat",
+      "artist": "The DeFranco Family featuring Tony DeFranco",
+      "youtube_id": "Yf2YDaOoOJY"
+    },
+    {
+      "rank": 10,
+      "title": "The Most Beautiful Girl",
+      "artist": "Charlie Rich",
+      "youtube_id": "ZXvI7IChkqI"
+    }
+  ]
+}

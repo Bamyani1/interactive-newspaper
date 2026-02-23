@@ -15,16 +15,12 @@ vi.mock("next/link", () => ({
     ),
 }));
 
-vi.mock("@/features/theme", () => ({
-    ThemeModeToggle: () => <button type="button">Light Mode</button>,
-}));
-
 describe("EditionFooter", () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    it("renders shared footer links and mode toggle", () => {
+    it("renders shared footer links", () => {
         render(
             <EditionFooter
                 onNextEdition={vi.fn()}
@@ -34,7 +30,6 @@ describe("EditionFooter", () => {
 
         expect(screen.getByRole("link", { name: "About" })).toHaveAttribute("href", "/about");
         expect(screen.getByRole("link", { name: "Contact" })).toHaveAttribute("href", "/contact");
-        expect(screen.getByRole("button", { name: "Light Mode" })).toBeInTheDocument();
     });
 
     it("renders and wires the See Next Edition button", () => {
