@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { ChevronDown, Music, Play } from "lucide-react";
 import { useMonthlyTrendingMusic } from "../hooks/useMonthlyTrendingMusic";
 
@@ -223,6 +224,7 @@ function TracksPlayer({
       window.removeEventListener("mousemove", onPointerMove);
       window.removeEventListener("blur", onBlur);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- setTarget only reads refs, effectively stable
   }, [showEmbed, isCoarsePointer]);
 
   if (!effectiveTrack) return null;
@@ -272,10 +274,12 @@ function TracksPlayer({
                 className="relative w-full h-[140px] group cursor-pointer bg-black"
                 aria-label={`Play ${effectiveTrack.title} by ${effectiveTrack.artist}`}
               >
-                <img
+                <Image
                   src={`https://img.youtube.com/vi/${effectiveTrack.youtubeId}/mqdefault.jpg`}
                   alt=""
-                  className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                  fill
+                  sizes="320px"
+                  className="object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
@@ -402,6 +406,7 @@ export const SidebarPlayer: React.FC<SidebarPlayerProps> = ({ currentDate = null
     }
 
     const firstWithVideo = monthlyPlayerTracks.findIndex((track) => Boolean(track.youtubeId));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initialize track index from async data
     setCurrentTrackIndex(firstWithVideo >= 0 ? firstWithVideo : 0);
     setIsTrackListOpen(firstWithVideo < 0);
   }, [currentDate, monthlyPlayerTracks]);

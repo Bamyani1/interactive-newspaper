@@ -111,11 +111,11 @@ export function useScrollCoordinator({
 }: UseScrollCoordinatorOptions) {
     useEffect(() => {
         const intent = scrollIntentRef.current;
-        if (!intent) return;
+        if (!intent) return () => {};
 
         // For pending focus (section switch), wait until section matches
         const pendingFocus = pendingFocusRef.current;
-        if (pendingFocus && currentSection !== pendingFocus.category) return;
+        if (pendingFocus && currentSection !== pendingFocus.category) return () => {};
 
         scrollIntentRef.current = null;
         pendingFocusRef.current = null;
