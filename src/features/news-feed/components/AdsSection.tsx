@@ -297,20 +297,40 @@ const Showcase: React.FC<TemplateProps> = ({ ad }) => (
     </div>
 );
 
+// ── Ad Image ────────────────────────────────────────────────────────
+
+function AdImage({ ad, compact }: { ad: VintageAd; compact?: boolean }) {
+    if (!ad.imageUrls || ad.imageUrls.length === 0) return null;
+    return (
+        <div className="w-full overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element -- ad images have unknown dimensions */}
+            <img
+                src={ad.imageUrls[0]}
+                alt={`${ad.title} advertisement`}
+                className={`w-full h-auto object-contain ${compact ? "max-h-32" : "max-h-64"}`}
+                loading="lazy"
+            />
+        </div>
+    );
+}
+
 // ── DisplayAd Dispatcher ────────────────────────────────────────────
 
+const SHORT_TIER: ReadonlySet<AdVariant> = new Set(["tiny-liner", "boxed-notice", "mini-display"]);
+
 function DisplayAd({ ad, variant }: { ad: VintageAd; variant: AdVariant }) {
+    const image = <AdImage ad={ad} compact={SHORT_TIER.has(variant)} />;
     switch (variant) {
-        case "tiny-liner":     return <TinyLiner ad={ad} />;
-        case "boxed-notice":   return <BoxedNotice ad={ad} />;
-        case "mini-display":   return <MiniDisplay ad={ad} />;
-        case "retail-coupon":  return <RetailCoupon ad={ad} />;
-        case "service-card":   return <ServiceCard ad={ad} />;
-        case "bulletin":       return <Bulletin ad={ad} />;
-        case "marquee":        return <Marquee ad={ad} />;
-        case "broadsheet":     return <Broadsheet ad={ad} />;
-        case "editorial-style": return <EditorialStyle ad={ad} />;
-        case "showcase":       return <Showcase ad={ad} />;
+        case "tiny-liner":     return <>{image}<TinyLiner ad={ad} /></>;
+        case "boxed-notice":   return <>{image}<BoxedNotice ad={ad} /></>;
+        case "mini-display":   return <>{image}<MiniDisplay ad={ad} /></>;
+        case "retail-coupon":  return <>{image}<RetailCoupon ad={ad} /></>;
+        case "service-card":   return <>{image}<ServiceCard ad={ad} /></>;
+        case "bulletin":       return <>{image}<Bulletin ad={ad} /></>;
+        case "marquee":        return <>{image}<Marquee ad={ad} /></>;
+        case "broadsheet":     return <>{image}<Broadsheet ad={ad} /></>;
+        case "editorial-style": return <>{image}<EditorialStyle ad={ad} /></>;
+        case "showcase":       return <>{image}<Showcase ad={ad} /></>;
     }
 }
 

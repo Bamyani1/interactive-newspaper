@@ -25,7 +25,7 @@ export const ScanViewer: React.FC<ScanViewerProps> = ({
 
     // Reset zoom when opening
     useEffect(() => {
-        if (isOpen) setZoom(1);
+        if (isOpen) setZoom(1); // eslint-disable-line react-hooks/set-state-in-effect -- reset on open
     }, [isOpen]);
 
     useEffect(() => {
@@ -45,7 +45,7 @@ export const ScanViewer: React.FC<ScanViewerProps> = ({
 
     // Focus trap and body scroll lock
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen) return () => {};
 
         // Lock body scroll
         const originalOverflow = document.body.style.overflow;

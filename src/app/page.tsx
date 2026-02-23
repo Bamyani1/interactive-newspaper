@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -20,14 +20,10 @@ export default function Home() {
     // Use the extracted animation hook
     useTickerAnimation();
 
-    // Default to latest edition (last in sorted list)
-    const [selectedEdition, setSelectedEdition] = useState<string | null>(null);
+    // Default to latest edition (last in sorted list); user can override via picker
+    const [userSelectedEdition, setUserSelectedEdition] = useState<string | null>(null);
     const [isPickerOpen, setIsPickerOpen] = useState(false);
-    useEffect(() => {
-        if (editions.length > 0 && !selectedEdition) {
-            setSelectedEdition(editions[editions.length - 1]);
-        }
-    }, [editions, selectedEdition]);
+    const selectedEdition = userSelectedEdition ?? (editions.length > 0 ? editions[editions.length - 1] : null);
 
     const handleEnter = () => {
         if (!selectedEdition) return;
@@ -82,7 +78,7 @@ export default function Home() {
                             <EditionPicker
                                 editions={editions}
                                 selectedEdition={selectedEdition}
-                                onSelect={setSelectedEdition}
+                                onSelect={setUserSelectedEdition}
                                 isLoading={isLoading}
                                 onOpenChange={setIsPickerOpen}
                             />
