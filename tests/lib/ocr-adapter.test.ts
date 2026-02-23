@@ -392,6 +392,43 @@ describe("transformArticles", () => {
   });
 });
 
+// ── Ad-image-description filtering (via transformArticles) ───────────
+
+describe("ad-image-description filtering", () => {
+  it("drops articles whose headline is an AI-generated ad description", () => {
+    const edition = makeEdition({
+      articles: [
+        makeArticle({
+          headline:
+            "advertisement titled 'Super Featured Edibles' listing dining specials and hours for various campus locations",
+          body: "",
+          image_files: ["images/ad-scan.jpg"],
+          images: [{ caption: "Super Featured Edibles", position: "top" }],
+        }),
+        makeArticle({ headline: "Bishops Win Big Game" }),
+      ],
+    });
+
+    const articles = transformArticles(edition);
+    expect(articles).toHaveLength(1);
+    expect(articles[0].headline).toBe("Bishops Win Big Game");
+  });
+
+  it("keeps normal articles with images", () => {
+    const edition = makeEdition({
+      articles: [
+        makeArticle({
+          headline: "Campus Photo Gallery",
+          image_files: ["images/campus.jpg"],
+        }),
+      ],
+    });
+
+    const articles = transformArticles(edition);
+    expect(articles).toHaveLength(1);
+  });
+});
+
 // ── Salutation stripping (via transformArticles) ─────────────────────
 
 describe("salutation stripping", () => {

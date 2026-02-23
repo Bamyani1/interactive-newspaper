@@ -53,6 +53,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
         setImgErrors(prev => new Set(prev).add(url));
     };
     const author = article.byline || null;
+    const writerPosition = article.writerPosition || null;
     const page = article.page || null;
     const fullText = typeof article.fullText === "string" ? article.fullText : "";
     const summary = typeof article.summary === "string" ? article.summary : "";
@@ -164,9 +165,12 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                         </h2>
 
                         {author && (
-                            <p className="card-byline">
-                                By {author}
-                            </p>
+                            <div className="card-byline">
+                                <p>By {author}</p>
+                                {writerPosition && (
+                                    <p className="text-[0.8em] opacity-70">{writerPosition}</p>
+                                )}
+                            </div>
                         )}
 
                         {hasSummary && (
@@ -187,6 +191,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                                     alt={article.headline}
                                     fill
                                     className="card-image object-cover"
+                                    style={{ objectPosition: "center 20%" }}
                                     onError={() => handleImgError(article.imageUrls[0])}
                                 />
                             </div>

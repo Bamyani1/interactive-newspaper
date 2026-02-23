@@ -185,12 +185,12 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%) rotate(90deg);
-    width: 60%;
-    aspect-ratio: 3201 / 4801;
+    width: 65%;
+    aspect-ratio: 635.8 / 969.49;
     background: url('/shape/1.png') center / 100% 100% no-repeat;
     pointer-events: none;
     z-index: 0;
-    opacity: 0.8;
+    opacity: 0.95;
     filter: drop-shadow(0 0 20px rgba(0, 0, 0, 0.65));
 }
 
@@ -436,6 +436,10 @@
         max-width: 900px;
     }
 
+    .cinema-paper::before {
+        width: 75%;
+    }
+
     .cinema-title {
         font-size: 2.2rem;
     }
@@ -455,6 +459,11 @@
     .cinema-paper {
         max-width: 520px;
         padding: 30px 25px;
+    }
+
+    .cinema-paper::before {
+        transform: translate(-50%, -50%);
+        width: 95%;
     }
 
     .cinema-paper-grid {

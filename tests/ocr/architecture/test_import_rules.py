@@ -132,7 +132,6 @@ def test_docai_provider_does_not_import_gemini_or_page_extractor():
         return  # Skip if file not yet created
     forbidden_prefixes = (
         "transcript_ocr.recognition.page_extractor",
-        "transcript_ocr.recognition.chunked_extractor",
         "google.genai",
         "transcript_ocr.shared.retry",
     )

@@ -15,7 +15,9 @@ const editionDirs = existsSync(EDITIONS_DIR)
 // Pre-existing data issues in legacy editions — tracked here so tests pass
 // while still catching regressions in newly processed editions.
 // Remove entries as editions are re-processed through the improved pipeline.
-const KNOWN_EMPTY_ARTICLES: Record<string, number[]> = {};
+const KNOWN_EMPTY_ARTICLES: Record<string, number[]> = {
+  "1980-02-28": [7],
+};
 
 const KNOWN_DUPLICATE_EDITIONS = new Set<string>();
 
