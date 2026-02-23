@@ -2,6 +2,7 @@ import type { Article, OcrEdition } from "@/src/types";
 import { VALID_CATEGORIES, classifyCategory } from "./category-rules";
 import {
   doesLastParagraphMatchAnyCaption,
+  isAdImageDescription,
   isAuthorHeadshot,
   isBodyMostlyCaption,
   isValidImageFile,
@@ -132,6 +133,16 @@ export function transformArticles(edition: OcrEdition): Article[] {
 
     // Remove completely empty articles (no headline, no text, no images)
     if (!hasHeadline && !plainText && !hasImages) return false;
+
+    // Remove articles whose headline is an AI-generated ad image description
+    if (isAdImageDescription(article.headline)) return false;
+
+    // Remove image-described entries: headline is just the image caption with no real body
+    if (hasImages && article.imageCaption) {
+      const headlineNorm = article.headline.trim().toLowerCase();
+      const captionNorm = article.imageCaption.trim().toLowerCase();
+      if (headlineNorm === captionNorm && !plainText) return false;
+    }
 
     // Keep articles that have images (photo features)
     if (hasImages) return true;

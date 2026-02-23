@@ -120,6 +120,9 @@ export interface OcrArticle {
     headline?: string;
     author?: string;
     writer_position?: string;
+    category?: string;
+    continues_on?: string;
+    continued_from?: string;
     body?: string;
     images: OcrImage[];
     image_files: string[];

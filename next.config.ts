@@ -16,6 +16,16 @@ const nextConfig: NextConfig = {
         hostname: "img.youtube.com",
       },
     ],
+    localPatterns: [
+      {
+        pathname: '/api/golden-image/**',
+        search: '',
+      },
+      {
+        pathname: '/api/editions/**',
+        search: '',
+      },
+    ],
   },
 };
 

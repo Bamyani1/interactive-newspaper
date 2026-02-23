@@ -13,6 +13,7 @@ interface EditionResponse {
         id: string;
         date: string;
         pageCount: number;
+        publicationInfo?: string;
     };
     articles: RawApiArticle[];
     ads?: VintageAd[];
@@ -25,27 +26,33 @@ interface EditionResponse {
 interface UseEditionArticlesResult {
     articles: Article[];
     ads: VintageAd[];
+    publicationInfo: string;
     hasActiveEdition: boolean;
     isLoading: boolean;
     error: Error | null;
 }
 
 const CATEGORY_LOOKUP: Record<string, Article["category"]> = {
+    "campus news": "Campus News",
+    "campus-news": "Campus News",
     news: "News",
+    "world & nation": "News",
+    "world-and-nation": "News",
     sports: "Sports",
-    features: "Features",
+    features: "Campus News",       // backward compat: old editions with "Features" → Campus News
     opinion: "Opinion",
-    arts: "Arts",
-    "campus life": "Campus Life",
-    "campus-life": "Campus Life",
+    "arts & entertainment": "Arts & Entertainment",
+    "arts-and-entertainment": "Arts & Entertainment",
+    arts: "Arts & Entertainment",
+    photography: "Arts & Entertainment",
 };
 
 const normalizeText = (value: unknown): string =>
     typeof value === "string" ? value : "";
 
 const normalizeCategory = (value: unknown): Article["category"] => {
-    if (typeof value !== "string") return "News";
-    return CATEGORY_LOOKUP[value.trim().toLowerCase()] ?? "News";
+    if (typeof value !== "string") return "Campus News";
+    return CATEGORY_LOOKUP[value.trim().toLowerCase()] ?? "Campus News";
 };
 
 const normalizeId = (
@@ -63,6 +70,7 @@ const normalizeId = (
 export function useEditionArticles(date: string | null): UseEditionArticlesResult {
     const [articles, setArticles] = useState<Article[]>([]);
     const [ads, setAds] = useState<VintageAd[]>([]);
+    const [publicationInfo, setPublicationInfo] = useState("");
     const [isLoading, setIsLoading] = useState(Boolean(date));
     const [error, setError] = useState<Error | null>(null);
 
@@ -73,6 +81,7 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
             if (!date) {
                 setArticles([]);
                 setAds([]);
+                setPublicationInfo("");
                 setError(null);
                 setIsLoading(false);
                 return;
@@ -87,6 +96,7 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
                 const seenCursors = new Set<string>();
                 let cursor: string | null = null;
                 let editionDate = date;
+                let editionPublicationInfo = "";
                 let pageRequests = 0;
                 const maxPageRequests = 25;
                 let remainingPages = false;
@@ -112,6 +122,9 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
 
                     const data: EditionResponse = await res.json();
                     editionDate = data.edition.date;
+                    if (data.edition.publicationInfo) {
+                        editionPublicationInfo = data.edition.publicationInfo;
+                    }
                     allArticles.push(...data.articles);
                     if (data.ads) allAds.push(...data.ads);
 
@@ -151,13 +164,14 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
                         id: normalizeId(a.id, editionDate, page, index),
                         date: editionDate,
                         category: normalizeCategory(a.category),
-                        headline: normalizeText(a.headline) || "Untitled Article",
+                        headline: normalizeText(a.headline) || (Array.isArray(a.imageUrls) && a.imageUrls.length > 0 && !normalizeText(a.fullText) ? "" : "Untitled Article"),
                         summary: normalizedSummary,
                         fullText: normalizedFullText,
                         imageUrls: Array.isArray(a.imageUrls)
                             ? a.imageUrls.map((u: string) => normalizeText(u)).filter(Boolean)
                             : (a.imageUrl && normalizeText(a.imageUrl) ? [normalizeText(a.imageUrl)] : []),
                         byline: normalizeText(a.byline) || undefined,
+                        writerPosition: normalizeText(a.writerPosition) || undefined,
                         imageCaption: normalizeText(a.imageCaption) || undefined,
                         imageCaptions: Array.isArray(a.imageCaptions)
                             ? a.imageCaptions.map((c: string | null) => c ? normalizeText(c) : null)
@@ -170,6 +184,7 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
 
                 setArticles(mappedArticles);
                 setAds(allAds);
+                setPublicationInfo(editionPublicationInfo);
             } catch (err) {
                 if (err instanceof DOMException && err.name === "AbortError") {
                     return;
@@ -189,5 +204,5 @@ export function useEditionArticles(date: string | null): UseEditionArticlesResul
         };
     }, [date]);
 
-    return { articles, ads, hasActiveEdition: Boolean(date), isLoading, error };
+    return { articles, ads, publicationInfo, hasActiveEdition: Boolean(date), isLoading, error };
 }

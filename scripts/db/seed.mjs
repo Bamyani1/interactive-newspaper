@@ -7,6 +7,7 @@
  * Usage:
  *   npm run db:seed          — insert data (skip existing editions)
  *   npm run db:reset         — drop all tables, recreate, and re-seed
+ *   npm run db:seed -- --date 1960-05-11 --editions-dir public/editions --summary-path ocr/runs/1960-05-11/seed-summary.json
  */
 
 import { neon } from "@neondatabase/serverless";
@@ -28,7 +29,7 @@ if (existsSync(envPath)) {
 // tsx loader lets us import TypeScript source directly
 // Note: without "type":"module" in package.json, tsx compiles .ts as CJS,
 // so we use a default import and destructure the named exports.
-import ocrAdapter from "../../src/lib/ocr-adapter.ts";
+import ocrAdapter from "../../src/server/ocr-adapter/index.ts";
 const { transformArticles, transformAds, computePageCount } = ocrAdapter;
 
 const ROOT = path.resolve(__dirnameEnv, "../..");
@@ -41,6 +42,23 @@ const MUSIC_DIR = path.join(ROOT, "public/top-10-music");
 const SCHEMA_FILE = path.join(__dirnameEnv, "schema.sql");
 
 const isReset = process.argv.includes("--reset");
+
+function readArgValue(flag) {
+  const idx = process.argv.indexOf(flag);
+  if (idx === -1) return "";
+  return process.argv[idx + 1] || "";
+}
+
+const targetDate = readArgValue("--date");
+const summaryPath = readArgValue("--summary-path");
+const editionsDirArg = readArgValue("--editions-dir");
+if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+  console.error(`ERROR: Invalid --date value '${targetDate}'. Expected YYYY-MM-DD.`);
+  process.exit(1);
+}
+const ACTIVE_EDITIONS_DIR = editionsDirArg
+  ? (path.isAbsolute(editionsDirArg) ? editionsDirArg : path.resolve(ROOT, editionsDirArg))
+  : EDITIONS_DIR;
 
 if (!process.env.DATABASE_URL) {
   console.error("ERROR: DATABASE_URL environment variable is required.");
@@ -98,17 +116,21 @@ async function dropAllTables() {
 
 // ─── Seed Editions ───────────────────────────────────────────────
 
-async function seedEditions() {
-  const entries = await readdir(EDITIONS_DIR, { withFileTypes: true });
-  const dateDirs = entries
+async function seedEditions(scopedDate = "") {
+  const entries = await readdir(ACTIVE_EDITIONS_DIR, { withFileTypes: true });
+  let dateDirs = entries
     .filter((e) => e.isDirectory() && isIsoDate(e.name))
     .map((e) => e.name)
     .sort();
+  if (scopedDate) {
+    dateDirs = dateDirs.filter((d) => d === scopedDate);
+  }
 
   console.log(`Found ${dateDirs.length} edition(s) to seed.`);
+  const seeded = [];
 
   for (const date of dateDirs) {
-    const editionPath = path.join(EDITIONS_DIR, date, "edition.json");
+    const editionPath = path.join(ACTIVE_EDITIONS_DIR, date, "edition.json");
     let raw;
     try {
       raw = await readFile(editionPath, "utf-8");
@@ -119,9 +141,11 @@ async function seedEditions() {
 
     const edition = JSON.parse(raw);
     const pageCount = computePageCount(edition);
+    const rawArticleCount = Array.isArray(edition.articles) ? edition.articles.length : 0;
     const articles = transformArticles(edition);
     const ads = transformAds(edition);
-    const articleCount = articles.length + ads.length;
+    const articleCount = articles.length;
+    const droppedInAdapter = Math.max(0, rawArticleCount - articleCount);
 
     // Insert edition
     await sql`
@@ -133,11 +157,14 @@ async function seedEditions() {
         article_count = EXCLUDED.article_count
     `;
 
-    // Insert articles in a transaction
+    // Delete existing articles for this edition, then re-insert.
+    // This ensures articles removed by adapter filters are also removed from the DB.
+    await sql`DELETE FROM articles WHERE edition_date = ${date}`;
+
     if (articles.length > 0) {
       const articleQueries = articles.map((a, i) =>
-        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, page, is_hero, is_featured, image_urls, image_caption, image_captions)
-            VALUES (${a.id}, ${a.date}, ${i}, ${sanitize(a.category)}, ${sanitize(a.headline)}, ${sanitize(a.summary)}, ${sanitize(a.fullText)}, ${stripHtml(a.fullText)}, ${sanitize(a.byline) ?? null}, ${a.page}, ${a.isHero}, ${a.isFeatured}, ${JSON.stringify(a.imageUrls)}, ${sanitize(a.imageCaption) ?? null}, ${JSON.stringify(a.imageCaptions)})
+        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions)
+            VALUES (${a.id}, ${a.date}, ${i}, ${sanitize(a.category)}, ${sanitize(a.headline)}, ${sanitize(a.summary)}, ${sanitize(a.fullText)}, ${stripHtml(a.fullText)}, ${sanitize(a.byline) ?? null}, ${sanitize(a.writerPosition) ?? null}, ${a.page}, ${a.isHero}, ${a.isFeatured}, ${JSON.stringify(a.imageUrls)}, ${sanitize(a.imageCaption) ?? null}, ${JSON.stringify(a.imageCaptions)})
             ON CONFLICT (id) DO UPDATE SET
               category = EXCLUDED.category,
               headline = EXCLUDED.headline,
@@ -145,6 +172,7 @@ async function seedEditions() {
               full_text = EXCLUDED.full_text,
               body_plain = EXCLUDED.body_plain,
               byline = EXCLUDED.byline,
+              writer_position = EXCLUDED.writer_position,
               page = EXCLUDED.page,
               is_hero = EXCLUDED.is_hero,
               is_featured = EXCLUDED.is_featured,
@@ -161,16 +189,26 @@ async function seedEditions() {
       await sql`DELETE FROM ads WHERE edition_date = ${date}`;
 
       const adQueries = ads.map((ad, i) =>
-        sql`INSERT INTO ads (edition_date, position, title, body, category, ad_type, display_text, phone, address, price)
-            VALUES (${date}, ${i}, ${sanitize(ad.title)}, ${sanitize(ad.body)}, ${sanitize(ad.category) ?? null}, ${sanitize(ad.adType) ?? null}, ${sanitize(ad.displayText) ?? null}, ${sanitize(ad.phone) ?? null}, ${sanitize(ad.address) ?? null}, ${sanitize(ad.price) ?? null})`
+        sql`INSERT INTO ads (edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls)
+            VALUES (${date}, ${i}, ${sanitize(ad.title)}, ${sanitize(ad.body)}, ${sanitize(ad.category) ?? null}, ${sanitize(ad.adType) ?? null}, ${sanitize(ad.displayText) ?? null}, ${sanitize(ad.phone) ?? null}, ${sanitize(ad.address) ?? null}, ${sanitize(ad.price) ?? null}, ${JSON.stringify(ad.imageUrls ?? [])})`
       );
       await sql.transaction(adQueries);
     }
 
     console.log(
-      `  ${date}: ${articles.length} articles, ${ads.length} ads, ${pageCount} pages`,
+      `  ${date}: ${articles.length} articles (${droppedInAdapter} filtered), ${ads.length} ads, ${pageCount} pages`,
     );
+    seeded.push({
+      date,
+      pageCount,
+      rawArticleCount,
+      articleCount: articles.length,
+      droppedInAdapter,
+      adCount: ads.length,
+      editionPath,
+    });
   }
+  return seeded;
 }
 
 // ─── Seed Weather ────────────────────────────────────────────────
@@ -253,22 +291,32 @@ async function seedMusic() {
 
 // ─── Build FTS Vectors ───────────────────────────────────────────
 
-async function buildSearchVectors() {
+async function buildSearchVectors(scopedDate = "") {
   console.log("Building full-text search vectors...");
 
-  await sql`
-    UPDATE articles SET search_vector =
-      setweight(to_tsvector('english', coalesce(headline, '')), 'A') ||
-      setweight(to_tsvector('english', coalesce(byline, '')), 'B') ||
-      setweight(to_tsvector('english', coalesce(body_plain, '')), 'C')
-  `;
+  if (scopedDate) {
+    await sql`
+      UPDATE articles SET search_vector =
+        setweight(to_tsvector('english', coalesce(headline, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(byline, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(body_plain, '')), 'C')
+      WHERE edition_date = ${scopedDate}
+    `;
+  } else {
+    await sql`
+      UPDATE articles SET search_vector =
+        setweight(to_tsvector('english', coalesce(headline, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(byline, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(body_plain, '')), 'C')
+    `;
+  }
 
   console.log("  Search vectors built.");
 }
 
 // ─── Embed Articles (optional — requires GEMINI_API_KEY) ─────────
 
-async function embedArticles() {
+async function embedArticles(scopedDate = "") {
   // Lazy-import to avoid errors when the key is not set
   let embedDocuments, buildEmbeddingText, hasApiKey;
   try {
@@ -286,7 +334,9 @@ async function embedArticles() {
     return;
   }
 
-  const unembedded = await sql`SELECT id, headline, byline, body_plain FROM articles WHERE embedding IS NULL ORDER BY id`;
+  const unembedded = scopedDate
+    ? await sql`SELECT id, headline, byline, body_plain FROM articles WHERE embedding IS NULL AND edition_date = ${scopedDate} ORDER BY id`
+    : await sql`SELECT id, headline, byline, body_plain FROM articles WHERE embedding IS NULL ORDER BY id`;
   if (unembedded.length === 0) {
     console.log("All articles already embedded.");
     return;
@@ -322,18 +372,37 @@ async function main() {
   const start = Date.now();
 
   console.log(`\nTranscript Archive — Database Seed`);
-  console.log(`Mode: ${isReset ? "RESET (drop + recreate)" : "UPSERT"}\n`);
+  console.log(`Mode: ${isReset ? "RESET (drop + recreate)" : "UPSERT"}${targetDate ? ` | DATE=${targetDate}` : ""}\n`);
+
+  const summary = {
+    mode: isReset ? "reset" : "upsert",
+    targetDate: targetDate || null,
+    editionsDir: ACTIVE_EDITIONS_DIR,
+    startedAt: new Date().toISOString(),
+    reset: isReset,
+    editions: [],
+    weatherSeeded: false,
+    musicSeeded: false,
+    searchVectorsScoped: Boolean(targetDate),
+    embeddingsScoped: Boolean(targetDate),
+  };
 
   if (isReset) {
     await dropAllTables();
   }
 
   await applySchema();
-  await seedEditions();
-  await seedWeather();
-  await seedMusic();
-  await buildSearchVectors();
-  await embedArticles();
+  summary.editions = await seedEditions(targetDate);
+  if (!targetDate) {
+    await seedWeather();
+    await seedMusic();
+    summary.weatherSeeded = true;
+    summary.musicSeeded = true;
+  } else {
+    console.log(`Skipping weather/music seed in date-scoped mode (${targetDate}).`);
+  }
+  await buildSearchVectors(targetDate);
+  await embedArticles(targetDate);
 
   // Run ANALYZE for query planner optimization
   await sql`ANALYZE editions`;
@@ -343,6 +412,15 @@ async function main() {
   await sql`ANALYZE music`;
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+  summary.elapsedSeconds = Number(elapsed);
+  summary.completedAt = new Date().toISOString();
+
+  if (summaryPath) {
+    const { mkdir, writeFile } = await import("fs/promises");
+    await mkdir(path.dirname(summaryPath), { recursive: true });
+    await writeFile(summaryPath, JSON.stringify(summary, null, 2) + "\n", "utf-8");
+    console.log(`Seed summary written to ${summaryPath}`);
+  }
   console.log(`\nDone in ${elapsed}s.`);
 }
 

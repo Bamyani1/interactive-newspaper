@@ -2,7 +2,7 @@
 
 import React from "react";
 
-const CATEGORIES = ["News", "Sports", "Features", "Opinion", "Arts", "Campus Life"] as const;
+const CATEGORIES = ["Campus News", "News", "Sports", "Opinion", "Arts & Entertainment"] as const;
 
 interface SearchFiltersProps {
   category: string;
