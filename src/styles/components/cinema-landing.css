@@ -167,8 +167,7 @@
     position: relative;
     overflow: visible;
     filter:
-        drop-shadow(8px 12px 50px rgba(0, 0, 0, 0.45))
-        drop-shadow(2px 4px 12px rgba(0, 0, 0, 0.25));
+        drop-shadow(8px 12px 50px rgba(0, 0, 0, 0.45)) drop-shadow(2px 4px 12px rgba(0, 0, 0, 0.25));
     max-width: 1100px;
     width: 100%;
     cursor: default;
@@ -196,7 +195,7 @@
 }
 
 /* Lift content above the torn paper image */
-.cinema-paper > * {
+.cinema-paper>* {
     position: relative;
     z-index: 1;
 }
@@ -225,13 +224,11 @@
     width: 1px;
     height: 80%;
     align-self: center;
-    background: linear-gradient(
-        to bottom,
-        transparent 0%,
-        color-mix(in srgb, var(--color-accent) 40%, transparent) 20%,
-        color-mix(in srgb, var(--color-accent) 40%, transparent) 80%,
-        transparent 100%
-    );
+    background: linear-gradient(to bottom,
+            transparent 0%,
+            color-mix(in srgb, var(--color-accent) 40%, transparent) 20%,
+            color-mix(in srgb, var(--color-accent) 40%, transparent) 80%,
+            transparent 100%);
 }
 
 .cinema-col-action {
@@ -239,6 +236,7 @@
     flex-direction: column;
     justify-content: center;
 }
+
 
 /* =========================================
    PAPER CARD CONTENT
@@ -421,8 +419,7 @@
 
 [data-mode='light'] .cinema-paper {
     filter:
-        drop-shadow(6px 10px 30px color-mix(in srgb, var(--owu-black) 12%, transparent))
-        drop-shadow(2px 4px 10px color-mix(in srgb, var(--owu-black) 8%, transparent));
+        drop-shadow(6px 10px 30px color-mix(in srgb, var(--owu-black) 12%, transparent)) drop-shadow(2px 4px 10px color-mix(in srgb, var(--owu-black) 8%, transparent));
 }
 
 [data-mode='light'] .cinema-paper::before {

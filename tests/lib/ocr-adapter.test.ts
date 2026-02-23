@@ -4,7 +4,7 @@ import type { OcrEdition, OcrArticle, OcrEnrichedAd } from "@/src/types";
 
 // Body text in test articles must exceed the 150-char content filter in
 // transformArticles. BODY_PAD provides reusable filler to reach that threshold.
-const BODY_PAD =
+const _BODY_PAD =
   " The campus community gathered to discuss the implications of these developments at length, with several faculty members contributing additional perspectives on the matter.";
 
 // ── Helpers ──────────────────────────────────────────────────────────

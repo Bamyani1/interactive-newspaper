@@ -5,7 +5,7 @@ import {
   isDateWithinLocalArchive,
   parseScope,
 } from '@/src/lib/weather-local-archive';
-import type { DailyWeatherRecord, WeatherQuery } from '@/src/types';
+import type { WeatherQuery } from '@/src/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;

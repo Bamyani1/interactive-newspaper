@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { loadEdition, transformArticles, transformAds, transformOtherContent, computePageCount } from '@/src/lib/ocr-adapter';
+import { NextRequest, NextResponse } from "next/server";
+import { queryEditionByDate } from "@/src/lib/db";
 
 // Revalidate individual edition data every 60 seconds (ISR)
 export const revalidate = 60;
@@ -18,37 +18,36 @@ export async function GET(
 
   if (!isIsoDate(date)) {
     return NextResponse.json(
-      { error: 'Invalid date format' },
+      { error: "Invalid date format" },
       { status: 400 },
     );
   }
 
-  const edition = await loadEdition(date);
-  if (!edition) {
+  try {
+    const result = await queryEditionByDate(date);
+
+    if (!result) {
+      return NextResponse.json(
+        { error: "Edition not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({
+      edition: result.edition,
+      articles: result.articles,
+      ads: result.ads,
+      otherContent: [],
+      pagination: {
+        nextCursor: null,
+        hasMore: false,
+      },
+    });
+  } catch (error) {
+    console.error(`Failed to load edition ${date}:`, error);
     return NextResponse.json(
-      { error: 'Edition not found' },
-      { status: 404 },
+      { error: "Failed to load edition" },
+      { status: 500 },
     );
   }
-
-  const articles = transformArticles(edition);
-  const ads = transformAds(edition);
-  const otherContent = transformOtherContent(edition);
-  const pageCount = computePageCount(edition);
-
-  return NextResponse.json({
-    edition: {
-      id: date,
-      date,
-      pageCount,
-      publicationInfo: edition.publication_info || '',
-    },
-    articles,
-    ads,
-    otherContent,
-    pagination: {
-      nextCursor: null,
-      hasMore: false,
-    },
-  });
 }

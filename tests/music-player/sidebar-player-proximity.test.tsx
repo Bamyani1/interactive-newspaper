@@ -3,6 +3,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { SidebarPlayer } from "../../src/features/music-player/components/SidebarPlayer";
 
+const MOCK_TRACKS = [
+    { rank: 1, title: "Song One", artist: "Artist A", youtubeId: "abc123" },
+    { rank: 2, title: "Song Two", artist: "Artist B", youtubeId: "def456" },
+];
+
+vi.mock("../../src/features/music-player/hooks/useMonthlyTrendingMusic", () => ({
+    useMonthlyTrendingMusic: () => ({
+        tracks: MOCK_TRACKS,
+        monthLabel: "January 1987",
+        monthNameOnly: "January",
+        isLoading: false,
+        error: null,
+        reason: null,
+    }),
+}));
+
 let coarsePointer = false;
 
 function createMatchMedia(query: string): MediaQueryList {
@@ -60,7 +76,7 @@ describe("SidebarPlayer proximity surface behavior", () => {
     });
 
     it("applies ghostly baseline variables at rest", () => {
-        const { container } = render(<SidebarPlayer />);
+        const { container } = render(<SidebarPlayer currentDate="1987-01-15" />);
         const surface = getSurface(container);
 
         expect(parseFloat(surface.style.getPropertyValue("--yt-surface-opacity"))).toBeCloseTo(0.35, 2);
@@ -68,7 +84,7 @@ describe("SidebarPlayer proximity surface behavior", () => {
     });
 
     it("brightens when pointer gets near and returns to baseline when far", async () => {
-        const { container } = render(<SidebarPlayer />);
+        const { container } = render(<SidebarPlayer currentDate="1987-01-15" />);
         const surface = getSurface(container);
         mockSurfaceRect(surface);
 
@@ -90,7 +106,7 @@ describe("SidebarPlayer proximity surface behavior", () => {
     it("keeps full visibility on coarse pointers", async () => {
         coarsePointer = true;
 
-        const { container } = render(<SidebarPlayer />);
+        const { container } = render(<SidebarPlayer currentDate="1987-01-15" />);
         const surface = getSurface(container);
         mockSurfaceRect(surface);
 
