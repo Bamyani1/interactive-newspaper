@@ -38,10 +38,8 @@ jobs:
           required = [
               root / 'ocr' / 'convert_scans.py',
               root / 'ocr' / 'enrich_ads.py',
-              root / 'ocr' / 'compare_runs.py',
-              root / 'ocr' / 'score_gold.py',
-              root / 'scripts' / 'process-edition.sh',
-              root / 'scripts' / 'process-unprocessed.sh',
+              root / 'scripts' / 'dev' / 'compare_runs.py',
+              root / 'scripts' / 'dev' / 'score_gold.py',
               root / 'scripts' / 'ocr' / 'process-edition.sh',
               root / 'scripts' / 'ocr' / 'process-unprocessed.sh',
           ]
