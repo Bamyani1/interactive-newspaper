@@ -24,8 +24,6 @@ EDITION_PATH=""
 RUN_ID=""
 KEEP_SOURCE=false
 CLEANUP_DATE=""
-PUBLIC_OUTPUT_ROOT=""
-OCR_OUTPUT_ROOT=""
 WORKERS=""
 
 while [[ $# -gt 0 ]]; do
@@ -50,22 +48,6 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
-    --public-output-root)
-      PUBLIC_OUTPUT_ROOT="${2:-}"
-      if [[ -z "$PUBLIC_OUTPUT_ROOT" ]]; then
-        echo "ERROR: --public-output-root requires a path"
-        exit 1
-      fi
-      shift 2
-      ;;
-    --ocr-output-root)
-      OCR_OUTPUT_ROOT="${2:-}"
-      if [[ -z "$OCR_OUTPUT_ROOT" ]]; then
-        echo "ERROR: --ocr-output-root requires a path"
-        exit 1
-      fi
-      shift 2
-      ;;
     --workers)
       WORKERS="${2:-}"
       if [[ -z "$WORKERS" ]]; then
@@ -76,7 +58,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -*)
       echo "ERROR: Unknown option: $1"
-      echo "Usage: scripts/process-edition.sh <path-to-edition-scan-dir> [--run-id <id>] [--keep-source] [--cleanup-date YYYY-MM-DD]"
+      echo "Usage: scripts/process-edition.sh <path-to-edition-scan-dir> [--run-id <id>] [--keep-source] [--cleanup-date YYYY-MM-DD] [--workers N]"
       exit 1
       ;;
     *)
@@ -91,7 +73,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$EDITION_PATH" ]]; then
-  echo "Usage: scripts/process-edition.sh <path-to-edition-scan-dir> [--run-id <id>] [--keep-source] [--cleanup-date YYYY-MM-DD]"
+  echo "Usage: scripts/process-edition.sh <path-to-edition-scan-dir> [--run-id <id>] [--keep-source] [--cleanup-date YYYY-MM-DD] [--workers N]"
   exit 1
 fi
 
@@ -168,19 +150,13 @@ OCR_CMD=(python "$ROOT_DIR/ocr/convert_scans.py" "$EDITION_PATH")
 if [[ -n "$RUN_ID" ]]; then
   OCR_CMD+=(--run-id "$RUN_ID")
 fi
-if [[ -n "$OCR_OUTPUT_ROOT" ]]; then
-  OCR_CMD+=(--ocr-output-root "$OCR_OUTPUT_ROOT")
-fi
-if [[ -n "$PUBLIC_OUTPUT_ROOT" ]]; then
-  OCR_CMD+=(--public-output-root "$PUBLIC_OUTPUT_ROOT")
-fi
 if [[ -n "$WORKERS" ]]; then
   OCR_CMD+=(--workers "$WORKERS")
 fi
 "${OCR_CMD[@]}" 2>&1 | tee "$LOG_DIR/ocr.log"
 
 # Validate OCR output
-PUBLIC_ROOT="${PUBLIC_OUTPUT_ROOT:-$ROOT_DIR/public/editions}"
+PUBLIC_ROOT="$ROOT_DIR/public/editions"
 EDITION_JSON="$PUBLIC_ROOT/$DATE/edition.json"
 if [[ ! -f "$EDITION_JSON" ]]; then
   echo "FAILED: edition.json not created at $EDITION_JSON"

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import threading
-from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -19,16 +18,12 @@ from ..config.constants import (
     YOLO_FIGURE_CLASSES,
     YOLO_NMS_IOU_THRESHOLD,
 )
+from ..config.paths import MODELS_DIR
 from ..contracts.diagnostics_models import CVRegionInfo, PageDiagnostics, StageTimer
 from ..shared.console import status as console_status, info
 from .region_filters import dedupe_overlapping_regions
 
-OCR_ROOT = Path(__file__).resolve().parents[3]
-_YOLO_MODEL_PATH = os.path.join(
-    str(OCR_ROOT),
-    "models",
-    "doclayout_yolo_docstructbench_imgsz1024.pt",
-)
+_YOLO_MODEL_PATH = str(MODELS_DIR / "doclayout_yolo_docstructbench_imgsz1024.pt")
 _yolo_model: YOLOv10 | None = None
 _yolo_lock = threading.Lock()
 

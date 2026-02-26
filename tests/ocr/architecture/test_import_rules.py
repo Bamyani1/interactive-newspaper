@@ -51,7 +51,6 @@ def _assert_no_import_prefixes(path: Path, forbidden_prefixes: Iterable[str]) ->
 def test_contracts_do_not_import_non_contract_layers():
     forbidden_prefixes = (
         "transcript_ocr.application",
-        "transcript_ocr.engine",
         "transcript_ocr.postprocessing",
         "transcript_ocr.recognition",
         "transcript_ocr.detection",
@@ -72,7 +71,6 @@ def test_contracts_do_not_import_non_contract_layers():
 def test_shared_does_not_import_domain_layers():
     forbidden_prefixes = (
         "transcript_ocr.application",
-        "transcript_ocr.engine",
         "transcript_ocr.recognition",
         "transcript_ocr.detection",
         "transcript_ocr.preprocessing",
@@ -107,13 +105,12 @@ def test_stage_modules_do_not_import_application_layer():
         for path in (PKG_ROOT / stage).glob("*.py"):
             if path.name == "__init__.py":
                 continue
-            _assert_no_import_prefixes(path, ("transcript_ocr.application", "transcript_ocr.engine"))
+            _assert_no_import_prefixes(path, ("transcript_ocr.application",))
 
 
 def test_evaluation_does_not_import_runtime_layers():
     forbidden_prefixes = (
         "transcript_ocr.application",
-        "transcript_ocr.engine",
     )
     eval_dir = PKG_ROOT / "evaluation"
     for path in eval_dir.glob("*.py"):
