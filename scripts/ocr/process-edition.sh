@@ -163,7 +163,7 @@ fi
 # ── Stage 1: OCR (includes ad enrichment) ─────────────────────
 
 echo ""
-echo "── Stage 1/3: OCR extraction + ad enrichment ────────────────"
+echo "── Stage 1/4: OCR extraction + ad enrichment ────────────────"
 OCR_CMD=(python "$ROOT_DIR/ocr/convert_scans.py" "$EDITION_PATH")
 if [[ -n "$RUN_ID" ]]; then
   OCR_CMD+=(--run-id "$RUN_ID")
@@ -204,7 +204,7 @@ echo "  ✓ OCR complete: $ARTICLE_COUNT articles extracted (ad enrichment inclu
 # ── Stage 2: Image cleanup ─────────────────────────────────────
 
 echo ""
-echo "── Stage 2/3: Image cleanup ───────────────────────────────"
+echo "── Stage 2/4: Image cleanup ───────────────────────────────"
 node "$ROOT_DIR/scripts/cleanup-images.mjs" \
   --apply \
   --date "$CLEANUP_DATE" \
@@ -213,10 +213,24 @@ node "$ROOT_DIR/scripts/cleanup-images.mjs" \
   2>&1 | tee "$LOG_DIR/cleanup-images.log"
 echo "  ✓ Image cleanup applied"
 
-# ── Stage 3: Database seed + embed ─────────────────────────────
+# ── Stage 3: Upload images to R2 ──────────────────────────────
 
 echo ""
-echo "── Stage 3/3: Database seed ───────────────────────────────"
+echo "── Stage 3/4: Upload images to R2 ────────────────────────"
+if [[ -n "${R2_ACCOUNT_ID:-}" && -n "${R2_BUCKET_NAME:-}" ]]; then
+  node "$ROOT_DIR/scripts/db/upload-images.mjs" \
+    --date "$DATE" \
+    --editions-dir "$PUBLIC_ROOT" \
+    2>&1 | tee "$LOG_DIR/upload-images.log"
+  echo "  ✓ Images uploaded to R2"
+else
+  echo "  ⊘ Skipped (R2 credentials not configured)"
+fi
+
+# ── Stage 4: Database seed + embed ─────────────────────────────
+
+echo ""
+echo "── Stage 4/4: Database seed ───────────────────────────────"
 OCR_MIN_TEXT_LENGTH=0 npm run db:seed -- --date "$DATE" --editions-dir "$PUBLIC_ROOT" --summary-path "$LOG_DIR/seed-summary.json" 2>&1 | tee "$LOG_DIR/seed.log"
 echo "  ✓ Database seeded"
 

@@ -3,7 +3,7 @@ import os
 import shutil
 
 EDITION = "1980-04-17"
-ROOT_DIR = "/Users/bamyani/Desktop/interactive-newspaper-main"
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC_DIR = os.path.join(ROOT_DIR, f"public/editions/{EDITION}")
 DEST_DIR = os.path.join(ROOT_DIR, f"tests/ocr/gold_data/{EDITION}")
 
