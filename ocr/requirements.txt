@@ -1,7 +1,10 @@
 google-genai
+google-cloud-documentai
+opencv-python-headless
 python-dotenv
 Pillow
 pydantic
 scipy
 doclayout-yolo
 huggingface_hub
+rich>=13.7

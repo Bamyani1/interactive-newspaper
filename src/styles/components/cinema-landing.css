@@ -152,10 +152,11 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: 30px 20px;
+    padding: 20px;
     position: relative;
     z-index: 5;
     order: 2;
+    overflow-y: auto;
 }
 
 /* =========================================
@@ -185,12 +186,12 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%) rotate(90deg);
-    width: 60%;
-    aspect-ratio: 3201 / 4801;
+    width: 65%;
+    aspect-ratio: 635.8 / 969.49;
     background: url('/shape/1.png') center / 100% 100% no-repeat;
     pointer-events: none;
     z-index: 0;
-    opacity: 0.8;
+    opacity: 0.95;
     filter: drop-shadow(0 0 20px rgba(0, 0, 0, 0.65));
 }
 
@@ -210,7 +211,7 @@
     gap: 0 30px;
     align-items: center;
     max-width: 576px;
-    margin: 0 auto;
+    margin: 10px auto 0;
 }
 
 .cinema-col-brand {
@@ -218,6 +219,21 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+}
+
+.cinema-col-brand--hidden {
+    display: none;
+}
+
+/* When picker is open: hide brand + divider, let action span full width */
+.cinema-paper-grid--picker-open .cinema-divider {
+    display: none;
+}
+
+.cinema-paper-grid--picker-open .cinema-col-action {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    align-items: center;
 }
 
 .cinema-divider {
@@ -427,6 +443,30 @@
 }
 
 /* =========================================
+   READ MODE — OVERLAY APPROACH
+   ========================================= */
+
+/* Landing content hidden in read mode — maintains grid height */
+.cinema-paper-grid--read-mode .cinema-col-brand,
+.cinema-paper-grid--read-mode .cinema-divider,
+.cinema-paper-grid--read-mode .cinema-col-action {
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transition: visibility 0s 0.15s, opacity 0.15s ease;
+}
+
+/* Expanded picker overlay — sits on top of hidden landing content */
+.cinema-expanded-overlay {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* =========================================
    RESPONSIVE
    ========================================= */
 
@@ -434,6 +474,10 @@
 @media (min-width: 769px) and (max-width: 1024px) {
     .cinema-paper {
         max-width: 900px;
+    }
+
+    .cinema-paper::before {
+        width: 75%;
     }
 
     .cinema-title {
@@ -455,6 +499,11 @@
     .cinema-paper {
         max-width: 520px;
         padding: 30px 25px;
+    }
+
+    .cinema-paper::before {
+        transform: translate(-50%, -50%);
+        width: 95%;
     }
 
     .cinema-paper-grid {

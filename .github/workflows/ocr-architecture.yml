@@ -1,0 +1,50 @@
+name: OCR Architecture
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  architecture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
+      - name: Run import boundary tests
+        run: |
+          pytest -q \
+            tests/ocr/architecture/test_import_rules.py \
+            tests/ocr/architecture/test_wrapper_entrypoints.py \
+            tests/ocr/architecture/test_runtime_cutover.py
+
+      - name: Validate script targets exist
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          root = Path('.')
+          required = [
+              root / 'ocr' / 'convert_scans.py',
+              root / 'ocr' / 'enrich_ads.py',
+              root / 'scripts' / 'dev' / 'compare_runs.py',
+              root / 'scripts' / 'dev' / 'score_gold.py',
+              root / 'scripts' / 'ocr' / 'process-edition.sh',
+              root / 'scripts' / 'ocr' / 'process-unprocessed.sh',
+          ]
+          missing = [str(p) for p in required if not p.exists()]
+          if missing:
+              raise SystemExit(f"Missing required scripts: {missing}")
+          print('Script target validation passed')
+          PY

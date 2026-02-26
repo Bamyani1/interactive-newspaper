@@ -73,6 +73,7 @@ export const TimeControls = () => {
     useEffect(() => {
         if (isDropdownOpen && currentDate) {
             const [year, month] = currentDate.split("-");
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- sync expanded state with dropdown
             setExpandedYear(year);
             setExpandedMonth(month);
         } else if (!isDropdownOpen) {

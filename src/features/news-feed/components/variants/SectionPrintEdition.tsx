@@ -81,7 +81,7 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
                 >
                   {heroArticle.headline}
                 </h1>
-                <Byline byline={heroArticle.byline} />
+                <Byline byline={heroArticle.byline} writerPosition={heroArticle.writerPosition} />
               </>
             }
             image={
@@ -184,7 +184,7 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
                           >
                             {article.headline}
                           </h2>
-                          <Byline byline={article.byline} />
+                          <Byline byline={article.byline} writerPosition={article.writerPosition} />
                         </>
                       }
                       image={

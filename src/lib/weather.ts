@@ -29,34 +29,6 @@ export interface WeatherLookupOptions {
   maxStationCandidates?: number;
 }
 
-export interface CdoStationInventoryQuery {
-  dataset_id?: string;
-  extent?: string;
-  location_id?: string;
-  limit?: number;
-  offset?: number;
-}
-
-export interface CdoStationInventoryResult {
-  metadata: {
-    resultset?: {
-      offset?: number;
-      count?: number;
-      limit?: number;
-    };
-  };
-  results: Array<{
-    id: string;
-    name: string;
-    latitude?: number;
-    longitude?: number;
-    elevation?: number;
-    mindate?: string;
-    maxdate?: string;
-    datacoverage?: number;
-  }>;
-}
-
 export interface WeatherRangeQuery {
   start_date: string;
   end_date: string;
@@ -788,40 +760,4 @@ export function computeDailyWeatherHash(record: DailyWeatherRecord): string {
 
 export function celsiusToFahrenheit(valueC: number): number {
   return (valueC * 9) / 5 + 32;
-}
-
-export async function fetchNoaaCdoStationInventory(
-  query: CdoStationInventoryQuery = {},
-  options: { fetcher?: Fetcher; token?: string } = {},
-): Promise<CdoStationInventoryResult> {
-  const token = options.token ?? process.env.NOAA_CDO_TOKEN;
-  if (!token) {
-    throw new Error('NOAA_CDO_TOKEN is required to query CDO station inventory.');
-  }
-
-  const fetcher = options.fetcher ?? defaultFetcher;
-  const params = new URLSearchParams({
-    datasetid: query.dataset_id ?? 'GHCND',
-    extent: query.extent ?? '38.0,-85.0,42.5,-80.3',
-    limit: String(query.limit ?? 1000),
-    offset: String(query.offset ?? 1),
-  });
-
-  if (query.location_id) {
-    params.set('locationid', query.location_id);
-  }
-
-  const response = await fetcher(`https://www.ncdc.noaa.gov/cdo-web/api/v2/stations?${params.toString()}`, {
-    headers: { token },
-  });
-
-  if (!response.ok) {
-    throw new Error(`NOAA CDO station inventory failed: ${response.status}`);
-  }
-
-  const parsed = (await response.json()) as CdoStationInventoryResult;
-  return {
-    metadata: parsed.metadata ?? {},
-    results: Array.isArray(parsed.results) ? parsed.results : [],
-  };
 }

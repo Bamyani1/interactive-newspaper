@@ -28,10 +28,10 @@ export default function ContactPage() {
                     </Reveal>
                     <Reveal delay={0.15}>
                         <a
-                            href="mailto:archive@transcript.edu"
+                            href="mailto:manwari@owu.edu"
                             className="text-base text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
                         >
-                            archive@transcript.edu
+                            manwari@owu.edu
                         </a>
                     </Reveal>
                 </div>

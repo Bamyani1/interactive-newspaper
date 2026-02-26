@@ -7,8 +7,8 @@ export const revalidate = 60;
 export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
-    const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
-    const offset = parseInt(url.searchParams.get("offset") ?? "0", 10);
+    const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 500);
+    const offset = Math.max(parseInt(url.searchParams.get("offset") ?? "0", 10) || 0, 0);
     const startDate = url.searchParams.get("start_date") || undefined;
     const endDate = url.searchParams.get("end_date") || undefined;
 

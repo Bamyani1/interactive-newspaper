@@ -1,0 +1,94 @@
+"""Visual matcher for image-region assignment."""
+
+from __future__ import annotations
+
+from PIL import Image
+from google.genai import types
+
+from ..config.constants import GEMINI_PAGE_MODEL
+from ..contracts.content_models import ImageRegionAssignments, PageContent
+from ..contracts.diagnostics_models import PageDiagnostics, StageTimer, TokenUsage
+from ..recognition.prompts import IMAGE_MATCHING_PROMPT, SAFETY_OFF
+from ..shared.console import substep, warning, error
+from ..shared.retry import gemini_generate_with_retry
+
+
+def match_images_visual(
+    client,
+    annotated_image: Image.Image,
+    page_content: PageContent,
+    num_regions: int,
+    diag: PageDiagnostics | None = None,
+) -> ImageRegionAssignments | None:
+    """Classify and match all CV-detected image regions to articles/ads."""
+    timer = StageTimer().start()
+
+    if diag is not None:
+        diag.visual_matching.attempted = True
+
+    parts = []
+    for i, article in enumerate(page_content.articles):
+        headline = article.headline or "(no headline)"
+        preview = article.body[:400].replace("\n", " ").strip()
+        parts.append(f"  Article [{i}]: {headline}")
+        if preview:
+            parts.append(f"    Preview: {preview}...")
+        if article.images:
+            for img in article.images:
+                cap = img if isinstance(img, str) else getattr(img, "caption", "")
+                if cap:
+                    cap_text = cap[:200] if isinstance(cap, str) else str(cap)[:200]
+                    parts.append(f"    Extracted caption: {cap_text}")
+
+    for i, ad in enumerate(page_content.ads):
+        preview = ad.body[:200].replace("\n", " ").strip()
+        parts.append(f"  Ad [{i}]: {ad.business_name}")
+        if preview:
+            parts.append(f"    Preview: {preview}...")
+
+    content_list = "\n".join(parts) if parts else "  (no articles or ads extracted)"
+    prompt = IMAGE_MATCHING_PROMPT.format(content_list=content_list, num_regions=num_regions)
+
+    try:
+        response = gemini_generate_with_retry(
+            client,
+            model=GEMINI_PAGE_MODEL,
+            contents=[annotated_image, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=ImageRegionAssignments,
+                safety_settings=SAFETY_OFF,
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+                max_output_tokens=4096,
+            ),
+        )
+
+        usage = response.usage_metadata
+        if usage:
+            substep(f"Visual matching tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out")
+            if diag is not None:
+                diag.visual_matching.tokens = TokenUsage(
+                    prompt_tokens=usage.prompt_token_count,
+                    candidates_tokens=usage.candidates_token_count,
+                    total_tokens=usage.total_token_count,
+                )
+
+        if diag is not None:
+            diag.timings["visual_matching"] = timer.stop()
+
+        if response.parsed:
+            if diag is not None:
+                diag.visual_matching.succeeded = True
+            return response.parsed
+
+        warning("Visual matching response was empty or blocked")
+        return None
+
+    except Exception as e:
+        error(f"Visual matching failed: {e}")
+        if diag is not None:
+            diag.timings["visual_matching"] = timer.stop()
+        return None
+
+
+__all__ = ["match_images_visual"]

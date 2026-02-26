@@ -8,11 +8,10 @@ import { TRANSITIONS } from "@/shared/motion/motionTokens";
 import {
   Newspaper,
   Trophy,
-  Sparkles,
   MessageSquare,
   MessageCircleQuestion,
   Palette,
-  Users,
+  Globe,
   ShoppingBag,
   Star,
   Search,
@@ -22,12 +21,11 @@ import type { SectionId } from "@/src/types";
 const SECTION_ICONS: Partial<Record<SectionId, React.ElementType>> = {
   Top: Star,
   All: Star,
-  News: Newspaper,
+  "Campus News": Newspaper,
+  News: Globe,
   Sports: Trophy,
-  Features: Sparkles,
   Opinion: MessageSquare,
-  Arts: Palette,
-  "Campus Life": Users,
+  "Arts & Entertainment": Palette,
   Ads: ShoppingBag,
 };
 
@@ -94,7 +92,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             >
               <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
               <span className="text-[10px] font-medium uppercase tracking-wider truncate max-w-[56px]">
-                {section.id === "Campus Life" ? "Campus" : section.label}
+                {section.id === "Arts & Entertainment" ? "Arts" : section.label}
               </span>
               {isActive && (
                 <motion.div

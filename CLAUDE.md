@@ -2,137 +2,287 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+# The Transcript Archive
 
-**The Transcript Archive** — an interactive web archive of Ohio Wesleyan University's historic student newspaper. Users browse digitized newspaper editions (currently from the 1960s) with vintage aesthetics, weather data, and era-appropriate music. Includes an AI-powered "Ask the Archive" feature that answers natural-language questions using a RAG pipeline over the article corpus.
+## Project
 
-## Commands
+A Next.js app that turns scanned OWU historical newspaper issues into a searchable, readable archive with RAG-powered Q&A. Content flows: raw TIF scans → Python OCR pipeline → `edition.json` → Node seed scripts → Neon Postgres → API routes → React UI.
 
-| Task | Command |
-|------|---------|
-| Dev server | `npm run dev` |
-| Production build | `npm run build` |
-| Lint | `npm run lint` |
-| Type check | `npx tsc --noEmit` |
-| Run all tests | `npm run test:run` |
-| Run tests (watch) | `npm run test` |
-| Run single test | `npx vitest run tests/hooks/useEditionArticles.test.ts` |
-| Seed database (upsert) | `npm run db:seed` |
-| Reset + seed database | `npm run db:reset` |
-| Embed articles (incremental) | `npm run db:embed` |
-| Embed all articles (force) | `npm run db:embed:force` |
-| Build weather archive | `npm run weather:build:ohio` |
-| Verify weather archive | `npm run weather:verify:ohio` |
-| Generate stained-glass SVG | `npm run glass:build` |
-| Generate autumn canopy SVG | `npm run canopy:build` |
+Full project reference: `docs/PROJECT_MASTER_GUIDE.md`
 
-### Edition Processing Scripts
+---
+
+## Tech Stack
+
+- **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, Framer Motion
+- **Backend:** Next.js API routes (server-side), Neon Postgres (serverless driver)
+- **AI/LLM:** Google Gemini (`@google/genai`) — OCR extraction, RAG answer generation, embeddings, reranking
+- **OCR pipeline:** Python 3.12 package at `ocr/src/transcript_ocr/`; wrappers at `ocr/*.py`; no `pyproject.toml` — uses `ocr/requirements.txt` + venv at `ocr/.venv/`
+- **Testing:** Vitest (TypeScript), pytest (Python)
+
+---
+
+## Dev Commands
 
 ```bash
-scripts/process-edition.sh <path-to-scan-dir>         # Full pipeline: OCR → enrich → cleanup → seed → embed
-scripts/process-unprocessed.sh [--parallel N] [--dry-run]  # Batch process multiple editions
-node scripts/cleanup-images.mjs [--apply]              # Dry-run image relevance cleanup (--apply writes changes)
+# Frontend
+npm run dev          # Start dev server
+npm run build        # Production build (runs tsc)
+npm run lint         # ESLint
+npm run test         # Vitest watch mode
+npm run test:run     # Vitest run (CI mode) — 286 tests
+
+# Database
+npm run db:seed      # Seed editions into Neon DB
+npm run db:reset     # Drop + recreate all tables, then seed
+npm run db:embed     # Generate vector embeddings for articles
+npm run db:embed:force  # Force re-embed all
+
+# OCR pipeline
+scripts/ocr/process-edition.sh <folder>   # Process one edition
+scripts/ocr/process-unprocessed.sh        # Batch process all unprocessed
+
+# Python tests
+python -m pytest tests/ocr/ -x           # OCR test suite (34 tests + 7 skip-if-no-output)
+python -m pytest tests/ocr/architecture/ # Import boundary / architecture tests (run in CI)
+
+# Specific test targets
+npm run test:golden      # OCR golden snapshot test (1980-04-17)
+npm run test:invariants  # OCR pipeline invariant tests
+
+# Running a single test
+npx vitest run tests/api/search.test.ts            # Single test file
+npx vitest run -t "should return articles"          # Single test by name pattern
+python -m pytest tests/ocr/test_merging.py::test_function_name -x  # Single Python test
+
+# Weather / asset generation
+npm run weather:build:ohio   # Build offline weather archive
+npm run weather:verify:ohio  # Verify weather archive integrity
+npm run glass:build          # Generate stained-glass SVG assets
+npm run canopy:build         # Generate autumn-canopy SVG assets
 ```
+
+---
+
+## Project Structure
+
+```
+src/
+  app/                  # Next.js App Router pages + API routes
+    api/                # editions, search, ask, weather routes
+    edition/[date]/     # Edition reading page
+    search/, ask/       # Search and Q&A pages
+  features/             # Feature modules (news-feed, search, ask-archive, music-player, weather, context-panel, navigation, archive)
+  lib/                  # Shared utilities (db.ts, embeddings.ts, answer-generator.ts, reranker.ts, weather-local-archive.ts)
+  server/               # Server-only code (ocr-adapter — transforms edition.json → DB rows)
+  types/                # Shared TypeScript types (index.ts)
+
+ocr/
+  src/transcript_ocr/   # Python OCR package — domain modules below
+    application/        # Orchestration (edition_pipeline, convert_scans_runtime)
+    cli/                # Entry points + _legacy_bridge.py
+    config/             # Settings, environment
+    contracts/          # Data models
+    recognition/        # DocAI & Gemini text extraction
+    preprocessing/      # Image normalization
+    detection/          # YOLO region detection
+    postprocessing/     # Text deduplication, cleaning
+    merging/            # Cross-page article merging
+    image_linking/      # Visual/spatial image matching
+    export/             # JSON/markdown writers
+    ingestion/          # File discovery, pathing
+    diagnostics/        # Reporting & snapshots
+    evaluation/         # Run comparisons & gold scoring
+    engine/             # Compatibility shim (OCR_FORCE_LEGACY=1 activates legacy path)
+    shared/             # Console utilities
+  convert_scans.py      # Main OCR entry point
+  enrich_ads.py         # Post-OCR ad enrichment
+  inbox/                # Drop new scan folders here (gitignored)
+  done/                 # Completed scans moved here (gitignored)
+  runs/                 # Diagnostics, logs, artifacts (gitignored)
+  models/               # YOLO weights — auto-downloaded (gitignored)
+
+scripts/
+  db/seed.mjs           # DB seed + reset
+  db/embed.mjs          # Embedding generation
+  db/schema.sql         # DB schema (editions, articles, ads, weather, music)
+  ocr/                  # Shell wrappers for OCR pipeline
+  dev/                  # OCR evaluation helpers (compare_runs.py, score_gold.py, gen_gold.py) + SVG asset generators
+  weather/              # Weather archive build/verify scripts
+  cleanup-images.mjs    # Post-OCR image cleanup
+
+public/
+  editions/<date>/      # edition.json + images — output of OCR pipeline
+  data/weather/ohio/    # index/ (app reads this), meta/ (seed metadata)
+  gold-score/           # OCR evaluation reference TIFFs
+  top-10-music/         # Monthly music chart data
+  shape/, backgrounds/  # UI assets
+
+tests/
+  hooks/, news-feed/, api/, lib/, weather/, ocr/   # Vitest + pytest suites
+  ocr/fixtures/golden/  # Golden metric snapshots (pipeline-golden.test.ts)
+  ocr/fixtures/parity/  # Parity keyset fixtures (test_parity_harness.py)
+
+docs/                   # Project documentation (PROJECT_MASTER_GUIDE.md, ocr-audit/)
+.github/workflows/      # ocr-architecture.yml — runs import boundary + architecture tests on PR/push
+```
+
+---
 
 ## Architecture
 
-### Tech Stack
+Five cooperating blocks:
 
-Next.js 16 (App Router) + React 19 + TypeScript 5 + Tailwind CSS 4. Animation via Framer Motion and GSAP. Testing with Vitest + Testing Library (jsdom). Icons from lucide-react. Tailwind v4 uses the PostCSS plugin (`@tailwindcss/postcss`) — there is no `tailwind.config.ts` file.
+1. **Frontend** — Next.js App Router pages consume API routes; feature modules in `src/features/`
+2. **API layer** — Server routes in `src/app/api/` query Neon DB; `POST /api/ask` runs full RAG pipeline
+3. **Database** — Neon Postgres; tables: `editions`, `articles`, `ads`, `weather`, `music`; FTS + pgvector for retrieval
+4. **OCR pipeline** — Python package processes scanned TIFs in 5 phases:
+   - Phase 1: DocAI extraction (preprocessing + recognition + YOLO detection per page, parallelized)
+   - Phase 2: Gemini structuring + image linking (per page, parallelized)
+   - Phase 3: Cross-page merging → `edition.json`
+   - Phase 4: Ad enrichment
+   - Phase 5: Diagnostics + issue reports
+5. **Ops scripts** — Shell + Node scripts for process/seed/embed/cleanup lifecycle
 
-### Data Flow: Editions Pipeline
+### API Routes
 
-Editions are static JSON files (source of truth), seeded into a Neon PostgreSQL database at build time. The pipeline:
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/editions` | GET | List editions with pagination |
+| `/api/editions/[date]` | GET | Full edition data (articles, ads, metadata) |
+| `/api/editions/[date]/images/[...path]` | GET | Proxy edition images |
+| `/api/search` | GET | Full-text article search |
+| `/api/ask` | POST | RAG Q&A pipeline (see below) |
+| `/api/weather` | GET | Historical weather lookup |
+| `/api/golden-image/[file]` | GET | Serve gold-score reference images |
 
-1. **OCR output** → `public/editions/{YYYY-MM-DD}/edition.json` (conforms to `OcrEdition` type)
-2. **Server adapter** (`src/lib/ocr-adapter.ts`) classifies articles by category via heuristics, transforms OCR data into frontend `Article`/`VintageAd` types
-3. **Seed script** (`scripts/db/seed.mjs`) reads JSON files, transforms via ocr-adapter, inserts into Neon PostgreSQL with FTS vectors
-4. **Embed script** (`scripts/db/embed.mjs`) generates 768-dim embeddings via `gemini-embedding-001` for articles missing them
-5. **Database layer** (`src/lib/db.ts`) provides typed query functions using `@neondatabase/serverless` HTTP driver
-6. **API routes** (`/api/editions`, `/api/editions/[date]`, `/api/search`, `/api/articles`, `/api/ask`, `/api/weather/range`) query the database
-7. **Client hooks** (`useEditionArticles`, `useArchive`, `useSearch`, `useAskArchive`) fetch from API and normalize into component-ready state
+### RAG Pipeline (`POST /api/ask`)
 
-To add a new edition: place a folder at `public/editions/YYYY-MM-DD/` containing `edition.json` (matching the `OcrEdition` interface from `src/types/index.ts`) and optionally `images/` and `scanned-newspaper/page{N}.jpg`. Then run `npm run db:seed && npm run db:embed`.
-
-### Database
-
-Neon PostgreSQL (remote, serverless). Connection via `DATABASE_URL` env var. Schema in `scripts/db/schema.sql`. Tables: `editions`, `articles`, `ads`, `weather`, `music`. The `@neondatabase/serverless` driver uses HTTP (not TCP) — each query is a single HTTP request, no connection pool needed.
-
-Search capabilities:
-- **Full-text search**: `search_vector` TSVECTOR column on articles with GIN index
-- **Vector search**: `embedding VECTOR(768)` column with HNSW index (cosine distance, m=16, ef_construction=64) via pgvector extension
-- **Hybrid search**: Reciprocal Rank Fusion (RRF) combining vector + FTS results (default vector weight 0.7)
-
-### RAG Pipeline (Ask the Archive)
-
-`POST /api/ask` — full retrieval-augmented generation pipeline using Google Gemini:
+Five lib modules execute in sequence:
 
 ```
-User Question
-  → Query Reformulation (src/lib/query-reformulator.ts) — rewrites modern queries into 1960s newspaper language
-  → Query Embedding (src/lib/embeddings.ts) — 768-dim via gemini-embedding-001
-  → Hybrid Retrieval (src/lib/db.ts) — vector + FTS with RRF fusion
-  → Re-Ranking (src/lib/reranker.ts) — LLM relevance scoring, filters by min score
-  → Answer Generation (src/lib/answer-generator.ts) — citation-grounded synthesis with confidence level
-  → AskResponse with sources, citations, confidence, and timing metadata
+query-reformulator.ts → embeddings.ts → db.ts (hybridSearch) → reranker.ts → answer-generator.ts
 ```
 
-Each stage has its own timeout and graceful fallback. Requires `GEMINI_API_KEY` or `GOOGLE_API_KEY` env var.
+1. **Reformulate** — rewrites modern query into 1960s newspaper language; produces separate `embeddingQuery` + `ftsQuery`
+2. **Embed** — generates 768-dim vector via `gemini-embedding-001`
+3. **Hybrid search** — combines vector similarity + full-text search using Reciprocal Rank Fusion (0.7 vector weight); returns top 8 articles
+4. **Rerank** — Gemini scores each article 0–10 relevance; filters to score ≥ 3, max 5 articles
+5. **Generate** — Gemini produces cited answer from the *original* question (not reformulated) + reranked articles
 
-### Feature-Based Architecture
+Each step has a timeout and graceful fallback (e.g., reformulation failure → use original query).
 
-Each domain lives under `src/features/{name}/` with its own components, hooks, context, and barrel `index.ts`. Features:
+---
 
-- **archive** — `ArchiveProvider` context: manages edition list, current date, loading state. Wraps the entire app.
-- **ask-archive** — "Ask the Archive" Q&A interface. Components: `AskInput`, `AnswerPanel`, `SourceList`, `SourceCard`, `ConfidenceBadge`. Hook: `useAskArchive`. Page at `/ask`.
-- **news-feed** — Main content: article cards, scan viewer, ads sections. Uses the print-edition layout (`TopStoriesPrintEdition`).
-- **weather** — Historical weather sidebar widget. Local Ohio archive (1950-2000) at `public/data/weather/ohio/`, falls back to live APIs for out-of-range dates.
-- **music-player** — Sidebar vintage music player. Local Billboard Hot 100 archive at `public/top-10-music/{YYYY}.json`. Date-aware: shows the month's top 10 on edition pages.
-- **time-controls** — Header date picker for navigating between editions.
-- **navigation** — Left sidebar with section navigation. Uses the FleuronClassic variant.
-- **context-panel** — Right sidebar aggregating weather + music player widgets.
-- **search** — Full-text search across the archive. SearchBar, SearchFilters, SearchResults components + useSearch hook. Page at `/search`.
-- **footer** — Site footer component.
-- **theme** — Dark/light mode toggle via `data-mode` attribute on `<body>`.
+## Data Flow
 
-### Shared Components
+```
+ocr/inbox/<folder>/   ← drop new scan TIFs here
+      ↓
+scripts/ocr/process-edition.sh
+      ↓
+ocr/convert_scans.py  →  public/editions/<date>/edition.json + images/
+      ↓
+ocr/enrich_ads.py  (post-OCR ad enrichment)
+scripts/cleanup-images.mjs  (prune/reassign image attachments)
+      ↓
+npm run db:seed  →  src/server/ocr-adapter/  →  Neon Postgres
+      ↓
+npm run db:embed  →  vector embeddings stored in articles table
+      ↓
+src/app/api/*  ←→  Next.js UI pages
+```
 
-`src/components/` (aliased as `@/shared`) holds cross-cutting UI: `PageShell` layout wrapper, `ErrorBoundary`, `Skeleton` loader, landing page components, and motion utilities.
+---
 
-### Path Aliases
+## TypeScript Path Aliases
 
-| Alias | Resolves To (tsconfig) |
-|-------|------------------------|
-| `@/*` | `./*` (repo root) |
-| `@/features/*` | `./src/features/*` |
-| `@/shared/*` | `./src/components/*` |
-| `@/styles/*` | `./src/styles/*` |
+Defined in `tsconfig.json`; mirrored in `vitest.config.ts` for tests:
 
-Vitest has its own alias config in `vitest.config.ts`. Note: Vitest maps `@` → `./src` (not repo root), and adds `@/src` → `./src` which tsconfig does not have. Keep both in sync when adding aliases.
+| Alias | Resolves to | Notes |
+|---|---|---|
+| `@/*` | `./*` | Root-relative (e.g., `@/src/lib/db`) |
+| `@/features/*` | `./src/features/*` | Feature modules shortcut |
+| `@/shared/*` | `./src/components/*` | Shared UI components |
+| `@/styles/*` | `./src/styles/*` | Stylesheets |
 
-### Styling System
+Vitest additionally defines `@/font-color` → `./font-color` and `@/src` → `./src`.
 
-CSS custom properties organized in layers: tokens → base → components (see `src/styles/index.css`). Use semantic tokens (`--color-bg-primary`, `--color-text-primary`, `--color-accent`) rather than raw OWU brand values. Color mode handled via `[data-mode='light']` / `[data-mode='dark']` selectors in `src/styles/tokens/colors.css`. Tailwind classes reference CSS variables (e.g., `bg-[var(--color-bg-primary)]`).
+---
 
-### Types
+## Code Style
 
-All shared types live in `src/types/index.ts` — single source of truth for both frontend and OCR/API types. Key types: `Article`, `EditionInfo`, `VintageAd`, `SearchResult`, `PaginationInfo`, `OcrEdition`, `OcrArticle`, `AskResponse`, `Citation`.
+**Prettier** (`.prettierrc`): double quotes, 100 char print width, trailing commas (`es5`), semicolons, 2-space indent, LF line endings.
 
-### Tests
+**ESLint** (`eslint.config.mjs`):
+- `no-console`: warn (allows `console.error` and `console.warn`)
+- `@typescript-eslint/no-unused-vars`: error (ignores `_`-prefixed vars/args)
+- `consistent-return`: warn
+- `react-hooks/set-state-in-effect`: warn
+- **Ignored directories:** `ocr/`, `font-color/`, `scripts/`
 
-Tests live in `tests/` (not colocated). Vitest config at root. Environment: jsdom. Setup file: `tests/setup.ts`. Test files follow pattern `tests/{domain}/{name}.test.ts(x)`.
+**CSS:** Tailwind CSS v4 via `@tailwindcss/postcss`.
+
+---
 
 ## Environment Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | Neon PostgreSQL connection string |
-| `GEMINI_API_KEY` or `GOOGLE_API_KEY` | Google Gemini API (RAG pipeline + embeddings) |
+All in `.env.local` (never commit this file):
+
+```
+DATABASE_URL=                    # Neon Postgres connection string
+GOOGLE_API_KEY=                  # Gemini API — OCR + RAG + embeddings
+GOOGLE_CLOUD_PROJECT=            # Document AI project ID
+DOCUMENT_AI_PROCESSOR_ID=        # Layout parser processor
+DOCUMENT_AI_LOCATION=            # us
+LAYOUT_PARSER_PROCESSOR_ID=      # Secondary layout processor
+```
+
+---
+
+## Testing
+
+| Suite | Command | Covers |
+|---|---|---|
+| TypeScript (Vitest) | `npm run test:run` | UI components, hooks, API routes, lib utilities, OCR adapter |
+| Python (pytest) | `python -m pytest tests/ocr/ -x` | OCR pipeline logic, architecture boundaries, artifact contracts |
+| CI (GitHub Actions) | `.github/workflows/ocr-architecture.yml` | Import rules, wrapper entrypoints, runtime cutover — runs on every PR |
+
+**Notes:**
+- `test_artifact_schema_contracts.py` and `test_parity_harness.py` auto-skip when `ocr/runs/` is absent; they activate after a pipeline run.
+- Golden test (`pipeline-golden.test.ts`) validates against `tests/ocr/fixtures/golden/1980-04-17.metrics.json`.
+
+---
 
 ## Conventions
 
-- Conventional Commits: `feat(scope):`, `fix(scope):`, `refactor(scope):`, etc.
-- Prettier: double quotes, semicolons, 2-space indent, 100 char width, trailing commas (es5)
-- ESLint: next/core-web-vitals + typescript rules. `no-console` warns (error/warn allowed). Unused vars error (prefix with `_` to ignore).
-- Prefix unused function params with `_` to satisfy `@typescript-eslint/no-unused-vars`.
-- Feature exports go through barrel `index.ts` files.
+- **Feature modules**: Business logic lives in `src/features/<feature>/`; no cross-feature imports
+- **API routes**: Always validate inputs; return typed JSON; use 400/404/500/502/504 correctly
+- **OCR adapter**: `src/server/ocr-adapter/` is the only place that transforms `edition.json` → DB shape
+- **Date format**: Always `YYYY-MM-DD` strings; never Date objects across API boundaries
+- **No `Co-Authored-By`** in git commits
+- **Do not auto-commit** — only commit when explicitly asked
+
+---
+
+## Current Production State
+
+- **Only edition in DB and `public/editions/`:** `1980-04-17`
+- **DB:** Neon Postgres (`little-feather-41857937`); 27 articles, 21 ads for 1980-04-17
+- **Branch:** `rag-enhanced` is the active development branch; `main` is production base
+
+---
+
+## Do Not Modify Without Explicit Instruction
+
+- `.env.local` — credentials
+- `public/editions/1980-04-17/` — the only production edition on disk
+- `public/gold-score/` — OCR evaluation reference TIFFs
+- `public/data/weather/ohio/index/` — pre-built weather index (18,628 daily entries, 1950–2000)
+- `scripts/db/schema.sql` — schema changes require migration plan
+
+---
+
+## Deep Reference
+
+- Full product + API + pipeline documentation: `docs/PROJECT_MASTER_GUIDE.md`

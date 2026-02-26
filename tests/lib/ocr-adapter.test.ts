@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { transformArticles, transformAds, transformOtherContent, computePageCount } from "@/src/lib/ocr-adapter";
+import { transformArticles, transformAds, computePageCount } from "@/src/lib/ocr-adapter";
 import type { OcrEdition, OcrArticle, OcrEnrichedAd } from "@/src/types";
 
 // Body text in test articles must exceed the 150-char content filter in
@@ -111,12 +111,12 @@ describe("transformArticles", () => {
   it("uses categories[] when provided", () => {
     const edition = makeEdition({
       articles: [makeArticle(), makeArticle()],
-      categories: ["Sports", "Arts"],
+      categories: ["Sports", "Arts & Entertainment"],
     });
 
     const articles = transformArticles(edition);
     expect(articles[0].category).toBe("Sports");
-    expect(articles[1].category).toBe("Arts");
+    expect(articles[1].category).toBe("Arts & Entertainment");
   });
 
   it("falls back to heuristic classification when no categories[]", () => {
@@ -321,7 +321,7 @@ describe("transformArticles", () => {
 
     const articles = transformArticles(edition);
     expect(articles[0].category).toBe("Sports");
-    expect(articles[1].category).toBe("News"); // invalid falls back to News
+    expect(articles[1].category).toBe("Campus News"); // invalid falls back to Campus News
   });
 
   it("defaults page to 1 when source_pages is empty", () => {
@@ -343,7 +343,8 @@ describe("transformArticles", () => {
       ],
     });
     const [article] = transformArticles(edition);
-    expect(article.byline).toBe("Tom Grissom, Sports Editor");
+    expect(article.byline).toBe("Tom Grissom");
+    expect(article.writerPosition).toBe("Sports Editor");
     expect(article.fullText).not.toContain("Sports Editor");
     expect(article.summary).not.toContain("Sports Editor");
   });
@@ -358,7 +359,8 @@ describe("transformArticles", () => {
       ],
     });
     const [article] = transformArticles(edition);
-    expect(article.byline).toBe("Pat Hanna, Transcript Staff");
+    expect(article.byline).toBe("Pat Hanna");
+    expect(article.writerPosition).toBe("Transcript Staff");
     expect(article.fullText).not.toContain("Transcript Staff");
   });
 
@@ -387,6 +389,43 @@ describe("transformArticles", () => {
     });
     const [article] = transformArticles(edition);
     expect(article.fullText).toContain("Opening Night");
+  });
+});
+
+// ── Ad-image-description filtering (via transformArticles) ───────────
+
+describe("ad-image-description filtering", () => {
+  it("drops articles whose headline is an AI-generated ad description", () => {
+    const edition = makeEdition({
+      articles: [
+        makeArticle({
+          headline:
+            "advertisement titled 'Super Featured Edibles' listing dining specials and hours for various campus locations",
+          body: "",
+          image_files: ["images/ad-scan.jpg"],
+          images: [{ caption: "Super Featured Edibles", position: "top" }],
+        }),
+        makeArticle({ headline: "Bishops Win Big Game" }),
+      ],
+    });
+
+    const articles = transformArticles(edition);
+    expect(articles).toHaveLength(1);
+    expect(articles[0].headline).toBe("Bishops Win Big Game");
+  });
+
+  it("keeps normal articles with images", () => {
+    const edition = makeEdition({
+      articles: [
+        makeArticle({
+          headline: "Campus Photo Gallery",
+          image_files: ["images/campus.jpg"],
+        }),
+      ],
+    });
+
+    const articles = transformArticles(edition);
+    expect(articles).toHaveLength(1);
   });
 });
 
@@ -458,7 +497,8 @@ describe("salutation stripping", () => {
     const [article] = transformArticles(edition);
     expect(article.fullText).not.toContain("Editor, the Transcript");
     expect(article.fullText).not.toContain("Staff Writer");
-    expect(article.byline).toBe("Tom Grissom, Staff Writer");
+    expect(article.byline).toBe("Tom Grissom");
+    expect(article.writerPosition).toBe("Staff Writer");
     expect(article.summary).toMatch(/^The body starts here/);
   });
 });
@@ -542,6 +582,23 @@ describe("headshot filtering", () => {
     expect(article.imageCaptions).toEqual(["Campus quad at sunset"]);
   });
 
+  it("strips trailing caption text duplicated in body", () => {
+    const edition = makeEdition({
+      articles: [
+        makeArticle({
+          headline: "Senator To Speak",
+          body: "The senator will speak at commencement this June and the campus community is buzzing with anticipation for this major event.\n\nMore details about the event and venue were released by the administration this week.\n\nSENATOR JOHN DOE will address the graduating class on June 14.",
+          image_files: ["images/senator.jpg"],
+          images: [{ caption: "SENATOR JOHN DOE will address the graduating class on June 14.", position: "top" }],
+        }),
+      ],
+    });
+
+    const [article] = transformArticles(edition);
+    expect(article.fullText).not.toContain("SENATOR JOHN DOE will address");
+    expect(article.fullText).toContain("More details");
+  });
+
   it("does not filter when author is empty", () => {
     const edition = makeEdition({
       articles: [
@@ -557,6 +614,61 @@ describe("headshot filtering", () => {
   });
 });
 
+// ── dehyphenation (tested indirectly via transformArticles) ──────────
+
+describe("dehyphenation", () => {
+  it("rejoins words split across double newlines (paragraph breaks)", () => {
+    const edition = makeEdition({
+      articles: [
+        makeArticle({
+          body: "He spoke per-\n\nsonally to the faculty about the proposed changes to the academic calendar that would affect all departments and their scheduling for the upcoming semester.",
+        }),
+      ],
+    });
+    const [article] = transformArticles(edition);
+    expect(article.fullText).toContain("personally");
+    expect(article.fullText).not.toContain("per-");
+  });
+
+  it("rejoins words split across single newlines", () => {
+    const edition = makeEdition({
+      articles: [
+        makeArticle({
+          body: "There are many ex-\namples of student involvement in campus governance throughout the university's long and distinguished history of promoting democratic participation among its student body.",
+        }),
+      ],
+    });
+    const [article] = transformArticles(edition);
+    expect(article.fullText).toContain("examples");
+    expect(article.fullText).not.toContain("ex-");
+  });
+
+  it("does not merge when next line starts with uppercase (real paragraph break)", () => {
+    const edition = makeEdition({
+      articles: [
+        makeArticle({
+          body: "The club held a bake-\n\nSale proceeds went to charity and were distributed among several local organizations serving the Delaware community throughout the year.",
+        }),
+      ],
+    });
+    const [article] = transformArticles(edition);
+    expect(article.fullText).toContain("bake-");
+  });
+
+  it("dehyphenates in summary as well", () => {
+    const edition = makeEdition({
+      articles: [
+        makeArticle({
+          body: "The com-\nmittee met yesterday to discuss important matters.\n\nSecond paragraph covers additional details about the campus renovation project that will transform several key buildings over the coming academic year.",
+        }),
+      ],
+    });
+    const [article] = transformArticles(edition);
+    expect(article.summary).toContain("committee");
+    expect(article.summary).not.toContain("com-");
+  });
+});
+
 // ── classifyCategory (tested indirectly via transformArticles) ───────
 
 describe("classifyCategory (via transformArticles)", () => {
@@ -569,8 +681,8 @@ describe("classifyCategory (via transformArticles)", () => {
     expect(classifyVia({ author: "By John Smith, Sports" })).toBe("Sports");
   });
 
-  it("detects Arts from byline 'Entertainment' keyword", () => {
-    expect(classifyVia({ author: "By Jane, Entertainment" })).toBe("Arts");
+  it("detects Arts & Entertainment from byline 'Entertainment' keyword", () => {
+    expect(classifyVia({ author: "By Jane, Entertainment" })).toBe("Arts & Entertainment");
   });
 
   it("detects Sports from byline without comma", () => {
@@ -595,12 +707,16 @@ describe("classifyCategory (via transformArticles)", () => {
     expect(classifyVia({ headline: "Bishops Win Basketball Championship" })).toBe("Sports");
   });
 
-  it("detects Arts from headline keywords", () => {
-    expect(classifyVia({ headline: "New Film Festival Opens on Campus" })).toBe("Arts");
+  it("detects Arts & Entertainment from headline keywords", () => {
+    expect(classifyVia({ headline: "New Film Festival Opens on Campus" })).toBe("Arts & Entertainment");
   });
 
-  it("defaults to News", () => {
-    expect(classifyVia({ headline: "Budget Approved", author: "By Staff" })).toBe("News");
+  it("defaults to Campus News", () => {
+    expect(classifyVia({ headline: "Budget Approved", author: "By Staff" })).toBe("Campus News");
+  });
+
+  it("detects News from headline keywords", () => {
+    expect(classifyVia({ headline: "Congress Passes New Education Bill" })).toBe("News");
   });
 });
 
@@ -713,36 +829,3 @@ describe("computePageCount", () => {
   });
 });
 
-// ── transformOtherContent ────────────────────────────────────────────
-
-describe("transformOtherContent", () => {
-  it("passes through other_content items", () => {
-    const edition = makeEdition({
-      other_content: [
-        { title: "Class Schedule", body: "Monday: Math 101 at 9am" },
-        { title: "Campus Notice", body: "Library closed Saturday" },
-      ],
-    });
-
-    const result = transformOtherContent(edition);
-    expect(result).toHaveLength(2);
-    expect(result[0].title).toBe("Class Schedule");
-    expect(result[1].body).toBe("Library closed Saturday");
-  });
-
-  it("returns empty array when other_content is missing", () => {
-    const edition = makeEdition();
-    (edition as Record<string, unknown>).other_content = undefined;
-    expect(transformOtherContent(edition)).toEqual([]);
-  });
-
-  it("defaults empty title/body to empty string", () => {
-    const edition = makeEdition({
-      other_content: [{ title: "", body: "" }],
-    });
-
-    const [item] = transformOtherContent(edition);
-    expect(item.title).toBe("");
-    expect(item.body).toBe("");
-  });
-});
