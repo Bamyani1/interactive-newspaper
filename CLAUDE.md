@@ -79,9 +79,9 @@ src/
 
 ocr/
   src/transcript_ocr/   # Python OCR package — domain modules below
-    application/        # Orchestration (edition_pipeline, convert_scans_runtime)
-    cli/                # Entry points + _legacy_bridge.py
-    config/             # Settings, environment
+    application/        # Pipeline orchestration (edition_pipeline, page_pipeline, ad_enrichment)
+    cli/                # CLI entry points (convert_scans, enrich_ads, compare_runs, score_gold)
+    config/             # Settings, environment, path constants (paths.py)
     contracts/          # Data models
     recognition/        # DocAI & Gemini text extraction
     preprocessing/      # Image normalization
@@ -93,8 +93,7 @@ ocr/
     ingestion/          # File discovery, pathing
     diagnostics/        # Reporting & snapshots
     evaluation/         # Run comparisons & gold scoring
-    engine/             # Compatibility shim (OCR_FORCE_LEGACY=1 activates legacy path)
-    shared/             # Console utilities
+    shared/             # Console utilities, retry helpers
   convert_scans.py      # Main OCR entry point
   enrich_ads.py         # Post-OCR ad enrichment
   inbox/                # Drop new scan folders here (gitignored)

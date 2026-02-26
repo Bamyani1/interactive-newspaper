@@ -1,2 +1,0 @@
-"""Internal OCR engine modules."""
-

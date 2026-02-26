@@ -1,4 +1,4 @@
-"""Tests for package-runtime default and legacy fallback behavior."""
+"""Tests for package-runtime default behavior."""
 
 from __future__ import annotations
 
@@ -28,7 +28,6 @@ def test_convert_scans_defaults_to_package_runtime():
     proc = _run(sys.executable, "ocr/convert_scans.py", "--help")
     assert proc.returncode == 0
     assert "usage: convert_scans.py" in proc.stdout
-    assert "convert_scans_legacy.py" not in proc.stdout
 
 
 def test_enrich_ads_defaults_to_package_runtime():

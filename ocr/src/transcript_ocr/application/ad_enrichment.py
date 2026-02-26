@@ -7,17 +7,13 @@ import json
 import os
 import tempfile
 import time
-from pathlib import Path
 
 from ..config.constants import GEMINI_AD_ENRICHMENT_MODEL
+from ..config.paths import PUBLIC_EDITIONS_DIR
 from ..contracts.ad_models import EnrichedAdsResponse
 from ..recognition.ad_prompts import ENRICHMENT_PROMPT, SAFETY_OFF
-from ..shared.console import status, substep, success, warning, error, info, file_written
+from ..shared.console import status, substep, success, error, info, file_written
 from ..shared.retry import gemini_generate_with_retry
-
-OCR_ROOT = Path(__file__).resolve().parents[3]
-REPO_ROOT = OCR_ROOT.parent
-EDITIONS_DIR = os.path.join(str(REPO_ROOT), "public", "editions")
 
 
 def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool, int, float]:
@@ -108,17 +104,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Enrich ads in edition.json files")
     parser.add_argument("--date", help="Enrich a specific edition by date (e.g. 1988-10-12)")
     parser.add_argument("--force", action="store_true", help="Re-enrich already enriched editions")
-    parser.add_argument(
-        "--editions-dir",
-        default=EDITIONS_DIR,
-        help="Directory containing edition subfolders (default: public/editions)",
-    )
     args = parser.parse_args(argv)
 
     from google import genai  # lazy: avoid import failure when google-genai not installed
 
     client = genai.Client()
-    editions_dir = args.editions_dir
+    editions_dir = str(PUBLIC_EDITIONS_DIR)
 
     total_tokens = 0
     total_time = 0.0
@@ -148,4 +139,4 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["EDITIONS_DIR", "enrich_edition", "main"]
+__all__ = ["enrich_edition", "main"]

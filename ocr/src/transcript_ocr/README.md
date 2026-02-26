@@ -1,32 +1,38 @@
 # transcript_ocr Package
 
-This package is the new modular home for OCR pipeline code.
+This package contains all OCR pipeline logic, organized by domain.
 
-## Current migration status
+## Package structure
 
-- Stage directories, config, contracts, CLI, and architecture tests are in place.
-- Stage modules now own extracted OCR logic (preprocessing, detection,
-  recognition, postprocessing, image-linking, merging, diagnostics, export).
-- `transcript_ocr.engine.*` is now a compatibility shim layer for legacy
-  imports while runtime orchestration lives in `application/*`.
-- `compare_runs` and `score_gold` logic has been moved into:
-  - `transcript_ocr.evaluation.run_compare`
-  - `transcript_ocr.evaluation.gold_score`
-- `convert_scans` and `enrich_ads` now execute package-native runtimes by default:
-  - `transcript_ocr.application.convert_scans_runtime`
-  - `transcript_ocr.application.ad_enrichment`
-- Top-level entrypoints remain stable via wrappers:
-  - `ocr/convert_scans.py`
-  - `ocr/enrich_ads.py`
-  - `ocr/compare_runs.py`
-  - `ocr/score_gold.py`
-- Temporary fallback remains available for one stabilization cycle:
-  - `OCR_FORCE_LEGACY=1` routes `convert_scans`/`enrich_ads` to `*_legacy.py`.
-- New parity harness utilities live in `transcript_ocr.evaluation.parity` with
-  fixture-backed tests under `tests/ocr/fixtures/parity`.
+```
+config/         — Settings, environment, path constants
+contracts/      — Data models (content, diagnostics, ads)
+cli/            — CLI entry points (convert_scans, enrich_ads, compare_runs, score_gold)
+application/    — Pipeline orchestration (edition_pipeline, page_pipeline, ad_enrichment)
+ingestion/      — File discovery, path resolution
+preprocessing/  — Image normalization, skew correction
+detection/      — YOLO region detection
+recognition/    — DocAI & Gemini text extraction, prompts
+postprocessing/ — Text deduplication, byline cleanup, ad reclassification
+merging/        — Cross-page article merging (deterministic + LLM)
+image_linking/  — Visual/spatial image-to-article matching
+export/         — JSON/markdown writers
+diagnostics/    — Reporting, snapshots, run manifests
+evaluation/     — Run comparison & gold scoring
+shared/         — Console utilities, retry helpers
+```
+
+## Call chain
+
+```
+ocr/convert_scans.py  (thin wrapper, adds src/ to sys.path)
+  → cli/convert_scans.py::main()  (single arg parse, canonical paths)
+    → application/edition_pipeline.py::process_edition()  (5-phase core)
+```
 
 ## Rules
 
 - Keep external CLI behavior and output contracts stable while refactoring internals.
-- New modules should be added under the matching domain directory (`recognition`, `postprocessing`, `merging`, etc.).
+- New modules should be added under the matching domain directory.
 - Avoid cross-layer imports that violate architecture tests in `tests/ocr/architecture/`.
+- All path constants are defined in `config/paths.py` — do not compute OCR_ROOT locally.
