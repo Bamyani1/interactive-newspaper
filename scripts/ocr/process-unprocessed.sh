@@ -6,9 +6,10 @@ set -euo pipefail
 # and processes each through the full pipeline.
 #
 # Usage:
-#   scripts/process-unprocessed.sh              # sequential (default)
-#   scripts/process-unprocessed.sh --parallel 3 # 3 concurrent workers
-#   scripts/process-unprocessed.sh --dry-run    # list editions without processing
+#   scripts/process-unprocessed.sh                        # sequential (default)
+#   scripts/process-unprocessed.sh --parallel 3           # 3 concurrent workers
+#   scripts/process-unprocessed.sh --dry-run              # list editions without processing
+#   scripts/process-unprocessed.sh --inbox /path/to/dir   # use custom inbox directory
 #
 # Each edition runs through: OCR → enrich → cleanup → seed → embed
 # Successfully processed editions are moved to ocr/done/.
@@ -16,7 +17,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 UNPROCESSED_DIR="$ROOT_DIR/ocr/inbox"
-SCRIPT="$ROOT_DIR/scripts/process-edition.sh"
+SCRIPT="$ROOT_DIR/scripts/ocr/process-edition.sh"
 
 # ── Args ────────────────────────────────────────────────────────
 
@@ -33,9 +34,17 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=true
       shift
       ;;
+    --inbox)
+      UNPROCESSED_DIR="${2:-}"
+      if [[ -z "$UNPROCESSED_DIR" ]]; then
+        echo "ERROR: --inbox requires a directory path"
+        exit 1
+      fi
+      shift 2
+      ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: scripts/process-unprocessed.sh [--parallel N] [--dry-run]"
+      echo "Usage: scripts/process-unprocessed.sh [--parallel N] [--dry-run] [--inbox DIR]"
       exit 1
       ;;
   esac

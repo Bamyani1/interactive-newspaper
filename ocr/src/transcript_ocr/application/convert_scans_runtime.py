@@ -109,8 +109,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--workers",
         type=int,
-        default=1,
-        help="Number of concurrent worker threads for page processing (default: 1).",
+        default=0,
+        help="Number of concurrent worker threads for page processing (default: OCR_WORKERS env or 1).",
     )
     cli = parser.parse_args(argv)
 

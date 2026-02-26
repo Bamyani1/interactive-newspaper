@@ -18,9 +18,11 @@
     "db:embed": "node --import tsx scripts/db/embed.mjs",
     "db:embed:force": "node --import tsx scripts/db/embed.mjs --force",
     "test:golden": "vitest run tests/ocr/pipeline-golden.test.ts",
-    "test:invariants": "vitest run tests/ocr/pipeline-invariants.test.ts"
+    "test:invariants": "vitest run tests/ocr/pipeline-invariants.test.ts",
+    "images:upload": "node scripts/db/upload-images.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.998.0",
     "@google/genai": "^1.42.0",
     "@neondatabase/serverless": "^1.0.2",
     "framer-motion": "^12.23.25",
@@ -41,6 +43,7 @@
     "eslint-config-next": "16.0.7",
     "jsdom": "^24.0.0",
     "oslllo-potrace": "^5.0.0",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5",

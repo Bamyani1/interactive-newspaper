@@ -152,10 +152,11 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: 30px 20px;
+    padding: 20px;
     position: relative;
     z-index: 5;
     order: 2;
+    overflow-y: auto;
 }
 
 /* =========================================
@@ -210,7 +211,7 @@
     gap: 0 30px;
     align-items: center;
     max-width: 576px;
-    margin: 0 auto;
+    margin: 10px auto 0;
 }
 
 .cinema-col-brand {
@@ -218,6 +219,21 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+}
+
+.cinema-col-brand--hidden {
+    display: none;
+}
+
+/* When picker is open: hide brand + divider, let action span full width */
+.cinema-paper-grid--picker-open .cinema-divider {
+    display: none;
+}
+
+.cinema-paper-grid--picker-open .cinema-col-action {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    align-items: center;
 }
 
 .cinema-divider {
@@ -424,6 +440,30 @@
 
 [data-mode='light'] .cinema-paper::before {
     filter: drop-shadow(0 0 15px rgba(0, 0, 0, 0.45));
+}
+
+/* =========================================
+   READ MODE — OVERLAY APPROACH
+   ========================================= */
+
+/* Landing content hidden in read mode — maintains grid height */
+.cinema-paper-grid--read-mode .cinema-col-brand,
+.cinema-paper-grid--read-mode .cinema-divider,
+.cinema-paper-grid--read-mode .cinema-col-action {
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transition: visibility 0s 0.15s, opacity 0.15s ease;
+}
+
+/* Expanded picker overlay — sits on top of hidden landing content */
+.cinema-expanded-overlay {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* =========================================

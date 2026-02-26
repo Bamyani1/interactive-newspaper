@@ -1,4 +1,5 @@
 import type { Article, OcrEdition } from "@/src/types";
+import { resolveImageUrl } from "@/src/lib/image-url";
 import { VALID_CATEGORIES, classifyCategory } from "./category-rules";
 import {
   doesLastParagraphMatchAnyCaption,
@@ -51,10 +52,7 @@ export function transformArticles(edition: OcrEdition): Article[] {
       .map((f, idx) => ({ f, idx }))
       .filter(({ f }) => isValidImageFile(f));
 
-    const rawImageUrls = rawEntries.map(({ f }) => {
-      const filename = f.replace(/^images\//, "");
-      return `/api/editions/${date}/images/${encodeURIComponent(filename)}`;
-    });
+    const rawImageUrls = rawEntries.map(({ f }) => resolveImageUrl(date, f));
 
     const rawImageCaptions: (string | null)[] = rawEntries.map(
       ({ idx }) => a.images?.[idx]?.caption || null,

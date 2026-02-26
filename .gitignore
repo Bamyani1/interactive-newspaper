@@ -95,6 +95,7 @@ ocr/runs/
 
 # OCR scan staging (large TIFFs)
 ocr/inbox/
+ocr/in2/
 ocr/done/
 
 # OCR Model Cache

@@ -5,6 +5,7 @@ import type {
   OcrEnrichedAd,
   VintageAd,
 } from "@/src/types";
+import { resolveImageUrl } from "@/src/lib/image-url";
 import { isValidImageFile } from "./image-rules";
 
 const VALID_AD_CATEGORIES: ReadonlySet<AdCategory> = new Set([
@@ -33,10 +34,7 @@ export function transformAds(edition: OcrEdition): VintageAd[] {
     // Build image URLs from ad.image_files (same pattern as transformArticles)
     const imageUrls = (ad.image_files ?? [])
       .filter((f) => isValidImageFile(f))
-      .map((f) => {
-        const filename = f.replace(/^images\//, "");
-        return `/api/editions/${date}/images/${encodeURIComponent(filename)}`;
-      });
+      .map((f) => resolveImageUrl(date, f));
 
     if (imageUrls.length > 0) base.imageUrls = imageUrls;
 

@@ -14,7 +14,7 @@ let hasPlayedEntrance = false;
 export default function Home() {
     const router = useRouter();
     const { editions, isLoading } = useArchive();
-    const [isEntering, setIsEntering] = useState(false);
+    const [isReadMode, setIsReadMode] = useState(false);
     const [isExiting, setIsExiting] = useState(false);
 
     // Use the extracted animation hook
@@ -27,8 +27,16 @@ export default function Home() {
 
     const handleEnter = () => {
         if (!selectedEdition) return;
-        setIsEntering(true);
+        setIsReadMode(true);
+    };
+
+    const handleNavigate = () => {
+        if (!selectedEdition) return;
         setIsExiting(true);
+    };
+
+    const handleBack = () => {
+        setIsReadMode(false);
     };
 
     // Memoize ticker items to prevent recreation on every render
@@ -48,7 +56,7 @@ export default function Home() {
                     className="cinema-paper"
                     variants={landingCardVariants}
                     initial={hasPlayedEntrance ? false : "hidden"}
-                    animate={isExiting ? "exit" : "show"}
+                    animate="show"
                     transition={TRANSITIONS.slow}
                     onAnimationComplete={(definition) => {
                         if (definition === "show") {
@@ -61,9 +69,9 @@ export default function Home() {
                         <p className="cinema-subtitle">Student Newspaper Since 1867</p>
                     </header>
 
-                    <div className="cinema-paper-grid">
-                        {/* LEFT: Brand */}
-                        <div className="cinema-col-brand">
+                    <div className={`cinema-paper-grid ${isReadMode ? "cinema-paper-grid--read-mode" : ""} ${isPickerOpen ? "cinema-paper-grid--picker-open" : ""}`}>
+                        {/* Landing content — ALWAYS rendered, hidden via CSS when read mode */}
+                        <div className={`cinema-col-brand ${isPickerOpen ? "cinema-col-brand--hidden" : ""}`}>
                             <h2 className="cinema-headline">
                                 Travel Back in Time.<br />
                                 Experience Campus History.
@@ -83,21 +91,37 @@ export default function Home() {
                                 onOpenChange={setIsPickerOpen}
                             />
                         </div>
+
+                        {/* Expanded picker — only mounted when read mode, overlays on top */}
+                        {isReadMode && (
+                            <motion.div
+                                className="cinema-expanded-overlay"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.25, delay: 0.1 }}
+                            >
+                                <EditionPicker
+                                    editions={editions}
+                                    selectedEdition={selectedEdition}
+                                    onSelect={setUserSelectedEdition}
+                                    isLoading={isLoading}
+                                    expanded
+                                    onNavigate={handleNavigate}
+                                    onBack={handleBack}
+                                />
+                            </motion.div>
+                        )}
                     </div>
 
-                    {!isPickerOpen && (
+                    {/* Read button — only in landing mode */}
+                    {!isReadMode && !isPickerOpen && (
                         <button
                             type="button"
                             className="cinema-btn"
                             onClick={handleEnter}
-                            disabled={isLoading || isEntering || !selectedEdition}
+                            disabled={isLoading || !selectedEdition}
                         >
-                            {isEntering ? (
-                                <>
-                                    <span>Printing...</span>
-                                    <Loader2 size={20} className="animate-spin" />
-                                </>
-                            ) : isLoading ? (
+                            {isLoading ? (
                                 <>
                                     <span>Loading Editions...</span>
                                     <Loader2 size={20} className="animate-spin" />
