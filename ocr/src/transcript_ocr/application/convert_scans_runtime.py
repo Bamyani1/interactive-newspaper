@@ -11,8 +11,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from google import genai
-
 from ..contracts.diagnostics_models import PageDiagnostics, PipelineReport
 from ..diagnostics.run_manifest import _get_git_commit_hash
 from ..ingestion.pathing import RunPaths, resolve_ocr_output_root, resolve_public_output_root
@@ -117,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
     script_dir = str(OCR_ROOT)
     output_dir = resolve_public_output_root(script_dir, cli.public_output_root)
     ocr_output_dir = resolve_ocr_output_root(script_dir, cli.ocr_output_root)
+
+    from google import genai  # lazy: avoid import failure when google-genai not installed
 
     client = genai.Client()
     path = cli.path
