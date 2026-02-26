@@ -9,9 +9,6 @@ import tempfile
 import time
 from pathlib import Path
 
-from google import genai
-from google.genai import types
-
 from ..config.constants import GEMINI_AD_ENRICHMENT_MODEL
 from ..contracts.ad_models import EnrichedAdsResponse
 from ..recognition.ad_prompts import ENRICHMENT_PROMPT, SAFETY_OFF
@@ -47,6 +44,8 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool
 
     ads_json = json.dumps(ads, indent=2)
     prompt = ENRICHMENT_PROMPT.format(ads_json=ads_json)
+
+    from google.genai import types  # lazy: avoid import failure when google-genai not installed
 
     call_start = time.time()
     response = gemini_generate_with_retry(
@@ -115,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Directory containing edition subfolders (default: public/editions)",
     )
     args = parser.parse_args(argv)
+
+    from google import genai  # lazy: avoid import failure when google-genai not installed
 
     client = genai.Client()
     editions_dir = args.editions_dir
