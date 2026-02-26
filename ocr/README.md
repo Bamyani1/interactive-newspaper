@@ -42,7 +42,7 @@ App-serving data (in `public/editions/YYYY-MM-DD/`):
 - `edition.json` - Structured article data (~200-300KB)
 - `images/` - Extracted editorial images (~2MB, 10-20 photos)
 
-OCR intermediates (in `ocr/output/YYYY-MM-DD/`):
+OCR intermediates (in `ocr/runs/YYYY-MM-DD/`):
 - `diagnostics.json` - Processing metrics
 - `*.md` - Per-page markdown outputs
 - `summary.md` - Merged edition markdown
@@ -53,14 +53,14 @@ OCR intermediates (in `ocr/output/YYYY-MM-DD/`):
 
 ### Batch Process All Editions
 
-Place raw scan folders in `ocr/scans/YYYY-MM-DD/`, then run with no arguments:
+Place raw scan folders in `ocr/inbox/YYYY-MM-DD/`, then run with no arguments:
 
 ```bash
 source .venv/bin/activate
 python convert_scans.py
 ```
 
-This processes all editions in `ocr/scans/` and writes app data to `public/editions/` and intermediates to `ocr/output/`.
+This processes all editions in `ocr/inbox/` and writes app data to `public/editions/` and intermediates to `ocr/runs/`.
 
 **For 50 editions:**
 - Duration: ~16-17 hours
@@ -122,8 +122,9 @@ Checks all editions for:
 - `requirements.txt` - Python dependencies
 - `.env` - API credentials (git-ignored)
 - `models/` - YOLO model cache (git-ignored)
-- `scans/` - Raw TIF scan inputs, organized by date (git-ignored)
-- `output/` - OCR intermediates: diagnostics, markdown (git-ignored)
+- `inbox/` - Drop new scan folders here (git-ignored)
+- `done/` - Completed scans moved here (git-ignored)
+- `runs/` - OCR intermediates: diagnostics, markdown (git-ignored)
 
 ## Model Info
 

@@ -57,10 +57,23 @@ CREATE TABLE IF NOT EXISTS ads (
   display_text  TEXT,
   phone         TEXT,
   address       TEXT,
-  price         TEXT
+  price         TEXT,
+  image_urls    JSONB NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX IF NOT EXISTS idx_ads_edition ON ads(edition_date);
+
+-- ─── Migrations (safe to re-run) ───────────────────────────────────
+
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS writer_position TEXT;
+
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS image_urls JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS ad_type TEXT;
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS display_text TEXT;
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS price TEXT;
 
 -- ─── Weather ─────────────────────────────────────────────────────
 

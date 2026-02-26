@@ -66,12 +66,12 @@ export async function queryEditionByDate(date: string): Promise<{
   const [articleRows, adRows] = await sql.transaction([
     sql`
       SELECT id, edition_date, position, category, headline, summary, full_text,
-             byline, page, is_hero, is_featured, image_urls, image_caption, image_captions
+             byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions
       FROM articles WHERE edition_date = ${date}
       ORDER BY position
     `,
     sql`
-      SELECT position, title, body, category, ad_type, display_text, phone, address, price
+      SELECT position, title, body, category, ad_type, display_text, phone, address, price, image_urls
       FROM ads WHERE edition_date = ${date}
       ORDER BY position
     `,
@@ -86,6 +86,7 @@ export async function queryEditionByDate(date: string): Promise<{
     fullText: r.full_text,
     imageUrls: r.image_urls ?? [],
     byline: r.byline ?? null,
+    writerPosition: r.writer_position ?? null,
     page: r.page,
     isHero: r.is_hero,
     isFeatured: r.is_featured,
@@ -102,6 +103,7 @@ export async function queryEditionByDate(date: string): Promise<{
     phone: r.phone ?? undefined,
     address: r.address ?? undefined,
     price: r.price ?? undefined,
+    imageUrls: r.image_urls?.length ? r.image_urls : undefined,
   }));
 
   return {
@@ -127,7 +129,7 @@ interface SearchOptions {
   offset?: number;
 }
 
-export interface SearchResultRow {
+interface SearchResultRow {
   id: string;
   editionDate: string;
   category: string;
@@ -183,134 +185,6 @@ export async function searchArticles(
     })),
     total: countResult[0].total,
   };
-}
-
-// ─── Browse Queries (cross-edition) ──────────────────────────────
-
-interface BrowseOptions {
-  category?: string | null;
-  author?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
-  limit?: number;
-  offset?: number;
-}
-
-export async function browseArticles(options: BrowseOptions = {}): Promise<{
-  articles: (Article & { editionDate: string })[];
-  total: number;
-}> {
-  const { limit = 20, offset = 0 } = options;
-  const category = options.category ?? null;
-  const author = options.author ?? null;
-  const startDate = options.startDate ?? null;
-  const endDate = options.endDate ?? null;
-
-  const countResult = await sql`
-    SELECT COUNT(*)::int as total
-    FROM articles
-    WHERE (${category}::text IS NULL OR category = ${category})
-      AND (${author}::text IS NULL OR byline ILIKE '%' || ${author} || '%')
-      AND (${startDate}::text IS NULL OR edition_date >= ${startDate})
-      AND (${endDate}::text IS NULL OR edition_date <= ${endDate})
-  `;
-
-  const rows = await sql`
-    SELECT id, edition_date, position, category, headline, summary, full_text,
-           byline, page, is_hero, is_featured, image_urls, image_caption, image_captions
-    FROM articles
-    WHERE (${category}::text IS NULL OR category = ${category})
-      AND (${author}::text IS NULL OR byline ILIKE '%' || ${author} || '%')
-      AND (${startDate}::text IS NULL OR edition_date >= ${startDate})
-      AND (${endDate}::text IS NULL OR edition_date <= ${endDate})
-    ORDER BY edition_date DESC, position
-    LIMIT ${limit} OFFSET ${offset}
-  `;
-
-  const articles = rows.map((r) => ({
-    id: r.id,
-    date: r.edition_date,
-    editionDate: r.edition_date,
-    category: r.category as Article["category"],
-    headline: r.headline,
-    summary: r.summary,
-    fullText: r.full_text,
-    imageUrls: r.image_urls ?? [],
-    byline: r.byline ?? null,
-    page: r.page,
-    isHero: r.is_hero,
-    isFeatured: r.is_featured,
-    imageCaption: r.image_caption ?? null,
-    imageCaptions: r.image_captions ?? [],
-  }));
-
-  return { articles, total: countResult[0].total };
-}
-
-// ─── Weather Queries ─────────────────────────────────────────────
-
-export interface WeatherRow {
-  date: string;
-  scope: string;
-  tmax_c: number | null;
-  tmin_c: number | null;
-  precip_mm: number | null;
-  source: string;
-  source_station_id: string | null;
-  quality_flag: string | null;
-  is_estimated: boolean;
-}
-
-export async function queryWeatherByDate(
-  date: string,
-  scope = "delaware",
-): Promise<WeatherRow | null> {
-  const rows = await sql`
-    SELECT * FROM weather WHERE date = ${date} AND scope = ${scope}
-  `;
-  if (rows.length === 0) return null;
-  const r = rows[0];
-  return {
-    date: r.date,
-    scope: r.scope,
-    tmax_c: r.tmax_c,
-    tmin_c: r.tmin_c,
-    precip_mm: r.precip_mm,
-    source: r.source,
-    source_station_id: r.source_station_id,
-    quality_flag: r.quality_flag,
-    is_estimated: r.is_estimated,
-  };
-}
-
-// ─── Music Queries ───────────────────────────────────────────────
-
-export interface MusicRow {
-  year: number;
-  month: string;
-  rank: number;
-  title: string;
-  artist: string;
-  youtubeId: string;
-}
-
-export async function queryMusicByMonth(
-  year: number,
-  month: string,
-): Promise<MusicRow[]> {
-  const rows = await sql`
-    SELECT year, month, rank, title, artist, youtube_id
-    FROM music WHERE year = ${year} AND month = ${month}
-    ORDER BY rank
-  `;
-  return rows.map((r) => ({
-    year: r.year,
-    month: r.month,
-    rank: r.rank,
-    title: r.title,
-    artist: r.artist,
-    youtubeId: r.youtube_id,
-  }));
 }
 
 // ─── Vector / RAG Queries ────────────────────────────────────────

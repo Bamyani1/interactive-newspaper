@@ -28,14 +28,6 @@ function getClient(): GoogleGenAI {
 }
 
 /**
- * Embed a single text for document storage (RETRIEVAL_DOCUMENT task type).
- */
-export async function embedDocument(text: string): Promise<number[]> {
-    const result = await embedDocuments([text]);
-    return result[0];
-}
-
-/**
  * Embed multiple texts for document storage. Handles batching internally.
  * Returns an array of embedding vectors (768-dim each), parallel to the input array.
  */

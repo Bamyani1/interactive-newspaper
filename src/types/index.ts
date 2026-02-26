@@ -8,12 +8,13 @@
 export interface Article {
     id: string;
     date: string;
-    category: "News" | "Sports" | "Features" | "Opinion" | "Arts" | "Campus Life";
+    category: "Campus News" | "News" | "Sports" | "Arts & Entertainment" | "Opinion";
     headline: string;
     summary: string;
     fullText: string;
     imageUrls: string[];
     byline?: string | null;
+    writerPosition?: string | null;
     page: number;
     isHero: boolean;
     isFeatured: boolean;
@@ -43,6 +44,7 @@ export interface VintageAd {
     phone?: string;
     address?: string;
     price?: string;
+    imageUrls?: string[];
 }
 
 export type WeatherSource =
@@ -85,11 +87,6 @@ export interface MonthlyTrendingTrack {
     youtubeId: string;
 }
 
-export interface MonthlyTrendingRecord {
-    month: string;
-    tracks: MonthlyTrendingTrack[];
-}
-
 export type MonthlyTrendingReason = "INVALID_DATE" | "NO_DATA" | null;
 
 export type SectionId = "Top" | Article["category"] | "Ads" | "Classifieds" | "All";
@@ -122,6 +119,10 @@ export interface OcrImage {
 export interface OcrArticle {
     headline?: string;
     author?: string;
+    writer_position?: string;
+    category?: string;
+    continues_on?: string;
+    continued_from?: string;
     body?: string;
     images: OcrImage[];
     image_files: string[];

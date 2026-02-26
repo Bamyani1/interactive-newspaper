@@ -15,12 +15,11 @@ import { SectionPrintEdition } from "./variants/SectionPrintEdition";
 
 
 export const SECTION_ORDER: Article["category"][] = [
+    "Campus News",
     "News",
     "Sports",
-    "Features",
     "Opinion",
-    "Arts",
-    "Campus Life",
+    "Arts & Entertainment",
 ];
 
 const getScannedPages = (editionDate: string, pageCount: number): string[] => {
@@ -40,6 +39,7 @@ interface NewsFeedProps {
     onDateChange: (date: string) => void;
     activeSection: SectionId;
     onSectionChange: (section: SectionId) => void;
+    publicationInfo?: string;
 }
 
 export const NewsFeed: React.FC<NewsFeedProps> = ({
@@ -51,6 +51,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     onDateChange,
     activeSection,
     onSectionChange: _onSectionChange,
+    publicationInfo,
 }) => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [focusedIndex, setFocusedIndex] = useState<number>(-1);
@@ -150,7 +151,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 
     // Reset focus when switching sections to prevent stale focus state
     useEffect(() => {
-        setFocusedIndex(-1);
+        setFocusedIndex(-1); // eslint-disable-line react-hooks/set-state-in-effect -- reset on section change
     }, [currentSection]);
 
     // ── Extracted hooks ───────────────────────────────────────────
@@ -188,7 +189,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                 className={`${strokeWrapperClass} flex flex-col gap-0 min-h-screen`}
                 style={strokeWrapperStyle}
             >
-                <EditionMasthead editionHeaderDate={editionHeaderDate} />
+                <EditionMasthead editionHeaderDate={editionHeaderDate} publicationInfo={publicationInfo} />
 
                 <div
                     className="flex flex-col max-w-5xl mx-auto px-4 md:px-6 w-full"

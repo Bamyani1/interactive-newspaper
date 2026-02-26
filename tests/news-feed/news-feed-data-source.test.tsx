@@ -37,7 +37,7 @@ function makeArticle(overrides: Partial<Article> = {}): Article {
     return {
         id: "hero-news",
         date: "1987-10-14",
-        category: "News",
+        category: "Campus News",
         headline: "Cracked pipe cools campus",
         summary: "Heat was restored to residential halls after repairs began.",
         fullText: "<p>Full article body from hero story.</p>",
@@ -166,7 +166,7 @@ describe("NewsFeed data source and full-story rendering", () => {
                 editionDate={null}
                 editions={["1987-10-14"]}
                 onDateChange={vi.fn()}
-                activeSection="News"
+                activeSection="Campus News"
                 onSectionChange={vi.fn()}
             />
         );

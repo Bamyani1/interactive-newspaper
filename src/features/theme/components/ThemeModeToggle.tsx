@@ -28,10 +28,10 @@ export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = fal
     // Always start "dark" on both server and client to avoid hydration mismatch
     const [mode, setMode] = useState<ThemeMode>("dark");
 
-    // Sync with localStorage after mount
+    // Sync with localStorage after mount (must be effect — localStorage unavailable during SSR)
     useEffect(() => {
         const stored = window.localStorage.getItem(STORAGE_KEY);
-        if (stored === "light") setMode("light");
+        if (stored === "light") setMode("light"); // eslint-disable-line react-hooks/set-state-in-effect
     }, []);
 
     useLayoutEffect(() => {

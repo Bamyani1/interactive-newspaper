@@ -7,17 +7,55 @@
  * Usage:
  *   node --experimental-vm-modules scripts/cleanup-images.mjs          # dry-run
  *   node --experimental-vm-modules scripts/cleanup-images.mjs --apply  # write changes
+ *   node --experimental-vm-modules scripts/cleanup-images.mjs --date 1960-05-11 --editions-dir public/editions --report-path ocr/runs/1960-05-11/cleanup-report.json
  */
 
-import { readdir, readFile, writeFile } from "fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const EDITIONS_DIR = path.join(ROOT, "public", "editions");
+const DEFAULT_EDITIONS_DIR = path.join(ROOT, "public", "editions");
+const args = process.argv.slice(2);
+let applyChanges = false;
+let targetDate = "";
+let reportPath = "";
+let editionsDir = DEFAULT_EDITIONS_DIR;
 
-const applyChanges = process.argv.includes("--apply");
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i];
+  if (arg === "--apply") {
+    applyChanges = true;
+    continue;
+  }
+  if (arg === "--date") {
+    targetDate = args[i + 1] || "";
+    i += 1;
+    continue;
+  }
+  if (arg === "--report-path") {
+    reportPath = args[i + 1] || "";
+    i += 1;
+    continue;
+  }
+  if (arg === "--editions-dir") {
+    editionsDir = args[i + 1] || "";
+    i += 1;
+    continue;
+  }
+  throw new Error(`Unknown option: ${arg}`);
+}
+
+if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+  throw new Error(`Invalid --date value: ${targetDate}. Expected YYYY-MM-DD.`);
+}
+if (!editionsDir) {
+  throw new Error("Missing editions directory path");
+}
+if (!path.isAbsolute(editionsDir)) {
+  editionsDir = path.resolve(ROOT, editionsDir);
+}
 
 // ─── Category classification (reused from ocr-adapter.ts) ────────────
 
@@ -149,19 +187,31 @@ function isPhotoOnly(article) {
 async function main() {
   console.log(`\n📰 Image Cleanup Script (${applyChanges ? "APPLY" : "DRY-RUN"} mode)\n`);
 
-  const entries = await readdir(EDITIONS_DIR, { withFileTypes: true });
-  const editionDirs = entries
+  const entries = await readdir(editionsDir, { withFileTypes: true });
+  const discoveredEditionDirs = entries
     .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(e.name))
     .map((e) => e.name)
     .sort();
+  const editionDirs = targetDate
+    ? discoveredEditionDirs.filter((d) => d === targetDate)
+    : discoveredEditionDirs;
+
+  if (targetDate && editionDirs.length === 0) {
+    throw new Error(`Edition not found for --date ${targetDate}`);
+  }
+
+  if (targetDate) {
+    console.log(`Scoped to edition date: ${targetDate}\n`);
+  }
 
   let totalRemoved = 0;
   let totalReassigned = 0;
   let totalEmptyCleaned = 0;
   let totalEditionsModified = 0;
+  const editionReports = [];
 
   for (const date of editionDirs) {
-    const filePath = path.join(EDITIONS_DIR, date, "edition.json");
+    const filePath = path.join(editionsDir, date, "edition.json");
     let raw;
     try {
       raw = await readFile(filePath, "utf-8");
@@ -174,6 +224,9 @@ async function main() {
 
     let editionModified = false;
     const changes = [];
+    let editionRemoved = 0;
+    let editionReassigned = 0;
+    let editionEmptyCleaned = 0;
 
     for (let i = 0; i < edition.articles.length; i++) {
       const article = edition.articles[i];
@@ -195,6 +248,7 @@ async function main() {
         }
         article.images = newImages;
         totalEmptyCleaned += emptyCount;
+        editionEmptyCleaned += emptyCount;
         editionModified = true;
         changes.push(
           `  [${i}] "${article.headline?.slice(0, 50)}": removed ${emptyCount} empty image_files entries`
@@ -272,6 +326,7 @@ async function main() {
               target.images.push(imgData);
 
               totalReassigned++;
+              editionReassigned++;
               reassigned = true;
               editionModified = true;
               changes.push(
@@ -289,6 +344,7 @@ async function main() {
             if (article.images) article.images.splice(imgI, 1);
 
             totalRemoved++;
+            editionRemoved++;
             editionModified = true;
             changes.push(
               `  [${i}] REMOVE "${caption.slice(0, 60)}..." ` +
@@ -312,6 +368,63 @@ async function main() {
       }
     }
 
+    // ── Ad image validation ──────────────────────────────────────────
+    const adSources = [edition.ads, edition.enriched_ads].filter(Array.isArray);
+    for (const adList of adSources) {
+      for (let i = 0; i < adList.length; i++) {
+        const ad = adList[i];
+        const adImages = ad.image_files || [];
+
+        // Remove empty strings
+        const adEmptyCount = adImages.filter((f) => f === "").length;
+        if (adEmptyCount > 0) {
+          ad.image_files = adImages.filter((f) => f !== "");
+          totalEmptyCleaned += adEmptyCount;
+          editionEmptyCleaned += adEmptyCount;
+          editionModified = true;
+          changes.push(
+            `  [ad ${i}] "${ad.business_name?.slice(0, 50)}": removed ${adEmptyCount} empty image_files entries`
+          );
+        }
+
+        // Validate referenced image files exist on disk
+        if (ad.image_files && ad.image_files.length > 0) {
+          const imagesDir = path.join(editionsDir, date, "images");
+          const validFiles = [];
+          for (const f of ad.image_files) {
+            const filename = f.replace(/^images\//, "");
+            const fullPath = path.join(imagesDir, filename);
+            try {
+              await access(fullPath);
+              validFiles.push(f);
+            } catch {
+              totalRemoved++;
+              editionRemoved++;
+              editionModified = true;
+              changes.push(
+                `  [ad ${i}] REMOVE missing file "${f}" from "${ad.business_name?.slice(0, 40)}"`
+              );
+            }
+          }
+          if (validFiles.length !== ad.image_files.length) {
+            ad.image_files = validFiles;
+          }
+        }
+      }
+    }
+
+    // Sync enriched_ads image_files with ads image_files
+    if (edition.ads && edition.enriched_ads) {
+      for (let i = 0; i < Math.min(edition.ads.length, edition.enriched_ads.length); i++) {
+        const adImgs = edition.ads[i].image_files || [];
+        const enrichedImgs = edition.enriched_ads[i].image_files || [];
+        if (JSON.stringify(adImgs) !== JSON.stringify(enrichedImgs)) {
+          edition.enriched_ads[i].image_files = [...adImgs];
+          editionModified = true;
+        }
+      }
+    }
+
     if (changes.length > 0) {
       console.log(`📅 ${date}:`);
       for (const c of changes) console.log(c);
@@ -325,6 +438,18 @@ async function main() {
         console.log(`  ✅ Written: ${filePath}\n`);
       }
     }
+
+    editionReports.push({
+      date,
+      modified: editionModified,
+      changes,
+      metrics: {
+        images_removed: editionRemoved,
+        images_reassigned: editionReassigned,
+        empty_entries_cleaned: editionEmptyCleaned,
+      },
+      edition_json_path: filePath,
+    });
   }
 
   console.log("─".repeat(60));
@@ -337,6 +462,59 @@ async function main() {
 
   if (!applyChanges && totalEditionsModified > 0) {
     console.log(`\n⚠️  Dry-run mode — no files changed. Run with --apply to write.\n`);
+  }
+
+  if (reportPath) {
+    const report = {
+      mode: applyChanges ? "apply" : "dry-run",
+      date_scope: targetDate || null,
+      started_at: new Date().toISOString(),
+      editions_scanned: editionDirs.length,
+      summary: {
+        editions_modified: totalEditionsModified,
+        images_removed: totalRemoved,
+        images_reassigned: totalReassigned,
+        empty_entries_cleaned: totalEmptyCleaned,
+      },
+      editions: editionReports,
+    };
+
+    await mkdir(path.dirname(reportPath), { recursive: true });
+    await writeFile(reportPath, JSON.stringify(report, null, 2) + "\n", "utf-8");
+
+    const mdPath = reportPath.endsWith(".json")
+      ? reportPath.replace(/\.json$/i, ".md")
+      : `${reportPath}.md`;
+    const mdLines = [
+      "# Cleanup Report",
+      "",
+      `- Mode: ${report.mode}`,
+      `- Date scope: ${report.date_scope ?? "all editions"}`,
+      `- Editions scanned: ${report.editions_scanned}`,
+      `- Editions modified: ${report.summary.editions_modified}`,
+      `- Images removed: ${report.summary.images_removed}`,
+      `- Images reassigned: ${report.summary.images_reassigned}`,
+      `- Empty entries cleaned: ${report.summary.empty_entries_cleaned}`,
+      "",
+    ];
+    for (const ed of editionReports) {
+      mdLines.push(`## ${ed.date}`);
+      mdLines.push(`- Modified: ${ed.modified ? "yes" : "no"}`);
+      mdLines.push(`- Images removed: ${ed.metrics.images_removed}`);
+      mdLines.push(`- Images reassigned: ${ed.metrics.images_reassigned}`);
+      mdLines.push(`- Empty entries cleaned: ${ed.metrics.empty_entries_cleaned}`);
+      mdLines.push(`- Edition JSON: ${ed.edition_json_path}`);
+      if (ed.changes.length) {
+        mdLines.push("- Changes:");
+        for (const c of ed.changes) {
+          mdLines.push(`  - ${c.trim()}`);
+        }
+      }
+      mdLines.push("");
+    }
+    await writeFile(mdPath, mdLines.join("\n").trimEnd() + "\n", "utf-8");
+    console.log(`Cleanup report written: ${reportPath}`);
+    console.log(`Cleanup report markdown: ${mdPath}`);
   }
 }
 

@@ -118,6 +118,7 @@ function EditionBody({
     const {
         articles,
         ads,
+        publicationInfo,
         hasActiveEdition,
         isLoading: isLoadingArticles,
         error,
@@ -169,6 +170,7 @@ function EditionBody({
     const prevDateRef = useRef<string | null>(null);
     useEffect(() => {
         if (prevDateRef.current && currentDate) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- derives direction from previous vs current date
             setDirection(currentDate > prevDateRef.current ? 1 : -1);
         }
         if (currentDate) prevDateRef.current = currentDate;
@@ -240,6 +242,7 @@ function EditionBody({
                                                 onDateChange={onDateChange}
                                                 activeSection={activeSection}
                                                 onSectionChange={handleSectionChange}
+                                                publicationInfo={publicationInfo}
                                             />
                                         </motion.div>
                                     )}

@@ -17,10 +17,12 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
 }
 
 .ep-container--open {
+    width: 100%;
+    max-width: 260px;
+    margin: 0 auto;
     animation: ep-fade-in 300ms var(--ease-default) both;
 }
 
@@ -37,48 +39,117 @@
 }
 
 /* =========================================
-   SELECTED LABEL (closed state)
+   CLOSED STATE — Editorial Date Block
    ========================================= */
 
-.ep-selected-label {
+.ep-closed-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    max-width: 220px;
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.ep-closed-rule {
+    display: block;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        color-mix(in srgb, var(--color-accent) 40%, transparent) 50%,
+        transparent 100%
+    );
+    transition: background 300ms var(--ease-default);
+}
+
+.ep-closed-label {
     font-family: var(--font-mono);
-    font-size: 0.65rem;
-    letter-spacing: 0.12em;
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--color-text-secondary);
-    text-align: center;
     margin: 0;
+    transition: color 300ms var(--ease-default);
 }
 
-/* =========================================
-   PICK EDITION BUTTON (closed state)
-   ========================================= */
-
-.ep-pick-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px 24px;
-    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
-    border-left: 3px solid var(--color-accent);
-    cursor: pointer;
-    font-family: var(--font-header);
+.ep-closed-ornament {
+    font-family: var(--font-body);
     font-size: 0.8rem;
-    font-weight: var(--font-bold);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--color-text-primary);
-    transition:
-        background var(--duration-normal) var(--ease-default),
-        border-color var(--duration-normal) var(--ease-default),
-        color var(--duration-normal) var(--ease-default);
+    color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+    transition: color 300ms var(--ease-default);
 }
 
-.ep-pick-btn:hover {
-    background: color-mix(in srgb, var(--color-accent) 16%, transparent);
-    border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+.ep-closed-date {
+    font-family: var(--font-header);
+    font-size: 1.55rem;
+    font-weight: var(--font-bold);
+    font-style: italic;
+    color: var(--color-text-primary);
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    transition:
+        color 300ms var(--ease-default),
+        letter-spacing 300ms var(--ease-default);
+}
+
+.ep-closed-weekday {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    transition: color 300ms var(--ease-default);
+}
+
+.ep-closed-change {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--color-accent) 65%, transparent);
+    margin-top: 2px;
+    transition:
+        color 300ms var(--ease-default),
+        letter-spacing 300ms var(--ease-default);
+}
+
+/* ── Closed-state hover ── */
+
+.ep-closed-btn:hover .ep-closed-rule {
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        color-mix(in srgb, var(--color-accent) 70%, transparent) 50%,
+        transparent 100%
+    );
+}
+
+.ep-closed-btn:hover .ep-closed-label {
+    color: var(--color-text-primary);
+}
+
+.ep-closed-btn:hover .ep-closed-ornament {
     color: var(--color-accent);
+}
+
+.ep-closed-btn:hover .ep-closed-date {
+    color: var(--color-accent);
+    letter-spacing: 0.02em;
+}
+
+.ep-closed-btn:hover .ep-closed-weekday {
+    color: var(--color-text-primary);
+}
+
+.ep-closed-btn:hover .ep-closed-change {
+    color: var(--color-accent);
+    letter-spacing: 0.16em;
 }
 
 /* =========================================
@@ -94,13 +165,13 @@
 
 .ep-decade-tab {
     flex: 1;
-    padding: 6px 4px;
+    padding: 8px 6px;
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
     cursor: pointer;
     font-family: var(--font-mono);
-    font-size: 0.6rem;
+    font-size: 0.8rem;
     font-weight: var(--font-bold);
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -130,7 +201,7 @@
     gap: 3px;
     max-height: 180px;
     overflow-y: auto;
-    padding: 2px 0;
+    padding: 10px 0 2px;
 }
 
 /* Scrollbar */
@@ -179,7 +250,7 @@
 
 .ep-date-item-date {
     font-family: var(--font-header);
-    font-size: 0.82rem;
+    font-size: 0.95rem;
     font-weight: var(--font-bold);
     color: var(--color-text-primary);
     transition: color var(--duration-normal) var(--ease-default);
@@ -191,7 +262,7 @@
 
 .ep-date-item-weekday {
     font-family: var(--font-mono);
-    font-size: 0.55rem;
+    font-size: 0.65rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--color-text-secondary);
@@ -208,14 +279,14 @@
     justify-content: center;
     gap: 4px;
     width: 100%;
-    padding: 6px 0;
-    margin-top: 8px;
+    padding: 8px 0;
+    margin-top: 10px;
     background: none;
     border: none;
     border-top: 1px solid color-mix(in srgb, var(--color-accent) 12%, transparent);
     cursor: pointer;
     font-family: var(--font-mono);
-    font-size: 0.55rem;
+    font-size: 0.7rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--color-text-secondary);
@@ -265,6 +336,104 @@
 }
 
 /* =========================================
+   EXPANDED STATE (Read Mode)
+   ========================================= */
+
+.ep-container--expanded {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    width: 100%;
+    max-width: 420px;
+    animation: ep-fade-in 300ms var(--ease-default) both;
+}
+
+.ep-container--expanded .ep-decade-tabs {
+    margin-bottom: 10px;
+}
+
+.ep-container--expanded .ep-date-list {
+    max-height: 220px;
+}
+
+/* Navigate button */
+.ep-navigate-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 20px;
+    margin-top: 10px;
+    background: var(--owu-dark-gray);
+    color: var(--owu-medium-gray);
+    border: none;
+    font-family: var(--font-header);
+    font-size: 0.8rem;
+    font-weight: var(--font-bold);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all var(--duration-normal) ease;
+}
+
+.ep-navigate-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--color-accent);
+    transform: translateY(100%);
+    transition: transform var(--duration-normal) ease;
+}
+
+.ep-navigate-btn:hover::before {
+    transform: translateY(0);
+}
+
+.ep-navigate-btn span,
+.ep-navigate-btn svg {
+    position: relative;
+    z-index: 1;
+}
+
+.ep-navigate-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.ep-navigate-btn:disabled::before {
+    display: none;
+}
+
+/* Back button */
+.ep-back-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+    padding: 8px 0;
+    margin-top: 8px;
+    background: none;
+    border: none;
+    border-top: 1px solid color-mix(in srgb, var(--color-accent) 12%, transparent);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    transition: color var(--duration-normal) var(--ease-default);
+}
+
+.ep-back-btn:hover {
+    color: var(--color-accent);
+}
+
+/* =========================================
    RESPONSIVE
    ========================================= */
 
@@ -277,13 +446,37 @@
         font-size: 0.78rem;
     }
 
-    .ep-pick-btn {
-        padding: 7px 20px;
-        font-size: 0.75rem;
+    .ep-closed-btn {
+        max-width: 180px;
+    }
+
+    .ep-closed-date {
+        font-size: 1.3rem;
+    }
+
+    .ep-closed-label {
+        font-size: 0.55rem;
+    }
+
+    .ep-closed-change {
+        font-size: 0.55rem;
     }
 
     .ep-decade-tab {
         font-size: 0.55rem;
         padding: 5px 2px;
+    }
+
+    .ep-container--expanded {
+        max-width: 100%;
+    }
+
+    .ep-container--expanded .ep-date-list {
+        max-height: 180px;
+    }
+
+    .ep-navigate-btn {
+        font-size: 0.75rem;
+        padding: 9px 16px;
     }
 }

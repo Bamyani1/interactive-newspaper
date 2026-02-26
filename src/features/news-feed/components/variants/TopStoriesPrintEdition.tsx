@@ -87,7 +87,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                   >
                     {heroArticle.headline}
                   </h1>
-                  <Byline byline={heroArticle.byline} />
+                  <Byline byline={heroArticle.byline} writerPosition={heroArticle.writerPosition} />
                 </>
               }
               image={
@@ -194,7 +194,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                             >
                               {article.headline}
                             </h2>
-                            <Byline byline={article.byline} />
+                            <Byline byline={article.byline} writerPosition={article.writerPosition} />
                           </>
                         }
                         image={
@@ -236,7 +236,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                             >
                               {article.headline}
                             </h2>
-                            <Byline byline={article.byline} />
+                            <Byline byline={article.byline} writerPosition={article.writerPosition} />
                           </>
                         }
                         image={

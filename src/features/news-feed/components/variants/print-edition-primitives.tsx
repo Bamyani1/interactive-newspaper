@@ -124,33 +124,51 @@ export function Kicker({ category }: { category: string }) {
   );
 }
 
-/** Byline in mono uppercase. */
+/** Byline in mono uppercase, with optional writer position. */
 export function Byline({
   byline,
+  writerPosition,
   centered,
 }: {
   byline?: string | null;
+  writerPosition?: string | null;
   centered?: boolean;
 }) {
   if (!byline) return null;
-  const parts: string[] = [];
-  if (byline) parts.push(`By ${byline}`);
 
   return (
-    <p
+    <div
       className={centered ? "text-center" : ""}
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: "11px",
-        fontWeight: 400,
-        textTransform: "uppercase",
-        letterSpacing: "0.12em",
-        color: "var(--color-accent)",
-        marginBottom: centered ? "1rem" : "0.75rem",
-      }}
+      style={{ marginBottom: centered ? "1rem" : "0.75rem" }}
     >
-      {parts.join("  ·  ")}
-    </p>
+      <p
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "11px",
+          fontWeight: 400,
+          textTransform: "uppercase",
+          letterSpacing: "0.12em",
+          color: "var(--color-accent)",
+        }}
+      >
+        By {byline}
+      </p>
+      {writerPosition && (
+        <p
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+            fontWeight: 400,
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+            color: "var(--color-text-secondary)",
+            marginTop: "0.15rem",
+          }}
+        >
+          {writerPosition}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -184,6 +202,7 @@ export function ArticleImage({
           alt={alt}
           fill
           className="object-cover"
+          style={{ objectPosition: "center 20%" }}
           priority={priority}
         />
       </div>
@@ -229,6 +248,7 @@ export function ImageGallery({
               alt={`${alt} — image ${i + 2}`}
               fill
               className="object-cover"
+              style={{ objectPosition: "center 20%" }}
             />
           </div>
           {img.caption && (
@@ -376,7 +396,7 @@ export function PhotoFeature({
         style={{ width: "40%", aspectRatio: "4/3" }}
         onClick={onImageClick}
       >
-        <Image src={imageSrc} alt={alt} fill className="object-cover" />
+        <Image src={imageSrc} alt={alt} fill className="object-cover" style={{ objectPosition: "center 20%" }} />
       </div>
     </div>
   );
