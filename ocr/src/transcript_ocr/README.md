@@ -7,7 +7,7 @@ This package contains all OCR pipeline logic, organized by domain.
 ```
 config/         — Settings, environment, path constants
 contracts/      — Data models (content, diagnostics, ads)
-cli/            — CLI entry points (convert_scans, enrich_ads, compare_runs, score_gold)
+cli/            — CLI entry points (convert_scans, enrich_ads, compare_runs)
 application/    — Pipeline orchestration (edition_pipeline, page_pipeline, ad_enrichment)
 ingestion/      — File discovery, path resolution
 preprocessing/  — Image normalization, skew correction

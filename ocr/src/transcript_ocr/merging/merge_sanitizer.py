@@ -107,6 +107,23 @@ def _sanitize_merged_articles(
         headline = (article.headline or "").strip()
         body = (article.body or "").strip()
         has_files = len(article.image_files) > 0
+
+        # Stricter filter: articles with no headline, very short body, and only
+        # image captions are not real articles — move to other_content
+        if not headline and len(body) < 20 and has_files:
+            caption_text = "\n\n".join(
+                img.caption.strip() for img in article.images if (img.caption or "").strip()
+            )
+            all_other.append(
+                OtherContent(
+                    title="Unidentified image",
+                    body=caption_text or body or article.image_files[0],
+                )
+            )
+            if md is not None:
+                md.empty_articles_removed += 1
+            continue
+
         if headline or body or has_files:
             sanitized.append(article)
             continue

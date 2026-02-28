@@ -30,24 +30,24 @@ npm run dev          # Start dev server
 npm run build        # Production build (runs tsc)
 npm run lint         # ESLint
 npm run test         # Vitest watch mode
-npm run test:run     # Vitest run (CI mode) — 286 tests
+npm run test:run     # Vitest run (CI mode) — 317 tests
 
 # Database
 npm run db:seed      # Seed editions into Neon DB
 npm run db:reset     # Drop + recreate all tables, then seed
 npm run db:embed     # Generate vector embeddings for articles
 npm run db:embed:force  # Force re-embed all
+npm run images:upload   # Upload edition images to R2 CDN
 
 # OCR pipeline
 scripts/ocr/process-edition.sh <folder>   # Process one edition
 scripts/ocr/process-unprocessed.sh        # Batch process all unprocessed
 
 # Python tests
-python -m pytest tests/ocr/ -x           # OCR test suite (34 tests + 7 skip-if-no-output)
+python -m pytest tests/ocr/ -x           # OCR test suite (107 tests collected)
 python -m pytest tests/ocr/architecture/ # Import boundary / architecture tests (run in CI)
 
 # Specific test targets
-npm run test:golden      # OCR golden snapshot test (1980-04-17)
 npm run test:invariants  # OCR pipeline invariant tests
 
 # Running a single test
@@ -72,7 +72,7 @@ src/
     api/                # editions, search, ask, weather routes
     edition/[date]/     # Edition reading page
     search/, ask/       # Search and Q&A pages
-  features/             # Feature modules (news-feed, search, ask-archive, music-player, weather, context-panel, navigation, archive)
+  features/             # Feature modules (news-feed, search, ask-archive, music-player, weather, context-panel, navigation, archive, theme, footer, time-controls)
   lib/                  # Shared utilities (db.ts, embeddings.ts, answer-generator.ts, reranker.ts, weather-local-archive.ts)
   server/               # Server-only code (ocr-adapter — transforms edition.json → DB rows)
   types/                # Shared TypeScript types (index.ts)
@@ -80,13 +80,13 @@ src/
 ocr/
   src/transcript_ocr/   # Python OCR package — domain modules below
     application/        # Pipeline orchestration (edition_pipeline, page_pipeline, ad_enrichment)
-    cli/                # CLI entry points (convert_scans, enrich_ads, compare_runs, score_gold)
+    cli/                # CLI entry points (convert_scans, enrich_ads, compare_runs)
     config/             # Settings, environment, path constants (paths.py)
     contracts/          # Data models
     recognition/        # DocAI & Gemini text extraction
     preprocessing/      # Image normalization
     detection/          # YOLO region detection
-    postprocessing/     # Text deduplication, cleaning
+    postprocessing/     # Text deduplication, cleaning, null sanitization
     merging/            # Cross-page article merging
     image_linking/      # Visual/spatial image matching
     export/             # JSON/markdown writers
@@ -106,21 +106,18 @@ scripts/
   db/embed.mjs          # Embedding generation
   db/schema.sql         # DB schema (editions, articles, ads, weather, music)
   ocr/                  # Shell wrappers for OCR pipeline
-  dev/                  # OCR evaluation helpers (compare_runs.py, score_gold.py, gen_gold.py) + SVG asset generators
+  dev/                  # OCR evaluation helpers (compare_runs.py) + SVG asset generators
   weather/              # Weather archive build/verify scripts
   cleanup-images.mjs    # Post-OCR image cleanup
 
 public/
   editions/<date>/      # edition.json + images — output of OCR pipeline
   data/weather/ohio/    # index/ (app reads this), meta/ (seed metadata)
-  gold-score/           # OCR evaluation reference TIFFs
   top-10-music/         # Monthly music chart data
   shape/, backgrounds/  # UI assets
 
 tests/
   hooks/, news-feed/, api/, lib/, weather/, ocr/   # Vitest + pytest suites
-  ocr/fixtures/golden/  # Golden metric snapshots (pipeline-golden.test.ts)
-  ocr/fixtures/parity/  # Parity keyset fixtures (test_parity_harness.py)
 
 docs/                   # Project documentation (PROJECT_MASTER_GUIDE.md, ocr-audit/)
 .github/workflows/      # ocr-architecture.yml — runs import boundary + architecture tests on PR/push
@@ -130,7 +127,7 @@ docs/                   # Project documentation (PROJECT_MASTER_GUIDE.md, ocr-au
 
 ## Architecture
 
-Five cooperating blocks:
+Six cooperating blocks:
 
 1. **Frontend** — Next.js App Router pages consume API routes; feature modules in `src/features/`
 2. **API layer** — Server routes in `src/app/api/` query Neon DB; `POST /api/ask` runs full RAG pipeline
@@ -142,6 +139,7 @@ Five cooperating blocks:
    - Phase 4: Ad enrichment
    - Phase 5: Diagnostics + issue reports
 5. **Ops scripts** — Shell + Node scripts for process/seed/embed/cleanup lifecycle
+6. **Image CDN** — Cloudflare R2 hosts `.webp` edition images in production; `src/lib/image-url.ts` resolves URLs via `IMAGE_BASE_URL` env var (falls back to local API proxy in dev)
 
 ### API Routes
 
@@ -153,7 +151,6 @@ Five cooperating blocks:
 | `/api/search` | GET | Full-text article search |
 | `/api/ask` | POST | RAG Q&A pipeline (see below) |
 | `/api/weather` | GET | Historical weather lookup |
-| `/api/golden-image/[file]` | GET | Serve gold-score reference images |
 
 ### RAG Pipeline (`POST /api/ask`)
 
@@ -235,6 +232,13 @@ GOOGLE_CLOUD_PROJECT=            # Document AI project ID
 DOCUMENT_AI_PROCESSOR_ID=        # Layout parser processor
 DOCUMENT_AI_LOCATION=            # us
 LAYOUT_PARSER_PROCESSOR_ID=      # Secondary layout processor
+
+# Optional — Cloudflare R2 image hosting
+IMAGE_BASE_URL=                  # R2 CDN base URL for production images
+R2_ACCOUNT_ID=                   # R2 account
+R2_ACCESS_KEY_ID=                # R2 access key
+R2_SECRET_ACCESS_KEY=            # R2 secret key
+R2_BUCKET_NAME=                  # R2 bucket name
 ```
 
 ---
@@ -248,8 +252,8 @@ LAYOUT_PARSER_PROCESSOR_ID=      # Secondary layout processor
 | CI (GitHub Actions) | `.github/workflows/ocr-architecture.yml` | Import rules, wrapper entrypoints, runtime cutover — runs on every PR |
 
 **Notes:**
-- `test_artifact_schema_contracts.py` and `test_parity_harness.py` auto-skip when `ocr/runs/` is absent; they activate after a pipeline run.
-- Golden test (`pipeline-golden.test.ts`) validates against `tests/ocr/fixtures/golden/1980-04-17.metrics.json`.
+- `test_artifact_schema_contracts.py` auto-skips when `ocr/runs/` is absent; it activates after a pipeline run.
+- Python test suite includes: `test_continuation.py`, `test_merging.py`, `test_null_sanitizer.py`, `test_proper_noun.py` (continuation logic, merge pipeline, null sanitization, proper noun corrections).
 
 ---
 
@@ -266,17 +270,15 @@ LAYOUT_PARSER_PROCESSOR_ID=      # Secondary layout processor
 
 ## Current Production State
 
-- **Only edition in DB and `public/editions/`:** `1980-04-17`
-- **DB:** Neon Postgres (`little-feather-41857937`); 27 articles, 21 ads for 1980-04-17
-- **Branch:** `rag-enhanced` is the active development branch; `main` is production base
+- **Editions in DB and `public/editions/`:** None (reset for fresh OCR runs)
+- **DB:** Neon Postgres (`little-feather-41857937`)
+- **Branch:** `main` is production base; active dev branches vary
 
 ---
 
 ## Do Not Modify Without Explicit Instruction
 
 - `.env.local` — credentials
-- `public/editions/1980-04-17/` — the only production edition on disk
-- `public/gold-score/` — OCR evaluation reference TIFFs
 - `public/data/weather/ohio/index/` — pre-built weather index (18,628 daily entries, 1950–2000)
 - `scripts/db/schema.sql` — schema changes require migration plan
 

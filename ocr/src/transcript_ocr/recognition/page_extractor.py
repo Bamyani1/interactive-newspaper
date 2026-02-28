@@ -14,6 +14,7 @@ from ..detection.yolo_provider import detect_image_regions
 from ..diagnostics.snapshots import save_snapshot
 from ..postprocessing.ad_reclassification import postprocess_page_content
 from ..postprocessing.deduplication import deduplicate_articles
+from ..postprocessing.null_sanitizer import _sanitize_null_strings
 from ..preprocessing.image_preprocessor import preprocess_image
 from ..shared.retry import gemini_generate_with_retry
 from .prompts import DOCAI_SYSTEM_PROMPT, SAFETY_OFF
@@ -97,6 +98,7 @@ def process_page_with_docai(
         page_num = _extract_page_number_from_filename(os.path.basename(image_path)) or response.parsed.page_number or "0"
         save_snapshot(snapshots_dir, f"raw_gemini_page{page_num}.json", response.parsed)
 
+        _sanitize_null_strings(response.parsed)
         page_content = deduplicate_articles(response.parsed, diag=diag)
         save_snapshot(snapshots_dir, f"post_dedup_page{page_num}.json", page_content)
 
