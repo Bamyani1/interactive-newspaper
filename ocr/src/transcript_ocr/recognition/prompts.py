@@ -67,6 +67,7 @@ Rules:
    - 0.5-0.7 = ambiguous match based on content similarity alone
    - Below 0.5 = very uncertain, should probably remain separate
    Single-article groups (no merge) should have confidence 1.0.
+10. When merging, be aware that continuation markers in the body text may be garbled by OCR (e.g., "(. 1)" instead of "(p. 1)", "Continuted" instead of "Continued"). Use context to identify these as continuation markers even if misspelled.
 """
 
 DOCAI_SYSTEM_PROMPT = """\
@@ -80,6 +81,9 @@ CRITICAL RULES:
 - CRITICAL: Carefully scan the BOTTOM of every column for "Continued on page X", "See page X", "(p. X)", or similar continuation markers. These are often printed in small italic type at the very end of a column and are easy to miss. If found, you MUST populate the "continues_on" field with the page number (digits only, e.g. "5" not "page 5"). Similarly, scan the TOP of columns for "Continued from page Y" markers and populate "continued_from". If an article body ends mid-sentence without any visible continuation marker, set "continues_on" to "?" to signal ambiguity.
 - NEVER generate descriptions of what text says. Only use the actual words from the OCR transcript.
 - Full-page or large-format subscription/promotional content with pricing is an AD, not an article.
+- For optional string fields (author, writer_position, continues_on, continued_from), use an empty string "" — NEVER output the word "null" or "none".
+- SPELLING CONSISTENCY: When the same proper noun appears multiple times, ensure consistent spelling throughout. If a name appears as both "Monahan" and "Mohahan", pick the more common/likely spelling and use it everywhere.
+- CONTINUATION MARKERS may be garbled by OCR. Look for patterns like "(. X)", "(p X)", "(Cont. from p. X)" and include them in continues_on/continued_from even if partially corrupted.
 
 PRE-EXTRACTED OCR TEXT (paragraph-organized):
 {ocr_text}
