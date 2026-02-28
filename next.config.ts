@@ -35,10 +35,6 @@ const nextConfig: NextConfig = {
     ],
     localPatterns: [
       {
-        pathname: '/api/golden-image/**',
-        search: '',
-      },
-      {
         pathname: '/api/editions/**',
         search: '',
       },

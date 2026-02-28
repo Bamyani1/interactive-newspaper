@@ -355,11 +355,12 @@ High-level stages:
 1. Ingest scans from edition folder.
 2. Detect visual regions (photo/figure candidates).
 3. Extract structured content using LLM.
-4. Merge continuation stories across pages.
-5. Attach and sanitize image assignments.
-6. Write edition artifacts (`edition.json`, markdown summaries).
-7. Enrich ads with category/type/display metadata.
-8. Seed transformed content into DB.
+4. Sanitize null/placeholder values from extracted fields.
+5. Merge continuation stories across pages.
+6. Attach and sanitize image assignments.
+7. Write edition artifacts (`edition.json`, markdown summaries).
+8. Enrich ads with category/type/display metadata.
+9. Seed transformed content into DB.
 
 Key outputs and diagnostics:
 - `edition.json`
@@ -620,16 +621,16 @@ Known drift areas + guardrails:
 - Guardrail tests are in place:
   - Architecture import boundaries.
   - Wrapper/runtime cutover checks.
-  - OCR invariants and golden tests.
-  - Parity harness and artifact contract tests.
+  - OCR invariants.
+  - Artifact contract tests.
+  - Unit tests for continuation logic, merge pipeline, null sanitization, and proper noun corrections.
 
 Source files:
 - `/Users/bamyani/Desktop/interactive-newspaper-main/tests/ocr/architecture/test_import_rules.py`
 - `/Users/bamyani/Desktop/interactive-newspaper-main/tests/ocr/architecture/test_wrapper_entrypoints.py`
 - `/Users/bamyani/Desktop/interactive-newspaper-main/tests/ocr/architecture/test_runtime_cutover.py`
 - `/Users/bamyani/Desktop/interactive-newspaper-main/tests/ocr/pipeline-invariants.test.ts`
-- `/Users/bamyani/Desktop/interactive-newspaper-main/tests/ocr/pipeline-golden.test.ts`
-- `/Users/bamyani/Desktop/interactive-newspaper-main/tests/ocr/test_parity_harness.py`
+- `/Users/bamyani/Desktop/interactive-newspaper-main/tests/ocr/pipeline-invariants.test.ts`
 
 ---
 

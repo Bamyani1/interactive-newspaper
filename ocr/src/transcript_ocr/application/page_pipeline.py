@@ -12,7 +12,7 @@ import os
 from PIL import Image as _PIL_Image
 
 from ..config.constants import MIN_AD_IMAGE_AREA_PIXELS
-from ..contracts.content_models import Article, ArticleImage, PageContent
+from ..contracts.content_models import Article, ArticleImage, OtherContent, PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer
 from ..diagnostics.snapshots import save_snapshot
 from ..export.markdown_writer import page_content_to_markdown
@@ -182,17 +182,29 @@ def structure_and_link_page(
             standalone_images = []
             for ri in unmatched:
                 if ri in saved_files:
-                    standalone_images.append(saved_files[ri])
                     caption = captions.get(ri, "")
-                    page_content.articles.append(
-                        Article(
-                            headline=caption if caption else "",
-                            author="",
-                            body="",
-                            images=[ArticleImage(caption=caption, position="")] if caption else [],
-                            image_files=[saved_files[ri]],
+                    if caption:
+                        # Has a caption — create a proper standalone photo article
+                        standalone_images.append(saved_files[ri])
+                        page_content.articles.append(
+                            Article(
+                                headline=caption,
+                                author="",
+                                body="",
+                                images=[ArticleImage(caption=caption, position="")],
+                                image_files=[saved_files[ri]],
+                            )
                         )
-                    )
+                    else:
+                        # No caption, no headline — move to other_content instead of
+                        # creating an empty article that clutters the output
+                        standalone_images.append(saved_files[ri])
+                        page_content.other_content.append(
+                            OtherContent(
+                                title="Unidentified image",
+                                body=saved_files[ri],
+                            )
+                        )
             if standalone_images:
                 substep(f"Preserved {len(standalone_images)} standalone images as photo articles")
 
