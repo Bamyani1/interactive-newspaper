@@ -18,6 +18,12 @@ _CONTINUATION_PATTERNS = [
         r"\bcon't\.?\s+from\s+(?:p(?:age)?\.?\s+)?\w[\w-]*\b",
         r"[\(-]\s*p\.?\s*\d+\s*\)?\s*$",
         r"\bsee page \w[\w-]*\b",
+        # OCR-fuzzy: missing "p" in (p. X) — e.g. "(. 1)"
+        r"\(\.\s*\d+\s*\)",
+        # OCR-fuzzy: common typos of "Continued" — e.g. "Continuted from p. 1"
+        r"\b[Cc]ontin[a-z]*(?:ed|ued)\s+(?:on|from)\s+(?:p(?:age)?\.?\s+)?\w[\w-]*\b",
+        # Broader: parenthesized continuation reference with OCR corruption
+        r"\(\s*(?:Continued|Con't\.?|From)\s+(?:on|from)?\s*(?:p(?:age)?\.?\s+)?\w[\w-]*\s*\)",
     ]
 ]
 
@@ -43,6 +49,12 @@ def _extract_continuation_info(body: str) -> dict[str, str | None]:
 
     if not info["continues_on"]:
         match = re.search(r"[\(-]\s*p\.?\s*(\d+)\s*\)?\s*$", body, re.IGNORECASE)
+        if match:
+            info["continues_on"] = match.group(1)
+
+    # Fallback: garbled "(. X)" where "p" was lost by OCR
+    if not info["continues_on"]:
+        match = re.search(r"\(\.\s*(\d+)\s*\)", body)
         if match:
             info["continues_on"] = match.group(1)
 

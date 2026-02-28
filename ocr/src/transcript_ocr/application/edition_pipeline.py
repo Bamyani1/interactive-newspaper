@@ -10,12 +10,10 @@ Five-phase pipeline:
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from ..contracts.content_models import EditionContent, MergedArticle
@@ -26,15 +24,13 @@ from ..export.artifact_writer import write_diagnostics_json, write_issue_reports
 from ..export.edition_writer import align_existing_image_files, finalize_and_write_edition_json
 from ..export.markdown_writer import edition_to_markdown
 from ..ingestion.discovery import discover_page_images, extract_edition_date
+from ..config.paths import REPO_ROOT
 from ..ingestion.pathing import RunPaths
 from ..merging.llm_merge import merge_edition_articles
 from ..recognition.docai_provider import DocAIError
 from ..shared.console import banner, stage, substep, success, warning, error, file_written, page_progress, print_summary_table
 from .ad_enrichment import enrich_edition
 from .page_pipeline import extract_page_docai, structure_and_link_page
-
-OCR_ROOT = Path(__file__).resolve().parents[3]
-REPO_ROOT = OCR_ROOT.parent
 
 
 def process_edition(

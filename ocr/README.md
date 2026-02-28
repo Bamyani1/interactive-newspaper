@@ -4,21 +4,25 @@ This pipeline processes scanned newspaper pages (TIFF format) into structured JS
 
 ## Architecture
 
-**Two-stage processing:**
-1. **DocLayout-YOLO**: Detects image/photo regions in each page
-2. **Google Gemini Flash**: Extracts article text, metadata, and categorization
+**Five-phase pipeline:**
+1. **Phase 1 — DocAI extraction**: Preprocesses pages + detects image regions via DocLayout-YOLO
+2. **Phase 2 — Gemini structuring**: Extracts article text, metadata, and categorization per page
+3. **Phase 3 — Cross-page merge**: Merges continued articles across pages into `edition.json`
+4. **Phase 4 — Ad enrichment**: Enriches ad metadata via Gemini
+5. **Phase 5 — Summary + diagnostics**: Writes issue reports and diagnostics JSON
 
 ## Setup
 
 ### 1. Create Virtual Environment
 ```bash
+cd ocr/
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
 ### 2. Configure API Key
-Create `.env` file:
+Add to `.env.local` in the project root:
 ```bash
 GOOGLE_API_KEY=your_gemini_api_key_here
 ```
@@ -33,98 +37,62 @@ On first execution, the DocLayout-YOLO model (~300MB) will download from Hugging
 ### Process Single Edition
 ```bash
 source .venv/bin/activate
-python convert_scans.py "scans/YYYY-MM-DD"
+python convert_scans.py "inbox/YYYY-MM-DD Newspaper Name"
 ```
 
-**Output** is split between two directories:
+### Full Pipeline (recommended)
+```bash
+scripts/ocr/process-edition.sh "ocr/inbox/YYYY-MM-DD Newspaper Name" --run-id my-run
+```
 
-App-serving data (in `public/editions/YYYY-MM-DD/`):
-- `edition.json` - Structured article data (~200-300KB)
-- `images/` - Extracted editorial images (~2MB, 10-20 photos)
-
-OCR intermediates (in `ocr/runs/YYYY-MM-DD/`):
-- `diagnostics.json` - Processing metrics
-- `*.md` - Per-page markdown outputs
-- `summary.md` - Merged edition markdown
-
-**Duration**: ~2.5 minutes per page (8-page edition = ~20 minutes)
-
-**Cost**: ~60K tokens per page = $0.01 per edition @ Gemini Flash rates
+This runs OCR → image cleanup → R2 upload → database seed in one step.
 
 ### Batch Process All Editions
 
-Place raw scan folders in `ocr/inbox/YYYY-MM-DD/`, then run with no arguments:
+Place raw scan folders in `ocr/inbox/`, then run with no arguments:
 
 ```bash
 source .venv/bin/activate
 python convert_scans.py
 ```
 
-This processes all editions in `ocr/inbox/` and writes app data to `public/editions/` and intermediates to `ocr/runs/`.
-
-**For 50 editions:**
-- Duration: ~16-17 hours
-- Cost: ~$0.60-1.00
-- Skips already-processed editions (resume-safe)
-
-### Validate Results
+### Ad Enrichment (standalone)
 ```bash
-source .venv/bin/activate
-python validate_batch.py
+python enrich_ads.py --date 1980-04-17
 ```
 
-Checks all editions for:
-- Valid JSON structure
-- Article presence
-- Image files
-- Diagnostics data
+**Output** is split between two directories:
 
-## Output Schema
+App-serving data (in `public/editions/YYYY-MM-DD/`):
+- `edition.json` — Structured article data
+- `images/` — Extracted editorial images
 
-### edition.json Structure
-```json
-{
-  "date": "1988-04-13",
-  "publication": "The Transcript",
-  "location": "Delaware, OH",
-  "articles": [
-    {
-      "id": "1988-04-13-001",
-      "headline": "Article Title",
-      "category": "News|Sports|Arts|Opinion",
-      "content": "Full article text...",
-      "byline": "Author Name",
-      "image": "images/0001_Page 1_img1.jpg",
-      "page": 1
-    }
-  ]
-}
-```
+OCR intermediates (in `ocr/runs/YYYY-MM-DD/`):
+- `diagnostics.json` — Processing metrics
+- `summary.md` — Merged edition markdown
+- `snapshots/` — Pipeline stage snapshots
 
-### Diagnostics
-```json
-{
-  "pages_attempted": 8,
-  "pages_processed": 8,
-  "total_images_extracted": 15,
-  "total_articles": 42,
-  "processing_time_seconds": 1245,
-  "gemini_tokens_used": 485000
-}
-```
+**Duration**: ~2.5 minutes per page (8-page edition = ~20 minutes)
+
+**Cost**: ~60K tokens per page = $0.01 per edition @ Gemini Flash rates
+
+## Entry Points
+
+| File | Purpose |
+|------|---------|
+| `convert_scans.py` | Main OCR entry point (thin wrapper → `transcript_ocr.cli.convert_scans`) |
+| `enrich_ads.py` | Standalone ad enrichment (thin wrapper → `transcript_ocr.cli.enrich_ads`) |
 
 ## Files
 
-- `convert_scans.py` - Main OCR script
-- `batch_process.sh` - Process all editions with progress tracking
-- `validate_batch.py` - Validate processing results
-- `monitor_progress.sh` - Real-time progress monitor
-- `requirements.txt` - Python dependencies
-- `.env` - API credentials (git-ignored)
-- `models/` - YOLO model cache (git-ignored)
-- `inbox/` - Drop new scan folders here (git-ignored)
-- `done/` - Completed scans moved here (git-ignored)
-- `runs/` - OCR intermediates: diagnostics, markdown (git-ignored)
+- `convert_scans.py` — Main OCR entry point
+- `enrich_ads.py` — Post-OCR ad enrichment
+- `requirements.txt` — Python dependencies
+- `models/` — YOLO model cache (git-ignored, auto-downloaded)
+- `inbox/` — Drop new scan folders here (git-ignored)
+- `done/` — Completed scans moved here (git-ignored)
+- `runs/` — OCR intermediates: diagnostics, snapshots (git-ignored)
+- `src/transcript_ocr/` — Python package with all pipeline logic
 
 ## Model Info
 
@@ -134,22 +102,9 @@ Checks all editions for:
 - Auto-downloaded on first run
 - Cached in `models/` directory
 
-**Google Gemini**: `gemini-3-flash-preview`
-- Purpose: OCR + article extraction + categorization
-- Rate: $0.000025 per 1K tokens
+**Google Gemini**: `gemini-2.5-flash-preview-05-20`
+- Purpose: OCR + article extraction + categorization + ad enrichment
 - Avg: ~60K tokens per newspaper page
-
-## Performance
-
-**Single Edition (8 pages):**
-- Time: ~20-25 minutes
-- Tokens: ~480K (~$0.01)
-- Output: 40-50 articles, 10-20 images
-
-**50 Editions (400 pages):**
-- Time: ~16-17 hours
-- Tokens: ~24M (~$0.60)
-- Output: ~2,000 articles, ~500 images
 
 ## Troubleshooting
 
@@ -159,25 +114,11 @@ Checks all editions for:
 - Verify `models/` directory is writable
 
 ### API errors
-- Check `.env` has valid `GOOGLE_API_KEY`
+- Check `.env.local` has valid `GOOGLE_API_KEY`
 - Verify API key at https://aistudio.google.com/apikey
 - Check rate limits (Gemini Flash is generous)
 
-### Out of memory
-- Reduce concurrent processing
-- Process editions sequentially
-- Close other applications
-
 ### Missing images
-- Check YOLO confidence threshold (`_YOLO_CONF_THRESHOLD = 0.5`)
+- Check YOLO confidence threshold in `config/constants.py`
 - Verify source TIFFs are readable
 - Check `diagnostics.json` for errors
-
-## Integration
-
-Processed editions are served by Next.js API routes:
-- `/api/editions` - List all editions
-- `/api/editions/[date]` - Get specific edition
-- `/api/editions/[date]/images/[...path]` - Serve images
-
-Frontend reads `edition.json` files directly from `public/editions/*/`.

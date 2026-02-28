@@ -25,6 +25,10 @@ from ..postprocessing.deduplication import _deduplicate_ads, _deduplicate_other_
 from ..recognition.prompts import MERGE_PROMPT, SAFETY_OFF
 from ..shared.retry import gemini_generate_with_retry
 from ..shared.console import substep, warning, error, info
+from ..postprocessing.proper_noun_corrections import (
+    _apply_edition_proper_noun_corrections,
+    _check_edition_proper_nouns,
+)
 from .continuation import _extract_continuation_info, _strip_continuation_markers
 from .deterministic_merge import _deterministic_merge
 from .merge_sanitizer import (
@@ -122,12 +126,16 @@ def _validate_merge_seam(client, bodies: list[str]) -> list[str]:
             continue
 
         last_char = prev_body[-1]
-        first_char = next_body[0]
-        looks_broken = last_char not in '.!?"\')\u201d\u2019' and first_char.islower()
+        # A merge seam is suspicious if previous body doesn't end with
+        # sentence-ending punctuation — regardless of what case the next
+        # fragment starts with (proper nouns, new paragraphs defeat the
+        # old lowercase-only check)
+        ends_with_terminal = last_char in '.!?"\')\u201d\u2019'
+        looks_broken = not ends_with_terminal
 
         if looks_broken:
-            tail = prev_body[-200:]
-            head = next_body[:200]
+            tail = prev_body[-400:]
+            head = next_body[:400]
             try:
                 repair_response = gemini_generate_with_retry(
                     client,
@@ -583,6 +591,13 @@ def merge_edition_articles(
         )
 
     merged_articles = _sanitize_merged_articles(merged_articles, all_other, md=md)
+
+    # Edition-level proper noun consistency — catches cross-page OCR errors
+    # like "Mohahan" (page 7) vs "Monahan" (page 1)
+    edition_corrections = _check_edition_proper_nouns(merged_articles)
+    if edition_corrections:
+        merged_articles = _apply_edition_proper_noun_corrections(merged_articles, edition_corrections)
+
     all_ads = _deduplicate_ads(all_ads)
     all_other = _deduplicate_other_content(all_other)
 

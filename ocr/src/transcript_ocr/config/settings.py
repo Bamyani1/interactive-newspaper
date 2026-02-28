@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 class PipelineSettings:
     google_api_key: str
     gemini_request_timeout_s: int = 240
-    force_legacy_runtime: bool = False
 
 
 def _load_env_file() -> None:
@@ -36,10 +35,8 @@ def load_settings() -> PipelineSettings:
         timeout_s = int(timeout_raw)
     except ValueError:
         timeout_s = 240
-    force_legacy = os.getenv("OCR_FORCE_LEGACY", "").strip() in {"1", "true", "TRUE", "yes", "YES"}
 
     return PipelineSettings(
         google_api_key=google_api_key,
         gemini_request_timeout_s=timeout_s,
-        force_legacy_runtime=force_legacy,
     )

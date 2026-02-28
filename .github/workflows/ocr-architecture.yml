@@ -39,7 +39,6 @@ jobs:
               root / 'ocr' / 'convert_scans.py',
               root / 'ocr' / 'enrich_ads.py',
               root / 'scripts' / 'dev' / 'compare_runs.py',
-              root / 'scripts' / 'dev' / 'score_gold.py',
               root / 'scripts' / 'ocr' / 'process-edition.sh',
               root / 'scripts' / 'ocr' / 'process-unprocessed.sh',
           ]
