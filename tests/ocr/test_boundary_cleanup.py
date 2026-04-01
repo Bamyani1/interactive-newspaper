@@ -51,3 +51,21 @@ def test_joins_word_split_across_boundary():
     seg2 = "everal articles on Arabia."
     result = clean_merge_boundary(seg1, seg2)
     assert "several" in result.lower()
+
+
+def test_whitespace_only_seg1_no_crash():
+    """Whitespace-only seg1 should not raise IndexError."""
+    result = clean_merge_boundary("   ", "Some text.")
+    assert result == "Some text."
+
+
+def test_single_char_seg1_joins():
+    """Single-char seg1 joining with lowercase seg2 start."""
+    result = clean_merge_boundary("s", "everal articles.")
+    assert "several" in result.lower()
+
+
+def test_single_word_seg1_joins():
+    """Single word seg1 without punctuation joins with lowercase seg2."""
+    result = clean_merge_boundary("secretari", "al duties were assigned.")
+    assert "secretarial" in result.lower()

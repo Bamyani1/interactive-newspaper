@@ -46,8 +46,11 @@ def extract_page_docai(
     if diag is not None:
         diag.filename = base_name
 
+    # Open image once for both quality check and preprocessing
+    original_image = _PIL_Image.open(image_path)
+
     # Pre-OCR quality check — skip blank pages, warn on low-res/inverted
-    quality = check_page_quality(_PIL_Image.open(image_path))
+    quality = check_page_quality(original_image)
     if quality.should_skip:
         warning(f"Skipping {base_name}: {quality.message}")
         if diag is not None:
@@ -56,7 +59,7 @@ def extract_page_docai(
     if quality.message:
         warning(f"{base_name}: {quality.message}")
 
-    raw_image = preprocess_image(_PIL_Image.open(image_path), diag=None)
+    raw_image = preprocess_image(original_image, diag=None)
 
     docai_result = extract_page_text(raw_image)
     substep(
