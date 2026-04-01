@@ -58,7 +58,7 @@ def match_images_visual(
                 response_mime_type="application/json",
                 response_schema=ImageRegionAssignments,
                 safety_settings=SAFETY_OFF,
-                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
                 max_output_tokens=4096,
             ),
         )
