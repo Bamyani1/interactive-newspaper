@@ -9,7 +9,7 @@ from difflib import SequenceMatcher as SM
 
 from google.genai import types
 
-from ..config.constants import GEMINI_MERGE_MODEL, GEMINI_PAGE_MODEL
+from ..config.constants import GEMINI_MERGE_MODEL, GEMINI_PAGE_MODEL, GEMINI_STRUCTURING_MODEL
 from ..contracts.content_models import (
     ArticleImage,
     EditionContent,
@@ -141,7 +141,7 @@ def _validate_merge_seam(client, bodies: list[str]) -> list[str]:
             try:
                 repair_response = gemini_generate_with_retry(
                     client,
-                    model=GEMINI_PAGE_MODEL,
+                    model=GEMINI_STRUCTURING_MODEL,
                     contents=[
                         "These two text fragments were extracted from consecutive newspaper columns. "
                         "They may connect mid-sentence at the boundary. "

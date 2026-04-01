@@ -7,7 +7,7 @@ import os
 from PIL import Image
 from google.genai import types
 
-from ..config.constants import GEMINI_PAGE_MODEL
+from ..config.constants import GEMINI_STRUCTURING_MODEL
 from ..contracts.content_models import PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer, TokenUsage
 from ..diagnostics.snapshots import save_snapshot
@@ -64,7 +64,7 @@ def process_page_with_docai(
     gemini_timer = StageTimer().start()
     response = gemini_generate_with_retry(
         client,
-        model=GEMINI_PAGE_MODEL,
+        model=GEMINI_STRUCTURING_MODEL,
         contents=[image, "Structure this pre-extracted OCR text into articles, ads, and other content."],
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
