@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections import defaultdict
 from difflib import SequenceMatcher as SM
@@ -29,6 +30,7 @@ from ..postprocessing.proper_noun_corrections import (
     _apply_edition_proper_noun_corrections,
     _check_edition_proper_nouns,
 )
+from .boundary_cleanup import clean_merge_boundary
 from .continuation import _extract_continuation_info, _strip_continuation_markers
 from .deterministic_merge import _deterministic_merge
 from .merge_sanitizer import (
@@ -512,17 +514,42 @@ def merge_edition_articles(
             if (cont.get("continued_from") or "").strip():
                 continued_from_values.append(cont["continued_from"].strip())
 
+        # Confidence filtering: reject low-confidence merges
+        merge_min_confidence = float(os.environ.get("MERGE_MIN_CONFIDENCE", "0.5"))
+        if len(valid_ids) > 1 and group.confidence < merge_min_confidence:
+            warning(f"Rejecting low-confidence merge ({group.confidence:.2f} < {merge_min_confidence}): {group.merged_headline}")
+            if md is not None:
+                md.low_confidence_rejections += 1
+            # Split back into individual articles
+            for aid in valid_ids:
+                ad = article_data[aid]
+                merged_articles.append(
+                    MergedArticle(
+                        headline=ad["headline"],
+                        author=_normalize_byline(ad.get("author", "")),
+                        writer_position=ad.get("writer_position", ""),
+                        category=ad.get("category", "Campus News"),
+                        continues_on=ad["continuation"].get("continues_on", ""),
+                        continued_from=ad["continuation"].get("continued_from", ""),
+                        body=_strip_continuation_markers(ad["body"]),
+                        images=list(ad.get("images", [])),
+                        image_files=list(ad.get("image_files", [])),
+                        source_pages=[ad["page_label"]],
+                    )
+                )
+            continue
+
         if len(bodies) > 1:
+            # Clean up OCR artifacts at merge join points
+            cleaned_bodies = [bodies[0]]
+            for i in range(1, len(bodies)):
+                cleaned = clean_merge_boundary(cleaned_bodies[-1], bodies[i])
+                cleaned_bodies[-1] = cleaned
+            bodies = cleaned_bodies
+
             bodies = _validate_merge_seam(client, bodies)
 
         merged_body = _best_body(bodies)
-
-        if len(valid_ids) > 1 and group.confidence < 0.7:
-            warning(f"Low-confidence merge ({group.confidence:.1f}): {group.merged_headline}")
-            if md is not None:
-                md.duplicate_warnings.append(
-                    f"Low confidence ({group.confidence:.1f}): {group.merged_headline} — IDs {valid_ids}"
-                )
 
         merged_body, stripped_captions = _strip_trailing_captions(merged_body)
         for cap in stripped_captions:

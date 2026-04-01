@@ -115,6 +115,7 @@ class MergePassDiagnostics:
     category_conflicts: int = 0
     image_orphans_dropped: int = 0
     empty_articles_removed: int = 0
+    low_confidence_rejections: int = 0
     tokens: TokenUsage = field(default_factory=TokenUsage)
     time_seconds: float = 0.0
     error: str = ""
