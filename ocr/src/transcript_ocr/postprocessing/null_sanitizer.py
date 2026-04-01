@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..contracts.content_models import PageContent
 
-_NULL_STRINGS = {"null", "none", "n/a", "undefined", "nil"}
+_NULL_STRINGS = {"null", "none", "n/a", "undefined", "nil", "unknown", "<none>"}
 
 _ARTICLE_STRING_FIELDS = ("author", "writer_position", "continues_on", "continued_from", "category")
 _AD_STRING_FIELDS = ("business_name",)

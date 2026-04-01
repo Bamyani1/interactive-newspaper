@@ -116,3 +116,19 @@ def test_multiple_articles():
     assert result.articles[0].writer_position == "Editor"
     assert result.articles[1].author == "Jane"
     assert result.articles[1].writer_position == ""
+
+
+def test_sanitizes_unknown_string():
+    page = _make_page(articles=[
+        Article(headline="Test", body="body", author="UNKNOWN"),
+    ])
+    result = _sanitize_null_strings(page)
+    assert result.articles[0].author == ""
+
+
+def test_sanitizes_angle_bracket_none():
+    page = _make_page(articles=[
+        Article(headline="Test", body="body", writer_position="<None>"),
+    ])
+    result = _sanitize_null_strings(page)
+    assert result.articles[0].writer_position == ""
