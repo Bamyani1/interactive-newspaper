@@ -39,24 +39,36 @@ def clean_merge_boundary(seg1: str, seg2: str) -> str:
     seg1 = seg1.rstrip()
     seg2 = seg2.lstrip()
 
+    # After stripping, either may be empty
+    if not seg1:
+        return seg2
+    if not seg2:
+        return seg1
+
     # --- Truncated word joining ---
     # If seg1 ends without sentence-terminal punctuation AND seg2 starts lowercase,
     # try joining the last word of seg1 with the first word of seg2.
-    last_char = seg1[-1] if seg1 else ""
-    first_char = seg2[0] if seg2 else ""
+    last_char = seg1[-1]
+    first_char = seg2[0]
 
     if last_char not in '.!?"\'\u201d\u2019)' and first_char.islower():
-        # Join last word of seg1 with first word of seg2
         seg1_words = seg1.rsplit(None, 1)
         seg2_words = seg2.split(None, 1)
-        if len(seg1_words) == 2 and seg2_words:
-            prefix = seg1_words[0]
-            last_word = seg1_words[1]
-            first_word = seg2_words[0]
-            rest = seg2_words[1] if len(seg2_words) > 1 else ""
-            joined = last_word + first_word
-            seg1 = prefix
-            seg2 = (joined + " " + rest).strip() if rest else joined
+        if seg2_words:
+            if len(seg1_words) == 2:
+                prefix = seg1_words[0]
+                last_word = seg1_words[1]
+                first_word = seg2_words[0]
+                rest = seg2_words[1] if len(seg2_words) > 1 else ""
+                joined = last_word + first_word
+                seg1 = prefix
+                seg2 = (joined + " " + rest).strip() if rest else joined
+            elif len(seg1_words) == 1:
+                # Single word — join entirely with first word of seg2
+                joined = seg1_words[0] + seg2_words[0]
+                rest = seg2_words[1] if len(seg2_words) > 1 else ""
+                seg1 = ""
+                seg2 = (joined + " " + rest).strip() if rest else joined
 
     # --- Duplicate sentence removal at seam ---
     last_sent = _last_sentence(seg1)

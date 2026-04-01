@@ -70,7 +70,7 @@ def _dedup_byline_from_body(author: str, body: str) -> str:
     lines = body.split("\n", 1)
     first_line = lines[0].strip()
     first_clean = re.sub(r"^By\s+", "", first_line, flags=re.IGNORECASE).strip().lower()
-    if first_clean == author_clean or first_clean.startswith(author_clean):
+    if first_clean == author_clean:
         return lines[1].lstrip("\n") if len(lines) > 1 else ""
     return body
 

@@ -179,6 +179,11 @@ def process_edition(
                 collected.append((img, page_diag, result))
                 progress.advance(task_id)
 
+    # Include diagnostics for pages that were skipped/failed in Phase 1
+    for img in image_files:
+        if img not in docai_results and img in page_diag_map:
+            report.page_diagnostics.append(page_diag_map[img])
+
     # Restore page ordering (sorted by filename) for deterministic merge
     collected.sort(key=lambda t: t[0])
     for img, page_diag, result in collected:

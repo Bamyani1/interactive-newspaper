@@ -32,19 +32,19 @@ def check_page_quality(image: Image.Image) -> PageQualityWarning:
     """
     width, height = image.size
 
-    # Low resolution check
-    if width < 500 or height < 500:
-        return PageQualityWarning(is_low_res=True, message=f"Low resolution: {width}x{height}")
-
     # Convert to grayscale array for pixel analysis
     gray = np.array(image.convert("L"))
 
-    # Blank page detection: >95% of pixels within 10 values of the median
+    # Blank detection first — catches blank pages regardless of resolution
     median_val = int(np.median(gray))
     within_range = np.sum(np.abs(gray.astype(int) - median_val) < 10)
     blank_ratio = within_range / gray.size
     if blank_ratio > 0.95:
         return PageQualityWarning(is_blank=True, message=f"Blank page detected ({blank_ratio:.1%} uniform)")
+
+    # Low resolution check (after blank — a low-res blank should be caught above)
+    if width < 500 or height < 500:
+        return PageQualityWarning(is_low_res=True, message=f"Low resolution: {width}x{height}")
 
     # Inverted scan detection: median < 64 means mostly dark
     if median_val < 64:

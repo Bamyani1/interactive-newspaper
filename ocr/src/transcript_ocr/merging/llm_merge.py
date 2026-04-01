@@ -470,13 +470,18 @@ def merge_edition_articles(
             )
         )
 
+    def _safe_page_int(label: str) -> int:
+        match = re.search(r'\d+', label or "")
+        return int(match.group()) if match else 0
+
+    merge_min_confidence = float(os.environ.get("MERGE_MIN_CONFIDENCE", "0.5"))
     merged_articles = []
     for group in decisions.groups:
         valid_ids = [aid for aid in group.article_ids if 0 <= aid < len(article_data)]
         if not valid_ids:
             continue
 
-        valid_ids = sorted(valid_ids, key=lambda aid: int(article_data[aid]["page_label"] or "0"))
+        valid_ids = sorted(valid_ids, key=lambda aid: _safe_page_int(article_data[aid]["page_label"]))
 
         bodies = []
         all_images = []
@@ -515,7 +520,6 @@ def merge_edition_articles(
                 continued_from_values.append(cont["continued_from"].strip())
 
         # Confidence filtering: reject low-confidence merges
-        merge_min_confidence = float(os.environ.get("MERGE_MIN_CONFIDENCE", "0.5"))
         if len(valid_ids) > 1 and group.confidence < merge_min_confidence:
             warning(f"Rejecting low-confidence merge ({group.confidence:.2f} < {merge_min_confidence}): {group.merged_headline}")
             if md is not None:
@@ -540,16 +544,17 @@ def merge_edition_articles(
             continue
 
         if len(bodies) > 1:
-            # Clean up OCR artifacts at merge join points
-            cleaned_bodies = [bodies[0]]
-            for i in range(1, len(bodies)):
-                cleaned = clean_merge_boundary(cleaned_bodies[-1], bodies[i])
-                cleaned_bodies[-1] = cleaned
-            bodies = cleaned_bodies
-
             bodies = _validate_merge_seam(client, bodies)
 
         merged_body = _best_body(bodies)
+
+        # Clean up OCR artifacts at merge boundaries (after seam repair joined the text)
+        paragraphs = merged_body.split("\n\n")
+        if len(paragraphs) > 1:
+            cleaned = paragraphs[0]
+            for i in range(1, len(paragraphs)):
+                cleaned = clean_merge_boundary(cleaned, paragraphs[i])
+            merged_body = cleaned
 
         merged_body, stripped_captions = _strip_trailing_captions(merged_body)
         for cap in stripped_captions:

@@ -54,6 +54,9 @@ Rules:
    - 0.5-0.7 = ambiguous match based on content similarity alone
    - Below 0.5 = very uncertain, should probably remain separate
    Single-article groups (no merge) should have confidence 1.0.
+7. Pick the best headline, author, and writer_position for each group — prefer the longer, more descriptive headline.
+8. Do NOT return any article body text — only article_ids, merged_headline, merged_author, merged_writer_position, and confidence.
+9. When continuation values show "?" (ambiguous/textual page reference), treat them as uncertain — match only if content similarity confirms the connection.
 """
 
 DOCAI_SYSTEM_PROMPT = """\
@@ -101,7 +104,7 @@ LOGOS AND SEALS: Organization logos, newspaper association seals, award emblems,
 Read columns top-to-bottom, then left-to-right. Follow articles that continue across columns.
 
 For each article, YOU MUST ASSIGN EXACTLY ONE of these categories to `category`:
-- Campus News: OWU-specific news — administration, policy changes, student government, campus events, institutional announcements, obituaries, Greek life events, student organizations, human interest profiles of students/faculty, syndicated humor columns
+- Campus News: OWU-specific news — administration, policy changes, student government, campus events, institutional announcements, obituaries, Greek life events, student organizations, human interest profiles of students/faculty
 - News: National/international news, wire service stories (AP, UPI), off-campus events, government/politics beyond OWU
 - Sports: Athletics, game results, player profiles, team news, intramurals
 - Arts & Entertainment: Music, theater, film, visual arts, performances, exhibitions, book/film/concert/album reviews, entertainment columns. Also: articles that are primarily photos with no or minimal text body (photo features, photo essays)
