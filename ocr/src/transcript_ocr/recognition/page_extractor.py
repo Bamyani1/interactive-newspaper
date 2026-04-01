@@ -73,6 +73,7 @@ def process_page_with_docai(
             safety_settings=SAFETY_OFF,
             media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             max_output_tokens=65536,
+            thinking_config=types.ThinkingConfig(thinking_level="high"),
         ),
     )
     gemini_elapsed = gemini_timer.stop()

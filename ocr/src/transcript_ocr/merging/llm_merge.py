@@ -155,6 +155,7 @@ def _validate_merge_seam(client, bodies: list[str]) -> list[str]:
                     config=types.GenerateContentConfig(
                         safety_settings=SAFETY_OFF,
                         max_output_tokens=1024,
+                        thinking_config=types.ThinkingConfig(thinking_level="high"),
                     ),
                 )
                 result = (repair_response.text or "").strip()
@@ -365,6 +366,7 @@ def merge_edition_articles(
                     response_schema=MergeDecisions,
                     safety_settings=SAFETY_OFF,
                     max_output_tokens=8192,
+                    thinking_config=types.ThinkingConfig(thinking_level="high"),
                 ),
             )
 
