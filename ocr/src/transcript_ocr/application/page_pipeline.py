@@ -20,7 +20,7 @@ from ..image_linking.assignment_applier import _apply_visual_assignments
 from ..image_linking.cropper import crop_and_save_images, draw_region_annotations
 from ..image_linking.spatial_matcher import match_images_to_articles
 from ..image_linking.visual_matcher import match_images_visual
-from ..preprocessing.image_preprocessor import preprocess_image
+from ..preprocessing.image_preprocessor import check_page_quality, preprocess_image
 from ..recognition.docai_provider import extract_page_text
 from ..recognition.page_extractor import (
     _extract_page_number_from_filename,
@@ -45,6 +45,16 @@ def extract_page_docai(
 
     if diag is not None:
         diag.filename = base_name
+
+    # Pre-OCR quality check — skip blank pages, warn on low-res/inverted
+    quality = check_page_quality(_PIL_Image.open(image_path))
+    if quality.should_skip:
+        warning(f"Skipping {base_name}: {quality.message}")
+        if diag is not None:
+            diag.error = f"skipped: {quality.message}"
+        return None, None, []
+    if quality.message:
+        warning(f"{base_name}: {quality.message}")
 
     raw_image = preprocess_image(_PIL_Image.open(image_path), diag=None)
 
