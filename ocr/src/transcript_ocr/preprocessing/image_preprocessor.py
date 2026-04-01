@@ -28,7 +28,7 @@ def preprocess_image(
         image = image.rotate(skew_angle, resample=Image.BICUBIC, expand=True, fillcolor=255)
 
     image = ImageEnhance.Contrast(image).enhance(1.5)
-    image = image.filter(ImageFilter.UnsharpMask(radius=1.0, percent=80, threshold=3))
+    image = image.filter(ImageFilter.UnsharpMask(radius=1.0, percent=50, threshold=3))
 
     if diag is not None:
         diag.skew_angle = skew_angle

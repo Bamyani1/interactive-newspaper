@@ -24,5 +24,5 @@ IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tif", ".tiff")
 
 DOCAI_CONFIDENCE_THRESHOLD = float(os.getenv("DOCAI_CONFIDENCE_THRESHOLD", "0.8"))
 DOCAI_MAX_BYTES = 18 * 1024 * 1024  # 18MB — buffer under Document AI's 20MB hard limit
-DOCAI_CLAHE_CLIP_LIMIT = 2.0        # CLAHE clip limit; higher = more contrast, more noise risk
+DOCAI_CLAHE_CLIP_LIMIT = 3.5        # CLAHE clip limit; higher = more contrast, more noise risk
 DOCAI_CLAHE_TILE_SIZE = (8, 8)      # CLAHE grid tile size
