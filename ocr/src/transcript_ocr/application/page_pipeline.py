@@ -114,6 +114,8 @@ def structure_and_link_page(
             client,
             image_path,
             docai_result,
+            preprocessed_image,
+            regions,
             diag=diag,
             snapshots_dir=snapshots_dir,
         )
