@@ -100,16 +100,17 @@ def process_edition(
 
     docai_results: dict[str, tuple] = {}  # img_path -> (docai_result, preprocessed_image, regions)
     page_diag_map: dict[str, PageDiagnostics] = {}
-    phase1_error: Exception | None = None
-    phase1_error_img: str = ""
 
-    def _run_phase1_page(img: str) -> tuple[str, PageDiagnostics, tuple]:
-        """Worker function for Phase 1 — returns (img, diag, extraction_result)."""
+    def _run_phase1_page(img: str) -> tuple[str, PageDiagnostics, tuple | None]:
+        """Worker function for Phase 1 — returns (img, diag, extraction_result_or_None)."""
         page_diag = PageDiagnostics()
-        docai_result, preprocessed_image, regions = extract_page_docai(
+        result = extract_page_docai(
             img, diag=page_diag, snapshots_dir=snapshots_dir,
         )
-        return img, page_diag, (docai_result, preprocessed_image, regions)
+        # extract_page_docai returns (None, None, []) for skipped pages (quality check)
+        if result[0] is None:
+            return img, page_diag, None
+        return img, page_diag, result
 
     with page_progress(len(image_files)) as progress:
         task_id = progress.add_task("DocAI extraction", total=len(image_files))
@@ -120,52 +121,42 @@ def process_edition(
                 try:
                     _, page_diag, result = future.result()
                     page_diag_map[img] = page_diag
-                    docai_results[img] = result
+                    if result is not None:
+                        docai_results[img] = result
                 except DocAIError as exc:
                     page_diag = PageDiagnostics()
                     page_diag.docai_status = f"failed: {exc}"
+                    page_diag.error = str(exc)
                     page_diag_map[img] = page_diag
-                    phase1_error = exc
-                    phase1_error_img = img
-                    for f in futures:
-                        f.cancel()
-                    break
+                    error(f"DocAI failed on {os.path.basename(img)}: {exc} — skipping page")
                 except Exception as exc:
                     page_diag = PageDiagnostics()
                     page_diag.error = str(exc)
                     page_diag_map[img] = page_diag
-                    phase1_error = exc
-                    phase1_error_img = img
-                    for f in futures:
-                        f.cancel()
-                    break
+                    error(f"Phase 1 failed on {os.path.basename(img)}: {exc} — skipping page")
                 progress.advance(task_id)
 
-    if phase1_error is not None:
-        img_name = os.path.basename(phase1_error_img)
-        if isinstance(phase1_error, DocAIError):
-            error(f"DocAI failed on {img_name}: {phase1_error}")
-            save_snapshot(
-                snapshots_dir,
-                f"docai_page{os.path.splitext(img_name)[0]}.json",
-                {"docai_status": f"failed: {phase1_error}"},
-            )
-            error(f"Aborting edition — DocAI failed on {img_name}")
-        else:
-            error(f"Phase 1 failed on {img_name}: {phase1_error}")
-            error(f"Aborting edition — extraction failed on {img_name}")
+    phase1_succeeded = len(docai_results)
+    phase1_failed = len(image_files) - phase1_succeeded
+    if phase1_failed > 0:
+        warning(f"Phase 1: {phase1_failed}/{len(image_files)} pages failed — continuing with {phase1_succeeded} pages")
+    if phase1_succeeded == 0:
+        error("All pages failed in Phase 1 — aborting edition")
         report.page_diagnostics.extend(page_diag_map.values())
         report.total_time_seconds = time.time() - pipeline_start
         report.finalize()
         _write_diagnostics_and_issues(report, edition_ocr_output, edition_output, snapshots_dir, "")
         return
 
-    success(f"Phase 1 done: {len(docai_results)}/{len(image_files)} pages extracted via DocAI")
+    success(f"Phase 1 done: {phase1_succeeded}/{len(image_files)} pages extracted via DocAI")
 
     # ── Phase 2: Gemini structuring (all pages) ───────────────────
     stage("Gemini structuring", 2, 5)
 
     page_results: list[tuple[str, Any]] = []
+
+    # Only process pages that succeeded in Phase 1
+    phase2_images = [img for img in image_files if img in docai_results]
 
     def _run_phase2_page(img: str) -> tuple[str, PageDiagnostics, Any]:
         """Worker function for Phase 2 — returns (img, diag, result)."""
@@ -178,10 +169,10 @@ def process_edition(
         )
         return img, page_diag, result
 
-    with page_progress(len(image_files)) as progress:
-        task_id = progress.add_task("Gemini structuring", total=len(image_files))
+    with page_progress(len(phase2_images)) as progress:
+        task_id = progress.add_task("Gemini structuring", total=len(phase2_images))
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_run_phase2_page, img): img for img in image_files}
+            futures = {executor.submit(_run_phase2_page, img): img for img in phase2_images}
             collected: list[tuple[str, PageDiagnostics, Any]] = []
             for future in as_completed(futures):
                 img, page_diag, result = future.result()
