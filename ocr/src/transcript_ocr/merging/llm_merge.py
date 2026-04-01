@@ -21,7 +21,7 @@ from ..contracts.content_models import (
 )
 from ..contracts.diagnostics_models import MergePassDiagnostics, PipelineReport, StageTimer, TokenUsage
 from ..diagnostics.snapshots import save_snapshot
-from ..postprocessing.byline_cleanup import _extract_byline_from_body, _normalize_byline, _split_author_position
+from ..postprocessing.byline_cleanup import _dedup_byline_from_body, _extract_byline_from_body, _normalize_byline, _split_author_position
 from ..postprocessing.deduplication import _deduplicate_ads, _deduplicate_other_content
 from ..recognition.prompts import MERGE_PROMPT, SAFETY_OFF
 from ..shared.retry import gemini_generate_with_retry
@@ -557,6 +557,7 @@ def merge_edition_articles(
 
         merged_author = _normalize_byline(group.merged_author)
         merged_author, merged_body = _extract_byline_from_body(group.merged_headline, merged_author, merged_body)
+        merged_body = _dedup_byline_from_body(merged_author, merged_body)
         merged_position = group.merged_writer_position
         if not merged_position:
             merged_author, merged_position = _split_author_position(merged_author)
