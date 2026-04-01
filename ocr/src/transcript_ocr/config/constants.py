@@ -2,9 +2,10 @@
 
 import os
 
-GEMINI_PAGE_MODEL = "gemini-3-flash-preview"
-GEMINI_MERGE_MODEL = "gemini-3.1-pro-preview"
-GEMINI_AD_ENRICHMENT_MODEL = "gemini-3-flash-preview"
+GEMINI_PAGE_MODEL = "gemini-3-flash-preview"           # Image matching, merge retry fallback
+GEMINI_STRUCTURING_MODEL = "gemini-3.1-pro-preview"     # Page structuring + seam repair (highest accuracy)
+GEMINI_MERGE_MODEL = "gemini-3.1-pro-preview"           # Cross-page merge decisions
+GEMINI_AD_ENRICHMENT_MODEL = "gemini-3-flash-preview"   # Ad enrichment
 
 # Back-compat alias while modules migrate.
 GEMINI_MODEL = GEMINI_PAGE_MODEL
