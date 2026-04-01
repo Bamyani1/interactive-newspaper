@@ -125,3 +125,30 @@ def test_extract_both_directions():
     )
     assert info["continued_from"] == "1"
     assert info["continues_on"] == "5"
+
+
+def test_strip_back_page():
+    text = "Article text continued on back page"
+    result = _strip_continuation_markers(text)
+    assert "back page" not in result.lower()
+
+
+def test_strip_next_page():
+    text = "Article text continued on next page"
+    result = _strip_continuation_markers(text)
+    assert "next page" not in result.lower()
+
+
+def test_extract_back_page_as_ambiguous():
+    info = _extract_continuation_info("End of text. Continued on back page")
+    assert info["continues_on"] == "?"
+
+
+def test_extract_preceding_page_as_ambiguous():
+    info = _extract_continuation_info("Continued from preceding page. The story goes on.")
+    assert info["continued_from"] == "?"
+
+
+def test_extract_normalizes_non_numeric():
+    info = _extract_continuation_info("See last page for conclusion")
+    assert info["continues_on"] == "?"
