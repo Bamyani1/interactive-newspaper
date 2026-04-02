@@ -38,7 +38,7 @@ export const AskInput: React.FC<AskInputProps> = ({ onSubmit, isLoading }) => {
 
   const handleExampleClick = (question: string) => {
     setValue(question);
-    onSubmit(question);
+    textareaRef.current?.focus();
   };
 
   return (

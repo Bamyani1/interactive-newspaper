@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState, useMemo, useCallback } from "react";
-import { ArrowRight } from "lucide-react";
-
 /* ─── Types ────────────────────────────────── */
 
 interface EditionPickerProps {
@@ -11,12 +9,6 @@ interface EditionPickerProps {
     onSelect: (date: string) => void;
     isLoading?: boolean;
     onOpenChange?: (isOpen: boolean) => void;
-    /** When true, renders in expanded read-mode (full decade tabs + navigate/back) */
-    expanded?: boolean;
-    /** Called when user clicks "Read This Edition" in expanded mode */
-    onNavigate?: () => void;
-    /** Called when user clicks "Back" in expanded mode */
-    onBack?: () => void;
 }
 
 interface DecadeGroup {
@@ -69,9 +61,6 @@ export function EditionPicker({
     onSelect,
     isLoading = false,
     onOpenChange,
-    expanded = false,
-    onNavigate,
-    onBack,
 }: EditionPickerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const groups = useMemo(() => groupEditionsByDecade(editions), [editions]);
@@ -107,77 +96,6 @@ export function EditionPicker({
         onSelect(date);
         closePicker();
     }, [onSelect, closePicker]);
-
-    /* ── Expanded mode (Read Mode overlay) ── */
-    if (expanded) {
-        return (
-            <div className="ep-container ep-container--expanded">
-                {/* Decade tabs */}
-                {groups.length > 1 && (
-                    <div className="ep-decade-tabs" role="tablist" aria-label="Select decade">
-                        {groups.map((group) => (
-                            <button
-                                key={group.prefix}
-                                type="button"
-                                role="tab"
-                                aria-selected={currentDecade === group.prefix}
-                                className={`ep-decade-tab ${currentDecade === group.prefix ? "ep-decade-tab--active" : ""}`}
-                                onClick={() => setActiveDecade(group.prefix)}
-                            >
-                                {group.decade}
-                            </button>
-                        ))}
-                    </div>
-                )}
-
-                {/* Edition list for selected decade */}
-                {activeGroup && (
-                    <div
-                        className="ep-date-list"
-                        role="listbox"
-                        aria-label={`Editions from the ${activeGroup.decade}`}
-                    >
-                        {activeGroup.editions.map((date) => {
-                            const isSelected = selectedEdition === date;
-                            return (
-                                <button
-                                    key={date}
-                                    type="button"
-                                    role="option"
-                                    aria-selected={isSelected}
-                                    className={`ep-date-item ${isSelected ? "ep-date-item--selected" : ""}`}
-                                    onClick={() => onSelect(date)}
-                                >
-                                    <span className="ep-date-item-date">
-                                        {formatEditionDate(date)}
-                                    </span>
-                                    <span className="ep-date-item-weekday">
-                                        {formatWeekday(date)}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* Read This Edition button */}
-                <button
-                    type="button"
-                    className="ep-navigate-btn"
-                    onClick={onNavigate}
-                    disabled={!selectedEdition}
-                >
-                    <span>Read This Edition</span>
-                    <ArrowRight size={16} />
-                </button>
-
-                {/* Back button */}
-                <button type="button" className="ep-back-btn" onClick={onBack}>
-                    ← Back
-                </button>
-            </div>
-        );
-    }
 
     /* ── Loading ────────────── */
     if (isLoading && editions.length === 0) {
@@ -254,6 +172,7 @@ export function EditionPicker({
                             >
                                 <span className="ep-date-item-date">
                                     {formatEditionDate(date)}
+                                    {date === "1960-01-13" && " (golden)"}
                                 </span>
                                 <span className="ep-date-item-weekday">
                                     {formatWeekday(date)}

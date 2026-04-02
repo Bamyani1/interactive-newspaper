@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { SearchResult, PaginationInfo } from "@/src/types";
+import { SkeletonFeed } from "@/shared";
 import { SearchResultCard } from "./SearchResultCard";
 
 interface SearchResultsProps {
@@ -27,6 +28,10 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
         Search failed. Please try again.
       </div>
     );
+  }
+
+  if (isLoading && results.length === 0 && query.trim()) {
+    return <SkeletonFeed count={3} />;
   }
 
   if (!query.trim()) {

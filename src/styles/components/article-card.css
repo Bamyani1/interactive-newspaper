@@ -94,7 +94,16 @@
     padding-bottom: 0;
 }
 .is-expanded .card-footer {
+    justify-content: center;
+}
+.is-expanded .card-meta {
     display: none;
+}
+.card-read-more svg {
+    transition: transform var(--duration-normal) var(--ease-default);
+}
+.is-expanded .card-read-more svg {
+    transform: rotate(180deg);
 }
 
 /* Read CTA — right-aligned in footer row */
