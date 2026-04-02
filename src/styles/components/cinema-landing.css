@@ -443,30 +443,6 @@
 }
 
 /* =========================================
-   READ MODE — OVERLAY APPROACH
-   ========================================= */
-
-/* Landing content hidden in read mode — maintains grid height */
-.cinema-paper-grid--read-mode .cinema-col-brand,
-.cinema-paper-grid--read-mode .cinema-divider,
-.cinema-paper-grid--read-mode .cinema-col-action {
-    visibility: hidden;
-    pointer-events: none;
-    opacity: 0;
-    transition: visibility 0s 0.15s, opacity 0.15s ease;
-}
-
-/* Expanded picker overlay — sits on top of hidden landing content */
-.cinema-expanded-overlay {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-/* =========================================
    RESPONSIVE
    ========================================= */
 

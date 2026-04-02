@@ -7,6 +7,7 @@ import threading
 
 import numpy as np
 from PIL import Image
+
 from doclayout_yolo import YOLOv10
 
 from ..config.constants import (
