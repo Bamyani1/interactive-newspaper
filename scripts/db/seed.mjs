@@ -4,14 +4,18 @@
  * Reads edition JSON files, weather index, and music data from the filesystem,
  * transforms them using ocr-adapter functions, and inserts into Neon PostgreSQL.
  *
+ * Locked editions (defined in locked-editions.json) are automatically restored
+ * from their gold source on every --reset, preventing accidental deletion.
+ *
  * Usage:
- *   npm run db:seed          — insert data (skip existing editions)
- *   npm run db:reset         — drop all tables, recreate, and re-seed
+ *   npm run db:seed              — insert data (skip existing editions)
+ *   npm run db:reset             — drop all tables, recreate, and re-seed
+ *   npm run db:reset -- --unlock — reset WITHOUT restoring locked editions
  *   npm run db:seed -- --date 1960-05-11 --editions-dir public/editions --summary-path ocr/runs/1960-05-11/seed-summary.json
  */
 
 import { neon } from "@neondatabase/serverless";
-import { readdir, readFile } from "fs/promises";
+import { readdir, readFile, mkdir, copyFile } from "fs/promises";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -42,6 +46,16 @@ const MUSIC_DIR = path.join(ROOT, "public/top-10-music");
 const SCHEMA_FILE = path.join(__dirnameEnv, "schema.sql");
 
 const isReset = process.argv.includes("--reset");
+const isUnlock = process.argv.includes("--unlock");
+
+// ─── Locked Editions ────────────────────────────────────────────
+// Locked editions are restored from their gold source on every --reset
+// to prevent accidental deletion. Use --unlock to skip this protection.
+
+const LOCKED_EDITIONS_FILE = path.join(__dirnameEnv, "locked-editions.json");
+const LOCKED_EDITIONS = existsSync(LOCKED_EDITIONS_FILE)
+  ? JSON.parse(readFileSync(LOCKED_EDITIONS_FILE, "utf-8"))
+  : {};
 
 function readArgValue(flag) {
   const idx = process.argv.indexOf(flag);
@@ -103,6 +117,60 @@ async function applySchema() {
   }
 
   console.log("Schema applied.");
+}
+
+// ─── DB-Level Lock: Export / Restore ────────────────────────────
+// Saves locked edition data from the database before DROP, then
+// re-inserts after schema recreation. This protects the gold edition
+// even on machines that don't have the gold source files locally.
+
+async function exportLockedEditions() {
+  const lockedDates = Object.keys(LOCKED_EDITIONS);
+  if (lockedDates.length === 0 || isUnlock) return null;
+
+  const saved = {};
+  for (const date of lockedDates) {
+    try {
+      const [edition] = await sql`SELECT * FROM editions WHERE date = ${date}`;
+      if (!edition) continue;
+      const articles = await sql`SELECT id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding FROM articles WHERE edition_date = ${date} ORDER BY position`;
+      const ads = await sql`SELECT edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls FROM ads WHERE edition_date = ${date} ORDER BY position`;
+      saved[date] = { edition, articles, ads };
+      console.log(`  Saved locked edition ${date} from DB (${articles.length} articles, ${ads.length} ads)`);
+    } catch {
+      // Tables might not exist on first run
+    }
+  }
+  return Object.keys(saved).length > 0 ? saved : null;
+}
+
+async function restoreLockedEditions(savedData) {
+  if (!savedData) return;
+
+  for (const [date, { edition, articles, ads }] of Object.entries(savedData)) {
+    await sql`INSERT INTO editions (date, publication_info, page_count, article_count)
+              VALUES (${edition.date}, ${edition.publication_info}, ${edition.page_count}, ${edition.article_count})
+              ON CONFLICT (date) DO NOTHING`;
+
+    if (articles.length > 0) {
+      const articleQueries = articles.map((a) =>
+        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding)
+            VALUES (${a.id}, ${a.edition_date}, ${a.position}, ${a.category}, ${a.headline}, ${a.summary}, ${a.full_text}, ${a.body_plain}, ${a.byline}, ${a.writer_position}, ${a.page}, ${a.is_hero}, ${a.is_featured}, ${JSON.stringify(a.image_urls)}, ${a.image_caption}, ${JSON.stringify(a.image_captions)}, ${a.embedding})
+            ON CONFLICT (id) DO NOTHING`
+      );
+      await sql.transaction(articleQueries);
+    }
+
+    if (ads.length > 0) {
+      const adQueries = ads.map((a) =>
+        sql`INSERT INTO ads (edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls)
+            VALUES (${a.edition_date}, ${a.position}, ${a.title}, ${a.body}, ${a.category}, ${a.ad_type}, ${a.display_text}, ${a.phone}, ${a.address}, ${a.price}, ${JSON.stringify(a.image_urls)})`
+      );
+      await sql.transaction(adQueries);
+    }
+
+    console.log(`  Restored locked edition ${date} (${articles.length} articles, ${ads.length} ads)`);
+  }
 }
 
 async function dropAllTables() {
@@ -368,6 +436,64 @@ async function embedArticles(scopedDate = "") {
   console.log(`  Embedding complete: ${done} articles.`);
 }
 
+// ─── Ensure Locked Editions ─────────────────────────────────────
+// Copies gold-standard edition files into public/editions/ if missing.
+// Called before seeding so locked editions always survive a --reset.
+
+async function ensureLockedEditions() {
+  const lockedDates = Object.keys(LOCKED_EDITIONS);
+  if (lockedDates.length === 0) return;
+
+  if (isUnlock) {
+    console.log(`⚠  --unlock: skipping protection for ${lockedDates.length} locked edition(s).`);
+    return;
+  }
+
+  console.log(`Locked editions: ${lockedDates.join(", ")}`);
+
+  for (const date of lockedDates) {
+    const config = LOCKED_EDITIONS[date];
+    const targetDir = path.join(ACTIVE_EDITIONS_DIR, date);
+    const targetJson = path.join(targetDir, "edition.json");
+    const sourcePath = path.resolve(ROOT, config.source);
+
+    if (existsSync(targetJson)) {
+      console.log(`  ${date}: ✓ already in place (${config.reason})`);
+      continue;
+    }
+
+    if (!existsSync(sourcePath)) {
+      console.error(`  ${date}: ✗ gold source missing at ${config.source} — cannot restore!`);
+      continue;
+    }
+
+    // Restore edition.json
+    await mkdir(targetDir, { recursive: true });
+    await copyFile(sourcePath, targetJson);
+    console.log(`  ${date}: restored edition.json from ${config.source}`);
+
+    // Restore images
+    if (config.images) {
+      const imagesSource = path.resolve(ROOT, config.images);
+      const imagesTarget = path.join(targetDir, "images");
+      if (existsSync(imagesSource)) {
+        await mkdir(imagesTarget, { recursive: true });
+        const files = await readdir(imagesSource);
+        let copied = 0;
+        for (const file of files) {
+          const src = path.join(imagesSource, file);
+          const dest = path.join(imagesTarget, file);
+          if (!existsSync(dest)) {
+            await copyFile(src, dest);
+            copied++;
+          }
+        }
+        console.log(`  ${date}: restored ${copied} image(s)`);
+      }
+    }
+  }
+}
+
 async function main() {
   const start = Date.now();
 
@@ -387,11 +513,15 @@ async function main() {
     embeddingsScoped: Boolean(targetDate),
   };
 
+  let savedLockedData = null;
   if (isReset) {
+    savedLockedData = await exportLockedEditions();
     await dropAllTables();
   }
 
   await applySchema();
+  await restoreLockedEditions(savedLockedData);
+  await ensureLockedEditions();
   summary.editions = await seedEditions(targetDate);
   if (!targetDate) {
     await seedWeather();
@@ -416,7 +546,7 @@ async function main() {
   summary.completedAt = new Date().toISOString();
 
   if (summaryPath) {
-    const { mkdir, writeFile } = await import("fs/promises");
+    const { writeFile } = await import("fs/promises");
     await mkdir(path.dirname(summaryPath), { recursive: true });
     await writeFile(summaryPath, JSON.stringify(summary, null, 2) + "\n", "utf-8");
     console.log(`Seed summary written to ${summaryPath}`);
