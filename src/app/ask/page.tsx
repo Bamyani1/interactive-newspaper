@@ -59,7 +59,7 @@ export default function AskPage() {
             )}
 
             {answer && (
-              <div ref={answerRef} tabIndex={-1} className="outline-none">
+              <div ref={answerRef} tabIndex={-1} className="outline-none ask-answer-enter">
                 <AnswerPanel response={answer} />
                 <SourceList sources={answer.sourceArticles} />
               </div>

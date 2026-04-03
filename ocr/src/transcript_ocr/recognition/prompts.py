@@ -43,31 +43,20 @@ Some articles start on one page and continue on another.
 Below is a numbered list of articles with their page, headline, author, continuation references, and a preview. Your task is to return ONLY grouping decisions — which articles should be merged.
 
 Rules:
-1. ONLY merge articles when there is clear evidence of continuation:
-   - Explicit "Continued on/from page X" reference matching the other article's page
-   - One article is a short continuation stub (headline contains "---" or "..." prefix)
-   - Same headline appearing on different pages with one picking up mid-sentence
-   - An article with continues_on="?" whose body ends mid-sentence and matches content with a stub on a later page
-2. NEVER merge articles that both have distinct, substantive headlines — even if on similar topics.
-   Example: "Scots Spoil Homecoming" and "Bishops Hurt By Mistakes" are SEPARATE articles.
-3. NEVER merge a photo-only entry (body is just a caption, <100 chars) into an article body.
-   Photo captions should remain as standalone entries.
+1. Merge ONLY when there is clear evidence of continuation: explicit "Continued on/from page X" references matching the other article's page, matching headlines across pages, or a stub (headline with "---"/"..." prefix) paired with its source. Tolerate OCR misspellings in continuation markers (e.g., "Continuted" for "Continued", "(. 1)" for "(p. 1)").
+2. NEVER merge articles that both have distinct, substantive headlines — even if on similar topics. Example: "Scots Spoil Homecoming" and "Bishops Hurt By Mistakes" are SEPARATE articles.
+3. NEVER merge a photo-only entry (body is just a caption, <100 chars) into an article body. Photo captions should remain as standalone entries.
 4. Every article must appear in exactly one group (even single-article groups).
-5. Pick the best headline, author, and writer_position for each group.
-6. Use continuation references to validate merges — prefer explicit markers over topic similarity.
-7. Do NOT return any article body text — only article_ids, merged_headline, merged_author.
-8. When multiple articles on the SAME page reference the SAME continuation page, each one is a SEPARATE article with its own continuation. Match them 1:1 by headline/content similarity. Read the CONTENT of each preview carefully to match source articles to their correct stubs. Do not just pair them by order — pair them by semantic content match.
-   Example: Page 1 has "Campus Protest" (continues on p.7) and "Student Demands" (continues on p.7).
-   Page 7 has "Protest" (from p.1) and "Demands" (from p.1).
-   Correct: group [Campus Protest + Protest] and [Student Demands + Demands] as TWO groups.
-   Wrong: grouping all four into one article.
-9. For EVERY group, set a "confidence" score between 0.0 and 1.0:
+5. When multiple articles on the SAME page reference the SAME continuation page, match them 1:1 by headline and content similarity. Read the CONTENT of each preview carefully — pair by semantic match, not by order.
+6. For EVERY group, set a "confidence" score between 0.0 and 1.0:
    - 1.0 = reciprocal explicit markers (both sides reference each other's page)
    - 0.8-0.9 = one-sided explicit marker with matching headline or content
    - 0.5-0.7 = ambiguous match based on content similarity alone
    - Below 0.5 = very uncertain, should probably remain separate
    Single-article groups (no merge) should have confidence 1.0.
-10. When merging, be aware that continuation markers in the body text may be garbled by OCR (e.g., "(. 1)" instead of "(p. 1)", "Continuted" instead of "Continued"). Use context to identify these as continuation markers even if misspelled.
+7. Pick the best headline, author, and writer_position for each group — prefer the longer, more descriptive headline.
+8. Do NOT return any article body text — only article_ids, merged_headline, merged_author, merged_writer_position, and confidence.
+9. When continuation values show "?" (ambiguous/textual page reference), treat them as uncertain — match only if content similarity confirms the connection.
 """
 
 DOCAI_SYSTEM_PROMPT = """\
@@ -104,10 +93,18 @@ Capture masthead/publication header in publication_info.
 Set page_number to the numeric page number (e.g., "3" not "Page 3"). Front pages are page 1.
 Put any remaining content (schedules, tables, notices, calendars) in other_content.
 
+LETTERS TO THE EDITOR: Each Letter to the Editor is a SEPARATE article. Letters typically end with a signature line (a dash or newline followed by a name, e.g. "- John Smith"). When you see a new salutation ("Editor, the Transcript:") or a new signature followed by a new heading, start a new article. Do not combine multiple signed letters into one article, even if they appear in the same column under a shared heading like "Letters" or "Mail".
+
+CONTINUATION FIELD FORMAT: The `continues_on` and `continued_from` fields must contain ONLY a page number as digits (e.g., "5"). If the source text says "Back Page", "next page", or similar phrases, set the field to "?" — never include textual descriptions.
+
+SYNDICATED CONTENT: Syndicated humor or entertainment columns (nationally distributed content, often with embedded product mentions, sponsor attributions, or copyright notices like "(C) 1960 Author Name") are "Arts & Entertainment", not "Campus News".
+
+LOGOS AND SEALS: Organization logos, newspaper association seals, award emblems, and masthead graphics should go in `other_content` with a descriptive title, not as articles.
+
 Read columns top-to-bottom, then left-to-right. Follow articles that continue across columns.
 
 For each article, YOU MUST ASSIGN EXACTLY ONE of these categories to `category`:
-- Campus News: OWU-specific news — administration, policy changes, student government, campus events, institutional announcements, obituaries, Greek life events, student organizations, human interest profiles of students/faculty, syndicated humor columns
+- Campus News: OWU-specific news — administration, policy changes, student government, campus events, institutional announcements, obituaries, Greek life events, student organizations, human interest profiles of students/faculty
 - News: National/international news, wire service stories (AP, UPI), off-campus events, government/politics beyond OWU
 - Sports: Athletics, game results, player profiles, team news, intramurals
 - Arts & Entertainment: Music, theater, film, visual arts, performances, exhibitions, book/film/concert/album reviews, entertainment columns. Also: articles that are primarily photos with no or minimal text body (photo features, photo essays)

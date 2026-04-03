@@ -5,6 +5,7 @@ import path from 'path';
 export const dynamic = 'force-dynamic';
 
 const OCR_OUTPUT_DIR = path.join(process.cwd(), 'public', 'editions');
+const GOLD_DIR = path.join(process.cwd(), 'gold');
 
 const CONTENT_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -47,15 +48,24 @@ export async function GET(
     return new NextResponse('Unsupported file type', { status: 400 });
   }
 
-  try {
-    const data = await readFile(filePath);
-    return new NextResponse(data, {
+  const respond = (data: Buffer) =>
+    new NextResponse(new Uint8Array(data), {
       headers: {
         'Content-Type': contentType,
         'Cache-Control': 'public, max-age=31536000, immutable',
       },
     });
+
+  try {
+    return respond(await readFile(filePath));
   } catch {
+    // Fallback: check gold/ directory
+    try {
+      const goldPath = path.join(GOLD_DIR, date, 'images', filename);
+      if (goldPath.startsWith(path.join(GOLD_DIR, date, 'images'))) {
+        return respond(await readFile(goldPath));
+      }
+    } catch { /* fall through */ }
     return new NextResponse('Image not found', { status: 404 });
   }
 }

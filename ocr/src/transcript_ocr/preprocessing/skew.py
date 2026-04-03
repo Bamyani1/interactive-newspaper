@@ -19,7 +19,7 @@ def _detect_skew_angle(image: Image.Image) -> float:
     best_angle = 0.0
     best_variance = 0.0
 
-    for angle_10x in range(-50, 51):
+    for angle_10x in range(-150, 151):
         angle = angle_10x / 10.0
         rotated = ndimage.rotate(binary, angle, reshape=False, order=0)
         row_sums = rotated.sum(axis=1)

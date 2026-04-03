@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections import defaultdict
 from difflib import SequenceMatcher as SM
 
 from google.genai import types
 
-from ..config.constants import GEMINI_MERGE_MODEL, GEMINI_PAGE_MODEL
+from ..config.constants import GEMINI_MERGE_MODEL, GEMINI_PAGE_MODEL, GEMINI_STRUCTURING_MODEL
 from ..contracts.content_models import (
     ArticleImage,
     EditionContent,
@@ -20,7 +21,7 @@ from ..contracts.content_models import (
 )
 from ..contracts.diagnostics_models import MergePassDiagnostics, PipelineReport, StageTimer, TokenUsage
 from ..diagnostics.snapshots import save_snapshot
-from ..postprocessing.byline_cleanup import _extract_byline_from_body, _normalize_byline, _split_author_position
+from ..postprocessing.byline_cleanup import _dedup_byline_from_body, _extract_byline_from_body, _normalize_byline, _split_author_position
 from ..postprocessing.deduplication import _deduplicate_ads, _deduplicate_other_content
 from ..recognition.prompts import MERGE_PROMPT, SAFETY_OFF
 from ..shared.retry import gemini_generate_with_retry
@@ -29,6 +30,7 @@ from ..postprocessing.proper_noun_corrections import (
     _apply_edition_proper_noun_corrections,
     _check_edition_proper_nouns,
 )
+from .boundary_cleanup import clean_merge_boundary
 from .continuation import _extract_continuation_info, _strip_continuation_markers
 from .deterministic_merge import _deterministic_merge
 from .merge_sanitizer import (
@@ -139,7 +141,7 @@ def _validate_merge_seam(client, bodies: list[str]) -> list[str]:
             try:
                 repair_response = gemini_generate_with_retry(
                     client,
-                    model=GEMINI_PAGE_MODEL,
+                    model=GEMINI_STRUCTURING_MODEL,
                     contents=[
                         "These two text fragments were extracted from consecutive newspaper columns. "
                         "They may connect mid-sentence at the boundary. "
@@ -153,6 +155,7 @@ def _validate_merge_seam(client, bodies: list[str]) -> list[str]:
                     config=types.GenerateContentConfig(
                         safety_settings=SAFETY_OFF,
                         max_output_tokens=1024,
+                        thinking_config=types.ThinkingConfig(thinking_level="high"),
                     ),
                 )
                 result = (repair_response.text or "").strip()
@@ -363,6 +366,7 @@ def merge_edition_articles(
                     response_schema=MergeDecisions,
                     safety_settings=SAFETY_OFF,
                     max_output_tokens=8192,
+                    thinking_config=types.ThinkingConfig(thinking_level="high"),
                 ),
             )
 
@@ -468,13 +472,18 @@ def merge_edition_articles(
             )
         )
 
+    def _safe_page_int(label: str) -> int:
+        match = re.search(r'\d+', label or "")
+        return int(match.group()) if match else 0
+
+    merge_min_confidence = float(os.environ.get("MERGE_MIN_CONFIDENCE", "0.5"))
     merged_articles = []
     for group in decisions.groups:
         valid_ids = [aid for aid in group.article_ids if 0 <= aid < len(article_data)]
         if not valid_ids:
             continue
 
-        valid_ids = sorted(valid_ids, key=lambda aid: int(article_data[aid]["page_label"] or "0"))
+        valid_ids = sorted(valid_ids, key=lambda aid: _safe_page_int(article_data[aid]["page_label"]))
 
         bodies = []
         all_images = []
@@ -512,17 +521,42 @@ def merge_edition_articles(
             if (cont.get("continued_from") or "").strip():
                 continued_from_values.append(cont["continued_from"].strip())
 
+        # Confidence filtering: reject low-confidence merges
+        if len(valid_ids) > 1 and group.confidence < merge_min_confidence:
+            warning(f"Rejecting low-confidence merge ({group.confidence:.2f} < {merge_min_confidence}): {group.merged_headline}")
+            if md is not None:
+                md.low_confidence_rejections += 1
+            # Split back into individual articles
+            for aid in valid_ids:
+                ad = article_data[aid]
+                merged_articles.append(
+                    MergedArticle(
+                        headline=ad["headline"],
+                        author=_normalize_byline(ad.get("author", "")),
+                        writer_position=ad.get("writer_position", ""),
+                        category=ad.get("category", "Campus News"),
+                        continues_on=ad["continuation"].get("continues_on", ""),
+                        continued_from=ad["continuation"].get("continued_from", ""),
+                        body=_strip_continuation_markers(ad["body"]),
+                        images=list(ad.get("images", [])),
+                        image_files=list(ad.get("image_files", [])),
+                        source_pages=[ad["page_label"]],
+                    )
+                )
+            continue
+
         if len(bodies) > 1:
             bodies = _validate_merge_seam(client, bodies)
 
         merged_body = _best_body(bodies)
 
-        if len(valid_ids) > 1 and group.confidence < 0.7:
-            warning(f"Low-confidence merge ({group.confidence:.1f}): {group.merged_headline}")
-            if md is not None:
-                md.duplicate_warnings.append(
-                    f"Low confidence ({group.confidence:.1f}): {group.merged_headline} — IDs {valid_ids}"
-                )
+        # Clean up OCR artifacts at merge boundaries (after seam repair joined the text)
+        paragraphs = merged_body.split("\n\n")
+        if len(paragraphs) > 1:
+            cleaned = paragraphs[0]
+            for i in range(1, len(paragraphs)):
+                cleaned = clean_merge_boundary(cleaned, paragraphs[i])
+            merged_body = cleaned
 
         merged_body, stripped_captions = _strip_trailing_captions(merged_body)
         for cap in stripped_captions:
@@ -530,6 +564,7 @@ def merge_edition_articles(
 
         merged_author = _normalize_byline(group.merged_author)
         merged_author, merged_body = _extract_byline_from_body(group.merged_headline, merged_author, merged_body)
+        merged_body = _dedup_byline_from_body(merged_author, merged_body)
         merged_position = group.merged_writer_position
         if not merged_position:
             merged_author, merged_position = _split_author_position(merged_author)

@@ -202,7 +202,8 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                 {/* Footer — READ FULL STORY right-aligned */}
                 <div className="card-footer">
                     <span className="card-read-more">
-                        Read full story <ChevronDown size={14} className="inline align-middle" />
+                        {isExpanded ? "Close" : "Read full story"}{" "}
+                        <ChevronDown size={14} className="inline align-middle" />
                     </span>
                     <div className="card-meta flex items-center gap-2 flex-wrap">
                         <span className="card-category">{article.category}</span>

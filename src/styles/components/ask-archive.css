@@ -202,6 +202,15 @@
     width: 100%;
 }
 
+@keyframes askFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.ask-answer-enter {
+    animation: askFadeIn 300ms var(--ease-default) both;
+}
+
 @keyframes askPulse {
     0%, 100% {
         opacity: 0.4;
