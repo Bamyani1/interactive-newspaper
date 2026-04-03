@@ -307,7 +307,7 @@ function AdImage({ ad, compact }: { ad: VintageAd; compact?: boolean }) {
             <img
                 src={ad.imageUrls[0]}
                 alt={`${ad.title} advertisement`}
-                className={`w-full h-auto object-contain ${compact ? "max-h-32" : "max-h-64"}`}
+                className={`w-full h-auto object-cover rounded-sm ${compact ? "max-h-32" : "max-h-64"}`}
                 loading="lazy"
             />
         </div>
@@ -373,11 +373,10 @@ export const AdsSection: React.FC<AdsSectionProps> = ({ displayAds }) => {
                 </span>
             </div>
 
-            <div className="columns-1 sm:columns-2 gap-4 md:gap-5 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 items-start gap-4 md:gap-5 mb-8">
                 {visibleAds.map((ad, idx) => (
                     <div
                         key={`display-${ad.title}-${idx}`}
-                        className="break-inside-avoid mb-4 md:mb-5"
                     >
                         <DisplayAd ad={ad} variant={variants[idx]} />
                     </div>
@@ -433,11 +432,10 @@ export const ClassifiedsSection: React.FC<ClassifiedsSectionProps> = ({ classifi
                 </span>
             </div>
 
-            <div className="columns-1 sm:columns-2 gap-4 md:gap-5 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 items-start gap-4 md:gap-5 mb-8">
                 {visibleAds.map((ad, idx) => (
                     <div
                         key={`classified-${ad.title}-${idx}`}
-                        className="break-inside-avoid mb-4 md:mb-5"
                     >
                         <DisplayAd ad={ad} variant={variants[idx]} />
                     </div>

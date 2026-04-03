@@ -24,6 +24,10 @@ _CONTINUATION_PATTERNS = [
         r"\b[Cc]ontin[a-z]*(?:ed|ued)\s+(?:on|from)\s+(?:p(?:age)?\.?\s+)?\w[\w-]*\b",
         # Broader: parenthesized continuation reference with OCR corruption
         r"\(\s*(?:Continued|Con't\.?|From)\s+(?:on|from)?\s*(?:p(?:age)?\.?\s+)?\w[\w-]*\s*\)",
+        # Textual page references (non-numeric — normalized to "?")
+        r"\bcontinued\s+on\s+(?:the\s+)?(?:back|last|final|next)\s+page\b",
+        r"\bcontinued\s+from\s+(?:the\s+)?(?:preceding|previous|last)\s+page\b",
+        r"\bsee\s+(?:the\s+)?(?:back|last|final|next)\s+page\b",
     ]
 ]
 
@@ -57,6 +61,29 @@ def _extract_continuation_info(body: str) -> dict[str, str | None]:
         match = re.search(r"\(\.\s*(\d+)\s*\)", body)
         if match:
             info["continues_on"] = match.group(1)
+
+    # Fallback: textual page references (back page, next page, etc.)
+    if not info["continues_on"]:
+        match = re.search(
+            r"\b(?:continued\s+on|see)\s+(?:the\s+)?(?:back|last|final|next)\s+page\b",
+            body, re.IGNORECASE,
+        )
+        if match:
+            info["continues_on"] = "?"
+
+    if not info["continued_from"]:
+        match = re.search(
+            r"\bcontinued\s+from\s+(?:the\s+)?(?:preceding|previous|last)\s+page\b",
+            body, re.IGNORECASE,
+        )
+        if match:
+            info["continued_from"] = "?"
+
+    # Normalize: any non-numeric result becomes "?"
+    for key in ("continues_on", "continued_from"):
+        val = info[key]
+        if val and val != "?" and not val.strip().isdigit():
+            info[key] = "?"
 
     return info
 

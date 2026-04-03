@@ -130,3 +130,25 @@ def test_empty_bodies_skipped():
     result = _validate_merge_seam(MagicMock(), bodies)
     # Empty body gets appended, then filtered by the [b for b if b.strip()] at end
     assert all(b.strip() for b in result)
+
+
+def test_deterministic_merge_multi_article_continuation():
+    """When 2 articles on page 1 continue to page 5, match by headline similarity."""
+    from transcript_ocr.merging.deterministic_merge import _deterministic_merge
+
+    article_data = [
+        {"page_label": "1", "headline": "Campus Protest Grows", "body": "Students gathered at the quad...",
+         "continuation": {"continues_on": "5", "continued_from": None}},
+        {"page_label": "1", "headline": "Student Demands Issued", "body": "A list of demands was presented...",
+         "continuation": {"continues_on": "5", "continued_from": None}},
+        {"page_label": "5", "headline": "Campus Protest", "body": "The protest continued into the evening...",
+         "continuation": {"continues_on": None, "continued_from": "1"}},
+        {"page_label": "5", "headline": "Student Demands", "body": "The demands included tuition freeze...",
+         "continuation": {"continues_on": None, "continued_from": "1"}},
+    ]
+    groups = _deterministic_merge(article_data)
+    # Should produce 2 groups: [0,2] and [1,3]
+    assert len(groups) == 2
+    group_sets = [set(g) for g in groups]
+    assert {0, 2} in group_sets
+    assert {1, 3} in group_sets

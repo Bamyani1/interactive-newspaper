@@ -7,15 +7,13 @@ import os
 from PIL import Image
 from google.genai import types
 
-from ..config.constants import GEMINI_PAGE_MODEL
+from ..config.constants import GEMINI_STRUCTURING_MODEL
 from ..contracts.content_models import PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer, TokenUsage
-from ..detection.yolo_provider import detect_image_regions
 from ..diagnostics.snapshots import save_snapshot
 from ..postprocessing.ad_reclassification import postprocess_page_content
 from ..postprocessing.deduplication import deduplicate_articles
 from ..postprocessing.null_sanitizer import _sanitize_null_strings
-from ..preprocessing.image_preprocessor import preprocess_image
 from ..shared.retry import gemini_generate_with_retry
 from .prompts import DOCAI_SYSTEM_PROMPT, SAFETY_OFF
 from ..shared.console import substep, warning
@@ -33,6 +31,8 @@ def process_page_with_docai(
     client,
     image_path: str,
     docai_result,
+    preprocessed_image: Image.Image,
+    regions: list[tuple[int, int, int, int]],
     diag: PageDiagnostics | None = None,
     snapshots_dir: str | None = None,
 ) -> tuple[PageContent, Image.Image, list[tuple[int, int, int, int]]]:
@@ -40,13 +40,10 @@ def process_page_with_docai(
     Send a preprocessed page image to Gemini for structuring, with OCR text pre-extracted
     by Document AI. Gemini structures the provided text into articles/ads — it does not
     re-read characters off the image.
-    """
-    image = Image.open(image_path)
-    image = preprocess_image(image, diag=diag)
 
-    regions = detect_image_regions(image, diag=diag)
-    if regions:
-        substep(f"Detected {len(regions)} image region(s) via local CV")
+    Uses the preprocessed image and regions from Phase 1 — does NOT reprocess.
+    """
+    image = preprocessed_image
 
     # Format DocAI text for the prompt
     if docai_result.paragraphs:
@@ -67,7 +64,7 @@ def process_page_with_docai(
     gemini_timer = StageTimer().start()
     response = gemini_generate_with_retry(
         client,
-        model=GEMINI_PAGE_MODEL,
+        model=GEMINI_STRUCTURING_MODEL,
         contents=[image, "Structure this pre-extracted OCR text into articles, ads, and other content."],
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
@@ -76,6 +73,7 @@ def process_page_with_docai(
             safety_settings=SAFETY_OFF,
             media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             max_output_tokens=65536,
+            thinking_config=types.ThinkingConfig(thinking_level="high"),
         ),
     )
     gemini_elapsed = gemini_timer.stop()

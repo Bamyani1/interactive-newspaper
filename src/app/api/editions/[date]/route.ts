@@ -1,8 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 import { queryEditionByDate } from "@/src/lib/db";
+import { transformArticles, transformAds, computePageCount } from "@/src/server/ocr-adapter";
+import type { OcrEdition } from "@/src/types";
 
 // Revalidate individual edition data every 60 seconds (ISR)
 export const revalidate = 60;
+
+const GOLD_DATE = "1960-01-13";
+
+function loadGoldEdition() {
+  const filePath = path.join(process.cwd(), "gold", GOLD_DATE, "gold-edition.json");
+  const raw = fs.readFileSync(filePath, "utf-8");
+  const edition: OcrEdition = JSON.parse(raw);
+  return {
+    edition: {
+      id: `gold-${GOLD_DATE}`,
+      date: GOLD_DATE,
+      pageCount: computePageCount(edition),
+      publicationInfo: edition.publication_info,
+    },
+    articles: transformArticles(edition),
+    ads: transformAds(edition),
+    otherContent: [],
+    pagination: { nextCursor: null, hasMore: false },
+  };
+}
 
 function isIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -27,6 +51,13 @@ export async function GET(
     const result = await queryEditionByDate(date);
 
     if (!result) {
+      if (date === GOLD_DATE) {
+        try {
+          return NextResponse.json(loadGoldEdition());
+        } catch {
+          // gold file missing — fall through to 404
+        }
+      }
       return NextResponse.json(
         { error: "Edition not found" },
         { status: 404 },

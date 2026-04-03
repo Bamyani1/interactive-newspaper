@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { ChevronDown, Music, Play } from "lucide-react";
 import { useMonthlyTrendingMusic } from "../hooks/useMonthlyTrendingMusic";
@@ -14,34 +14,6 @@ interface PlayerTrack {
   title: string;
   artist: string;
   youtubeId?: string | null;
-}
-
-const PROXIMITY_RADIUS = 240;
-const BASE_OPACITY = 0.35;
-const OPACITY_RANGE = 0.65;
-const BASE_BRIGHTNESS = 0.7;
-const BRIGHTNESS_RANGE = 0.3;
-const LERP_FACTOR = 0.08;
-const LERP_THRESHOLD = 0.001;
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function isCoarsePointerInput(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(pointer: coarse)").matches
-  );
-}
-
-function distanceToRect(clientX: number, clientY: number, rect: DOMRect): number {
-  const dx =
-    clientX < rect.left ? rect.left - clientX : clientX > rect.right ? clientX - rect.right : 0;
-  const dy =
-    clientY < rect.top ? rect.top - clientY : clientY > rect.bottom ? clientY - rect.bottom : 0;
-  return Math.hypot(dx, dy);
 }
 
 function MessageCard({ title, body }: { title: string; body: string }) {
@@ -96,137 +68,6 @@ function TracksPlayer({
     setIsPlaying(false);
   }, [effectiveTrack?.youtubeId]);
 
-  const surfaceRef = useRef<HTMLDivElement | null>(null);
-  const eventRafRef = useRef<number | null>(null);
-  const targetRef = useRef(0);
-  const currentRef = useRef(0);
-  const lerpRunningRef = useRef(false);
-  const lerpRafRef = useRef<number | null>(null);
-  const isCoarseRef = useRef(isCoarsePointerInput());
-  const [isCoarsePointer, setIsCoarsePointer] = useState(isCoarsePointerInput);
-
-  const applyStyles = () => {
-    const el = surfaceRef.current;
-    if (!el) return;
-    const coarse = isCoarseRef.current;
-    const p = currentRef.current;
-    const opacity = coarse ? BASE_OPACITY : BASE_OPACITY + OPACITY_RANGE * p;
-    const brightness = coarse ? 1 : BASE_BRIGHTNESS + BRIGHTNESS_RANGE * p;
-    el.style.setProperty("--yt-surface-opacity", opacity.toFixed(3));
-    el.style.setProperty("--yt-surface-brightness", brightness.toFixed(3));
-  };
-
-  const runLerp = () => {
-    const diff = targetRef.current - currentRef.current;
-    if (Math.abs(diff) < LERP_THRESHOLD) {
-      currentRef.current = targetRef.current;
-      applyStyles();
-      lerpRunningRef.current = false;
-      lerpRafRef.current = null;
-      return;
-    }
-    currentRef.current += diff * LERP_FACTOR;
-    applyStyles();
-    lerpRafRef.current = requestAnimationFrame(runLerp);
-  };
-
-  const setTarget = (value: number) => {
-    targetRef.current = clamp01(value);
-    if (!lerpRunningRef.current) {
-      lerpRunningRef.current = true;
-      lerpRafRef.current = requestAnimationFrame(runLerp);
-    }
-  };
-
-  useEffect(() => {
-    isCoarseRef.current = isCoarsePointer;
-    applyStyles();
-  }, [isCoarsePointer]);
-
-  useEffect(() => {
-    applyStyles();
-    return () => {
-      if (lerpRafRef.current !== null) {
-        cancelAnimationFrame(lerpRafRef.current);
-        lerpRafRef.current = null;
-      }
-      lerpRunningRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return undefined;
-    }
-
-    const media = window.matchMedia("(pointer: coarse)");
-    const handleMediaChange = (event: MediaQueryListEvent) => {
-      setIsCoarsePointer(event.matches);
-    };
-    const syncId = window.requestAnimationFrame(() => {
-      setIsCoarsePointer(media.matches);
-    });
-
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", handleMediaChange);
-      return () => {
-        window.cancelAnimationFrame(syncId);
-        media.removeEventListener("change", handleMediaChange);
-      };
-    }
-
-    const legacyListener = ((event: MediaQueryListEvent) => {
-      setIsCoarsePointer(event.matches);
-    }) as (this: MediaQueryList, ev: MediaQueryListEvent) => void;
-    media.addListener(legacyListener);
-    return () => {
-      window.cancelAnimationFrame(syncId);
-      media.removeListener(legacyListener);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!showEmbed || isCoarsePointer || typeof window === "undefined") {
-      return undefined;
-    }
-
-    const updateProximity = (clientX: number, clientY: number) => {
-      const rect = surfaceRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const distance = distanceToRect(clientX, clientY, rect);
-      const next = clamp01(1 - distance / PROXIMITY_RADIUS);
-      setTarget(next);
-    };
-
-    const onPointerMove = (event: PointerEvent | MouseEvent) => {
-      if (eventRafRef.current !== null) {
-        cancelAnimationFrame(eventRafRef.current);
-      }
-
-      eventRafRef.current = window.requestAnimationFrame(() => {
-        eventRafRef.current = null;
-        updateProximity(event.clientX, event.clientY);
-      });
-    };
-
-    const onBlur = () => setTarget(0);
-
-    window.addEventListener("pointermove", onPointerMove, { passive: true });
-    window.addEventListener("mousemove", onPointerMove, { passive: true });
-    window.addEventListener("blur", onBlur);
-
-    return () => {
-      if (eventRafRef.current !== null) {
-        cancelAnimationFrame(eventRafRef.current);
-        eventRafRef.current = null;
-      }
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("mousemove", onPointerMove);
-      window.removeEventListener("blur", onBlur);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- setTarget only reads refs, effectively stable
-  }, [showEmbed, isCoarsePointer]);
-
   if (!effectiveTrack) return null;
 
   return (
@@ -238,16 +79,7 @@ function TracksPlayer({
         {header}
       </h3>
 
-      <div
-        ref={surfaceRef}
-        className="sidebar-player-surface"
-        onPointerEnter={() => {
-          if (!isCoarsePointer) {
-            setTarget(1);
-          }
-        }}
-        onPointerLeave={() => setTarget(0)}
-      >
+      <div className="sidebar-player-surface">
       <div
         className="relative border overflow-hidden"
         style={{

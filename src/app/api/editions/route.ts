@@ -1,8 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 import { queryEditions } from "@/src/lib/db";
 
 // Revalidate editions list every 60 seconds (ISR)
 export const revalidate = 60;
+
+const GOLD_DATE = "1960-01-13";
+const GOLD_EDITION_INFO = {
+  id: `gold-${GOLD_DATE}`,
+  date: GOLD_DATE,
+  pageCount: 12,
+  articleCount: 46,
+};
+
+function goldFileExists(): boolean {
+  try {
+    fs.accessSync(path.join(process.cwd(), "gold", GOLD_DATE, "gold-edition.json"));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,6 +37,12 @@ export async function GET(request: NextRequest) {
       startDate,
       endDate,
     });
+
+    // Inject gold edition if it exists and isn't already in the DB
+    const hasGold = editions.some((e: { date: string }) => e.date === GOLD_DATE);
+    if (!hasGold && goldFileExists()) {
+      editions.unshift(GOLD_EDITION_INFO);
+    }
 
     return NextResponse.json({ editions, pagination });
   } catch (error) {
