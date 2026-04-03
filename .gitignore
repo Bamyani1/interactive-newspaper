@@ -112,6 +112,10 @@ public/editions/*/
 # Gold reference data — lives locally + in DB/R2, not in git
 gold/
 
+# Project docs — kept local only
+CLAUDE.md
+docs/PROJECT_MASTER_GUIDE.md
+
 # Debug output
 debug/
 
