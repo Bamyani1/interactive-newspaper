@@ -39,7 +39,7 @@
      ========================================= */
 
   /* Header */
-  --header-height: 47px;
+  --header-height: 54px;
   --header-content-gap: 0px;
   --header-offset-total: calc(var(--header-height) + var(--header-content-gap));
 
