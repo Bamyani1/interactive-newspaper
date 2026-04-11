@@ -2,7 +2,7 @@
  * Embedding Script
  *
  * Generates semantic embeddings for all articles in the database that don't
- * have one yet. Uses gemini-embedding-001 via the shared embeddings utility.
+ * have one yet. Uses gemini-embedding-2-preview via the shared embeddings utility.
  *
  * Usage:
  *   npm run db:embed              — embed articles missing embeddings
@@ -27,7 +27,7 @@ if (existsSync(envPath)) {
 
 // Dynamic import: tsx transpiles .ts → CJS at runtime; static named imports
 // from .ts files don't work in .mjs because Node resolves exports before tsx runs.
-const { embedDocuments, buildEmbeddingText, hasApiKey, EMBEDDING_DIMS } =
+const { embedDocuments, buildEmbeddingText, hasApiKey, EMBEDDING_DIMS, EMBEDDING_MODEL } =
     await import("../../src/lib/embeddings.ts");
 
 const isForce = process.argv.includes("--force");
@@ -58,10 +58,10 @@ async function main() {
         `Mode: ${isForce ? "FORCE (re-embed all)" : isDryRun ? "DRY RUN (estimate only)" : "INCREMENTAL (skip existing)"}\n`,
     );
 
-    // Fetch articles that need embedding
+    // Fetch articles that need embedding (include edition_date + category for contextual embedding)
     const articles = isForce
-        ? await sql`SELECT id, headline, byline, body_plain FROM articles ORDER BY id`
-        : await sql`SELECT id, headline, byline, body_plain FROM articles WHERE embedding IS NULL ORDER BY id`;
+        ? await sql`SELECT id, headline, byline, body_plain, edition_date, category FROM articles ORDER BY id`
+        : await sql`SELECT id, headline, byline, body_plain, edition_date, category FROM articles WHERE embedding IS NULL ORDER BY id`;
 
     if (articles.length === 0) {
         console.log("All articles already have embeddings. Nothing to do.");
@@ -77,11 +77,13 @@ async function main() {
                 headline: a.headline,
                 byline: a.byline,
                 body_plain: a.body_plain,
+                edition_date: a.edition_date,
+                category: a.category,
             }).length,
         0,
     );
     const estimatedTokens = Math.ceil(totalChars / 4);
-    const estimatedCost = (estimatedTokens / 1_000_000) * 0.075;
+    const estimatedCost = (estimatedTokens / 1_000_000) * 0.20; // gemini-embedding-2-preview pricing
 
     console.log(`Articles to embed: ${articles.length}`);
     console.log(
@@ -99,6 +101,7 @@ async function main() {
     // Process in batches
     let embedded = 0;
     let errors = 0;
+    let consecutiveFailures = 0;
 
     for (let i = 0; i < articles.length; i += BATCH_SIZE) {
         const batch = articles.slice(i, i + BATCH_SIZE);
@@ -107,6 +110,8 @@ async function main() {
                 headline: a.headline,
                 byline: a.byline,
                 body_plain: a.body_plain,
+                edition_date: a.edition_date,
+                category: a.category,
             }),
         );
 
@@ -116,11 +121,12 @@ async function main() {
             // Update each article with its embedding
             const updateQueries = batch.map((article, idx) => {
                 const vecStr = `[${vectors[idx].join(",")}]`;
-                return sql`UPDATE articles SET embedding = ${vecStr}::vector WHERE id = ${article.id}`;
+                return sql`UPDATE articles SET embedding = ${vecStr}::vector, embedding_model = ${EMBEDDING_MODEL} WHERE id = ${article.id}`;
             });
             await sql.transaction(updateQueries);
 
             embedded += batch.length;
+            consecutiveFailures = 0;
             const pct = ((embedded / articles.length) * 100).toFixed(0);
             console.log(
                 `  Embedded ${embedded}/${articles.length} articles (${pct}%)`,
@@ -133,7 +139,8 @@ async function main() {
             );
 
             // Retry with exponential backoff
-            const retryDelay = Math.min(2000 * Math.pow(2, Math.floor(i / BATCH_SIZE)), 30000);
+            consecutiveFailures++;
+            const retryDelay = Math.min(2000 * Math.pow(2, consecutiveFailures - 1), 30000);
             console.log(`  Retrying in ${retryDelay / 1000}s...`);
             await new Promise((r) => setTimeout(r, retryDelay));
 
@@ -141,12 +148,13 @@ async function main() {
                 const vectors = await embedDocuments(texts);
                 const updateQueries = batch.map((article, idx) => {
                     const vecStr = `[${vectors[idx].join(",")}]`;
-                    return sql`UPDATE articles SET embedding = ${vecStr}::vector WHERE id = ${article.id}`;
+                    return sql`UPDATE articles SET embedding = ${vecStr}::vector, embedding_model = ${EMBEDDING_MODEL} WHERE id = ${article.id}`;
                 });
                 await sql.transaction(updateQueries);
 
                 embedded += batch.length;
                 errors -= batch.length;
+                consecutiveFailures = 0;
                 console.log(`  Retry succeeded: ${embedded}/${articles.length}`);
             } catch (retryErr) {
                 console.error(`  Retry also failed:`, retryErr.message || retryErr);
