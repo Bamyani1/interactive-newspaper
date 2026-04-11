@@ -93,6 +93,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const filters = body.filters ?? {};
         let articles: RetrievedArticle[];
         let method: "hybrid" | "vector" = "hybrid";
+        const retrievalLimit = mode === "visual" ? 20 : 8;
 
         const retrievalTimeout = new Promise<never>((_, reject) =>
             setTimeout(
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         try {
             articles = await Promise.race([
                 hybridSearch(ftsQuery, questionEmbedding, {
-                    limit: 8,
+                    limit: retrievalLimit,
                     category: filters.category ?? null,
                     startDate: filters.startDate ?? null,
                     endDate: filters.endDate ?? null,
@@ -129,7 +130,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             );
             articles = await Promise.race([
                 queryArticlesByEmbedding(questionEmbedding, {
-                    limit: 8,
+                    limit: retrievalLimit,
                     category: filters.category ?? null,
                     startDate: filters.startDate ?? null,
                     endDate: filters.endDate ?? null,
@@ -140,7 +141,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const retrievalTimeMs = Date.now() - retrievalStart;
 
         // ── Step 4: Re-rank articles by relevance ──
-        const rankedArticles = await rerankArticles(question, articles);
+        const rankedArticles = await rerankArticles(question, articles, {
+            maxArticles: mode === "visual" ? 15 : 5,
+        });
 
         // ── Step 5: Generate answer (using ORIGINAL question, not reformulated) ──
         const generationStart = Date.now();
