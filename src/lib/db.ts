@@ -197,8 +197,8 @@ export interface RetrievedArticle {
   summary: string;
   byline: string | null;
   bodyPlain: string;
-  distance: number;
-  source: "vector" | "fts";
+  distance: number | null;
+  source: "vector" | "fts" | "both";
 }
 
 interface VectorSearchOptions {
@@ -211,6 +211,7 @@ interface VectorSearchOptions {
 /**
  * Retrieve articles by cosine similarity to a query embedding vector.
  * Uses the HNSW index for fast approximate nearest-neighbor search.
+ * Sets ef_search=100 (vs default 40) for better recall on our small corpus.
  */
 export async function queryArticlesByEmbedding(
   embeddingVec: number[],
@@ -222,19 +223,22 @@ export async function queryArticlesByEmbedding(
   const endDate = options.endDate ?? null;
   const vecStr = `[${embeddingVec.join(",")}]`;
 
-  const rows = await sql`
-    SELECT
-      a.id, a.edition_date, a.category, a.headline, a.summary,
-      a.byline, a.body_plain,
-      (a.embedding <=> ${vecStr}::vector) as distance
-    FROM articles a
-    WHERE a.embedding IS NOT NULL
-      AND (${category}::text IS NULL OR a.category = ${category})
-      AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-      AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-    ORDER BY a.embedding <=> ${vecStr}::vector
-    LIMIT ${limit}
-  `;
+  const [, rows] = await sql.transaction([
+    sql`SET LOCAL hnsw.ef_search = 100`,
+    sql`
+      SELECT
+        a.id, a.edition_date, a.category, a.headline, a.summary,
+        a.byline, a.body_plain,
+        (a.embedding <=> ${vecStr}::vector) as distance
+      FROM articles a
+      WHERE a.embedding IS NOT NULL
+        AND (${category}::text IS NULL OR a.category = ${category})
+        AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+        AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+      ORDER BY a.embedding <=> ${vecStr}::vector
+      LIMIT ${limit}
+    `,
+  ]);
 
   return rows.map((r) => ({
     id: r.id,
@@ -298,6 +302,7 @@ export async function hybridSearch(
     const existing = scoreMap.get(article.id);
     if (existing) {
       existing.score += rrfScore;
+      existing.article = { ...existing.article, source: "both" };
     } else {
       scoreMap.set(article.id, { score: rrfScore, article });
     }
@@ -344,7 +349,7 @@ async function searchArticlesForRag(
     summary: r.summary,
     byline: r.byline ?? null,
     bodyPlain: r.body_plain,
-    distance: 0, // FTS doesn't produce cosine distance
+    distance: null, // FTS doesn't produce cosine distance
     source: "fts" as const,
   }));
 }

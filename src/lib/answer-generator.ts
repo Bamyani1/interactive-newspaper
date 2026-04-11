@@ -100,8 +100,11 @@ export async function generateAnswer(
         };
     }
 
-    // Compute confidence from vector distances only (FTS-only results have distance=0 which would inflate scores)
-    const vectorArticles = sourceArticles.filter((a) => a.source === "vector" || a.source === "both");
+    // Compute confidence from vector distances only (FTS-only results have distance=null)
+    const vectorArticles = sourceArticles.filter(
+        (a): a is RetrievedArticle & { distance: number } =>
+            (a.source === "vector" || a.source === "both") && a.distance !== null,
+    );
     const avgDistance =
         vectorArticles.length > 0
             ? vectorArticles.reduce((s, a) => s + a.distance, 0) / vectorArticles.length
