@@ -64,7 +64,7 @@ export async function rerankArticles(
             )
             .join("\n");
 
-        const userPrompt = `Question: ${question}\n\nArticles:\n${articleSummaries}`;
+        const userPrompt = `<user_question>${question}</user_question>\n\nArticles:\n${articleSummaries}`;
 
         const controller = new AbortController();
         const timeout = setTimeout(

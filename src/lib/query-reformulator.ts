@@ -8,20 +8,11 @@
  * Graceful fallback: returns the original question on any error or timeout.
  */
 
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiClient } from "@/src/lib/gemini-client";
 
-const REFORMULATION_MODEL = "gemini-2.0-flash";
+const REFORMULATION_MODEL = "gemini-3-flash-preview";
 const REFORMULATION_TIMEOUT_MS = 3_000;
 const REFORMULATION_MAX_TOKENS = 200;
-
-let _client: GoogleGenAI | null = null;
-
-function getClient(): GoogleGenAI {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey) throw new Error("API key required for query reformulation");
-    if (!_client) _client = new GoogleGenAI({ apiKey });
-    return _client;
-}
 
 export interface ReformulatedQuery {
     embeddingQuery: string;
@@ -55,7 +46,7 @@ export async function reformulateQuery(
     };
 
     try {
-        const client = getClient();
+        const client = getGeminiClient();
 
         const controller = new AbortController();
         const timeout = setTimeout(
@@ -68,13 +59,14 @@ export async function reformulateQuery(
             contents: [
                 {
                     role: "user",
-                    parts: [{ text: `Question: ${originalQuestion}` }],
+                    parts: [{ text: `<user_question>${originalQuestion}</user_question>` }],
                 },
             ],
             config: {
                 systemInstruction: REFORMULATION_PROMPT,
                 maxOutputTokens: REFORMULATION_MAX_TOKENS,
                 temperature: 0.0,
+                thinkingConfig: { thinkingBudget: 0 },
                 abortSignal: controller.signal,
             },
         });

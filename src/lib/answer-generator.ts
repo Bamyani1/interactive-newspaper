@@ -82,7 +82,7 @@ ${a.bodyPlain.slice(0, MAX_SOURCE_CHARS)}`,
     return `SOURCES:
 ${sourcesBlock}
 
-QUESTION: ${question}`;
+<user_question>${question}</user_question>`;
 }
 
 // ─── Generation ──────────────────────────────────────────────────
