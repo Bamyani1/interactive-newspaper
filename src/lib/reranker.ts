@@ -8,23 +8,14 @@
  * Graceful fallback: returns the original articles on any error or timeout.
  */
 
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiClient } from "@/src/lib/gemini-client";
 import type { RetrievedArticle } from "@/src/lib/db";
 
-const RERANKER_MODEL = "gemini-2.0-flash";
+const RERANKER_MODEL = "gemini-3-flash-preview";
 const RERANKER_TIMEOUT_MS = 5_000;
 const RERANKER_MAX_TOKENS = 100;
 const DEFAULT_MIN_SCORE = 3;
 const DEFAULT_MAX_ARTICLES = 5;
-
-let _client: GoogleGenAI | null = null;
-
-function getClient(): GoogleGenAI {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey) throw new Error("API key required for re-ranking");
-    if (!_client) _client = new GoogleGenAI({ apiKey });
-    return _client;
-}
 
 export interface RankedArticle extends RetrievedArticle {
     relevanceScore: number;
@@ -64,7 +55,7 @@ export async function rerankArticles(
     }
 
     try {
-        const client = getClient();
+        const client = getGeminiClient();
 
         const articleSummaries = articles
             .map(
@@ -88,6 +79,7 @@ export async function rerankArticles(
                 systemInstruction: RERANKER_PROMPT,
                 maxOutputTokens: RERANKER_MAX_TOKENS,
                 temperature: 0.0,
+                thinkingConfig: { thinkingBudget: 0 },
                 abortSignal: controller.signal,
             },
         });
@@ -124,7 +116,7 @@ export function parseScores(
 ): number[] | null {
     try {
         // Extract JSON array from the response (may have surrounding text)
-        const arrayMatch = text.match(/\[[\d\s,]+\]/);
+        const arrayMatch = text.match(/\[[\d\s,.]+\]/);
         if (!arrayMatch) return null;
 
         const parsed = JSON.parse(arrayMatch[0]) as unknown[];
