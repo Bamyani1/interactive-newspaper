@@ -17,10 +17,15 @@ export const TimelineGallery: React.FC<TimelineGalleryProps> = ({ response }) =>
 
   return (
     <div className="mt-8">
-      {/* Compact text summary */}
-      <p className="ask-answer text-sm opacity-80 mb-6" style={{ color: "var(--color-text-primary)" }}>
-        {response.answer.split("\n").slice(0, 3).join(" ").slice(0, 300)}
-        {response.answer.length > 300 ? "..." : ""}
+      {/* Compact text summary — strip markdown artifacts */}
+      <p className="text-sm opacity-80 mb-6 leading-relaxed" style={{ color: "var(--color-text-primary)" }}>
+        {response.answer
+          .replace(/^##\s+.+$/gm, "")        // strip ## headers
+          .replace(/\[Source \d+\]/gi, "")     // strip [Source N] citations
+          .replace(/\n+/g, " ")               // collapse newlines
+          .trim()
+          .slice(0, 250)}
+        {response.answer.length > 250 ? "..." : ""}
       </p>
 
       <div className="ask-meta mb-6">
