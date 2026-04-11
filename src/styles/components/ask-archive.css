@@ -117,6 +117,27 @@
     color: var(--color-text-primary);
 }
 
+.ask-answer p {
+    margin: 0 0 1rem;
+}
+
+.ask-answer p:last-child {
+    margin-bottom: 0;
+}
+
+.ask-answer-heading {
+    font-family: var(--font-headline, var(--font-body));
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--color-accent);
+    margin: 1.5rem 0 0.5rem;
+}
+
+.ask-answer-heading:first-child {
+    margin-top: 0;
+}
+
 .ask-citation-link {
     color: var(--color-accent);
     font-size: 0.8em;
@@ -309,4 +330,57 @@
     .ask-example-chip {
         transition: none;
     }
+}
+
+/* ─── Timeline Gallery ──────────────────────────────────────── */
+
+.ask-timeline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .ask-timeline-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ask-timeline-card {
+  display: block;
+  text-decoration: none;
+  border-bottom: 1px dashed var(--color-border, #444);
+  padding-bottom: 1rem;
+  transition: opacity 0.2s;
+}
+
+.ask-timeline-card:hover {
+  opacity: 0.85;
+}
+
+.ask-timeline-image-wrapper {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.ask-timeline-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.ask-timeline-date {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  opacity: 0.5;
+  color: var(--color-text-primary);
+}
+
+.ask-timeline-headline {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.3;
 }
