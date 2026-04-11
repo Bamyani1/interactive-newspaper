@@ -74,7 +74,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
 
         // ── Step 1: Reformulate query for better retrieval ──
-        const { embeddingQuery, ftsQuery } = await reformulateQuery(question);
+        const { embeddingQuery, ftsQuery, mode } = await reformulateQuery(question);
 
         // ── Step 2: Embed the reformulated query ──
         let questionEmbedding: number[];
@@ -156,6 +156,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             answer,
             citations,
             confidence,
+            mode,
             sourceArticles: rankedArticles.map((a) => ({
                 id: a.id,
                 headline: a.headline,
@@ -165,6 +166,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 byline: a.byline,
                 bodySnippet: a.bodyPlain.slice(0, 300) + (a.bodyPlain.length > 300 ? "…" : ""),
                 distance: a.distance !== null ? parseFloat(a.distance.toFixed(4)) : null,
+                imageUrls: a.imageUrls,
             })),
             meta: {
                 retrievalTimeMs,
