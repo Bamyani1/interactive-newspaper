@@ -199,6 +199,7 @@ export interface RetrievedArticle {
   bodyPlain: string;
   distance: number | null;
   source: "vector" | "fts" | "both";
+  imageUrls: string[];
 }
 
 interface VectorSearchOptions {
@@ -228,7 +229,7 @@ export async function queryArticlesByEmbedding(
     sql`
       SELECT
         a.id, a.edition_date, a.category, a.headline, a.summary,
-        a.byline, a.body_plain,
+        a.byline, a.body_plain, a.image_urls,
         (a.embedding <=> ${vecStr}::vector) as distance
       FROM articles a
       WHERE a.embedding IS NOT NULL
@@ -250,6 +251,7 @@ export async function queryArticlesByEmbedding(
     bodyPlain: r.body_plain,
     distance: parseFloat(r.distance),
     source: "vector" as const,
+    imageUrls: r.image_urls ?? [],
   }));
 }
 
@@ -330,7 +332,7 @@ async function searchArticlesForRag(
 
   const rows = await sql`
     SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-           a.byline, a.body_plain,
+           a.byline, a.body_plain, a.image_urls,
            ts_rank(a.search_vector, q) as rank
     FROM articles a, websearch_to_tsquery('english', ${query}) q
     WHERE a.search_vector @@ q
@@ -351,5 +353,6 @@ async function searchArticlesForRag(
     bodyPlain: r.body_plain,
     distance: null, // FTS doesn't produce cosine distance
     source: "fts" as const,
+    imageUrls: r.image_urls ?? [],
   }));
 }

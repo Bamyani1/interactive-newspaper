@@ -25,6 +25,7 @@ function makeVectorRow(overrides: Record<string, unknown> = {}) {
     summary: "Test summary",
     byline: "Test Author",
     body_plain: "Test body",
+    image_urls: [],
     distance: "0.2500",
     ...overrides,
   };
@@ -39,6 +40,7 @@ function makeFtsRow(overrides: Record<string, unknown> = {}) {
     summary: "Sports summary",
     byline: null,
     body_plain: "Sports body",
+    image_urls: [],
     rank: "0.8500",
     ...overrides,
   };
@@ -74,6 +76,7 @@ describe("queryArticlesByEmbedding", () => {
       bodyPlain: "Test body",
       distance: 0.25,
       source: "vector",
+      imageUrls: [],
     });
     expect(results[1].headline).toBe("Second Article");
     expect(results[1].distance).toBe(0.4);
