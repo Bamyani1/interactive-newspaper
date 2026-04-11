@@ -133,6 +133,23 @@ describe("generateAnswer", () => {
 
       expect(result.citations).toEqual([]);
     });
+
+    it("strips preamble even with single newline separator", async () => {
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue({
+        text: "Relevant sources: [Source 1]\nThe campus held elections [Source 1].",
+      });
+
+      const articles = [
+        makeArticle({ id: "1960-01-07-0", headline: "Election Results" }),
+      ];
+
+      const result = await generateAnswer("What happened?", articles);
+
+      // The "Relevant sources:" line should be stripped even with only \n
+      expect(result.answer).not.toContain("Relevant sources:");
+      expect(result.answer).toContain("The campus held elections");
+    });
   });
 
   describe("confidence scoring", () => {

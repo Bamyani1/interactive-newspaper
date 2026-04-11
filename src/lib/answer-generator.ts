@@ -147,7 +147,7 @@ export async function generateAnswer(
         const rawText = response.text?.trim() ?? "";
 
         // Strip the CoT preamble ("Relevant sources: ...") before user-facing answer
-        const rawAnswer = rawText.replace(/^Relevant sources:[^\n]*\n\n/, "").trim();
+        const rawAnswer = rawText.replace(/^Relevant sources:[^\n]*\n+/, "").trim();
 
         if (!rawAnswer) {
             return {
