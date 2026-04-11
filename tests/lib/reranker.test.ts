@@ -61,6 +61,10 @@ describe("parseScores", () => {
   it("returns null for no JSON array", () => {
     expect(parseScores("I cannot score these", 3)).toBeNull();
   });
+
+  it("parses decimal scores and floors them to integers", () => {
+    expect(parseScores("[8.5, 3.2, 6.0]", 3)).toEqual([8.5, 3.2, 6]);
+  });
 });
 
 describe("rerankArticles", () => {
