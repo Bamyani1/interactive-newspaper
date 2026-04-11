@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildEmbeddingText } from "@/src/lib/embeddings";
+import { buildEmbeddingText, buildEmbeddingInput } from "@/src/lib/embeddings";
 
 describe("buildEmbeddingText", () => {
   it("builds text with title and body prefix format", () => {
@@ -42,5 +42,32 @@ describe("buildEmbeddingText", () => {
     });
 
     expect(text).toContain(normalBody);
+  });
+});
+
+describe("buildEmbeddingInput", () => {
+  it("returns text-only input when no image provided", () => {
+    const input = buildEmbeddingInput({
+      headline: "Test",
+      body_plain: "Content",
+      edition_date: "1960-01-13",
+      category: "News",
+    });
+    expect(input.text).toContain("title: Test");
+    expect(input.imageBase64).toBeUndefined();
+  });
+
+  it("includes image data when imageBase64 is provided", () => {
+    const input = buildEmbeddingInput({
+      headline: "Test",
+      body_plain: "Content",
+      edition_date: "1960-01-13",
+      category: "News",
+      imageBase64: "iVBORw0KGgo=",
+      imageMimeType: "image/jpeg",
+    });
+    expect(input.text).toContain("title: Test");
+    expect(input.imageBase64).toBe("iVBORw0KGgo=");
+    expect(input.imageMimeType).toBe("image/jpeg");
   });
 });

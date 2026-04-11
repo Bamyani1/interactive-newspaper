@@ -50,26 +50,43 @@ function setCachedEmbedding(key: string, embedding: number[]): void {
 // ─── Document Embedding ────────────────────────────────────────
 
 /**
- * Embed multiple texts for document storage. Handles batching internally.
+ * Embed multiple inputs for document storage. Handles batching internally.
  * Returns an array of embedding vectors (768-dim each), parallel to the input array.
  *
- * Texts should already be formatted with the document prefix via buildEmbeddingText().
+ * Text-only inputs are batched; multimodal inputs (with imageBase64) are sent
+ * individually due to the Gemini API 6-image-per-request limit. Results are
+ * reassembled in original input order.
+ *
+ * Inputs should already be formatted with the document prefix via buildEmbeddingInput().
  */
-export async function embedDocuments(texts: string[]): Promise<number[][]> {
-  if (texts.length === 0) return [];
+export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> {
+  if (inputs.length === 0) return [];
 
   const client = getGeminiClient();
-  const allEmbeddings: number[][] = [];
 
-  for (let i = 0; i < texts.length; i += MAX_BATCH_SIZE) {
-    const batch = texts.slice(i, i + MAX_BATCH_SIZE);
+  // Split into text-only (batchable) and multimodal (sent individually due to 6-image API limit)
+  const textIndices: number[] = [];
+  const imageIndices: number[] = [];
+  for (let i = 0; i < inputs.length; i++) {
+    if (inputs[i].imageBase64) {
+      imageIndices.push(i);
+    } else {
+      textIndices.push(i);
+    }
+  }
+
+  const textOnly = textIndices.map((i) => inputs[i]);
+  const withImages = imageIndices.map((i) => inputs[i]);
+
+  // Batch text-only embeddings
+  const textEmbeddings: number[][] = [];
+  for (let i = 0; i < textOnly.length; i += MAX_BATCH_SIZE) {
+    const batch = textOnly.slice(i, i + MAX_BATCH_SIZE);
 
     const response = await client.models.embedContent({
       model: EMBEDDING_MODEL,
-      contents: batch.map((text) => ({ parts: [{ text }] })),
-      config: {
-        outputDimensionality: EMBEDDING_DIMS,
-      },
+      contents: batch.map((inp) => ({ parts: [{ text: inp.text }] })),
+      config: { outputDimensionality: EMBEDDING_DIMS },
     });
 
     if (!response.embeddings || response.embeddings.length !== batch.length) {
@@ -84,16 +101,51 @@ export async function embedDocuments(texts: string[]): Promise<number[][]> {
           `Invalid embedding dimensions: expected ${EMBEDDING_DIMS}, got ${emb.values?.length ?? 0}`,
         );
       }
-      allEmbeddings.push(emb.values);
+      textEmbeddings.push(emb.values);
     }
 
-    // Rate-limit pause between batches (avoid 429s)
-    if (i + MAX_BATCH_SIZE < texts.length) {
+    if (i + MAX_BATCH_SIZE < textOnly.length) {
       await sleep(200);
     }
   }
 
-  return allEmbeddings;
+  // Process multimodal embeddings individually
+  const imageEmbeddings: number[][] = [];
+  for (const inp of withImages) {
+    const response = await client.models.embedContent({
+      model: EMBEDDING_MODEL,
+      contents: [{
+        parts: [
+          { text: inp.text },
+          { inlineData: { mimeType: inp.imageMimeType || "image/jpeg", data: inp.imageBase64! } },
+        ],
+      }],
+      config: { outputDimensionality: EMBEDDING_DIMS },
+    });
+
+    if (!response.embeddings || response.embeddings.length !== 1) {
+      throw new Error("Failed to generate multimodal embedding");
+    }
+    const emb = response.embeddings[0];
+    if (!emb.values || emb.values.length !== EMBEDDING_DIMS) {
+      throw new Error(
+        `Invalid embedding dimensions: expected ${EMBEDDING_DIMS}, got ${emb.values?.length ?? 0}`,
+      );
+    }
+    imageEmbeddings.push(emb.values);
+    await sleep(200);
+  }
+
+  // Reassemble in original input order
+  const result: number[][] = new Array(inputs.length);
+  for (let i = 0; i < textIndices.length; i++) {
+    result[textIndices[i]] = textEmbeddings[i];
+  }
+  for (let i = 0; i < imageIndices.length; i++) {
+    result[imageIndices[i]] = imageEmbeddings[i];
+  }
+
+  return result;
 }
 
 // ─── Query Embedding ───────────────────────────────────────────
@@ -191,6 +243,37 @@ export function buildEmbeddingText(article: {
   }
 
   return full;
+}
+
+// ─── Multimodal Input ─────────────────────────────────────────
+
+export interface EmbedInput {
+  text: string;
+  imageBase64?: string;
+  imageMimeType?: string;
+}
+
+/**
+ * Build the embedding input for an article — text + optional image.
+ */
+export function buildEmbeddingInput(article: {
+  headline: string;
+  byline?: string | null;
+  body_plain: string;
+  edition_date?: string | null;
+  category?: string | null;
+  imageBase64?: string;
+  imageMimeType?: string;
+}): EmbedInput {
+  const text = buildEmbeddingText(article);
+  if (article.imageBase64) {
+    return {
+      text,
+      imageBase64: article.imageBase64,
+      imageMimeType: article.imageMimeType || "image/jpeg",
+    };
+  }
+  return { text };
 }
 
 // ─── Utilities ─────────────────────────────────────────────────
