@@ -14,9 +14,12 @@ import { generateAnswer } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
 import type { AskResponse } from "@/src/types";
+import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 
 const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
+
+const askRateLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 });
 
 interface AskRequestBody {
     question: string;
@@ -31,6 +34,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const totalStart = Date.now();
 
     try {
+        // ── Rate limit ──
+        const ip = getClientIp(request);
+        const rateResult = askRateLimiter(ip);
+        if (!rateResult.allowed) {
+            return NextResponse.json(
+                { error: "Too many questions. Please wait a moment and try again." },
+                {
+                    status: 429,
+                    headers: {
+                        "Retry-After": String(Math.ceil((rateResult.resetAt - Date.now()) / 1000)),
+                    },
+                },
+            );
+        }
+
         const body = (await request.json()) as AskRequestBody;
 
         // ── Validate ──
