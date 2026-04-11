@@ -103,6 +103,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             }
             console.warn("Hybrid search failed, falling back to vector-only:", err);
             method = "vector";
+            const fallbackTimeout = new Promise<never>((_, reject) =>
+                setTimeout(
+                    () => reject(new Error("Retrieval timeout")),
+                    RETRIEVAL_TIMEOUT_MS,
+                ),
+            );
             articles = await Promise.race([
                 queryArticlesByEmbedding(questionEmbedding, {
                     limit: 8,
@@ -110,7 +116,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     startDate: filters.startDate ?? null,
                     endDate: filters.endDate ?? null,
                 }),
-                retrievalTimeout,
+                fallbackTimeout,
             ]);
         }
         const retrievalTimeMs = Date.now() - retrievalStart;
