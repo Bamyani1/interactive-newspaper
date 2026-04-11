@@ -6,23 +6,14 @@
  * enough information, the model is instructed to say so honestly.
  */
 
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiClient } from "@/src/lib/gemini-client";
 import type { RetrievedArticle } from "@/src/lib/db";
 import type { Citation } from "@/src/types";
 
-const GENERATION_MODEL = "gemini-2.0-flash";
+const GENERATION_MODEL = "gemini-3-flash-preview";
 const MAX_ANSWER_TOKENS = 2560;
 const GENERATION_TIMEOUT_MS = 15_000;
 const MAX_SOURCE_CHARS = 5000;
-
-let _client: GoogleGenAI | null = null;
-
-function getClient(): GoogleGenAI {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey) throw new Error("API key required for answer generation");
-    if (!_client) _client = new GoogleGenAI({ apiKey });
-    return _client;
-}
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -50,7 +41,8 @@ RULES — follow these exactly:
 
 RESPONSE FORMAT:
 Begin with a line: "Relevant sources: [Source N, Source M, ...]" listing only sources you will actually cite.
-Then write a blank line, followed by your answer as plain text with inline [Source N] citations. Do not use markdown headers or bullet points.
+Then write a blank line, followed by your answer with inline [Source N] citations.
+Use ## section headers to organize the answer by topic when covering multiple subjects. Use paragraph breaks between distinct points. Do not use bullet points or numbered lists.
 
 EXAMPLES:
 
@@ -108,16 +100,16 @@ export async function generateAnswer(
         };
     }
 
-    // Compute confidence from vector distances only (FTS results have distance=0 which would inflate scores)
-    const vectorArticles = sourceArticles.filter((a) => a.source === "vector");
+    // Compute confidence from vector distances only (FTS-only results have distance=0 which would inflate scores)
+    const vectorArticles = sourceArticles.filter((a) => a.source === "vector" || a.source === "both");
     const avgDistance =
         vectorArticles.length > 0
             ? vectorArticles.reduce((s, a) => s + a.distance, 0) / vectorArticles.length
-            : 0.35; // default to "medium" range when no vector results
-    const confidence = computeConfidence(avgDistance, sourceArticles.length);
+            : 0.27; // default to "medium" range when no vector results
+    const confidence = computeConfidence(avgDistance, vectorArticles.length);
 
-    // If all sources are very distant, return a low-confidence disclaimer
-    if (confidence === "low" && avgDistance > 0.45) {
+    // If all sources are very distant, skip the expensive Gemini call
+    if (confidence === "low" && avgDistance > 0.30) {
         return {
             answer:
                 "I don't have enough information in the archive to answer this question. The articles I found don't seem to be closely related to what you're asking about.",
@@ -126,7 +118,7 @@ export async function generateAnswer(
         };
     }
 
-    const client = getClient();
+    const client = getGeminiClient();
     const systemPrompt = buildSystemPrompt();
     const userPrompt = buildUserPrompt(question, sourceArticles);
 
@@ -145,6 +137,7 @@ export async function generateAnswer(
                 systemInstruction: systemPrompt,
                 maxOutputTokens: MAX_ANSWER_TOKENS,
                 temperature: 0.2, // low temperature for factual grounding
+                thinkingConfig: { thinkingBudget: 0 },
                 abortSignal: controller.signal,
             },
         });
@@ -236,11 +229,11 @@ function computeConfidence(
     avgDistance: number,
     articleCount: number,
 ): "low" | "medium" | "high" {
-    // Distance thresholds tuned from our embedding audit:
-    // - Good matches: < 0.30 distance
-    // - Decent matches: 0.30 - 0.40
-    // - Weak matches: > 0.40
-    if (avgDistance < 0.30 && articleCount >= 2) return "high";
-    if (avgDistance < 0.40) return "medium";
+    // Thresholds calibrated for gemini-embedding-2-preview distance distribution:
+    // - Strong matches: < 0.24 (protests, Greek life, cagers)
+    // - Good matches: 0.24 - 0.30 (food, war, general topics)
+    // - Weak matches: > 0.30 (quantum physics, off-topic)
+    if (avgDistance < 0.24 && articleCount >= 2) return "high";
+    if (avgDistance < 0.30) return "medium";
     return "low";
 }

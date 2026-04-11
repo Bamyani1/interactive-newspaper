@@ -160,8 +160,8 @@ describe("generateAnswer", () => {
       });
 
       const articles = [
-        makeArticle({ id: "a", distance: 0.35, source: "vector" }),
-        makeArticle({ id: "b", distance: 0.35, source: "vector" }),
+        makeArticle({ id: "a", distance: 0.27, source: "vector" }),
+        makeArticle({ id: "b", distance: 0.27, source: "vector" }),
       ];
 
       const result = await generateAnswer("question", articles);
@@ -208,16 +208,39 @@ describe("generateAnswer", () => {
       });
 
       const articles = [
-        makeArticle({ id: "a", distance: 0.25, source: "vector" }),
-        makeArticle({ id: "b", distance: 0.25, source: "vector" }),
+        makeArticle({ id: "a", distance: 0.22, source: "vector" }),
+        makeArticle({ id: "b", distance: 0.22, source: "vector" }),
         makeArticle({ id: "c", distance: 0, source: "fts" }),
         makeArticle({ id: "d", distance: 0, source: "fts" }),
       ];
 
       const result = await generateAnswer("question", articles);
 
-      // avgDistance = 0.25 from vector-only, articleCount = 4 >= 2 -> high
+      // avgDistance = 0.22 from vector-only, articleCount = 4 >= 2 -> high
       expect(result.confidence).toBe("high");
+    });
+
+    it("uses vectorArticles.length (not total) for high-confidence threshold", async () => {
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue({
+        text: "Some info [Source 1].",
+      });
+
+      // 1 vector article at close distance + 4 FTS-only articles
+      // vectorArticles.length = 1 (< 2), so confidence should NOT be "high"
+      const articles = [
+        makeArticle({ id: "a", distance: 0.20, source: "vector" }),
+        makeArticle({ id: "b", distance: 0, source: "fts" }),
+        makeArticle({ id: "c", distance: 0, source: "fts" }),
+        makeArticle({ id: "d", distance: 0, source: "fts" }),
+        makeArticle({ id: "e", distance: 0, source: "fts" }),
+      ];
+
+      const result = await generateAnswer("question", articles);
+
+      // avgDistance = 0.20 (only vector), but vectorArticles.length = 1 < 2
+      // Should be "medium" (not "high"), because only 1 vector article confirms the match
+      expect(result.confidence).toBe("medium");
     });
   });
 
