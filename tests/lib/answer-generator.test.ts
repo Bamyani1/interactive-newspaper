@@ -209,8 +209,8 @@ describe("generateAnswer", () => {
       });
 
       const articles = [
-        makeArticle({ id: "a", distance: 0, source: "fts" }),
-        makeArticle({ id: "b", distance: 0, source: "fts" }),
+        makeArticle({ id: "a", distance: null, source: "fts" }),
+        makeArticle({ id: "b", distance: null, source: "fts" }),
       ];
 
       const result = await generateAnswer("question", articles);
@@ -227,8 +227,8 @@ describe("generateAnswer", () => {
       const articles = [
         makeArticle({ id: "a", distance: 0.22, source: "vector" }),
         makeArticle({ id: "b", distance: 0.22, source: "vector" }),
-        makeArticle({ id: "c", distance: 0, source: "fts" }),
-        makeArticle({ id: "d", distance: 0, source: "fts" }),
+        makeArticle({ id: "c", distance: null, source: "fts" }),
+        makeArticle({ id: "d", distance: null, source: "fts" }),
       ];
 
       const result = await generateAnswer("question", articles);
@@ -247,10 +247,10 @@ describe("generateAnswer", () => {
       // vectorArticles.length = 1 (< 2), so confidence should NOT be "high"
       const articles = [
         makeArticle({ id: "a", distance: 0.20, source: "vector" }),
-        makeArticle({ id: "b", distance: 0, source: "fts" }),
-        makeArticle({ id: "c", distance: 0, source: "fts" }),
-        makeArticle({ id: "d", distance: 0, source: "fts" }),
-        makeArticle({ id: "e", distance: 0, source: "fts" }),
+        makeArticle({ id: "b", distance: null, source: "fts" }),
+        makeArticle({ id: "c", distance: null, source: "fts" }),
+        makeArticle({ id: "d", distance: null, source: "fts" }),
+        makeArticle({ id: "e", distance: null, source: "fts" }),
       ];
 
       const result = await generateAnswer("question", articles);

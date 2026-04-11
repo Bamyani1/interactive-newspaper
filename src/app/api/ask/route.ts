@@ -164,7 +164,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 summary: a.summary,
                 byline: a.byline,
                 bodySnippet: a.bodyPlain.slice(0, 300) + (a.bodyPlain.length > 300 ? "…" : ""),
-                distance: parseFloat(a.distance.toFixed(4)),
+                distance: a.distance !== null ? parseFloat(a.distance.toFixed(4)) : null,
             })),
             meta: {
                 retrievalTimeMs,

@@ -175,7 +175,7 @@ export interface AskResponse {
         summary: string;
         byline: string | null;
         bodySnippet: string;
-        distance: number;
+        distance: number | null;
     }[];
     meta: {
         retrievalTimeMs: number;
