@@ -17,6 +17,7 @@ const REFORMULATION_MAX_TOKENS = 200;
 export interface ReformulatedQuery {
     embeddingQuery: string;
     ftsQuery: string;
+    mode: "text" | "visual";
 }
 
 const REFORMULATION_PROMPT = `You help reformulate modern search queries for a 1960s university newspaper archive (The Transcript, Ohio Wesleyan University).
@@ -24,6 +25,7 @@ const REFORMULATION_PROMPT = `You help reformulate modern search queries for a 1
 Given a user question, produce two reformulated queries:
 1. SEMANTIC: A natural-language expansion for embedding search. Add 1960s-era synonyms and rephrase for semantic similarity. Keep it under 50 words.
 2. KEYWORDS: A keyword query for full-text search. List the most important search terms including period-appropriate synonyms, separated by OR. Keep it under 30 words.
+3. MODE: Either "text" (factual question) or "visual" (user wants to see images, photos, or visual changes over time). Use "visual" when the query asks to "show", "see", or requests photos, pictures, or visual history.
 
 Expand abbreviations (OWU → Ohio Wesleyan University). Add era-appropriate terms:
 - basketball → basketball OR cagers OR hoopsters
@@ -33,9 +35,10 @@ Expand abbreviations (OWU → Ohio Wesleyan University). Add era-appropriate ter
 - dormitory → dormitory OR dorm OR "residence hall"
 - fraternity/sorority → fraternity OR sorority OR "Greek life" OR pledge
 
-Respond in EXACTLY this format (two lines, no extra text):
+Respond in EXACTLY this format (three lines, no extra text):
 SEMANTIC: <your semantic query>
-KEYWORDS: <your keyword query>`;
+KEYWORDS: <your keyword query>
+MODE: text|visual`;
 
 export async function reformulateQuery(
     originalQuestion: string,
@@ -43,6 +46,7 @@ export async function reformulateQuery(
     const fallback: ReformulatedQuery = {
         embeddingQuery: originalQuestion,
         ftsQuery: originalQuestion,
+        mode: "text",
     };
 
     try {
@@ -104,5 +108,8 @@ export function parseReformulationResponse(
         return fallback;
     }
 
-    return { embeddingQuery, ftsQuery };
+    const modeMatch = text.match(/^MODE:\s*(.+)$/m);
+    const mode = modeMatch && modeMatch[1].trim().toLowerCase() === "visual" ? "visual" : "text";
+
+    return { embeddingQuery, ftsQuery, mode };
 }
