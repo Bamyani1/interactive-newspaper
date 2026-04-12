@@ -498,7 +498,7 @@ async function ensureLockedEditions() {
 async function main() {
   const start = Date.now();
 
-  console.log(`\nTranscript Archive — Database Seed`);
+  console.log(`\nThe Transcript Archive — Database Seed`);
   console.log(`Mode: ${isReset ? "RESET (drop + recreate)" : "UPSERT"}${targetDate ? ` | DATE=${targetDate}` : ""}\n`);
 
   const summary = {

@@ -11,8 +11,8 @@
 import { getGeminiClient } from "@/src/lib/gemini-client";
 
 const REFORMULATION_MODEL = "gemini-3-flash-preview";
-const REFORMULATION_TIMEOUT_MS = 3_000;
-const REFORMULATION_MAX_TOKENS = 200;
+const REFORMULATION_TIMEOUT_MS = 5_000;
+const REFORMULATION_MAX_TOKENS = 250;
 
 export interface ReformulatedQuery {
     embeddingQuery: string;
@@ -20,20 +20,27 @@ export interface ReformulatedQuery {
     mode: "text" | "visual";
 }
 
-const REFORMULATION_PROMPT = `You help reformulate modern search queries for a 1960s university newspaper archive (The Transcript, Ohio Wesleyan University).
+const REFORMULATION_PROMPT = `You help reformulate modern search queries for The Transcript Archive (Ohio Wesleyan University, 1960-2000).
 
 Given a user question, produce two reformulated queries:
-1. SEMANTIC: A natural-language expansion for embedding search. Add 1960s-era synonyms and rephrase for semantic similarity. Keep it under 50 words.
-2. KEYWORDS: A keyword query for full-text search. List the most important search terms including period-appropriate synonyms, separated by OR. Keep it under 30 words.
+1. SEMANTIC: A natural-language expansion for embedding search. Add era-appropriate synonyms and rephrase for semantic similarity. Keep it under 50 words.
+2. KEYWORDS: A keyword query for full-text search. List the most important search terms including period-appropriate synonyms, separated by OR. Keep it under 40 words.
 3. MODE: Either "text" (factual question) or "visual" (user wants to see images, photos, or visual changes over time). Use "visual" when the query asks to "show", "see", or requests photos, pictures, or visual history.
 
 Expand abbreviations (OWU → Ohio Wesleyan University). Add era-appropriate terms:
 - basketball → basketball OR cagers OR hoopsters
 - football → football OR gridiron OR "Battling Bishops"
-- student government → "student government" OR "student senate" OR "student council"
-- protest → protest OR demonstration OR rally OR sit-in
+- other sports → lacrosse OR swimming OR track OR tennis OR wrestling OR "cross country" OR baseball OR soccer
+- student government → "student government" OR "student senate" OR "student council" OR WCSA
+- protest → protest OR demonstration OR rally OR sit-in OR strike
 - dormitory → dormitory OR dorm OR "residence hall"
-- fraternity/sorority → fraternity OR sorority OR "Greek life" OR pledge
+- fraternity/sorority → fraternity OR sorority OR "Greek life" OR pledge OR rush
+- draft / Vietnam → draft OR "selective service" OR conscription OR ROTC OR Vietnam OR "anti-war"
+- civil rights → "civil rights" OR integration OR "Black students" OR Negro OR desegregation
+- governance → dean OR provost OR president OR "board of trustees" OR faculty OR administration
+- campus places → "Branch Rickey Arena" OR "Hamilton-Williams" OR "Slocum Hall" OR "Sanborn Hall" OR "Beeghly Library"
+- the newspaper → "The Transcript" OR "student newspaper" OR editor OR editorial
+- academics → curriculum OR course OR major OR professor OR faculty OR seminar
 
 Respond in EXACTLY this format (three lines, no extra text):
 SEMANTIC: <your semantic query>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { RetrievedArticle } from "@/src/lib/db";
+import type { RankedArticle } from "@/src/lib/reranker";
 
 // ── Mock ─────────────────────────────────────────────────────────────
 
@@ -15,7 +15,7 @@ vi.mock("@google/genai", () => ({
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeArticle(overrides: Partial<RetrievedArticle> = {}): RetrievedArticle {
+function makeArticle(overrides: Partial<RankedArticle> = {}): RankedArticle {
   return {
     id: "1960-01-07-0",
     editionDate: "1960-01-07",
@@ -26,6 +26,8 @@ function makeArticle(overrides: Partial<RetrievedArticle> = {}): RetrievedArticl
     bodyPlain: "This is a test article body with enough content.",
     distance: 0.25,
     source: "vector",
+    imageUrls: [],
+    relevanceScore: 8, // default to "relevant" so confidence tests still work
     ...overrides,
   };
 }
@@ -177,8 +179,8 @@ describe("generateAnswer", () => {
       });
 
       const articles = [
-        makeArticle({ id: "a", distance: 0.27, source: "vector" }),
-        makeArticle({ id: "b", distance: 0.27, source: "vector" }),
+        makeArticle({ id: "a", distance: 0.27, source: "vector", relevanceScore: 6 }),
+        makeArticle({ id: "b", distance: 0.27, source: "vector", relevanceScore: 6 }),
       ];
 
       const result = await generateAnswer("question", articles);
@@ -190,8 +192,8 @@ describe("generateAnswer", () => {
       const generateAnswer = await importGenerateAnswer();
 
       const articles = [
-        makeArticle({ distance: 0.5, source: "vector" }),
-        makeArticle({ distance: 0.5, source: "vector" }),
+        makeArticle({ distance: 0.5, source: "vector", relevanceScore: 3 }),
+        makeArticle({ distance: 0.5, source: "vector", relevanceScore: 3 }),
       ];
 
       const result = await generateAnswer("question", articles);
@@ -209,8 +211,8 @@ describe("generateAnswer", () => {
       });
 
       const articles = [
-        makeArticle({ id: "a", distance: null, source: "fts" }),
-        makeArticle({ id: "b", distance: null, source: "fts" }),
+        makeArticle({ id: "a", distance: null, source: "fts", relevanceScore: 6 }),
+        makeArticle({ id: "b", distance: null, source: "fts", relevanceScore: 6 }),
       ];
 
       const result = await generateAnswer("question", articles);
@@ -237,26 +239,21 @@ describe("generateAnswer", () => {
       expect(result.confidence).toBe("high");
     });
 
-    it("uses vectorArticles.length (not total) for high-confidence threshold", async () => {
+    it("downgrades confidence when reranker scores are mediocre even with close distance", async () => {
       const generateAnswer = await importGenerateAnswer();
       mockGenerateContent.mockResolvedValue({
         text: "Some info [Source 1].",
       });
 
-      // 1 vector article at close distance + 4 FTS-only articles
-      // vectorArticles.length = 1 (< 2), so confidence should NOT be "high"
+      // Close vector distance but reranker says only "somewhat relevant"
+      // → should be medium, not high
       const articles = [
-        makeArticle({ id: "a", distance: 0.20, source: "vector" }),
-        makeArticle({ id: "b", distance: null, source: "fts" }),
-        makeArticle({ id: "c", distance: null, source: "fts" }),
-        makeArticle({ id: "d", distance: null, source: "fts" }),
-        makeArticle({ id: "e", distance: null, source: "fts" }),
+        makeArticle({ id: "a", distance: 0.20, source: "vector", relevanceScore: 5 }),
+        makeArticle({ id: "b", distance: 0.20, source: "vector", relevanceScore: 5 }),
       ];
 
       const result = await generateAnswer("question", articles);
 
-      // avgDistance = 0.20 (only vector), but vectorArticles.length = 1 < 2
-      // Should be "medium" (not "high"), because only 1 vector article confirms the match
       expect(result.confidence).toBe("medium");
     });
   });

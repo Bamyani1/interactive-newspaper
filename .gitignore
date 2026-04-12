@@ -99,6 +99,9 @@ ocr/inbox/
 ocr/in2/
 ocr/done/
 
+# IIIF downloads (local artifacts from scripts/iiif/download.py)
+scripts/iiif/downloads/
+
 # OCR Model Cache
 ocr/models/
 ocr/models/.cache/
@@ -121,3 +124,22 @@ debug/
 
 # System Files
 **.DS_Store
+
+# Playwright MCP session artifacts (browser traces/screenshots)
+.playwright-mcp/
+
+# Brainstorming session state (Superpowers skill)
+.superpowers/
+
+# AI planning artifacts — kept local only
+docs/superpowers/
+
+# OCR intermediate workspace (large per-edition artifacts)
+ocr/workspace/
+
+# Deleted during cleanup; defensive entry in case dirs recreated
+audit-notes/
+report/
+
+# Unused/experimental large assets
+new-bg.png

@@ -8,10 +8,10 @@ import os
 import tempfile
 import time
 
-from ..config.constants import GEMINI_AD_ENRICHMENT_MODEL
 from ..config.paths import PUBLIC_EDITIONS_DIR
+from ..config.prompts_loader import MODELS
 from ..contracts.ad_models import EnrichedAdsResponse
-from ..recognition.ad_prompts import ENRICHMENT_PROMPT, SAFETY_OFF
+from ..recognition.ad_prompts import ENRICHMENT_SYSTEM_PROMPT, ENRICHMENT_USER_TEMPLATE, SAFETY_OFF
 from ..shared.console import status, substep, success, error, info, file_written
 from ..shared.retry import gemini_generate_with_retry
 
@@ -39,20 +39,24 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool
     status(f"{edition_date}: Enriching {len(ads)} ads...")
 
     ads_json = json.dumps(ads, indent=2)
-    prompt = ENRICHMENT_PROMPT.format(ads_json=ads_json)
+    user_message = ENRICHMENT_USER_TEMPLATE.format(ads_json=ads_json)
 
     from google.genai import types  # lazy: avoid import failure when google-genai not installed
 
+    ad_model_cfg = MODELS["ad_enrichment"]
+    ad_thinking = types.ThinkingConfig(thinking_level=ad_model_cfg["thinking"]) if ad_model_cfg.get("thinking") else None
     call_start = time.time()
     response = gemini_generate_with_retry(
         client,
-        model=GEMINI_AD_ENRICHMENT_MODEL,
-        contents=[prompt],
+        model=ad_model_cfg["name"],
+        contents=[user_message],
         config=types.GenerateContentConfig(
+            system_instruction=ENRICHMENT_SYSTEM_PROMPT,
             response_mime_type="application/json",
             response_schema=EnrichedAdsResponse,
             safety_settings=SAFETY_OFF,
-            max_output_tokens=32768,
+            max_output_tokens=65536,
+            **({"thinking_config": ad_thinking} if ad_thinking else {}),
         ),
     )
     call_elapsed = time.time() - call_start

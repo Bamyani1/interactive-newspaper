@@ -2,10 +2,12 @@
 
 import os
 
-GEMINI_PAGE_MODEL = "gemini-3-flash-preview"           # Image matching, merge retry fallback
-GEMINI_STRUCTURING_MODEL = "gemini-3.1-pro-preview"     # Page structuring + seam repair (highest accuracy)
-GEMINI_MERGE_MODEL = "gemini-3.1-pro-preview"           # Cross-page merge decisions
-GEMINI_AD_ENRICHMENT_MODEL = "gemini-3-flash-preview"   # Ad enrichment
+from .prompts_loader import MODELS
+
+GEMINI_PAGE_MODEL = MODELS["image_matching"]["name"]
+GEMINI_STRUCTURING_MODEL = MODELS["page_structuring"]["name"]
+GEMINI_MERGE_MODEL = MODELS["merge"]["name"]
+GEMINI_AD_ENRICHMENT_MODEL = MODELS["ad_enrichment"]["name"]
 
 # Back-compat alias while modules migrate.
 GEMINI_MODEL = GEMINI_PAGE_MODEL
@@ -22,6 +24,7 @@ MAX_ASPECT_RATIO = 4.0
 MIN_AD_IMAGE_AREA_PIXELS = 40000
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tif", ".tiff")
+TIF_EXTENSIONS = (".tif", ".tiff")
 
 DOCAI_CONFIDENCE_THRESHOLD = float(os.getenv("DOCAI_CONFIDENCE_THRESHOLD", "0.8"))
 DOCAI_MAX_BYTES = 18 * 1024 * 1024  # 18MB — buffer under Document AI's 20MB hard limit

@@ -93,7 +93,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const filters = body.filters ?? {};
         let articles: RetrievedArticle[];
         let method: "hybrid" | "vector" = "hybrid";
-        const retrievalLimit = mode === "visual" ? 20 : 8;
+        // Visual mode retrieves more candidates since we pre-filter to articles
+        // with images (smaller pool, need wider net to find relevant photos)
+        const retrievalLimit = mode === "visual" ? 30 : 8;
 
         const retrievalTimeout = new Promise<never>((_, reject) =>
             setTimeout(
@@ -102,6 +104,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             ),
         );
 
+        // Adaptive vector/FTS weighting based on query mode:
+        // Visual queries (conceptual "show me X") favor vector similarity (0.7)
+        // Text queries (factual, often keyword-heavy) get more FTS weight (0.4)
+        const vectorWeight = mode === "visual" ? 0.7 : 0.6;
+        // Visual mode restricts retrieval to articles with images so the gallery
+        // has enough content even after reranking filters out weak matches.
+        const onlyWithImages = mode === "visual";
+
         try {
             articles = await Promise.race([
                 hybridSearch(ftsQuery, questionEmbedding, {
@@ -109,7 +119,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     category: filters.category ?? null,
                     startDate: filters.startDate ?? null,
                     endDate: filters.endDate ?? null,
-                    vectorWeight: 0.7,
+                    vectorWeight,
+                    onlyWithImages,
                 }),
                 retrievalTimeout,
             ]);
@@ -128,21 +139,36 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     RETRIEVAL_TIMEOUT_MS,
                 ),
             );
-            articles = await Promise.race([
-                queryArticlesByEmbedding(questionEmbedding, {
-                    limit: retrievalLimit,
-                    category: filters.category ?? null,
-                    startDate: filters.startDate ?? null,
-                    endDate: filters.endDate ?? null,
-                }),
-                fallbackTimeout,
-            ]);
+            try {
+                articles = await Promise.race([
+                    queryArticlesByEmbedding(questionEmbedding, {
+                        limit: retrievalLimit,
+                        category: filters.category ?? null,
+                        startDate: filters.startDate ?? null,
+                        endDate: filters.endDate ?? null,
+                        onlyWithImages,
+                    }),
+                    fallbackTimeout,
+                ]);
+            } catch (fallbackErr) {
+                if (fallbackErr instanceof Error && fallbackErr.message === "Retrieval timeout") {
+                    return NextResponse.json(
+                        { error: "Retrieval took too long. Please try again." },
+                        { status: 504 },
+                    );
+                }
+                throw fallbackErr;
+            }
         }
         const retrievalTimeMs = Date.now() - retrievalStart;
 
         // ── Step 4: Re-rank articles by relevance ──
+        // Visual mode uses a lower threshold (3 = tangentially related) because
+        // the user's goal is seeing photos, not precise answers — "somewhat related"
+        // photos are still valuable. Text mode stays strict at 5.
         const rankedArticles = await rerankArticles(question, articles, {
             maxArticles: mode === "visual" ? 15 : 5,
+            minScore: mode === "visual" ? 3 : 5,
         });
 
         // ── Step 5: Generate answer (using ORIGINAL question, not reformulated) ──
@@ -167,7 +193,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 category: a.category,
                 summary: a.summary,
                 byline: a.byline,
-                bodySnippet: a.bodyPlain.slice(0, 300) + (a.bodyPlain.length > 300 ? "…" : ""),
+                bodySnippet: (a.bodyPlain || "").slice(0, 300) + ((a.bodyPlain || "").length > 300 ? "…" : ""),
                 distance: a.distance !== null ? parseFloat(a.distance.toFixed(4)) : null,
                 imageUrls: a.imageUrls,
             })),

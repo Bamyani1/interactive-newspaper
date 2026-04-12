@@ -1,8 +1,10 @@
-"""Prompt constants for ad enrichment."""
+"""Prompt constants for ad enrichment — loaded from ocr/src/prompts.json."""
 
 from __future__ import annotations
 
 from google.genai import types
+
+from ..config.prompts_loader import PROMPTS
 
 SAFETY_OFF = [
     types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF"),
@@ -12,21 +14,7 @@ SAFETY_OFF = [
     types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold="OFF"),
 ]
 
-ENRICHMENT_PROMPT = """\
-You are processing advertisements extracted from a historical college newspaper (The Transcript, Ohio Wesleyan University).
+ENRICHMENT_SYSTEM_PROMPT = PROMPTS["ad_enrichment_system"]
+ENRICHMENT_USER_TEMPLATE = PROMPTS["ad_enrichment_user_template"]
 
-For each ad below, return an enriched version with:
-1. **category**: One of: Food & Drink, Entertainment, Services, Retail, Greek Life, Jobs, Housing, Education, Events, Other
-2. **ad_type**: IMPORTANT — use "classified" ONLY for brief text-only listings: job postings, housing want-ads, items for sale, personal notices (typically 1-3 short sentences, no branding or imagery). Everything else is "display" — any ad with a business name, branding, promotional offers, product descriptions, or visual layout is "display". When in doubt, use "display".
-3. **display_text**: A condensed version (~150 chars max) that captures the key message. Write it as a clean, readable summary — not raw OCR text. Include the business name and main offer/service.
-4. **phone**: Extract phone number if present, otherwise ""
-5. **address**: Extract street address if present, otherwise ""
-6. **price**: Extract any pricing info if present, otherwise ""
-
-Preserve the original business_name, body, and image_files exactly as given.
-
-Ads to enrich:
-{ads_json}
-"""
-
-__all__ = ["ENRICHMENT_PROMPT", "SAFETY_OFF"]
+__all__ = ["ENRICHMENT_SYSTEM_PROMPT", "ENRICHMENT_USER_TEMPLATE", "SAFETY_OFF"]

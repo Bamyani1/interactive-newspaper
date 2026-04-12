@@ -183,7 +183,7 @@ export default function FontCustomizer() {
                                     className="font-preset-preview"
                                     style={{ fontFamily: preset.fonts["--font-header"] }}
                                 >
-                                    The Transcript - Ohio Wesleyan University
+                                    The Transcript Archive - Ohio Wesleyan University
                                 </div>
 
                                 <div

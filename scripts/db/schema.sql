@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category);
 CREATE INDEX IF NOT EXISTS idx_articles_byline ON articles(byline) WHERE byline IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_articles_search ON articles USING gin(search_vector);
 CREATE INDEX IF NOT EXISTS idx_articles_embedding ON articles USING hnsw (embedding vector_cosine_ops)
-  WITH (m = 16, ef_construction = 64);
+  WITH (m = 16, ef_construction = 128);
 
 -- ─── Ads ─────────────────────────────────────────────────────────
 
@@ -109,7 +109,8 @@ CREATE OR REPLACE FUNCTION articles_search_vector_update() RETURNS trigger AS $$
 BEGIN
   NEW.search_vector :=
     setweight(to_tsvector('english', coalesce(NEW.headline, '')), 'A') ||
-    setweight(to_tsvector('english', coalesce(NEW.byline, '')), 'B') ||
+    setweight(to_tsvector('english', coalesce(NEW.summary, '')), 'B') ||
+    setweight(to_tsvector('english', coalesce(NEW.byline, '')), 'C') ||
     setweight(to_tsvector('english', coalesce(NEW.body_plain, '')), 'C');
   RETURN NEW;
 END $$ LANGUAGE plpgsql;

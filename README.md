@@ -1,255 +1,261 @@
 # The Transcript Archive
 
-> An interactive archive of OWU's historic student newspaper — browse editions from the 1980s with a vintage aesthetic.
+> AI-powered searchable archive of Ohio Wesleyan University's student newspaper — 40 years of scanned print editions (1960–2000) turned into a multimodal RAG-powered research tool.
 
-![Next.js](https://img.shields.io/badge/Next.js-16.0.7-black)
-![React](https://img.shields.io/badge/React-19.2.0-61dafb)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)
+![Next.js](https://img.shields.io/badge/Next.js-16-black)
+![React](https://img.shields.io/badge/React-19-61dafb)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6)
+![Python](https://img.shields.io/badge/Python-3.12-3776ab)
+![Postgres](https://img.shields.io/badge/Postgres-pgvector-336791)
+![Gemini](https://img.shields.io/badge/Gemini-embedding_001-4285f4)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-## Features
+---
 
-- 📰 **Archive Explorer** — Navigate through historical newspaper editions by date
-- 🗺️ **Interactive Campus Map** — Explore the 1936 OWU campus with zoomable imagery and guided tours
-- 🎵 **Vintage Music Player** — Era-appropriate audio accompaniment
-- 🎨 **Authentic Aesthetics** — Period-accurate styling with sepia tones and newspaper typography
-- 📱 **Responsive Design** — Optimized for desktop with mobile support
+## What It Does
 
-## Prerequisites
+- **Browse the archive** — Navigate 80+ digitized editions with period-accurate typography, date controls, and an era-aware reading experience.
+- **Ask the Archive** — Natural-language Q&A powered by a full RAG pipeline: query reformulation, hybrid vector + full-text search, Gemini reranking, and cited answer generation.
+- **Multimodal visual queries** — Ask "show me protest photos" and get a visual-mode answer with a `TimelineGallery` of matching article thumbnails. Text and image embeddings live in the same vector space (`gemini-embedding-001`).
+- **End-to-end OCR pipeline** — A Python pipeline turns raw TIF scans into structured `edition.json`: DocAI layout parsing, DocLayout-YOLO region detection, Gemini structuring, cross-page article merging, ad enrichment, and per-run diagnostics.
+- **Historical context** — Offline Ohio weather archive (1950–2000) and monthly US top-10 music archive (1958–2000) for period-accurate sidebars.
 
-- **Node.js**: v18.x or higher
-- **npm**: v9.x or higher (or use pnpm/yarn)
+> For a deep technical walkthrough — architecture, pipeline internals, hardening decisions, and skills demonstrated — see [`PROJECT_DESCRIPTION.md`](./PROJECT_DESCRIPTION.md).
 
-## Installation
+---
+
+## Tech Stack
+
+**Frontend**
+- Next.js 16 (App Router) · React 19 · TypeScript 5
+- Tailwind CSS v4 · Framer Motion · Three.js / React Three Fiber
+- Server Components + streaming API routes
+
+**Backend**
+- Next.js API routes (Node.js runtime)
+- Neon Postgres (serverless) with `pgvector` and tsvector full-text search
+- Cloudflare R2 for edition image hosting (via AWS SDK v3)
+- Vitest (TypeScript) and pytest (Python) for testing
+
+**AI / ML**
+- **Google Gemini** (`@google/genai`) — OCR structuring, embeddings (`gemini-embedding-001`, 768-dim), reranking, RAG answer generation
+- **Google Document AI** — layout parser for character-level OCR with confidence scoring
+- **DocLayout-YOLO** — photo/illustration region detection on scanned pages
+
+**Python OCR Pipeline**
+- Python 3.12, `ocr/src/transcript_ocr/` package
+- Domain-driven layout: `application/`, `recognition/`, `preprocessing/`, `detection/`, `merging/`, `postprocessing/`, `image_linking/`, `export/`, `diagnostics/`
+- Import-boundary and architecture tests enforced in CI (`.github/workflows/ocr-architecture.yml`)
+
+---
+
+## Quickstart
+
+**Prerequisites:** Node.js 20+, Python 3.12, a Neon Postgres database, Google Cloud project with Document AI, Google Gemini API key.
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/transcript-archive.git
+# 1. Clone and install
+git clone https://github.com/<your-username>/transcript-archive.git
 cd transcript-archive
-
-# Install dependencies
 npm install
 
-# Start the development server
-npm run dev
+# 2. Configure environment
+cp .env.example .env.local
+# Edit .env.local and fill in DATABASE_URL, GOOGLE_API_KEY, etc.
+
+# 3. Seed the database
+npm run db:seed          # creates tables + loads existing edition.json files
+npm run db:embed         # generates 768-dim vector embeddings for all articles
+
+# 4. Run the app
+npm run dev              # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the app.
+For the **OCR pipeline** (processing new scans), see the Python setup below.
 
-## How to Run
+```bash
+cd ocr
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cd ..
+
+# Drop TIF folders into ocr/inbox/<date>/ then:
+scripts/ocr/process-edition.sh ocr/inbox/1988-10-12
+scripts/ocr/process-unprocessed.sh   # batch-process everything unprocessed
+```
+
+---
+
+## Commands
 
 | Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development server with hot reload |
-| `npm run build` | Create optimized production build |
-| `npm run start` | Run the production build locally |
-| `npm run lint` | Run ESLint to check code quality |
-| `npm run weather:build:ohio` | Build offline Ohio weather archive (1950–2000) |
-| `npm run weather:verify:ohio` | Verify archive integrity and date coverage |
-| `npm run music:build:us-monthly` | Build offline US monthly music archive (1958–2000) |
-| `npm run music:verify:us-monthly` | Verify monthly music archive integrity and coverage |
-| `npm run music:youtube:verify` | Validate YouTube map IDs and report coverage by month |
+|---|---|
+| `npm run dev` | Start Next.js dev server (hot reload) |
+| `npm run build` | Production build (runs `tsc`) |
+| `npm run lint` | ESLint |
+| `npm run test` | Vitest watch mode |
+| `npm run test:run` | Vitest run (CI mode) |
+| `npm run test:invariants` | OCR pipeline invariant tests |
+| `npm run db:seed` | Seed editions into Neon Postgres |
+| `npm run db:reset` | Drop + recreate tables, then seed |
+| `npm run db:embed` | Generate vector embeddings for articles |
+| `npm run db:embed:force` | Force re-embed all articles |
+| `npm run images:upload` | Upload edition images to Cloudflare R2 |
+| `npm run weather:build:ohio` | Build offline weather archive (1950–2000) |
+| `npm run weather:verify:ohio` | Verify archive integrity |
+| `scripts/ocr/process-edition.sh <folder>` | Process a single edition end-to-end |
+| `scripts/ocr/process-unprocessed.sh` | Batch OCR all new inbox folders |
+| `python -m pytest tests/ocr/ -x` | Python OCR test suite |
 
-## Configuration
+---
 
-### Environment Variables
+## Environment Variables
 
-No environment variables are required for basic operation. Create a `.env.local` file for custom configuration:
+Create `.env.local` from `.env.example`:
 
-```bash
-# Example (optional)
-NEXT_PUBLIC_ANALYTICS_ID=your-analytics-id
-```
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | Yes | Neon Postgres connection string |
+| `GOOGLE_API_KEY` | Yes | Gemini — OCR structuring, embeddings, RAG generation |
+| `GOOGLE_CLOUD_PROJECT` | Yes (OCR) | Document AI project ID |
+| `DOCUMENT_AI_PROCESSOR_ID` | Yes (OCR) | Document AI layout parser processor |
+| `DOCUMENT_AI_LOCATION` | Yes (OCR) | Typically `us` |
+| `LAYOUT_PARSER_PROCESSOR_ID` | Optional | Secondary layout processor |
+| `R2_ACCOUNT_ID` | Optional | Cloudflare R2 account (production image CDN) |
+| `R2_ACCESS_KEY_ID` | Optional | R2 access key |
+| `R2_SECRET_ACCESS_KEY` | Optional | R2 secret key |
+| `R2_BUCKET_NAME` | Optional | R2 bucket name |
+| `IMAGE_BASE_URL` | Optional | R2 public CDN base URL (falls back to local API proxy in dev) |
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NEXT_PUBLIC_ANALYTICS_ID` | No | Analytics tracking ID |
+**Never commit `.env.local`** — it is already in `.gitignore`.
 
-### Remote Images
-
-The app is configured to allow images from `placehold.co`. Add additional domains in `next.config.ts`.
-
-### Offline Weather Archive
-
-The project includes an offline Ohio historical weather archive for **1950-01-01 through 2000-12-31**.
-
-Build/regenerate:
-
-```bash
-npm run weather:build:ohio
-npm run weather:verify:ohio
-```
-
-Archive paths:
-
-- `public/data/weather/ohio/meta/stations.json`
-- `public/data/weather/ohio/raw/by-year/*.ndjson.gz`
-- `public/data/weather/ohio/index/delaware-by-date-1950-2000.json`
-- `public/data/weather/ohio/index/statewide-by-date-1950-2000.json`
-- `public/data/weather/ohio/manifest.json`
-
-Current archive footprint is approximately **56MB** (`39MB` raw yearly + `17MB` indexes).
-
-API behavior:
-
-- `/api/weather` reads local archive first for in-range dates.
-- `/api/weather` supports `scope=delaware|statewide` (default `delaware`).
-- Out-of-range dates continue to use live fallback providers.
-
-### Offline Monthly Music Archive
-
-The project includes an offline US monthly top-10 archive for **1958-08 through 2000-12**.
-
-Build/regenerate:
-
-```bash
-npm run music:build:us-monthly
-npm run music:verify:us-monthly
-npm run music:youtube:verify
-```
-
-Archive paths:
-
-- `public/data/music/us/hot100/raw/hot-100-current.snapshot.csv.gz`
-- `public/data/music/us/hot100/index/monthly-top10-1958-2000.json`
-- `public/data/music/us/hot100/index/tracks-catalog-1958-2000.json`
-- `public/data/music/us/hot100/manifest.json`
-- `public/data/music/us/hot100/meta/youtube-map.json`
-
-Expected runtime and footprint:
-
-- Build runtime is typically a few seconds on a normal dev machine.
-- Archive footprint is currently about **6.9MB** (`3.3MB` raw snapshot + `3.6MB` indexes).
-
-API behavior:
-
-- `/api/music?date=YYYY-MM-DD` resolves the month and reads local archive data.
-- Coverage is `1958-08` through `2000-12` inclusive.
-- Out-of-range dates return `OUT_OF_ARCHIVE_RANGE` with `record: null`.
-- Sidebar player is date-aware on edition pages and shows that month’s top 10.
-- In monthly mode, the player auto-selects the first track with a mapped `youtubeId`.
-- If a selected track has no mapped video, the UI shows an explicit **Open YouTube search** fallback link.
+---
 
 ## Project Structure
 
 ```
 .
-├── app/                          # Next.js App Router
-│   ├── api/                      # API routes
-│   │   ├── playback/             # Music playback state
-│   │   ├── playlists/            # Playlist CRUD
-│   │   └── tracks/               # Track listing
-│   ├── campus-map/               # Interactive campus map page
-│   ├── edition/                  # Main archive browser page
-│   ├── globals.css               # Global styles & CSS variables
-│   ├── layout.tsx                # Root layout with providers
-│   └── page.tsx                  # Landing page
+├── src/                          # Next.js frontend
+│   ├── app/                      # App Router pages + API routes
+│   │   ├── api/                  # /api/ask, /api/editions, /api/search, /api/weather
+│   │   ├── ask/                  # Ask the Archive page (RAG UI)
+│   │   └── edition/[date]/       # Edition reader
+│   ├── features/                 # Feature modules (news-feed, ask-archive, etc.)
+│   ├── lib/                      # Shared: db, embeddings, answer-generator, reranker, query-reformulator, gemini-client
+│   └── server/                   # Server-only: ocr-adapter (edition.json → DB rows)
 │
-├── public/                       # Static assets
-│   ├── editions/1986/            # Oct 24, 1986 edition data
-│   └── tiles/                    # Deep zoom image tiles
+├── ocr/                          # Python OCR pipeline
+│   ├── src/transcript_ocr/       # Domain-driven package
+│   │   ├── application/          # edition_pipeline, page_pipeline, ad_enrichment, content_rescue
+│   │   ├── recognition/          # DocAI provider, Gemini page extractor, prompts
+│   │   ├── preprocessing/        # skew correction, image conversion
+│   │   ├── detection/            # DocLayout-YOLO region detection
+│   │   ├── merging/              # cross-page article merge, continuation, deduplication
+│   │   ├── postprocessing/       # deduplication, ad reclassification, null sanitization
+│   │   ├── image_linking/        # visual matcher — region-to-article attribution
+│   │   └── contracts/            # typed data models
+│   ├── convert_scans.py          # Main OCR entry point
+│   ├── enrich_ads.py             # Post-OCR ad enrichment
+│   └── rescue_content.py         # Failure-triage CLI for rescue pipeline
 │
-└── src/features/                 # Feature-Based Architecture
-    ├── archive/                  # Core state management (date/era)
-    ├── campus-map/               # Interactive map components
-    ├── context-panel/            # Right sidebar widgets
-    ├── music-player/             # Vintage music player
-    ├── navigation/               # Left sidebar navigation
-    ├── news-feed/                # Main article feed
-    ├── shared/                   # Shared types and utilities
-    └── time-controls/            # Header date picker
+├── scripts/
+│   ├── db/                       # seed, embed, migrate, recreate-hnsw-index
+│   ├── ocr/                      # Shell wrappers around the Python pipeline
+│   ├── iiif/                     # IIIF archive download tool (OCLC ContentDM)
+│   └── weather/                  # Weather archive builders
+│
+├── public/
+│   ├── editions/<date>/          # OCR output: edition.json + images (gitignored)
+│   └── data/weather/ohio/        # Offline weather archive
+│
+└── tests/
+    ├── api/, lib/, news-feed/    # Vitest suites
+    └── ocr/                      # pytest suite + architecture tests
 ```
 
-## Development Workflow
+---
 
-### Code Quality
-
-```bash
-# Lint code
-npm run lint
-
-# Type check (no emit)
-npx tsc --noEmit
-
-# Build for production
-npm run build
-```
-
-### Adding New Editions
-
-1. Add scanned pages to `public/editions/{year}/scanned-newspaper/`
-2. Add extracted text to `public/editions/{year}/extracted-text/`
-3. Extend `src/features/news-feed/data/mockData.ts` with article metadata
-
-### Feature Folder Pattern
-
-New features should follow the existing structure:
+## RAG Pipeline (how `/api/ask` works)
 
 ```
-src/features/{feature-name}/
-├── components/       # React components
-├── context/          # React Context (if needed)
-├── data/             # Static data or mocks
-├── hooks/            # Custom hooks
-├── types/            # TypeScript interfaces
-└── index.ts          # Barrel file (public API)
+POST /api/ask
+  ↓
+query-reformulator    → rewrite modern query in 1960s newspaper language
+                        detect intent (text-only vs visual)
+                        produce separate embeddingQuery + ftsQuery
+  ↓
+embeddings            → multimodal embed (text + optional image) via gemini-embedding-001
+                        guard against token-limit truncation
+  ↓
+db.hybridSearch       → vector similarity (HNSW) + FTS with Reciprocal Rank Fusion (0.7 vector weight)
+                        returns top-8 candidate articles
+  ↓
+reranker              → Gemini scores each candidate 0–10 for relevance
+                        filters to score ≥ 3, max 5 articles
+  ↓
+answer-generator      → Gemini produces cited answer from original question + reranked articles
+                        visual-mode returns imageUrls for TimelineGallery rendering
 ```
 
-## Troubleshooting
+Every step has a timeout, a typed error envelope, and a graceful fallback (e.g., reformulation failure → use original query; rerank failure → vector-only retrieval with a fresh timeout). Rate-limited at 10 req/min. User input wrapped in XML delimiters for prompt-injection defense.
 
-### Build Errors
+---
 
-**`sharp` installation fails:**
-```bash
-npm rebuild sharp
-```
-
-**Port 3000 in use:**
-```bash
-npm run dev -- --port 3001
-```
-
-### Development Issues
-
-- **Map not loading**: Ensure `public/tiles/campus-map.dzi` exists
-- **Styles broken**: Check that `globals.css` is imported in `layout.tsx`
-
-## Security Notes
-
-- No secrets or API keys are required for operation
-- Core edition/article data is static
-- Historical weather lookups (`/api/weather`) use the local Ohio archive first (1950–2000), then call public NOAA/ACIS/Open-Meteo only when needed
-- Monthly music lookups (`/api/music`) use committed local archive data for 1958-08..2000-12
-- User preferences stored in `localStorage` only
-
-## Contributing
-
-We follow **Conventional Commits** for a clean git history.
-
-### Commit Format
+## OCR Pipeline (how `convert_scans.py` works)
 
 ```
-<type>(<scope>): <description>
+ocr/inbox/<date>/*.tif
+  ↓
+Phase 1: DocAI Extraction (parallel per page)
+  → preprocess (grayscale, CLAHE, denoise, border crop)
+  → Document AI layout parser (char-level OCR + confidence)
+  → DocLayout-YOLO region detection (photos/illustrations)
+  ↓
+Phase 2: Gemini Structuring + Image Linking (parallel per page)
+  → Gemini structures DocAI text into articles/ads with headlines, bylines, categories
+  → Visual matcher links YOLO regions to article/ad bounding boxes
+  ↓
+Phase 3: Cross-Page Merging
+  → merge articles by continuation markers ("Continued on page X")
+  → deduplicate overlapping content
+  → consolidate orphan images
+  ↓
+Phase 4: Ad Enrichment
+  → Gemini extracts metadata (advertiser, category, call-to-action) from ad crops
+  ↓
+Phase 5: Diagnostics + Issue Reports
+  → per-page timing, confidence, token usage, YOLO stats
+  → issue_report.json flags detected problems
+  ↓
+public/editions/<date>/edition.json + images/
 ```
 
-| Type | Description |
-|------|-------------|
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `docs` | Documentation only |
-| `style` | Formatting changes |
-| `refactor` | Code restructuring |
-| `chore` | Build/tooling changes |
+Then: `npm run db:seed` ingests the `edition.json` into Neon Postgres, and `npm run db:embed` generates 768-dim vectors for every article.
 
-### Before Submitting a PR
+---
 
-- [ ] Run `npm run build` successfully
-- [ ] Run `npm run lint` with no errors
-- [ ] Test changes locally in browser
-- [ ] Use feature folder structure for new features
+## Testing
+
+| Suite | Command | Covers |
+|---|---|---|
+| TypeScript | `npm run test:run` | UI components, hooks, API routes, lib utilities, OCR adapter |
+| Python | `python -m pytest tests/ocr/ -x` | OCR pipeline logic, architecture boundaries, artifact contracts |
+| CI | `.github/workflows/ocr-architecture.yml` | Import rules, wrapper entrypoints, runtime cutover |
+
+Architecture tests fail the build if any module violates the `application → (recognition/preprocessing/detection) → shared` dependency direction.
+
+---
+
+## Conventions
+
+- **Conventional commits** — `feat(rag):`, `fix(ocr):`, `chore:`, `docs:`, etc.
+- **Feature modules** — business logic lives in `src/features/<feature>/`; no cross-feature imports
+- **API routes** — always validate inputs, return typed JSON, use correct HTTP status codes
+- **OCR adapter** — `src/server/ocr-adapter/` is the *only* place that transforms `edition.json` → DB shape
+- **Dates** — always `YYYY-MM-DD` strings; never `Date` objects across API boundaries
+
+---
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
-
----
+MIT — see [LICENSE](./LICENSE).
