@@ -31,6 +31,7 @@
     overflow: hidden;
     isolation: isolate;
     background: var(--cathedral-base);
+    pointer-events: auto;
     cursor: default;
 }
 
@@ -53,7 +54,7 @@
 .cathedral-glass object,
 .cathedral-glass img {
     width: 100%;
-    height: auto;
+    height: 100%;
     display: block;
 }
 
@@ -210,22 +211,22 @@
     pointer-events: none;
     background:
         radial-gradient(
-            ellipse 120% 60% at 50% -10%,
-            transparent 40%,
-            rgba(13, 8, 4, 0.6) 75%,
-            rgba(13, 8, 4, 0.95) 100%
+            ellipse 120% 80% at 50% 50%,
+            transparent 50%,
+            rgba(13, 8, 4, 0.4) 80%,
+            rgba(13, 8, 4, 0.7) 100%
         ),
         linear-gradient(
             to top,
-            rgba(13, 8, 4, 0.8) 0%,
-            transparent 40%
+            rgba(13, 8, 4, 0.3) 0%,
+            transparent 20%
         ),
         linear-gradient(
             to right,
-            rgba(13, 8, 4, 0.7) 0%,
-            transparent 12%,
-            transparent 88%,
-            rgba(13, 8, 4, 0.7) 100%
+            rgba(13, 8, 4, 0.4) 0%,
+            transparent 10%,
+            transparent 90%,
+            rgba(13, 8, 4, 0.4) 100%
         );
 }
 

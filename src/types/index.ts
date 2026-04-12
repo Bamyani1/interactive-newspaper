@@ -167,6 +167,7 @@ export interface AskResponse {
     answer: string;
     citations: Citation[];
     confidence: "low" | "medium" | "high";
+    mode: "text" | "visual";
     sourceArticles: {
         id: string;
         headline: string;
@@ -175,7 +176,8 @@ export interface AskResponse {
         summary: string;
         byline: string | null;
         bodySnippet: string;
-        distance: number;
+        distance: number | null;
+        imageUrls: string[];
     }[];
     meta: {
         retrievalTimeMs: number;

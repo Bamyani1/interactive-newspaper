@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -16,6 +17,7 @@ from ..config.constants import (
     DOCAI_CONFIDENCE_THRESHOLD,
     DOCAI_MAX_BYTES,
 )
+from ..shared.console import warning
 
 
 class DocAIError(Exception):
@@ -193,6 +195,28 @@ def _extract_token_confidences(document) -> tuple[list[str], float]:
     return low_conf_words, mean_conf
 
 
+def _is_transient_docai_error(exc: Exception) -> bool:
+    """Check if a DocAI exception is transient and worth retrying."""
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if code is not None:
+        try:
+            code_int = int(code)
+            # 4xx errors are permanent (bad request, too large, etc.)
+            if 400 <= code_int < 500 and code_int != 429:
+                return False
+            return code_int in {429, 500, 503}
+        except (ValueError, TypeError):
+            pass
+    exc_str = str(exc).lower()
+    # 400-level errors are permanent — don't retry
+    if "400" in exc_str or "bad request" in exc_str:
+        return False
+    return any(
+        term in exc_str
+        for term in ["429", "timeout", "unavailable", "resource exhausted", "server error"]
+    )
+
+
 def extract_page_text(image: Image.Image) -> DocAIResult:
     """
     Run Document AI Layout Parser OCR on a preprocessed page image.
@@ -239,10 +263,18 @@ def extract_page_text(image: Image.Image) -> DocAIResult:
     )
 
     client = _get_docai_client()
-    try:
-        result = client.process_document(request=request)
-    except Exception as exc:
-        raise DocAIError(f"Document AI API error: {exc}") from exc
+    max_retries = 3
+    for attempt in range(max_retries + 1):
+        try:
+            result = client.process_document(request=request)
+            break
+        except Exception as exc:
+            if _is_transient_docai_error(exc) and attempt < max_retries:
+                delay = 2 * (2 ** attempt)  # 2s, 4s, 8s
+                warning(f"DocAI error ({exc}), retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(delay)
+            else:
+                raise DocAIError(f"Document AI API error: {exc}") from exc
 
     document = result.document
     raw_text = document.text or ""

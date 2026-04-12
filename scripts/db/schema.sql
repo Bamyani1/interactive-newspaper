@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS articles (
   image_caption   TEXT,
   image_captions  JSONB NOT NULL DEFAULT '[]',
   search_vector   TSVECTOR,                 -- auto-populated for FTS
-  embedding       VECTOR(768)               -- semantic embedding for RAG (gemini-embedding-001)
+  embedding       VECTOR(768)               -- semantic embedding for RAG (gemini-embedding-2-preview)
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_edition ON articles(edition_date);
@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category);
 CREATE INDEX IF NOT EXISTS idx_articles_byline ON articles(byline) WHERE byline IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_articles_search ON articles USING gin(search_vector);
 CREATE INDEX IF NOT EXISTS idx_articles_embedding ON articles USING hnsw (embedding vector_cosine_ops)
-  WITH (m = 16, ef_construction = 64);
+  WITH (m = 16, ef_construction = 128);
 
 -- ─── Ads ─────────────────────────────────────────────────────────
 
@@ -66,6 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_ads_edition ON ads(edition_date);
 -- ─── Migrations (safe to re-run) ───────────────────────────────────
 
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS writer_position TEXT;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS embedding_model TEXT;
 
 ALTER TABLE ads ADD COLUMN IF NOT EXISTS image_urls JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE ads ADD COLUMN IF NOT EXISTS category TEXT;
@@ -101,3 +102,25 @@ CREATE TABLE IF NOT EXISTS music (
   youtube_id TEXT NOT NULL,
   PRIMARY KEY (year, month, rank)
 );
+
+-- ─── Search Vector Trigger ──────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION articles_search_vector_update() RETURNS trigger AS $$
+BEGIN
+  NEW.search_vector :=
+    setweight(to_tsvector('english', coalesce(NEW.headline, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(NEW.summary, '')), 'B') ||
+    setweight(to_tsvector('english', coalesce(NEW.byline, '')), 'C') ||
+    setweight(to_tsvector('english', coalesce(NEW.body_plain, '')), 'C');
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'articles_search_vector_trig'
+  ) THEN
+    CREATE TRIGGER articles_search_vector_trig
+    BEFORE INSERT OR UPDATE ON articles
+    FOR EACH ROW EXECUTE FUNCTION articles_search_vector_update();
+  END IF;
+END $$;
