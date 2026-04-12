@@ -11,15 +11,18 @@ from google import genai
 from google.genai import types
 
 from .console import warning as _console_warning
+from ..config.prompts_loader import MODELS
 
 logger = logging.getLogger(__name__)
 
 # Transient HTTP status codes worth retrying
 _RETRYABLE_STATUS_CODES = {429, 500, 503}
 
-_MAX_RETRIES = 3
-_BASE_DELAY_S = 2  # exponential: 2s, 4s, 8s
-_REQUEST_TIMEOUT_S = int(os.getenv("GEMINI_REQUEST_TIMEOUT_S", "240"))
+_MAX_RETRIES = 4
+_BASE_DELAY_S = 2  # exponential: 2s, 4s, 8s, 16s, 32s
+_REQUEST_TIMEOUT_S = int(os.getenv("GEMINI_REQUEST_TIMEOUT_S", "120"))
+_CALL_SPACING_S = float(os.getenv("GEMINI_CALL_SPACING_S", "0.5"))  # min seconds between calls
+_RETRY_MODEL = MODELS["merge_fallback"]["name"]  # fallback model for retry attempts
 
 
 def _generate_content_with_timeout(
@@ -70,10 +73,14 @@ def gemini_generate_with_retry(
     last_exc: Exception | None = None
 
     for attempt in range(_MAX_RETRIES + 1):
+        if _CALL_SPACING_S > 0:
+            time.sleep(_CALL_SPACING_S)
+        # Use Pro model on 2nd and 3rd retry attempts
+        attempt_model = _RETRY_MODEL if attempt > 0 else model
         try:
             return _generate_content_with_timeout(
                 client,
-                model=model,
+                model=attempt_model,
                 contents=contents,
                 config=config,
             )
@@ -81,7 +88,7 @@ def gemini_generate_with_retry(
             # Check if this is a retryable API error
             if _is_retryable(exc) and attempt < _MAX_RETRIES:
                 delay = _BASE_DELAY_S * (2 ** attempt)
-                _console_warning(f"Gemini API error ({exc}), retrying in {delay}s (attempt {attempt + 1}/{_MAX_RETRIES})")
+                _console_warning(f"Gemini API error ({exc}), retrying with {_RETRY_MODEL} in {delay}s (attempt {attempt + 1}/{_MAX_RETRIES})")
                 time.sleep(delay)
                 last_exc = exc
                 continue
@@ -113,7 +120,7 @@ def _is_retryable(exc: Exception) -> bool:
 
     # Check the string representation as a last resort
     exc_str = str(exc).lower()
-    if any(term in exc_str for term in ["429", "500", "503", "rate limit", "resource exhausted"]):
+    if any(term in exc_str for term in ["429", "500", "503", "rate limit", "resource exhausted", "server disconnected"]):
         return True
 
     return False

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
-import { PageShell, CinemaBackground, Ticker, useTickerAnimation, EditionPicker } from "@/shared";
+import { PageShell, CathedralBackground, Ticker, useTickerAnimation, EditionPicker } from "@/shared";
 import { headlines } from "@/shared/landing/data/headlines";
 import { landingCardVariants, TRANSITIONS } from "@/shared/motion/motionTokens";
 
@@ -36,7 +36,7 @@ export default function Home() {
     );
 
     return (
-        <PageShell variant="cinema" backgroundContent={<CinemaBackground />}>
+        <PageShell variant="cinema" backgroundContent={<CathedralBackground />}>
             {/* TOP TICKER */}
             <Ticker items={tickerItems} />
 
@@ -55,7 +55,7 @@ export default function Home() {
                     }}
                 >
                     <header className="cinema-masthead">
-                        <h1 className="cinema-title">The Transcript</h1>
+                        <h1 className="cinema-title">The Transcript Archive</h1>
                         <p className="cinema-subtitle">Student Newspaper Since 1867</p>
                     </header>
 

@@ -1,11 +1,13 @@
 """Edition-level pipeline entrypoints.
 
-Five-phase pipeline:
+Seven-phase pipeline:
+  Phase 0: TIF → PNG conversion (lossless, runs first)
   Phase 1: DocAI extraction (all pages, fail-fast)
   Phase 2: Gemini structuring (all pages, uses DocAI text)
   Phase 3: Cross-page merge
-  Phase 4: Ad enrichment (folded in)
-  Phase 5: Summary + diagnostics
+  Phase 4: Ad enrichment
+  Phase 5: Content triage (rescue misclassified articles)
+  Phase 6: Summary + diagnostics
 """
 
 from __future__ import annotations
@@ -24,12 +26,14 @@ from ..export.artifact_writer import write_diagnostics_json, write_issue_reports
 from ..export.edition_writer import align_existing_image_files, finalize_and_write_edition_json
 from ..export.markdown_writer import edition_to_markdown
 from ..ingestion.discovery import discover_page_images, extract_edition_date
+from ..preprocessing.image_converter import convert_edition_images
 from ..config.paths import REPO_ROOT
 from ..ingestion.pathing import RunPaths
 from ..merging.llm_merge import merge_edition_articles
 from ..recognition.docai_provider import DocAIError
 from ..shared.console import banner, stage, substep, success, warning, error, file_written, page_progress, print_summary_table
 from .ad_enrichment import enrich_edition
+from .content_rescue import triage_edition
 from .page_pipeline import extract_page_docai, structure_and_link_page
 
 
@@ -62,6 +66,9 @@ def process_edition(
         git_commit_hash=_get_git_commit_hash(str(REPO_ROOT)),
         start_time=datetime.now(timezone.utc).isoformat(),
     )
+
+    # ── Phase 0: Convert TIF scans to optimized PNG ──────────
+    convert_edition_images(edition_dir)
 
     image_files = discover_page_images(edition_dir)
     if not image_files:
@@ -96,7 +103,7 @@ def process_edition(
     banner(edition_date, len(image_files), output_edition_abs, resolved_run_id, edition_ocr_output or "")
 
     # ── Phase 1: DocAI extraction (all pages, fail-fast) ──────────
-    stage("DocAI extraction", 1, 5)
+    stage("DocAI extraction", 1, 6)
 
     docai_results: dict[str, tuple] = {}  # img_path -> (docai_result, preprocessed_image, regions)
     page_diag_map: dict[str, PageDiagnostics] = {}
@@ -151,7 +158,7 @@ def process_edition(
     success(f"Phase 1 done: {phase1_succeeded}/{len(image_files)} pages extracted via DocAI")
 
     # ── Phase 2: Gemini structuring (all pages) ───────────────────
-    stage("Gemini structuring", 2, 5)
+    stage("Gemini structuring", 2, 6)
 
     page_results: list[tuple[str, Any]] = []
 
@@ -194,10 +201,13 @@ def process_edition(
     report.pages_processed = len(page_results)
     success(f"Phase 2 done: {len(page_results)}/{len(image_files)} pages structured")
 
+    # Free preprocessed images — Phase 3+ only needs article text
+    docai_results.clear()
+
     # ── Phase 3: Cross-page merge ─────────────────────────────────
     edition_json_path = os.path.join(edition_output, "edition.json")
     if page_results:
-        stage("Cross-page merge", 3, 5)
+        stage("Cross-page merge", 3, 6)
         substep(f"Merging articles across pages for {edition_date}...")
         merged = merge_edition_articles(client, page_results, report=report, snapshots_dir=snapshots_dir)
         save_snapshot(snapshots_dir, "post_merge_edition.json", merged)
@@ -228,6 +238,32 @@ def process_edition(
             merged = EditionContent(articles=all_articles, ads=all_ads, other_content=all_other)
             substep(f"{len(merged.articles)} unmerged articles")
 
+        # ── Drop articles linked to failed pages ──
+        failed_pages = set()
+        for pd in report.page_diagnostics:
+            if pd.error and pd.final_article_count == 0 and pd.final_ad_count == 0:
+                # page_number may be empty if page failed before Gemini assigned it
+                pg = pd.page_number or ""
+                if not pg and pd.filename:
+                    from .page_pipeline import _extract_page_number_from_filename
+                    pg = _extract_page_number_from_filename(pd.filename) or ""
+                if pg:
+                    failed_pages.add(str(pg))
+
+        if failed_pages and merged:
+            before = len(merged.articles)
+            merged.articles = [
+                a for a in merged.articles
+                if not (
+                    a.continues_on in failed_pages
+                    or a.continued_from in failed_pages
+                    or any(p in failed_pages for p in a.source_pages)
+                )
+            ]
+            dropped = before - len(merged.articles)
+            if dropped:
+                warning(f"Dropped {dropped} articles linked to failed pages {sorted(failed_pages)}")
+
         if merged:
             md = edition_to_markdown(edition_date, merged)
             merged_dir = edition_ocr_output if edition_ocr_output else output_dir
@@ -254,7 +290,7 @@ def process_edition(
 
     # ── Phase 4: Ad enrichment ────────────────────────────────────
     if os.path.isfile(edition_json_path):
-        stage("Ad enrichment", 4, 5)
+        stage("Ad enrichment", 4, 6)
         substep(f"Enriching ads for {edition_date}...")
         try:
             performed, tokens, elapsed = enrich_edition(edition_json_path, client)
@@ -265,13 +301,26 @@ def process_edition(
         except Exception as exc:
             warning(f"Ad enrichment failed (non-fatal): {exc}")
 
-    # ── Phase 5: Summary + diagnostics ────────────────────────────
+    # ── Phase 5: Content triage ────────────────────────────────────
+    if os.path.isfile(edition_json_path):
+        stage("Content triage", 5, 6)
+        substep(f"Triaging content for {edition_date}...")
+        try:
+            performed, tokens, elapsed = triage_edition(edition_json_path, client)
+            if performed:
+                substep(f"Content triage: {tokens} tokens, {elapsed:.1f}s")
+            else:
+                substep("Content triage: skipped (already triaged or nothing to triage)")
+        except Exception as exc:
+            warning(f"Content triage failed (non-fatal): {exc}")
+
+    # ── Phase 6: Summary + diagnostics ────────────────────────────
     report.total_time_seconds = time.time() - pipeline_start
     report.finalize()
 
     _write_diagnostics_and_issues(report, edition_ocr_output, edition_output, snapshots_dir, edition_json_path)
 
-    stage("Summary", 5, 5)
+    stage("Summary", 6, 6)
     print_summary_table(report)
 
 

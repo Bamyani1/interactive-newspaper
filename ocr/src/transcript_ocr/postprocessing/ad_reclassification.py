@@ -8,7 +8,6 @@ from ..contracts.content_models import Ad, Article, PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer
 from ..shared.console import substep
 from .byline_cleanup import _split_author_position, _normalize_byline
-from .proper_noun_corrections import _apply_proper_noun_corrections, _check_proper_noun_consistency
 
 _AD_SIGNALS = [
     r"\$\d",
@@ -71,10 +70,6 @@ def postprocess_page_content(
                 )
         else:
             final_articles.append(art)
-
-    corrections = _check_proper_noun_consistency(final_articles, diag=diag)
-    if corrections:
-        final_articles = _apply_proper_noun_corrections(final_articles, corrections, diag=diag)
 
     if diag is not None:
         diag.timings["postprocess"] = timer.stop()

@@ -89,15 +89,15 @@ function loadFirstImage(article) {
 async function main() {
     const start = Date.now();
 
-    console.log(`\nTranscript Archive — Embedding Generator`);
+    console.log(`\nThe Transcript Archive — Embedding Generator`);
     console.log(
         `Mode: ${isForce ? "FORCE (re-embed all)" : isDryRun ? "DRY RUN (estimate only)" : "INCREMENTAL (skip existing)"}\n`,
     );
 
-    // Fetch articles that need embedding (include edition_date + category for contextual embedding)
+    // Fetch articles that need embedding (include edition_date + category + summary + image_caption for contextual embedding)
     const articles = isForce
-        ? await sql`SELECT id, headline, byline, body_plain, edition_date, category, image_urls FROM articles ORDER BY id`
-        : await sql`SELECT id, headline, byline, body_plain, edition_date, category, image_urls FROM articles WHERE embedding IS NULL ORDER BY id`;
+        ? await sql`SELECT id, headline, byline, body_plain, edition_date, category, summary, image_caption, image_urls FROM articles ORDER BY id`
+        : await sql`SELECT id, headline, byline, body_plain, edition_date, category, summary, image_caption, image_urls FROM articles WHERE embedding IS NULL ORDER BY id`;
 
     if (articles.length === 0) {
         console.log("All articles already have embeddings. Nothing to do.");
@@ -115,6 +115,8 @@ async function main() {
                 body_plain: a.body_plain,
                 edition_date: a.edition_date,
                 category: a.category,
+                summary: a.summary,
+                image_caption: a.image_caption,
             }).length,
         0,
     );
@@ -149,6 +151,8 @@ async function main() {
                 body_plain: a.body_plain,
                 edition_date: a.edition_date,
                 category: a.category,
+                summary: a.summary,
+                image_caption: a.image_caption,
                 imageBase64: img?.base64,
                 imageMimeType: img?.mimeType,
             });

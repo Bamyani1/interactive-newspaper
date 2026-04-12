@@ -2,24 +2,19 @@
 
 from __future__ import annotations
 
-import re
-
-
-def _normalize_for_compare(text: str) -> str:
-    """Collapse whitespace for sentence comparison."""
-    return re.sub(r"\s+", " ", text.strip()).lower()
+from ..shared.text import normalize_for_compare, split_sentences
 
 
 def _last_sentence(text: str) -> str:
     """Extract the last sentence from text."""
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    return sentences[-1].strip() if sentences else ""
+    sentences = split_sentences(text)
+    return sentences[-1] if sentences else ""
 
 
 def _first_sentence(text: str) -> str:
     """Extract the first sentence from text."""
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    return sentences[0].strip() if sentences else ""
+    sentences = split_sentences(text)
+    return sentences[0] if sentences else ""
 
 
 def clean_merge_boundary(seg1: str, seg2: str) -> str:
@@ -73,7 +68,7 @@ def clean_merge_boundary(seg1: str, seg2: str) -> str:
     # --- Duplicate sentence removal at seam ---
     last_sent = _last_sentence(seg1)
     first_sent = _first_sentence(seg2)
-    if last_sent and first_sent and _normalize_for_compare(last_sent) == _normalize_for_compare(first_sent):
+    if last_sent and first_sent and normalize_for_compare(last_sent) == normalize_for_compare(first_sent):
         # Remove the duplicate from seg2
         idx = seg2.find(first_sent)
         if idx != -1:

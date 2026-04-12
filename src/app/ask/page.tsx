@@ -60,14 +60,9 @@ export default function AskPage() {
 
             {answer && (
               <div ref={answerRef} tabIndex={-1} className="outline-none ask-answer-enter">
-                {answer.mode === "visual" ? (
-                  <TimelineGallery response={answer} />
-                ) : (
-                  <>
-                    <AnswerPanel response={answer} />
-                    <SourceList sources={answer.sourceArticles} />
-                  </>
-                )}
+                {answer.mode === "visual" && <TimelineGallery response={answer} />}
+                <AnswerPanel response={answer} />
+                <SourceList sources={answer.sourceArticles} />
               </div>
             )}
           </div>

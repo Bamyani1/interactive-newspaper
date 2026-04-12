@@ -28,6 +28,7 @@ SCRIPT="$ROOT_DIR/scripts/ocr/process-edition.sh"
 PARALLEL=1
 DRY_RUN=false
 FROM_STAGE=""
+WORKERS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -59,9 +60,17 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --workers)
+      WORKERS="${2:-}"
+      if [[ -z "$WORKERS" ]]; then
+        echo "ERROR: --workers requires a number"
+        exit 1
+      fi
+      shift 2
+      ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: scripts/ocr/process-unprocessed.sh [--parallel N] [--dry-run] [--inbox DIR] [--from-stage N]"
+      echo "Usage: scripts/ocr/process-unprocessed.sh [--parallel N] [--dry-run] [--inbox DIR] [--from-stage N] [--workers N]"
       exit 1
       ;;
   esac
@@ -71,6 +80,9 @@ done
 PASS_THROUGH_ARGS=""
 if [[ -n "$FROM_STAGE" ]]; then
   PASS_THROUGH_ARGS="--from-stage $FROM_STAGE"
+fi
+if [[ -n "$WORKERS" ]]; then
+  PASS_THROUGH_ARGS="$PASS_THROUGH_ARGS --workers $WORKERS"
 fi
 
 # ── Helpers ─────────────────────────────────────────────────────
@@ -106,13 +118,18 @@ fi
 echo "Found ${#EDITIONS[@]} edition(s) to process:"
 for dir in "${EDITIONS[@]}"; do
   DATE=$(basename "$dir" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
-  PAGE_COUNT=$(find "$dir" -name "*.tif" 2>/dev/null | wc -l | tr -d ' ')
+  PAGE_COUNT=$(find "$dir" \( -name "*.tif" -o -name "*.tiff" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" \) 2>/dev/null | wc -l | tr -d ' ')
   echo "  - $DATE ($PAGE_COUNT pages)"
 done
 echo ""
 
 if [[ -n "$FROM_STAGE" ]]; then
   echo "Resuming from stage $FROM_STAGE (stages 1-$((FROM_STAGE - 1)) will be skipped)"
+  echo ""
+fi
+
+if [[ -n "$WORKERS" ]]; then
+  echo "Workers per edition: $WORKERS"
   echo ""
 fi
 
@@ -170,6 +187,8 @@ else
     local log_dir="$ROOT_DIR/ocr/runs/$date"
     mkdir -p "$log_dir"
 
+    echo "  ▶ $date starting..."
+
     local exit_code=0
     # shellcheck disable=SC2086
     bash "$SCRIPT" "$dir" $PASS_THROUGH_ARGS_STR > "$log_dir/pipeline.log" 2>&1 || exit_code=$?
@@ -178,7 +197,14 @@ else
     echo "$exit_code" > "$XARGS_RESULTS_DIR/$date.result"
 
     if [[ $exit_code -eq 0 ]]; then
-      echo "  ✓ $date completed"
+      # Extract article/ad counts from pipeline summary
+      local arts=0 ads=0 secs=0
+      if [[ -f "$log_dir/pipeline-summary.json" ]]; then
+        arts=$(python3 -c "import json; print(json.load(open('$log_dir/pipeline-summary.json')).get('article_count',0))" 2>/dev/null) || arts=0
+        ads=$(python3 -c "import json; print(json.load(open('$log_dir/pipeline-summary.json')).get('ad_count',0))" 2>/dev/null) || ads=0
+        secs=$(python3 -c "import json; print(json.load(open('$log_dir/pipeline-summary.json')).get('total_seconds',0))" 2>/dev/null) || secs=0
+      fi
+      echo "  ✓ $date completed (${secs}s, ${arts} articles, ${ads} ads)"
     else
       echo "  ✗ $date FAILED (exit $exit_code, see ocr/runs/$date/pipeline.log)"
     fi

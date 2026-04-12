@@ -21,22 +21,22 @@ import sharp from "sharp";
 import Potrace from "oslllo-potrace";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SOURCE_IMAGE = join(__dirname, "..", "public", "1.png");
-const OUTPUT_PATH = join(__dirname, "..", "public", "shape", "stained-glass-animated.svg");
+const SOURCE_IMAGE = join(__dirname, "..", "..", "public", "shape", "stained-glass-texture.png");
+const OUTPUT_PATH = join(__dirname, "..", "..", "public", "shape", "stained-glass-animated.svg");
 
 // -- Config --
-const TRACE_W = 960;
-const TRACE_H = 600;
+const TRACE_W = 2880;
+const TRACE_H = 1800;
 const VIEWBOX_W = 1920;
 const VIEWBOX_H = 1200;
-const TURD_SIZE = 40;
-const OPT_TOLERANCE = 0.8;
-const ALPHA_MAX = 1.5;
-const CLUSTER_DIST = 8;
-const MIN_CLUSTER_AREA = 500;
-const MIN_CLUSTER_SPAN = 30;
-const MAX_CLUSTER_DIM = 600;
-const MAX_CLUSTERS_PER_COLOR = 80;
+const TURD_SIZE = 2;
+const OPT_TOLERANCE = 0.2;
+const ALPHA_MAX = 0.8;
+const CLUSTER_DIST = -1;
+const MIN_CLUSTER_AREA = 30;
+const MIN_CLUSTER_SPAN = 4;
+const MAX_CLUSTER_DIM = 250;
+const MAX_CLUSTERS_PER_COLOR = 1100;
 
 // Color definitions (HSL-based)
 // hueRange: [min, max] in degrees (wraps for red), null = any hue
@@ -45,7 +45,7 @@ const COLOR_DEFS = [
   { id: "orange", hueRange: [12, 28], satMin: 35, lRange: [15, 82], fill: "#c06020", glow: "#ff9040", stroke: "#804018" },
   { id: "gold", hueRange: [28, 58], satMin: 40, lRange: [15, 82], fill: "#c09030", glow: "#ffd060", stroke: "#806020" },
   { id: "cyan", hueRange: [165, 218], satMin: 30, lRange: [15, 82], fill: "#3090a8", glow: "#60d0f0", stroke: "#1a6080" },
-  { id: "dark", hueRange: null, satMin: 0, lRange: [0, 18], fill: "#1a1008", glow: "#503a20", stroke: "#0d0804" },
+  { id: "dark", hueRange: null, satMin: 0, lRange: [0, 18], fill: "#1a1008", glow: "#503a20", stroke: "#0d0804", maxPanels: 20 },
   { id: "bright", hueRange: null, satMin: 0, lRange: [82, 100], fill: "#e8e0d0", glow: "#ffffff", stroke: "#a09880" },
 ];
 
@@ -167,9 +167,9 @@ async function cleanupMask(maskBuffer) {
   // median(3) removes salt-and-pepper noise from anti-aliased color boundaries
   // blur(0.5) + threshold(128) approximates a gentle close (erode + dilate)
   return await sharp(maskBuffer, { raw: { width: TRACE_W, height: TRACE_H, channels: 1 } })
-    .blur(0.5)
+    .blur(0.3)
     .threshold(128)
-    .median(3)
+    .median(1)
     .png()
     .toBuffer();
 }
@@ -289,6 +289,19 @@ function makeUF(n) {
 function clusterPaths(pathsWithBBoxes) {
   const n = pathsWithBBoxes.length;
   if (n === 0) return [];
+
+  // No-clustering mode: each raw path becomes its own panel
+  if (CLUSTER_DIST < 0) {
+    const singles = pathsWithBBoxes
+      .map((p) => {
+        const w = p.bbox.maxX - p.bbox.minX;
+        const h = p.bbox.maxY - p.bbox.minY;
+        return { paths: [p.d], bbox: p.bbox, area: w * h };
+      })
+      .filter((c) => c.area >= MIN_CLUSTER_AREA || Math.max(c.bbox.maxX - c.bbox.minX, c.bbox.maxY - c.bbox.minY) >= MIN_CLUSTER_SPAN);
+    singles.sort((a, b) => b.area - a.area);
+    return singles.slice(0, MAX_CLUSTERS_PER_COLOR);
+  }
 
   const uf = makeUF(n);
   const clusterBBox = pathsWithBBoxes.map((p) => ({ ...p.bbox }));
@@ -798,6 +811,9 @@ async function main() {
     console.log(`  Paths with valid bboxes: ${pathsWithBBoxes.length}`);
 
     const clusters = clusterPaths(pathsWithBBoxes);
+    if (colorDef.maxPanels && clusters.length > colorDef.maxPanels) {
+      clusters.length = colorDef.maxPanels;
+    }
     classifyClusters(clusters);
     console.log(`  Final clusters: ${clusters.length}`);
 

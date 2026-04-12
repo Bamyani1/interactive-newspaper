@@ -211,13 +211,15 @@ export function buildEmbeddingText(article: {
   body_plain: string;
   edition_date?: string | null;
   category?: string | null;
+  summary?: string | null;
+  image_caption?: string | null;
 }): string {
   const bodyParts: string[] = [];
 
   // Contextual preamble
   if (article.edition_date || article.category) {
     const ctx = [
-      "From The Transcript (Ohio Wesleyan University newspaper)",
+      "From The Transcript Archive (Ohio Wesleyan University newspaper)",
       article.edition_date,
       article.category ? `${article.category} section` : null,
     ]
@@ -227,6 +229,10 @@ export function buildEmbeddingText(article: {
   }
 
   if (article.byline) bodyParts.push(article.byline);
+  // Summary (article lede) — most semantically dense sentence, prepended for prominence
+  if (article.summary) bodyParts.push(article.summary);
+  // Image caption — gives visual articles semantic signal from photo content
+  if (article.image_caption) bodyParts.push(`[Photo: ${article.image_caption}]`);
   if (article.body_plain) bodyParts.push(article.body_plain);
 
   const body = bodyParts.join("\n\n").trim();
@@ -262,6 +268,8 @@ export function buildEmbeddingInput(article: {
   body_plain: string;
   edition_date?: string | null;
   category?: string | null;
+  summary?: string | null;
+  image_caption?: string | null;
   imageBase64?: string;
   imageMimeType?: string;
 }): EmbedInput {

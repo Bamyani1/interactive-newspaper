@@ -34,15 +34,23 @@ class ArticleImage(BaseModel):
 
 
 class Article(BaseModel):
-    headline: str
+    headline: str = Field(
+        description="Primary headline only — the main title in large/bold type. Exclude subheadlines, deck text, and kickers.",
+    )
     author: str = ""
     writer_position: str = ""
     category: Literal["Campus News", "News", "Sports", "Arts & Entertainment", "Opinion"] = Field(
         default="Campus News",
         description="Must be exactly one of: Campus News, News, Sports, Arts & Entertainment, Opinion",
     )
-    continues_on: str = ""
-    continued_from: str = ""
+    continues_on: str = Field(
+        default="",
+        description="Page number (digits only) where this article continues, or '?' if ambiguous. Empty string if none.",
+    )
+    continued_from: str = Field(
+        default="",
+        description="Page number (digits only) where this article continues from. Empty string if none.",
+    )
     body: str
     images: list[ArticleImage] = []
     image_files: list[str] = []
@@ -68,16 +76,25 @@ class PageContent(BaseModel):
 
 
 class MergedArticle(BaseModel):
-    headline: str
+    headline: str = Field(
+        default="",
+        description="Primary headline only — the main title in large/bold type. Exclude subheadlines, deck text, and kickers.",
+    )
     author: str = ""
     writer_position: str = ""
     category: Literal["Campus News", "News", "Sports", "Arts & Entertainment", "Opinion"] = Field(
         default="Campus News",
         description="Must be exactly one of: Campus News, News, Sports, Arts & Entertainment, Opinion",
     )
-    continues_on: str = ""
-    continued_from: str = ""
-    body: str
+    continues_on: str = Field(
+        default="",
+        description="Page number (digits only) where this article continues, or '?' if ambiguous. Empty string if none.",
+    )
+    continued_from: str = Field(
+        default="",
+        description="Page number (digits only) where this article continues from. Empty string if none.",
+    )
+    body: str = ""
     images: list[ArticleImage] = []
     image_files: list[str] = []
     source_pages: list[str] = []
@@ -103,25 +120,68 @@ class MergeDecisions(BaseModel):
 
 class ImageRegionAssignment(BaseModel):
     region_number: int
-    content_type: str
-    content_index: int = -1
-    caption: str = ""
+    content_type: Literal["article", "ad", "standalone", "text_ad", "not_image"] = Field(
+        description="Type of content in this region: article photo, ad image, standalone image, text-only ad, or scanner noise/artifact",
+    )
+    content_index: int = Field(
+        default=-1,
+        description="0-based index into the article or ad list. Use -1 for standalone, text_ad, or not_image.",
+    )
+    caption: str = Field(
+        default="",
+        description="Brief description of what the image shows. Leave empty for text_ad and not_image.",
+    )
 
 
 class ImageRegionAssignments(BaseModel):
     assignments: list[ImageRegionAssignment]
 
 
+class SuspectArticleDecision(BaseModel):
+    index: int = Field(description="0-based index into the suspect articles list")
+    decision: Literal["keep", "demote"] = Field(
+        description="'keep' = real article, stays. 'demote' = not a real article, move to other_content.",
+    )
+
+
+class OtherContentDecision(BaseModel):
+    index: int = Field(description="0-based index into the other content list")
+    decision: Literal["promote", "keep"] = Field(
+        description="'promote' = real article, move to articles. 'keep' = stays in other_content.",
+    )
+    headline: str = Field(
+        default="",
+        description="For promoted items: a clean headline. Empty for 'keep'.",
+    )
+    category: Literal["Campus News", "News", "Sports", "Arts & Entertainment", "Opinion"] = Field(
+        default="Campus News",
+        description="For promoted items: article category. Ignored for 'keep'.",
+    )
+
+
+class ContentTriageResponse(BaseModel):
+    suspect_articles: list[SuspectArticleDecision]
+    other_content: list[OtherContentDecision]
+
+
 class EnrichedAd(BaseModel):
     business_name: str
     body: str
     image_files: list[str]
-    category: str
-    ad_type: str
-    display_text: str
-    phone: str
-    address: str
-    price: str
+    category: Literal[
+        "Food & Drink", "Entertainment", "Services", "Retail",
+        "Greek Life", "Jobs", "Housing", "Education", "Events", "Other",
+    ] = Field(description="Business category")
+    ad_type: Literal["display", "classified"] = Field(
+        description="'classified' ONLY for brief text-only listings (job postings, want-ads). Everything else is 'display'.",
+    )
+    display_text: str = Field(
+        default="",
+        description="Condensed ~150 char summary of the ad's key message.",
+    )
+    phone: str = ""
+    address: str = ""
+    price: str = ""
 
 
 class EnrichedAdsResponse(BaseModel):
@@ -134,6 +194,7 @@ __all__ = [
     "Ad",
     "Article",
     "ArticleImage",
+    "ContentTriageResponse",
     "EditionContent",
     "EnrichedAd",
     "EnrichedAdsResponse",
@@ -143,5 +204,7 @@ __all__ = [
     "MergeInstruction",
     "MergedArticle",
     "OtherContent",
+    "OtherContentDecision",
     "PageContent",
+    "SuspectArticleDecision",
 ]

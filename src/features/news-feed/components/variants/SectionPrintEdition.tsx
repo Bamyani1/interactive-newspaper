@@ -156,7 +156,7 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
                       />
                       {article.imageUrls.length > 1 && (
                         <ImageGallery
-                          images={article.imageUrls.slice(1, 2).map((url, i) => ({
+                          images={article.imageUrls.slice(1).map((url, i) => ({
                             src: url,
                             caption: article.imageCaptions?.[i + 1],
                           }))}

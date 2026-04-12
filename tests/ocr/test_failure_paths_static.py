@@ -82,7 +82,8 @@ def test_docai_failure_aborts_and_writes_diagnostics(tmp_path, monkeypatch):
     """When DocAI fails on any page, the edition aborts and writes diagnostics."""
     edition_dir = tmp_path / "ocr" / "scans" / "1970-01-01"
     edition_dir.mkdir(parents=True, exist_ok=True)
-    (edition_dir / "Page 01.jpg").write_bytes(b"x")
+    from PIL import Image
+    Image.new("L", (100, 100), color=128).save(str(edition_dir / "Page 01.png"), format="PNG")
 
     public_root = tmp_path / "public" / "editions"
     ocr_root = tmp_path / "ocr" / "output"

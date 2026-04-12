@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import io
+
 from PIL import Image
 from google.genai import types
 
-from ..config.constants import GEMINI_PAGE_MODEL
+from ..config.prompts_loader import MODELS
 from ..contracts.content_models import ImageRegionAssignments, PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer, TokenUsage
 from ..recognition.prompts import IMAGE_MATCHING_PROMPT, SAFETY_OFF
@@ -50,16 +52,25 @@ def match_images_visual(
     prompt = IMAGE_MATCHING_PROMPT.format(content_list=content_list, num_regions=num_regions)
 
     try:
+        img_model_cfg = MODELS["image_matching"]
+        img_thinking = types.ThinkingConfig(thinking_level=img_model_cfg["thinking"]) if img_model_cfg.get("thinking") else None
+
+        # Encode image to optimized PNG bytes — avoids SDK's wasteful re-encoding
+        buf = io.BytesIO()
+        annotated_image.save(buf, format="PNG", optimize=True)
+        image_part = types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png")
+
         response = gemini_generate_with_retry(
             client,
-            model=GEMINI_PAGE_MODEL,
-            contents=[annotated_image, prompt],
+            model=img_model_cfg["name"],
+            contents=[image_part, prompt],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=ImageRegionAssignments,
                 safety_settings=SAFETY_OFF,
                 media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
-                max_output_tokens=4096,
+                max_output_tokens=65536,
+                **({"thinking_config": img_thinking} if img_thinking else {}),
             ),
         )
 

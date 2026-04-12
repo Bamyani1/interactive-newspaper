@@ -16,6 +16,7 @@ function makeSource(overrides: Partial<SourceArticle> = {}): SourceArticle {
     byline: "Test Author",
     bodySnippet: "This is a snippet of the article body...",
     distance: 0.25,
+    imageUrls: [],
     ...overrides,
   };
 }
