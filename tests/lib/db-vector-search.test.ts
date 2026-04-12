@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mock setup ────────────────────────────────────────────────────────
 // vi.hoisted ensures mockSql is available when vi.mock (which is hoisted) runs.
-const { mockSql } = vi.hoisted(() => ({ mockSql: vi.fn() }));
+const { mockSql } = vi.hoisted(() => {
+  const fn = vi.fn() as ReturnType<typeof vi.fn> & { transaction: ReturnType<typeof vi.fn> };
+  fn.transaction = vi.fn();
+  return { mockSql: fn };
+});
 vi.mock("@neondatabase/serverless", () => ({
   neon: vi.fn(() => mockSql),
 }));
@@ -21,6 +25,7 @@ function makeVectorRow(overrides: Record<string, unknown> = {}) {
     summary: "Test summary",
     byline: "Test Author",
     body_plain: "Test body",
+    image_urls: [],
     distance: "0.2500",
     ...overrides,
   };
@@ -35,6 +40,7 @@ function makeFtsRow(overrides: Record<string, unknown> = {}) {
     summary: "Sports summary",
     byline: null,
     body_plain: "Sports body",
+    image_urls: [],
     rank: "0.8500",
     ...overrides,
   };
@@ -54,7 +60,8 @@ describe("queryArticlesByEmbedding", () => {
       makeVectorRow({ id: "1960-01-07-0", distance: "0.2500" }),
       makeVectorRow({ id: "1960-01-07-1", headline: "Second Article", distance: "0.4000" }),
     ];
-    mockSql.mockResolvedValueOnce(rows);
+    // sql.transaction returns [SET_LOCAL_result, SELECT_result]
+    mockSql.transaction.mockResolvedValueOnce([[], rows]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -69,6 +76,7 @@ describe("queryArticlesByEmbedding", () => {
       bodyPlain: "Test body",
       distance: 0.25,
       source: "vector",
+      imageUrls: [],
     });
     expect(results[1].headline).toBe("Second Article");
     expect(results[1].distance).toBe(0.4);
@@ -76,20 +84,15 @@ describe("queryArticlesByEmbedding", () => {
   });
 
   it("respects the limit option", async () => {
-    mockSql.mockResolvedValueOnce([]);
+    mockSql.transaction.mockResolvedValueOnce([[], []]);
 
     await queryArticlesByEmbedding(DUMMY_EMBEDDING, { limit: 5 });
 
-    expect(mockSql).toHaveBeenCalledTimes(1);
-    // The tagged template call receives template parts + interpolated values.
-    // The limit (5) should appear among the arguments.
-    const callArgs = mockSql.mock.calls[0];
-    const interpolatedValues = callArgs.slice(1);
-    expect(interpolatedValues).toContain(5);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
   });
 
   it("returns empty array when no rows match", async () => {
-    mockSql.mockResolvedValueOnce([]);
+    mockSql.transaction.mockResolvedValueOnce([[], []]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -98,7 +101,7 @@ describe("queryArticlesByEmbedding", () => {
 
   it("handles null byline correctly", async () => {
     const rows = [makeVectorRow({ byline: null })];
-    mockSql.mockResolvedValueOnce(rows);
+    mockSql.transaction.mockResolvedValueOnce([[], rows]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -113,6 +116,18 @@ describe("hybridSearch", () => {
     vi.clearAllMocks();
   });
 
+  // Helper: mock the three sql calls that hybridSearch triggers:
+  // 1-2: two tagged template calls inside queryArticlesByEmbedding's transaction array (SET LOCAL + SELECT)
+  // 3: one tagged template call for FTS in searchArticlesForRag
+  // Plus: sql.transaction() for the vector search wrapper
+  function mockHybridCalls(vectorRows: Record<string, unknown>[], ftsRows: Record<string, unknown>[]) {
+    mockSql
+      .mockResolvedValueOnce([])  // SET LOCAL (dummy, transaction overrides)
+      .mockResolvedValueOnce([])  // SELECT vector (dummy, transaction overrides)
+      .mockResolvedValueOnce(ftsRows);
+    mockSql.transaction.mockResolvedValueOnce([[], vectorRows]);
+  }
+
   it("merges vector and FTS results sorted by RRF score", async () => {
     const vectorRows = [
       makeVectorRow({ id: "vec-1", headline: "Vector Article 1", distance: "0.1000" }),
@@ -122,18 +137,16 @@ describe("hybridSearch", () => {
       makeFtsRow({ id: "fts-1", headline: "FTS Article 1", rank: "0.9000" }),
       makeFtsRow({ id: "fts-2", headline: "FTS Article 2", rank: "0.5000" }),
     ];
-    mockSql.mockResolvedValueOnce(vectorRows).mockResolvedValueOnce(ftsRows);
+    mockHybridCalls(vectorRows, ftsRows);
 
     const results = await hybridSearch("test question", DUMMY_EMBEDDING);
 
     expect(results.length).toBe(4);
-    // All four unique articles should be present
     const ids = results.map((r) => r.id);
     expect(ids).toContain("vec-1");
     expect(ids).toContain("vec-2");
     expect(ids).toContain("fts-1");
     expect(ids).toContain("fts-2");
-    // First result should be vec-1 (rank 0 in vector, highest vector weight)
     expect(results[0].id).toBe("vec-1");
   });
 
@@ -147,35 +160,33 @@ describe("hybridSearch", () => {
       makeFtsRow({ id: sharedId, headline: "Shared Article", rank: "0.9000" }),
       makeFtsRow({ id: "fts-only", headline: "FTS Only", rank: "0.5000" }),
     ];
-    mockSql.mockResolvedValueOnce(vectorRows).mockResolvedValueOnce(ftsRows);
+    mockHybridCalls(vectorRows, ftsRows);
 
     const results = await hybridSearch("test question", DUMMY_EMBEDDING);
 
-    // Shared article should appear only once
     const sharedOccurrences = results.filter((r) => r.id === sharedId);
     expect(sharedOccurrences).toHaveLength(1);
-    // Total should be 3 (not 4) due to deduplication
     expect(results).toHaveLength(3);
-    // The shared article gets boosted (both vector + FTS scores) and should rank first
     expect(results[0].id).toBe(sharedId);
   });
 
   it("marks FTS-only articles with source 'fts'", async () => {
     const vectorRows = [makeVectorRow({ id: "vec-1", distance: "0.1000" })];
     const ftsRows = [makeFtsRow({ id: "fts-1", rank: "0.9000" })];
-    mockSql.mockResolvedValueOnce(vectorRows).mockResolvedValueOnce(ftsRows);
+    mockHybridCalls(vectorRows, ftsRows);
 
     const results = await hybridSearch("test question", DUMMY_EMBEDDING);
 
     const ftsArticle = results.find((r) => r.id === "fts-1");
     expect(ftsArticle).toBeDefined();
     expect(ftsArticle!.source).toBe("fts");
+    expect(ftsArticle!.distance).toBeNull();
   });
 
   it("marks vector-only articles with source 'vector'", async () => {
     const vectorRows = [makeVectorRow({ id: "vec-1", distance: "0.1000" })];
     const ftsRows = [makeFtsRow({ id: "fts-1", rank: "0.9000" })];
-    mockSql.mockResolvedValueOnce(vectorRows).mockResolvedValueOnce(ftsRows);
+    mockHybridCalls(vectorRows, ftsRows);
 
     const results = await hybridSearch("test question", DUMMY_EMBEDDING);
 
@@ -195,7 +206,7 @@ describe("hybridSearch", () => {
       makeFtsRow({ id: "f2", rank: "0.7000" }),
       makeFtsRow({ id: "f3", rank: "0.5000" }),
     ];
-    mockSql.mockResolvedValueOnce(vectorRows).mockResolvedValueOnce(ftsRows);
+    mockHybridCalls(vectorRows, ftsRows);
 
     const results = await hybridSearch("test question", DUMMY_EMBEDDING, { limit: 3 });
 

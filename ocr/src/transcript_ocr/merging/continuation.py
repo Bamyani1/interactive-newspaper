@@ -96,6 +96,12 @@ def _strip_continuation_markers(text: str) -> str:
     return re.sub(r" +", " ", text).strip()
 
 
+_STOP_WORDS = frozenset({
+    "the", "a", "an", "of", "in", "on", "at", "to", "for",
+    "and", "or", "is", "are", "by", "with", "from", "its",
+})
+
+
 def _headline_similar(h1: str, h2: str) -> bool:
     """Check if two headlines are similar enough for one-sided merge."""
     if not h1 or not h2:
@@ -104,7 +110,16 @@ def _headline_similar(h1: str, h2: str) -> bool:
     b = re.sub(r"^(continued|con't\.?)\s*[-:—]?\s*", "", h2, flags=re.IGNORECASE).strip().lower()
     if not a or not b:
         return False
-    return a in b or b in a
+    # Substring check (still valid for exact containment)
+    if a in b or b in a:
+        return True
+    # Word overlap for partial matches
+    words_a = set(a.split()) - _STOP_WORDS
+    words_b = set(b.split()) - _STOP_WORDS
+    if not words_a or not words_b:
+        return False
+    overlap = len(words_a & words_b)
+    return overlap / min(len(words_a), len(words_b)) >= 0.5
 
 
 extract_continuation_info = _extract_continuation_info

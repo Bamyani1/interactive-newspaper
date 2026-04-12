@@ -197,8 +197,9 @@ export interface RetrievedArticle {
   summary: string;
   byline: string | null;
   bodyPlain: string;
-  distance: number;
-  source: "vector" | "fts";
+  distance: number | null;
+  source: "vector" | "fts" | "both";
+  imageUrls: string[];
 }
 
 interface VectorSearchOptions {
@@ -206,11 +207,13 @@ interface VectorSearchOptions {
   category?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  onlyWithImages?: boolean;
 }
 
 /**
  * Retrieve articles by cosine similarity to a query embedding vector.
  * Uses the HNSW index for fast approximate nearest-neighbor search.
+ * Sets ef_search=100 (vs default 40) for better recall on our small corpus.
  */
 export async function queryArticlesByEmbedding(
   embeddingVec: number[],
@@ -220,21 +223,26 @@ export async function queryArticlesByEmbedding(
   const category = options.category ?? null;
   const startDate = options.startDate ?? null;
   const endDate = options.endDate ?? null;
+  const onlyWithImages = options.onlyWithImages ?? false;
   const vecStr = `[${embeddingVec.join(",")}]`;
 
-  const rows = await sql`
-    SELECT
-      a.id, a.edition_date, a.category, a.headline, a.summary,
-      a.byline, a.body_plain,
-      (a.embedding <=> ${vecStr}::vector) as distance
-    FROM articles a
-    WHERE a.embedding IS NOT NULL
-      AND (${category}::text IS NULL OR a.category = ${category})
-      AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-      AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-    ORDER BY a.embedding <=> ${vecStr}::vector
-    LIMIT ${limit}
-  `;
+  const [, rows] = await sql.transaction([
+    sql`SET LOCAL hnsw.ef_search = 100`,
+    sql`
+      SELECT
+        a.id, a.edition_date, a.category, a.headline, a.summary,
+        a.byline, a.body_plain, a.image_urls,
+        (a.embedding <=> ${vecStr}::vector) as distance
+      FROM articles a
+      WHERE a.embedding IS NOT NULL
+        AND (${category}::text IS NULL OR a.category = ${category})
+        AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+        AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+        AND (${onlyWithImages}::boolean = false OR (a.image_urls IS NOT NULL AND jsonb_array_length(a.image_urls) > 0))
+      ORDER BY a.embedding <=> ${vecStr}::vector
+      LIMIT ${limit}
+    `,
+  ]);
 
   return rows.map((r) => ({
     id: r.id,
@@ -246,6 +254,7 @@ export async function queryArticlesByEmbedding(
     bodyPlain: r.body_plain,
     distance: parseFloat(r.distance),
     source: "vector" as const,
+    imageUrls: r.image_urls ?? [],
   }));
 }
 
@@ -257,7 +266,7 @@ export async function queryArticlesByEmbedding(
 export async function hybridSearch(
   question: string,
   embeddingVec: number[],
-  options: { limit?: number; vectorWeight?: number; category?: string | null; startDate?: string | null; endDate?: string | null } = {},
+  options: { limit?: number; vectorWeight?: number; category?: string | null; startDate?: string | null; endDate?: string | null; onlyWithImages?: boolean } = {},
 ): Promise<RetrievedArticle[]> {
   const limit = options.limit ?? 8;
   const vectorWeight = options.vectorWeight ?? 0.7;
@@ -271,17 +280,20 @@ export async function hybridSearch(
       category: options.category,
       startDate: options.startDate,
       endDate: options.endDate,
+      onlyWithImages: options.onlyWithImages,
     }),
     searchArticlesForRag(question, {
       limit: fetchK,
       category: options.category ?? undefined,
       startDate: options.startDate ?? undefined,
       endDate: options.endDate ?? undefined,
+      onlyWithImages: options.onlyWithImages,
     }),
   ]);
 
   // Reciprocal Rank Fusion (RRF): score = sum(weight / (k + rank))
-  const RRF_K = 60; // standard RRF constant
+  // K=40 (vs standard 60) gives better rank differentiation for our small corpus
+  const RRF_K = 40;
   const scoreMap = new Map<string, { score: number; article: RetrievedArticle }>();
 
   // Score vector results
@@ -298,6 +310,7 @@ export async function hybridSearch(
     const existing = scoreMap.get(article.id);
     if (existing) {
       existing.score += rrfScore;
+      existing.article = { ...existing.article, source: "both" };
     } else {
       scoreMap.set(article.id, { score: rrfScore, article });
     }
@@ -316,22 +329,24 @@ export async function hybridSearch(
  */
 async function searchArticlesForRag(
   query: string,
-  options: { limit?: number; category?: string; startDate?: string; endDate?: string } = {},
+  options: { limit?: number; category?: string; startDate?: string; endDate?: string; onlyWithImages?: boolean } = {},
 ): Promise<RetrievedArticle[]> {
   const limit = options.limit ?? 20;
   const category = options.category ?? null;
   const startDate = options.startDate ?? null;
   const endDate = options.endDate ?? null;
+  const onlyWithImages = options.onlyWithImages ?? false;
 
   const rows = await sql`
     SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-           a.byline, a.body_plain,
+           a.byline, a.body_plain, a.image_urls,
            ts_rank(a.search_vector, q) as rank
     FROM articles a, websearch_to_tsquery('english', ${query}) q
     WHERE a.search_vector @@ q
       AND (${category}::text IS NULL OR a.category = ${category})
       AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
       AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+      AND (${onlyWithImages}::boolean = false OR (a.image_urls IS NOT NULL AND jsonb_array_length(a.image_urls) > 0))
     ORDER BY rank DESC
     LIMIT ${limit}
   `;
@@ -344,7 +359,8 @@ async function searchArticlesForRag(
     summary: r.summary,
     byline: r.byline ?? null,
     bodyPlain: r.body_plain,
-    distance: 0, // FTS doesn't produce cosine distance
+    distance: null, // FTS doesn't produce cosine distance
     source: "fts" as const,
+    imageUrls: r.image_urls ?? [],
   }));
 }

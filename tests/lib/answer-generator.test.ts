@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { RetrievedArticle } from "@/src/lib/db";
+import type { RankedArticle } from "@/src/lib/reranker";
 
 // ── Mock ─────────────────────────────────────────────────────────────
 
@@ -15,7 +15,7 @@ vi.mock("@google/genai", () => ({
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeArticle(overrides: Partial<RetrievedArticle> = {}): RetrievedArticle {
+function makeArticle(overrides: Partial<RankedArticle> = {}): RankedArticle {
   return {
     id: "1960-01-07-0",
     editionDate: "1960-01-07",
@@ -26,6 +26,8 @@ function makeArticle(overrides: Partial<RetrievedArticle> = {}): RetrievedArticl
     bodyPlain: "This is a test article body with enough content.",
     distance: 0.25,
     source: "vector",
+    imageUrls: [],
+    relevanceScore: 8, // default to "relevant" so confidence tests still work
     ...overrides,
   };
 }
@@ -133,6 +135,23 @@ describe("generateAnswer", () => {
 
       expect(result.citations).toEqual([]);
     });
+
+    it("strips preamble even with single newline separator", async () => {
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue({
+        text: "Relevant sources: [Source 1]\nThe campus held elections [Source 1].",
+      });
+
+      const articles = [
+        makeArticle({ id: "1960-01-07-0", headline: "Election Results" }),
+      ];
+
+      const result = await generateAnswer("What happened?", articles);
+
+      // The "Relevant sources:" line should be stripped even with only \n
+      expect(result.answer).not.toContain("Relevant sources:");
+      expect(result.answer).toContain("The campus held elections");
+    });
   });
 
   describe("confidence scoring", () => {
@@ -160,8 +179,8 @@ describe("generateAnswer", () => {
       });
 
       const articles = [
-        makeArticle({ id: "a", distance: 0.35, source: "vector" }),
-        makeArticle({ id: "b", distance: 0.35, source: "vector" }),
+        makeArticle({ id: "a", distance: 0.27, source: "vector", relevanceScore: 6 }),
+        makeArticle({ id: "b", distance: 0.27, source: "vector", relevanceScore: 6 }),
       ];
 
       const result = await generateAnswer("question", articles);
@@ -173,8 +192,8 @@ describe("generateAnswer", () => {
       const generateAnswer = await importGenerateAnswer();
 
       const articles = [
-        makeArticle({ distance: 0.5, source: "vector" }),
-        makeArticle({ distance: 0.5, source: "vector" }),
+        makeArticle({ distance: 0.5, source: "vector", relevanceScore: 3 }),
+        makeArticle({ distance: 0.5, source: "vector", relevanceScore: 3 }),
       ];
 
       const result = await generateAnswer("question", articles);
@@ -192,8 +211,8 @@ describe("generateAnswer", () => {
       });
 
       const articles = [
-        makeArticle({ id: "a", distance: 0, source: "fts" }),
-        makeArticle({ id: "b", distance: 0, source: "fts" }),
+        makeArticle({ id: "a", distance: null, source: "fts", relevanceScore: 6 }),
+        makeArticle({ id: "b", distance: null, source: "fts", relevanceScore: 6 }),
       ];
 
       const result = await generateAnswer("question", articles);
@@ -208,16 +227,34 @@ describe("generateAnswer", () => {
       });
 
       const articles = [
-        makeArticle({ id: "a", distance: 0.25, source: "vector" }),
-        makeArticle({ id: "b", distance: 0.25, source: "vector" }),
-        makeArticle({ id: "c", distance: 0, source: "fts" }),
-        makeArticle({ id: "d", distance: 0, source: "fts" }),
+        makeArticle({ id: "a", distance: 0.22, source: "vector" }),
+        makeArticle({ id: "b", distance: 0.22, source: "vector" }),
+        makeArticle({ id: "c", distance: null, source: "fts" }),
+        makeArticle({ id: "d", distance: null, source: "fts" }),
       ];
 
       const result = await generateAnswer("question", articles);
 
-      // avgDistance = 0.25 from vector-only, articleCount = 4 >= 2 -> high
+      // avgDistance = 0.22 from vector-only, articleCount = 4 >= 2 -> high
       expect(result.confidence).toBe("high");
+    });
+
+    it("downgrades confidence when reranker scores are mediocre even with close distance", async () => {
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue({
+        text: "Some info [Source 1].",
+      });
+
+      // Close vector distance but reranker says only "somewhat relevant"
+      // → should be medium, not high
+      const articles = [
+        makeArticle({ id: "a", distance: 0.20, source: "vector", relevanceScore: 5 }),
+        makeArticle({ id: "b", distance: 0.20, source: "vector", relevanceScore: 5 }),
+      ];
+
+      const result = await generateAnswer("question", articles);
+
+      expect(result.confidence).toBe("medium");
     });
   });
 

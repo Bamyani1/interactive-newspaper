@@ -133,7 +133,7 @@ async function exportLockedEditions() {
     try {
       const [edition] = await sql`SELECT * FROM editions WHERE date = ${date}`;
       if (!edition) continue;
-      const articles = await sql`SELECT id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding FROM articles WHERE edition_date = ${date} ORDER BY position`;
+      const articles = await sql`SELECT id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model FROM articles WHERE edition_date = ${date} ORDER BY position`;
       const ads = await sql`SELECT edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls FROM ads WHERE edition_date = ${date} ORDER BY position`;
       saved[date] = { edition, articles, ads };
       console.log(`  Saved locked edition ${date} from DB (${articles.length} articles, ${ads.length} ads)`);
@@ -154,14 +154,15 @@ async function restoreLockedEditions(savedData) {
 
     if (articles.length > 0) {
       const articleQueries = articles.map((a) =>
-        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding)
-            VALUES (${a.id}, ${a.edition_date}, ${a.position}, ${a.category}, ${a.headline}, ${a.summary}, ${a.full_text}, ${a.body_plain}, ${a.byline}, ${a.writer_position}, ${a.page}, ${a.is_hero}, ${a.is_featured}, ${JSON.stringify(a.image_urls)}, ${a.image_caption}, ${JSON.stringify(a.image_captions)}, ${a.embedding})
+        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model)
+            VALUES (${a.id}, ${a.edition_date}, ${a.position}, ${a.category}, ${a.headline}, ${a.summary}, ${a.full_text}, ${a.body_plain}, ${a.byline}, ${a.writer_position}, ${a.page}, ${a.is_hero}, ${a.is_featured}, ${JSON.stringify(a.image_urls)}, ${a.image_caption}, ${JSON.stringify(a.image_captions)}, ${a.embedding}, ${a.embedding_model})
             ON CONFLICT (id) DO NOTHING`
       );
       await sql.transaction(articleQueries);
     }
 
     if (ads.length > 0) {
+      await sql`DELETE FROM ads WHERE edition_date = ${date}`;
       const adQueries = ads.map((a) =>
         sql`INSERT INTO ads (edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls)
             VALUES (${a.edition_date}, ${a.position}, ${a.title}, ${a.body}, ${a.category}, ${a.ad_type}, ${a.display_text}, ${a.phone}, ${a.address}, ${a.price}, ${JSON.stringify(a.image_urls)})`
@@ -403,8 +404,8 @@ async function embedArticles(scopedDate = "") {
   }
 
   const unembedded = scopedDate
-    ? await sql`SELECT id, headline, byline, body_plain FROM articles WHERE embedding IS NULL AND edition_date = ${scopedDate} ORDER BY id`
-    : await sql`SELECT id, headline, byline, body_plain FROM articles WHERE embedding IS NULL ORDER BY id`;
+    ? await sql`SELECT id, headline, byline, body_plain, edition_date, category FROM articles WHERE embedding IS NULL AND edition_date = ${scopedDate} ORDER BY id`
+    : await sql`SELECT id, headline, byline, body_plain, edition_date, category FROM articles WHERE embedding IS NULL ORDER BY id`;
   if (unembedded.length === 0) {
     console.log("All articles already embedded.");
     return;
@@ -417,7 +418,7 @@ async function embedArticles(scopedDate = "") {
 
   for (let i = 0; i < unembedded.length; i += BATCH) {
     const batch = unembedded.slice(i, i + BATCH);
-    const texts = batch.map((a) => buildEmbeddingText({ headline: a.headline, byline: a.byline, body_plain: a.body_plain }));
+    const texts = batch.map((a) => buildEmbeddingText({ headline: a.headline, byline: a.byline, body_plain: a.body_plain, edition_date: a.edition_date, category: a.category }));
 
     try {
       const vectors = await embedDocuments(texts);
@@ -497,7 +498,7 @@ async function ensureLockedEditions() {
 async function main() {
   const start = Date.now();
 
-  console.log(`\nTranscript Archive — Database Seed`);
+  console.log(`\nThe Transcript Archive — Database Seed`);
   console.log(`Mode: ${isReset ? "RESET (drop + recreate)" : "UPSERT"}${targetDate ? ` | DATE=${targetDate}` : ""}\n`);
 
   const summary = {

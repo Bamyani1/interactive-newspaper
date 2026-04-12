@@ -115,6 +115,31 @@
     font-size: 1.05rem;
     line-height: 1.75;
     color: var(--color-text-primary);
+    background: var(--color-bg-secondary);
+    border: 1px dashed var(--stroke-accent-soft);
+    border-radius: 4px;
+    padding: 1.25rem 1.5rem;
+}
+
+.ask-answer p {
+    margin: 0 0 1rem;
+}
+
+.ask-answer p:last-child {
+    margin-bottom: 0;
+}
+
+.ask-answer-heading {
+    font-family: var(--font-headline, var(--font-body));
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--color-accent);
+    margin: 1.5rem 0 0.5rem;
+}
+
+.ask-answer-heading:first-child {
+    margin-top: 0;
 }
 
 .ask-citation-link {
@@ -141,6 +166,30 @@
 
 .ask-source-card:last-child {
     border-bottom: none;
+}
+
+.ask-source-card-inner {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.ask-source-card-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.ask-source-card-thumb {
+    flex-shrink: 0;
+    width: 80px;
+}
+
+.ask-source-thumb-wrapper {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border: 3px solid var(--color-text-primary);
 }
 
 /* =========================================
@@ -309,4 +358,79 @@
     .ask-example-chip {
         transition: none;
     }
+}
+
+/* ─── Timeline Gallery ──────────────────────────────────────── */
+
+.ask-timeline-section {
+  margin-top: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px dashed var(--stroke-accent-soft);
+}
+
+.ask-timeline-label {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--color-accent);
+  margin-bottom: 1rem;
+}
+
+.ask-timeline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.ask-timeline-card {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  transition: transform 0.2s ease;
+}
+
+.ask-timeline-card:hover {
+  transform: translateY(-2px);
+}
+
+.ask-timeline-image-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+  border: 2px solid var(--color-text-primary);
+  background: var(--color-bg-secondary);
+}
+
+.ask-timeline-card:hover .ask-timeline-image-wrapper {
+  border-color: var(--color-accent);
+}
+
+.ask-timeline-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0 0.125rem;
+}
+
+.ask-timeline-date {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  opacity: 0.55;
+  color: var(--color-text-primary);
+  letter-spacing: 0.03em;
+}
+
+.ask-timeline-headline {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

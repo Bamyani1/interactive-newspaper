@@ -127,6 +127,16 @@ function extractProperNames(text) {
 function scoreRelevance(caption, articleHeadline, articleBody, articleCategory) {
   if (!caption || caption.trim().length < 15) return 1.0; // too short to judge
 
+  // If the caption contains the article headline, the image clearly belongs here
+  // (e.g. AI caption "A cartoon titled 'PROSPECTIVE??!'" for article "PROSPECTIVE??!")
+  if (articleHeadline && articleHeadline.trim().length >= 3) {
+    const headlineNorm = articleHeadline.trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
+    const captionNorm = caption.toLowerCase().replace(/[^a-z0-9\s]/g, "");
+    if (headlineNorm.length >= 3 && captionNorm.includes(headlineNorm)) {
+      return 1.0;
+    }
+  }
+
   const captionTokens = tokenize(caption);
   if (captionTokens.length === 0) return 1.0;
 
@@ -261,22 +271,35 @@ async function main() {
       // Skip articles without images
       if (!article.image_files || article.image_files.length === 0) continue;
 
+      // Skip very short articles — likely photo captions or editorial cartoons
+      // where the image IS the article content
+      const bodyLen = (article.body || "").replace(/\s+/g, " ").trim().length;
+      if (bodyLen < 200) continue;
+
       const articleCategory = classifyText(
         `${article.headline || ""} ${(article.body || "").slice(0, 300)}`
       );
 
       // Score each image
       for (let imgI = article.image_files.length - 1; imgI >= 0; imgI--) {
-        const caption = article.images?.[imgI]?.caption || "";
+        // Collect ALL captions for this article (OCR + AI-generated may differ in index)
+        const allCaptions = (article.images || [])
+          .map((img) => img.caption || "")
+          .filter((c) => c.trim().length >= 15);
 
-        if (caption.trim().length < 15) continue; // can't evaluate
+        if (allCaptions.length === 0) continue; // can't evaluate
 
-        const score = scoreRelevance(
-          caption,
-          article.headline || "",
-          article.body || "",
-          articleCategory
-        );
+        // Score using the best caption — the AI-generated description often matches
+        // better than OCR-extracted photographer credits like "Photo (Name)"
+        let score = 0;
+        let caption = allCaptions[0];
+        for (const cap of allCaptions) {
+          const s = scoreRelevance(cap, article.headline || "", article.body || "", articleCategory);
+          if (s > score) {
+            score = s;
+            caption = cap;
+          }
+        }
 
         if (score < 0.15) {
           // Try to find a better article on the same page

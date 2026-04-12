@@ -180,8 +180,18 @@ def structure_and_link_page(
 
             for ri, ai in region_to_article.items():
                 if ri in saved_files:
-                    page_content.articles[ai].image_files.append(saved_files[ri])
-                    page_content.articles[ai].images.append(ArticleImage(caption=captions.get(ri, ""), position=""))
+                    article = page_content.articles[ai]
+                    article.image_files.append(saved_files[ri])
+                    ai_caption = captions.get(ri, "")
+                    file_idx = len(article.image_files) - 1
+                    if file_idx < len(article.images):
+                        # OCR already created an images entry for this slot;
+                        # replace with the AI caption (describes actual content,
+                        # not just a photographer credit like "Photo (Name)")
+                        if ai_caption:
+                            article.images[file_idx].caption = ai_caption
+                    else:
+                        article.images.append(ArticleImage(caption=ai_caption, position=""))
 
             for ri, adi in region_to_ad.items():
                 if ri in saved_files:
@@ -198,30 +208,19 @@ def structure_and_link_page(
             for ri in unmatched:
                 if ri in saved_files:
                     caption = captions.get(ri, "")
-                    if caption:
-                        # Has a caption — create a proper standalone photo article
-                        standalone_images.append(saved_files[ri])
-                        page_content.articles.append(
-                            Article(
-                                headline=caption,
-                                author="",
-                                body="",
-                                images=[ArticleImage(caption=caption, position="")],
-                                image_files=[saved_files[ri]],
-                            )
+                    # Unmatched images are not linked to any article or ad.
+                    # These are typically decorative graphics, section headers,
+                    # weather maps, etc. — not standalone photo articles.
+                    # Move to other_content to avoid cluttering the article list.
+                    standalone_images.append(saved_files[ri])
+                    page_content.other_content.append(
+                        OtherContent(
+                            title=caption or "Unidentified image",
+                            body=saved_files[ri],
                         )
-                    else:
-                        # No caption, no headline — move to other_content instead of
-                        # creating an empty article that clutters the output
-                        standalone_images.append(saved_files[ri])
-                        page_content.other_content.append(
-                            OtherContent(
-                                title="Unidentified image",
-                                body=saved_files[ri],
-                            )
-                        )
+                    )
             if standalone_images:
-                substep(f"Preserved {len(standalone_images)} standalone images as photo articles")
+                substep(f"Preserved {len(standalone_images)} standalone images in other_content")
 
             matched_article = len(region_to_article)
             matched_ad = len(region_to_ad)

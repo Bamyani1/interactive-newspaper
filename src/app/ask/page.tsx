@@ -4,7 +4,7 @@ import React, { useRef, useEffect } from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
 import { SiteFooter } from "@/features/footer";
-import { AskInput, AnswerPanel, SourceList, AskEmptyState, useAskArchive } from "@/features/ask-archive";
+import { AskInput, AnswerPanel, SourceList, AskEmptyState, TimelineGallery, useAskArchive } from "@/features/ask-archive";
 
 export default function AskPage() {
   const { answer, isLoading, error, submit, reset } = useAskArchive();
@@ -60,6 +60,7 @@ export default function AskPage() {
 
             {answer && (
               <div ref={answerRef} tabIndex={-1} className="outline-none ask-answer-enter">
+                {answer.mode === "visual" && <TimelineGallery response={answer} />}
                 <AnswerPanel response={answer} />
                 <SourceList sources={answer.sourceArticles} />
               </div>

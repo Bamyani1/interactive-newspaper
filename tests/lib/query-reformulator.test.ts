@@ -28,6 +28,7 @@ describe("parseReformulationResponse", () => {
   const fallback = {
     embeddingQuery: "original question",
     ftsQuery: "original question",
+    mode: "text" as const,
   };
 
   it("parses valid SEMANTIC + KEYWORDS response", () => {
@@ -64,6 +65,22 @@ describe("parseReformulationResponse", () => {
     const text = "SEMANTIC: \nKEYWORDS: ";
     const result = parseReformulationResponse(text, fallback);
     expect(result).toBe(fallback);
+  });
+
+  it("parses MODE field from response", () => {
+    const result = parseReformulationResponse(
+      "SEMANTIC: campus buildings\nKEYWORDS: campus OR buildings\nMODE: visual",
+      { embeddingQuery: "fallback", ftsQuery: "fallback", mode: "text" },
+    );
+    expect(result.mode).toBe("visual");
+  });
+
+  it("defaults mode to text when MODE line is missing", () => {
+    const result = parseReformulationResponse(
+      "SEMANTIC: campus news\nKEYWORDS: campus OR news",
+      { embeddingQuery: "fallback", ftsQuery: "fallback", mode: "text" },
+    );
+    expect(result.mode).toBe("text");
   });
 });
 

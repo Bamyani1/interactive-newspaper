@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useCallback, useRef } from "react";
 
 interface Mote {
   id: number;
@@ -41,9 +41,17 @@ function generateMotes(count: number): Mote[] {
 
 export function CathedralBackground() {
   const motes = useMemo(() => generateMotes(25), []);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const el = rootRef.current;
+    if (!el) return;
+    el.style.setProperty("--mouse-x", String(e.clientX / window.innerWidth));
+    el.style.setProperty("--mouse-y", String(e.clientY / window.innerHeight));
+  }, []);
 
   return (
-    <div className="cathedral-root">
+    <div className="cathedral-root" ref={rootRef} onMouseMove={handleMouseMove}>
       {/* Layer 1: Stained glass SVG */}
       <div className="cathedral-glass">
         <object
@@ -56,7 +64,11 @@ export function CathedralBackground() {
       {/* Layer 2: Ambient color bleed */}
       <div className="cathedral-ambient" />
 
-      {/* Layer 3: Dust motes */}
+
+      {/* Layer 5: Gothic vignette */}
+      <div className="cathedral-vignette" />
+
+      {/* Layer 6: Dust motes */}
       <div className="cathedral-motes">
         {motes.map((mote) => (
           <div
@@ -76,7 +88,7 @@ export function CathedralBackground() {
         ))}
       </div>
 
-      {/* Layer 4: Film grain */}
+      {/* Layer 8: Film grain */}
       <div className="cathedral-grain" />
     </div>
   );

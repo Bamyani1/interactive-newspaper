@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import os
 
 from PIL import Image
 from google.genai import types
 
-from ..config.constants import GEMINI_STRUCTURING_MODEL
+from ..config.prompts_loader import MODELS
 from ..contracts.content_models import PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer, TokenUsage
 from ..diagnostics.snapshots import save_snapshot
@@ -61,11 +62,19 @@ def process_page_with_docai(
         known_continuations=known_continuations,
     )
 
+    structuring_cfg = MODELS["page_structuring"]
+    structuring_thinking = types.ThinkingConfig(thinking_level=structuring_cfg["thinking"]) if structuring_cfg.get("thinking") else None
+
+    # Encode image to optimized PNG bytes — avoids SDK's wasteful re-encoding
+    buf = io.BytesIO()
+    image.save(buf, format="PNG", optimize=True)
+    image_part = types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png")
+
     gemini_timer = StageTimer().start()
     response = gemini_generate_with_retry(
         client,
-        model=GEMINI_STRUCTURING_MODEL,
-        contents=[image, "Structure this pre-extracted OCR text into articles, ads, and other content."],
+        model=structuring_cfg["name"],
+        contents=[image_part, "Structure this pre-extracted OCR text into articles, ads, and other content."],
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
             response_mime_type="application/json",
@@ -73,7 +82,7 @@ def process_page_with_docai(
             safety_settings=SAFETY_OFF,
             media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             max_output_tokens=65536,
-            thinking_config=types.ThinkingConfig(thinking_level="high"),
+            **({"thinking_config": structuring_thinking} if structuring_thinking else {}),
         ),
     )
     gemini_elapsed = gemini_timer.stop()
@@ -107,6 +116,35 @@ def process_page_with_docai(
         if filename_page:
             page_content.page_number = filename_page
         return page_content, image, regions
+
+    # Retry: move OCR text from system_instruction to user contents.
+    # The RECITATION filter blocks when system instruction text is reproduced in output.
+    # Moving it to user contents signals "data to process" rather than "text to recite".
+    warning("Full page blocked (likely RECITATION), retrying with OCR text as user content...")
+    try:
+        retry_response = gemini_generate_with_retry(
+            client,
+            model=structuring_cfg["name"],
+            contents=[image_part, system_prompt + "\n\nStructure this into articles, ads, and other content."],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=PageContent,
+                safety_settings=SAFETY_OFF,
+                max_output_tokens=65536,
+            ),
+        )
+        if retry_response.parsed:
+            warning("User-content fallback succeeded")
+            page_content = retry_response.parsed
+            _sanitize_null_strings(page_content)
+            page_content = deduplicate_articles(page_content, diag=diag)
+            page_content = postprocess_page_content(page_content, diag=diag)
+            filename_page = _extract_page_number_from_filename(os.path.basename(image_path))
+            if filename_page:
+                page_content.page_number = filename_page
+            return page_content, image, regions
+    except Exception as e:
+        warning(f"Text-only fallback also failed: {e}")
 
     warning("Full page blocked or empty (docai path)")
     return PageContent(articles=[], ads=[], other_content=[], page_number="0", publication_info=""), image, regions

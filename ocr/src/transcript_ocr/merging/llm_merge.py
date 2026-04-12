@@ -9,7 +9,7 @@ from difflib import SequenceMatcher as SM
 
 from google.genai import types
 
-from ..config.constants import GEMINI_MERGE_MODEL, GEMINI_PAGE_MODEL, GEMINI_STRUCTURING_MODEL
+from ..config.prompts_loader import MODELS, PROMPTS
 from ..contracts.content_models import (
     ArticleImage,
     EditionContent,
@@ -23,69 +23,29 @@ from ..contracts.diagnostics_models import MergePassDiagnostics, PipelineReport,
 from ..diagnostics.snapshots import save_snapshot
 from ..postprocessing.byline_cleanup import _dedup_byline_from_body, _extract_byline_from_body, _normalize_byline, _split_author_position
 from ..postprocessing.deduplication import _deduplicate_ads, _deduplicate_other_content
-from ..recognition.prompts import MERGE_PROMPT, SAFETY_OFF
+from ..recognition.prompts import MERGE_SYSTEM_PROMPT, MERGE_USER_TEMPLATE, SAFETY_OFF
 from ..shared.retry import gemini_generate_with_retry
 from ..shared.console import substep, warning, error, info
-from ..postprocessing.proper_noun_corrections import (
-    _apply_edition_proper_noun_corrections,
-    _check_edition_proper_nouns,
-)
 from .boundary_cleanup import clean_merge_boundary
 from .continuation import _extract_continuation_info, _strip_continuation_markers
 from .deterministic_merge import _deterministic_merge
 from .merge_sanitizer import (
     _choose_merged_category,
     _reconcile_image_alignment,
-    _sanitize_merged_articles,
     _strip_trailing_captions,
 )
 
 
-def _build_deterministic_decisions(
-    article_data: list[dict], pre_merged: list[list[int]]
-) -> MergeDecisions:
-    """Build MergeDecisions from deterministic pre-merged groups.
-
-    Used as fallback when the LLM merge call fails (safety block, parse error,
-    network timeout). Every pre-merged group becomes a MergeInstruction; every
-    ungrouped article becomes a singleton.
-    """
-    grouped: set[int] = set()
-    groups: list[MergeInstruction] = []
-
-    for member_ids in pre_merged:
-        grouped.update(member_ids)
-        # Pick best headline: longest non-stub (>20 chars), falling back to first
-        headlines = [article_data[i]["headline"] or "" for i in member_ids]
-        best_headline = max(headlines, key=lambda h: len(h) if len(h) > 20 else 0) or headlines[0]
-        # First non-empty author / writer_position
-        author = next((article_data[i]["author"] for i in member_ids if article_data[i].get("author")), "")
-        position = next((article_data[i].get("writer_position") for i in member_ids if article_data[i].get("writer_position")), "")
-        groups.append(
-            MergeInstruction(
-                article_ids=list(member_ids),
-                merged_headline=best_headline,
-                merged_author=author,
-                merged_writer_position=position,
-                confidence=1.0,
-            )
-        )
-
-    # Singletons for ungrouped articles
-    for idx in range(len(article_data)):
-        if idx not in grouped:
-            ad = article_data[idx]
-            groups.append(
-                MergeInstruction(
-                    article_ids=[idx],
-                    merged_headline=ad["headline"] or "",
-                    merged_author=ad.get("author", ""),
-                    merged_writer_position=ad.get("writer_position", ""),
-                    confidence=1.0,
-                )
-            )
-
-    return MergeDecisions(groups=groups)
+def _finalize_merge_diagnostics(
+    md: MergePassDiagnostics | None,
+    merge_timer: StageTimer,
+    report: PipelineReport | None,
+) -> None:
+    """Attach merge diagnostics to the pipeline report and stop the timer."""
+    if md is not None:
+        md.time_seconds = merge_timer.stop()
+        if report is not None:
+            report.merge_pass = md
 
 
 def _best_body(bodies: list[str]) -> str:
@@ -139,23 +99,17 @@ def _validate_merge_seam(client, bodies: list[str]) -> list[str]:
             tail = prev_body[-400:]
             head = next_body[:400]
             try:
+                seam_prompt = PROMPTS["seam_repair"].format(tail=tail, head=head)
+                seam_model_cfg = MODELS["seam_repair"]
+                seam_thinking = types.ThinkingConfig(thinking_level=seam_model_cfg["thinking"]) if seam_model_cfg.get("thinking") else None
                 repair_response = gemini_generate_with_retry(
                     client,
-                    model=GEMINI_STRUCTURING_MODEL,
-                    contents=[
-                        "These two text fragments were extracted from consecutive newspaper columns. "
-                        "They may connect mid-sentence at the boundary. "
-                        "If they connect mid-sentence, return ONLY the corrected joined text "
-                        "(the last paragraph of Fragment A merged with the first paragraph of Fragment B). "
-                        "Do not include ellipsis markers or any formatting — return only the clean merged paragraph text. "
-                        "If they do NOT connect (they are separate paragraphs), return exactly: VALID\n\n"
-                        f"Fragment A (end):\n{tail}\n\n"
-                        f"Fragment B (start):\n{head}"
-                    ],
+                    model=seam_model_cfg["name"],
+                    contents=[seam_prompt],
                     config=types.GenerateContentConfig(
                         safety_settings=SAFETY_OFF,
-                        max_output_tokens=1024,
-                        thinking_config=types.ThinkingConfig(thinking_level="high"),
+                        max_output_tokens=65536,
+                        **({"thinking_config": seam_thinking} if seam_thinking else {}),
                     ),
                 )
                 result = (repair_response.text or "").strip()
@@ -221,6 +175,7 @@ def merge_edition_articles(
 
     if not article_data:
         info("No articles found to merge.")
+        _finalize_merge_diagnostics(md, merge_timer, report)
         return None
 
     if md is not None:
@@ -232,14 +187,12 @@ def merge_edition_articles(
 
     target_pages = set()
     has_continuations = False
-    ambiguous_pointers = set()
     for idx, ad in enumerate(article_data):
         cont_on = ad["continuation"]["continues_on"]
         if cont_on and cont_on != "?":
             target_pages.add(cont_on)
             has_continuations = True
         elif cont_on == "?":
-            ambiguous_pointers.add(idx)
             has_continuations = True
         if ad["continuation"]["continued_from"]:
             target_pages.add(ad["continuation"]["continued_from"])
@@ -284,7 +237,7 @@ def merge_edition_articles(
             if ad["page_label"] not in target_pages:
                 has_continuations = True
 
-    prompt_parts = [MERGE_PROMPT]
+    prompt_parts = [MERGE_USER_TEMPLATE]
     for idx, ad in enumerate(article_data):
         is_pointer = bool(ad["continuation"]["continues_on"] or ad["continuation"]["continued_from"])
         is_target = ad["page_label"] in target_pages
@@ -317,33 +270,57 @@ def merge_edition_articles(
 
     sources_by_target: dict[str, list[int]] = defaultdict(list)
     stubs_by_source: dict[str, list[int]] = defaultdict(list)
+    wildcard_sources: dict[str, list[int]] = defaultdict(list)
     for idx, ad in enumerate(article_data):
         cont_on = ad["continuation"]["continues_on"]
         if cont_on and cont_on != "?":
             sources_by_target[cont_on].append(idx)
+        elif cont_on == "?":
+            wildcard_sources[ad["page_label"]].append(idx)
         cont_from = ad["continuation"]["continued_from"]
-        if cont_from:
+        if cont_from and cont_from != "?":
             stubs_by_source[cont_from].append(idx)
 
     suggested_pairs = []
+    paired_src: set[int] = set()
+    paired_stub: set[int] = set()
+
+    def _score_and_pair(src_ids: list[int], stub_ids: list[int]) -> None:
+        """Compute body-similarity scores and greedily pair sources with stubs."""
+        scores = []
+        for src_id in src_ids:
+            src_tail = (article_data[src_id]["body"] or "")[-300:]
+            for stub_id in stub_ids:
+                stub_head = (article_data[stub_id]["body"] or "")[:300]
+                ratio = SM(None, src_tail.lower(), stub_head.lower()).ratio()
+                scores.append((src_id, stub_id, ratio))
+        scores.sort(key=lambda x: -x[2])
+        for src_id, stub_id, ratio in scores:
+            if src_id not in paired_src and stub_id not in paired_stub:
+                suggested_pairs.append((src_id, stub_id, ratio))
+                paired_src.add(src_id)
+                paired_stub.add(stub_id)
+
+    # Pass A: Specific continues_on — match sources on page A continuing to B
+    #         with stubs on page B that have continued_from=A
     for target_page, source_ids in sources_by_target.items():
-        stub_ids = stubs_by_source.get(target_page, [])
-        if len(source_ids) > 1 and len(stub_ids) > 1:
-            scores = []
-            for src_id in source_ids:
-                src_tail = (article_data[src_id]["body"] or "")[-300:]
-                for stub_id in stub_ids:
-                    stub_head = (article_data[stub_id]["body"] or "")[:300]
-                    ratio = SM(None, src_tail.lower(), stub_head.lower()).ratio()
-                    scores.append((src_id, stub_id, ratio))
-            scores.sort(key=lambda x: -x[2])
-            used_src = set()
-            used_stub = set()
-            for src_id, stub_id, ratio in scores:
-                if src_id not in used_src and stub_id not in used_stub:
-                    suggested_pairs.append((src_id, stub_id, ratio))
-                    used_src.add(src_id)
-                    used_stub.add(stub_id)
+        source_pages = {article_data[s]["page_label"] for s in source_ids}
+        matching_stubs = []
+        for sp in source_pages:
+            for stub_id in stubs_by_source.get(sp, []):
+                if article_data[stub_id]["page_label"] == target_page:
+                    matching_stubs.append(stub_id)
+        if len(source_ids) > 1 and len(matching_stubs) > 1:
+            _score_and_pair(source_ids, matching_stubs)
+
+    # Pass B: Wildcard continues_on=? — match sources on page A
+    #         with stubs that have continued_from=A
+    for source_page, src_ids in wildcard_sources.items():
+        stub_ids = stubs_by_source.get(source_page, [])
+        unpaired_src = [s for s in src_ids if s not in paired_src]
+        unpaired_stubs = [s for s in stub_ids if s not in paired_stub]
+        if unpaired_src and unpaired_stubs:
+            _score_and_pair(unpaired_src, unpaired_stubs)
 
     if suggested_pairs:
         prompt_parts.append("\nSUGGESTED PAIRS (based on content similarity — verify before applying):")
@@ -356,17 +333,20 @@ def merge_edition_articles(
     merge_text = "\n".join(prompt_parts)
 
     if has_continuations:
+        merge_model_cfg = MODELS["merge"]
+        merge_thinking = types.ThinkingConfig(thinking_level=merge_model_cfg["thinking"]) if merge_model_cfg.get("thinking") else None
         try:
             response = gemini_generate_with_retry(
                 client,
-                model=GEMINI_MERGE_MODEL,
+                model=merge_model_cfg["name"],
                 contents=[merge_text],
                 config=types.GenerateContentConfig(
+                    system_instruction=MERGE_SYSTEM_PROMPT,
                     response_mime_type="application/json",
                     response_schema=MergeDecisions,
                     safety_settings=SAFETY_OFF,
-                    max_output_tokens=8192,
-                    thinking_config=types.ThinkingConfig(thinking_level="high"),
+                    max_output_tokens=65536,
+                    **({"thinking_config": merge_thinking} if merge_thinking else {}),
                 ),
             )
 
@@ -389,17 +369,21 @@ def merge_edition_articles(
                 if md is not None:
                     md.error = f"Pro merge failed (raw: {raw!r})"
 
-                # Retry with Flash — less likely to trigger safety filters
+                # Retry with fallback model
+                fallback_cfg = MODELS["merge_fallback"]
+                fallback_thinking = types.ThinkingConfig(thinking_level=fallback_cfg["thinking"]) if fallback_cfg.get("thinking") else None
                 try:
                     response = gemini_generate_with_retry(
                         client,
-                        model=GEMINI_PAGE_MODEL,
+                        model=fallback_cfg["name"],
                         contents=[merge_text],
                         config=types.GenerateContentConfig(
+                            system_instruction=MERGE_SYSTEM_PROMPT,
                             response_mime_type="application/json",
                             response_schema=MergeDecisions,
                             safety_settings=SAFETY_OFF,
-                            max_output_tokens=8192,
+                            max_output_tokens=65536,
+                            **({"thinking_config": fallback_thinking} if fallback_thinking else {}),
                         ),
                     )
                     flash_usage = response.usage_metadata
@@ -420,20 +404,22 @@ def merge_edition_articles(
                         md.error = "flash_retry"
                     decisions = response.parsed
                 else:
-                    warning("Flash retry also unparseable — falling back to deterministic merge.")
+                    warning("Flash retry also unparseable — aborting merge.")
                     if md is not None:
-                        md.error = "deterministic_fallback"
-                    decisions = _build_deterministic_decisions(article_data, pre_merged)
+                        md.error = "llm_merge_failed"
+                    _finalize_merge_diagnostics(md, merge_timer, report)
+                    return None
             else:
                 decisions = response.parsed
 
             decisions: MergeDecisions
             save_snapshot(snapshots_dir, "merge_decisions.json", decisions)
         except Exception as e:
-            error(f"Merge failed: {e} — falling back to deterministic merge.")
+            error(f"Merge failed: {e} — aborting merge.")
             if md is not None:
-                md.error = f"deterministic_fallback — {e}"
-            decisions = _build_deterministic_decisions(article_data, pre_merged)
+                md.error = f"llm_merge_failed — {e}"
+            _finalize_merge_diagnostics(md, merge_timer, report)
+            return None
     else:
         info("No explicit continuations found. Bypassing LLM merge pass.")
         decisions = MergeDecisions(groups=[])
@@ -625,14 +611,6 @@ def merge_edition_articles(
             )
         )
 
-    merged_articles = _sanitize_merged_articles(merged_articles, all_other, md=md)
-
-    # Edition-level proper noun consistency — catches cross-page OCR errors
-    # like "Mohahan" (page 7) vs "Monahan" (page 1)
-    edition_corrections = _check_edition_proper_nouns(merged_articles)
-    if edition_corrections:
-        merged_articles = _apply_edition_proper_noun_corrections(merged_articles, edition_corrections)
-
     all_ads = _deduplicate_ads(all_ads)
     all_other = _deduplicate_other_content(all_other)
 
@@ -640,8 +618,7 @@ def merge_edition_articles(
         md.articles_after_merge = len(merged_articles)
         md.singleton_groups = sum(1 for g in decisions.groups if len(g.article_ids) == 1)
         md.multi_article_groups = sum(1 for g in decisions.groups if len(g.article_ids) > 1)
-        md.time_seconds = merge_timer.stop()
-        report.merge_pass = md
+    _finalize_merge_diagnostics(md, merge_timer, report)
 
     return EditionContent(
         articles=merged_articles,
@@ -650,4 +627,4 @@ def merge_edition_articles(
     )
 
 
-__all__ = ["_best_body", "_build_deterministic_decisions", "_validate_merge_seam", "merge_edition_articles"]
+__all__ = ["_best_body", "_validate_merge_seam", "merge_edition_articles"]

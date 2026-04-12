@@ -22,6 +22,11 @@ vi.mock("@/src/lib/reranker", () => ({
   rerankArticles: vi.fn(),
 }));
 
+vi.mock("@/src/lib/rate-limit", () => ({
+  createRateLimiter: () => () => ({ allowed: true, resetAt: Date.now() + 60000 }),
+  getClientIp: () => "127.0.0.1",
+}));
+
 import { POST } from "@/src/app/api/ask/route";
 import { embedQuery } from "@/src/lib/embeddings";
 import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
@@ -47,6 +52,7 @@ const mockArticle = {
   bodyPlain: "Test body content for article.",
   distance: 0.25,
   source: "vector" as const,
+  imageUrls: [],
 };
 
 describe("POST /api/ask", () => {
@@ -55,6 +61,7 @@ describe("POST /api/ask", () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "What happened at OWU?",
       ftsQuery: "What happened at OWU?",
+      mode: "text",
     });
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
@@ -182,6 +189,7 @@ describe("POST /api/ask", () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "expanded OWU query",
       ftsQuery: "OWU OR Ohio Wesleyan",
+      mode: "text",
     });
 
     await POST(makeRequest({ question: "What happened at OWU?" }));
@@ -199,6 +207,7 @@ describe("POST /api/ask", () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "reformulated for embedding",
       ftsQuery: "reformulated for fts",
+      mode: "text",
     });
 
     await POST(makeRequest({ question: "Original question?" }));
@@ -217,7 +226,7 @@ describe("POST /api/ask", () => {
 
     await POST(makeRequest({ question: "Test?" }));
 
-    expect(rerankArticles).toHaveBeenCalledWith("Test?", retrieved);
+    expect(rerankArticles).toHaveBeenCalledWith("Test?", retrieved, { maxArticles: 5 });
     expect(generateAnswer).toHaveBeenCalledWith("Test?", reranked);
   });
 
@@ -225,6 +234,7 @@ describe("POST /api/ask", () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "reformulated query",
       ftsQuery: "reformulated fts",
+      mode: "text",
     });
 
     const response = await POST(makeRequest({ question: "What sports existed?" }));
@@ -238,6 +248,7 @@ describe("POST /api/ask", () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: question,
       ftsQuery: question,
+      mode: "text",
     });
 
     const response = await POST(makeRequest({ question }));

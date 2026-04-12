@@ -69,6 +69,30 @@ def _deterministic_merge(article_data: list[dict]) -> list[list[int]]:
             if best_match not in merged_into:
                 merged_into[best_match] = leader
 
+    # Pass 3: Forward-looking one-sided merges.
+    # Source has continues_on=X but target on page X has no continued_from.
+    # Match by headline similarity.
+    for i in range(n):
+        if i in merged_into:
+            continue
+        cont_on = article_data[i]["continuation"].get("continues_on")
+        if not cont_on or cont_on == "?":
+            continue
+        best_match = None
+        for j in range(n):
+            if i == j or j in merged_into:
+                continue
+            if article_data[j]["page_label"] != cont_on:
+                continue
+            if _headline_similar(article_data[i]["headline"], article_data[j]["headline"]):
+                best_match = j
+                break
+        if best_match is not None:
+            leader = merged_into.get(i, i)
+            merged_into[best_match] = leader
+            if i not in merged_into:
+                merged_into[i] = leader
+
     groups: dict[int, list[int]] = {}
     for idx, leader in merged_into.items():
         groups.setdefault(leader, [leader] if leader not in groups else groups[leader])

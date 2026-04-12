@@ -2,29 +2,17 @@
 
 from __future__ import annotations
 
-import re
-
 from ..contracts.content_models import Ad, Article, OtherContent, PageContent
 from ..contracts.diagnostics_models import DeduplicationInfo, PageDiagnostics, StageTimer
-
-
-def _split_sentences(text: str) -> list[str]:
-    """Split text into sentences using basic punctuation rules."""
-    parts = re.split(r"(?<=[.!?])\s+", text.strip())
-    return [s.strip() for s in parts if s.strip()]
-
-
-def _normalize(text: str) -> str:
-    """Collapse whitespace for comparison."""
-    return re.sub(r"\s+", " ", text.strip())
+from ..shared.text import normalize_whitespace, split_sentences
 
 
 def _sentence_overlap(sents_a: list[str], sents_b: list[str]) -> float:
     """Return the fraction of shared sentences (relative to smaller set)."""
     if not sents_a or not sents_b:
         return 0.0
-    set_a = set(_normalize(s) for s in sents_a)
-    set_b = set(_normalize(s) for s in sents_b)
+    set_a = set(normalize_whitespace(s) for s in sents_a)
+    set_b = set(normalize_whitespace(s) for s in sents_b)
     overlap = len(set_a & set_b)
     return overlap / min(len(set_a), len(set_b))
 
@@ -35,17 +23,17 @@ def _dedup_article_body(body: str) -> str:
 
     cleaned_paragraphs = []
     for para in paragraphs:
-        sentences = _split_sentences(para)
+        sentences = split_sentences(para)
         deduped = []
         for sent in sentences:
-            if not deduped or _normalize(sent) != _normalize(deduped[-1]):
+            if not deduped or normalize_whitespace(sent) != normalize_whitespace(deduped[-1]):
                 deduped.append(sent)
         cleaned_paragraphs.append(" ".join(deduped))
 
     seen = set()
     unique_paragraphs = []
     for para in cleaned_paragraphs:
-        key = _normalize(para)
+        key = normalize_whitespace(para)
         if key not in seen:
             seen.add(key)
             unique_paragraphs.append(para)
@@ -84,11 +72,11 @@ def deduplicate_articles(
         if i in used:
             continue
         best = art_a
-        sents_best = _split_sentences(best.body)
+        sents_best = split_sentences(best.body)
         for j in range(i + 1, len(articles)):
             if j in used:
                 continue
-            sents_j = _split_sentences(articles[j].body)
+            sents_j = split_sentences(articles[j].body)
             if _sentence_overlap(sents_best, sents_j) > 0.6:
                 used.add(j)
                 if not best.headline and articles[j].headline:
@@ -106,7 +94,7 @@ def deduplicate_articles(
                         images=best.images + articles[j].images,
                         image_files=best.image_files + articles[j].image_files,
                     )
-                    sents_best = _split_sentences(best.body)
+                    sents_best = split_sentences(best.body)
         merged.append(best)
 
     if diag is not None:
@@ -136,18 +124,18 @@ def _deduplicate_ads(ads: list[Ad]) -> list[Ad]:
         if i in used:
             continue
         best = ad_a
-        name_a = _normalize(ad_a.business_name).lower()
-        sents_best = _split_sentences(best.body)
+        name_a = normalize_whitespace(ad_a.business_name).lower()
+        sents_best = split_sentences(best.body)
         for j in range(i + 1, len(ads)):
             if j in used:
                 continue
-            name_b = _normalize(ads[j].business_name).lower()
+            name_b = normalize_whitespace(ads[j].business_name).lower()
             if name_a != name_b:
                 from difflib import SequenceMatcher
 
                 if SequenceMatcher(None, name_a, name_b).ratio() < 0.8:
                     continue
-            sents_j = _split_sentences(ads[j].body)
+            sents_j = split_sentences(ads[j].body)
             if _sentence_overlap(sents_best, sents_j) > 0.6:
                 used.add(j)
                 combined_images = list(best.image_files) + list(ads[j].image_files)
@@ -163,7 +151,7 @@ def _deduplicate_ads(ads: list[Ad]) -> list[Ad]:
                         body=best.body,
                         image_files=combined_images,
                     )
-                sents_best = _split_sentences(best.body)
+                sents_best = split_sentences(best.body)
         merged.append(best)
     return merged
 
@@ -178,20 +166,20 @@ def _deduplicate_other_content(others: list[OtherContent]) -> list[OtherContent]
         if i in used:
             continue
         best = oc_a
-        title_a = _normalize(oc_a.title).lower()
-        sents_best = _split_sentences(best.body)
+        title_a = normalize_whitespace(oc_a.title).lower()
+        sents_best = split_sentences(best.body)
         for j in range(i + 1, len(others)):
             if j in used:
                 continue
-            title_b = _normalize(others[j].title).lower()
+            title_b = normalize_whitespace(others[j].title).lower()
             if title_a != title_b:
                 continue
-            sents_j = _split_sentences(others[j].body)
+            sents_j = split_sentences(others[j].body)
             if _sentence_overlap(sents_best, sents_j) > 0.6:
                 used.add(j)
                 if len(others[j].body) > len(best.body):
                     best = OtherContent(title=best.title, body=others[j].body)
-                sents_best = _split_sentences(best.body)
+                sents_best = split_sentences(best.body)
         merged.append(best)
     return merged
 
@@ -200,8 +188,6 @@ __all__ = [
     "_dedup_article_body",
     "_deduplicate_ads",
     "_deduplicate_other_content",
-    "_normalize",
     "_sentence_overlap",
-    "_split_sentences",
     "deduplicate_articles",
 ]
