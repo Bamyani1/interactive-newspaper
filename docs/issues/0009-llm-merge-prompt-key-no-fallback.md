@@ -1,11 +1,19 @@
 ---
 id: 0009
 title: llm_merge uses PROMPTS["seam_repair"] with no key fallback
-status: open
+status: fixed
 severity: high
 area: ocr
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `config/prompts_loader.py` now validates required prompt keys
+> (`seam_repair`) at module load and raises `RuntimeError` with a descriptive
+> message if any are missing. A stale deploy or a partial manual edit that
+> drops the key now fails loudly at pipeline startup instead of crashing mid-
+> merge with a cryptic KeyError.
+
 
 ## Symptom
 

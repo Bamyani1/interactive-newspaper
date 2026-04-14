@@ -1,11 +1,18 @@
 ---
 id: 0027
 title: .gitignore adds scripts/dev/data/ without explanatory comment
-status: open
+status: fixed
 severity: low
 area: infra
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `.gitignore` now has an inline comment above `scripts/dev/data/`
+> explaining that it holds transient build artifacts from the
+> music-archive fetch scripts (billboard raw JSON, hot100 CSV) and that
+> regenerating via the scripts is safe.
+
 
 ## Symptom
 

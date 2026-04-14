@@ -120,17 +120,26 @@ def triage_edition(edition_path: str, client, force: bool = False) -> tuple[bool
 
     result: ContentTriageResponse = response.parsed
 
-    # Apply suspect article decisions
+    # Apply suspect article decisions, tracking any out-of-bounds index drops
+    # so operators can see how much Gemini work was lost. Previously dropped
+    # silently with no counter or log entry. See docs/issues/0010.
+    dropped_oob: list[tuple[str, int, int]] = []
     demote_indices = set()
     for decision in result.suspect_articles:
-        if decision.decision == "demote" and 0 <= decision.index < len(suspect_indices):
-            demote_indices.add(suspect_indices[decision.index])
+        if decision.decision == "demote":
+            if 0 <= decision.index < len(suspect_indices):
+                demote_indices.add(suspect_indices[decision.index])
+            else:
+                dropped_oob.append(("demote", decision.index, len(suspect_indices)))
 
     # Apply other_content decisions
     promote_indices = set()
     promoted_articles = []
     for decision in result.other_content:
-        if decision.decision == "promote" and 0 <= decision.index < len(promotable_indices):
+        if decision.decision == "promote":
+            if not (0 <= decision.index < len(promotable_indices)):
+                dropped_oob.append(("promote", decision.index, len(promotable_indices)))
+                continue
             oc_idx = promotable_indices[decision.index]
             oc = other_content[oc_idx]
             promote_indices.add(oc_idx)
@@ -168,6 +177,13 @@ def triage_edition(edition_path: str, client, force: bool = False) -> tuple[bool
                     "triage_promoted": True,
                 })
 
+    if dropped_oob:
+        from ..shared.console import warning as _warning
+        _warning(
+            f"content_rescue: dropped {len(dropped_oob)} out-of-bounds triage "
+            f"decisions (first 5: {dropped_oob[:5]})"
+        )
+
     # Build new articles list (remove demoted, add promoted)
     demoted_to_other = []
     new_articles = []
@@ -194,8 +210,12 @@ def triage_edition(edition_path: str, client, force: bool = False) -> tuple[bool
     edition["other_content"] = new_other
     edition["content_triaged"] = True
 
-    # Atomic write
-    tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(edition_path), suffix=".json")
+    # Atomic write. Explicit prefix avoids collisions when two processes
+    # touch the same edition directory concurrently (e.g. rerunning a failed
+    # edition while another run started). See docs/issues/0020.
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(edition_path), prefix="rescue_", suffix=".json"
+    )
     try:
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
             json.dump(edition, f, indent=2)

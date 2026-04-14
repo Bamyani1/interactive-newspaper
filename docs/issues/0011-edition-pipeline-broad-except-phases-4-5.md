@@ -1,11 +1,22 @@
 ---
 id: 0011
 title: edition_pipeline broad except in Phase 4/5 masks Gemini 503s as warnings
-status: open
+status: fixed
 severity: high
 area: ocr
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix (partial — log-only):** kept the broad `except Exception` in Phases
+> 4 and 5 intentionally. Narrowing it would start failing editions that
+> currently complete under transient Gemini hiccups — a real behavior
+> change that the user's "no huge difference" constraint forbids. Instead,
+> added a `_is_gemini_transient` helper that tags the warning message with
+> `[cause=gemini_5xx_or_quota]` when the exception looks like a transient
+> 5xx / 429 / quota failure, so operators can distinguish outages from
+> config errors in logs. Retries and alerting are a separate follow-up.
+
 
 ## Symptom
 
