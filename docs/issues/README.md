@@ -21,7 +21,6 @@ the row to the "Closed issues" section with the closing date).
 
 | ID | Title | Area | Severity | Opened |
 |---:|---|---|---|---|
-| 0004 | [CI workflow has no Next.js TS build/lint/test coverage](0004-ci-missing-typescript-coverage.md) | ci | critical | 2026-04-13 |
 | 0007 | [Image proxy silent catch opaques FS errors as 404](0007-image-proxy-silent-catch.md) | api | high | 2026-04-13 |
 | 0008 | [page_extractor accesses .page_number on possibly-None response.parsed](0008-page-extractor-parsed-none-access.md) | ocr | high | 2026-04-13 |
 | 0009 | [llm_merge uses PROMPTS["seam_repair"] with no key fallback](0009-llm-merge-prompt-key-no-fallback.md) | ocr | high | 2026-04-13 |
@@ -32,9 +31,7 @@ the row to the "Closed issues" section with the closing date).
 | 0014 | [continuation marker extraction returns [] on truncated page text](0014-continuation-markers-truncated-text.md) | ocr | high | 2026-04-13 |
 | 0015 | [image_linking visual→spatial fallback invisible in diagnostics](0015-image-linking-visual-fallback-invisible.md) | ocr | high | 2026-04-13 |
 | 0016 | [/api/admin/revalidate uses string-equality token check, no rate limit](0016-admin-revalidate-token-no-timing-safety.md) | api | medium | 2026-04-13 |
-| 0017 | [next.config.ts image optimization changes uncommitted](0017-next-config-image-opts-uncommitted.md) | infra | medium | 2026-04-13 |
 | 0018 | [cleanup-images.mjs tokenScore can become NaN on empty captionTokens](0018-cleanup-images-nan-tokenscore.md) | scripts | medium | 2026-04-13 |
-| 0019 | [weather build has no inline post-build validation](0019-weather-build-no-inline-validation.md) | scripts | medium | 2026-04-13 |
 | 0020 | [OCR tempfile creation uses suffix-only](0020-ocr-tempfile-no-unique-prefix.md) | ocr | medium | 2026-04-13 |
 | 0021 | [llm_merge tolerates out-of-bounds article_ids with only a warning](0021-llm-merge-oob-article-ids-no-diagnostic.md) | ocr | medium | 2026-04-13 |
 | 0022 | [flash-retry reads usage_metadata without chained None check](0022-flash-retry-usage-metadata-none.md) | ocr | medium | 2026-04-13 |
@@ -42,12 +39,15 @@ the row to the "Closed issues" section with the closing date).
 | 0024 | [weather.ts uses `as unknown as` double-cast for raw OpenMeteo response](0024-weather-raw-response-type-cast.md) | api | low | 2026-04-13 |
 | 0025 | [/api/weather route doesn't bound-check lat/lon/location_name](0025-weather-route-input-bounds.md) | api | low | 2026-04-13 |
 | 0026 | [p-limit resolves to two versions in the lockfile](0026-p-limit-duplicate-versions.md) | deps | low | 2026-04-13 |
-| 0027 | [.gitignore adds scripts/dev/data/ without explanatory comment](0027-gitignore-dev-data-comment.md) | infra | low | 2026-04-13 |
 
 ## Closed issues
 
 | ID | Title | Area | Severity | Closed |
 |---:|---|---|---|---|
+| 0004 | [CI workflow has no Next.js TS build/lint/test coverage](0004-ci-missing-typescript-coverage.md) | ci | critical | 2026-04-14 |
+| 0017 | [next.config.ts image optimization changes uncommitted](0017-next-config-image-opts-uncommitted.md) | infra | medium | 2026-04-14 |
+| 0019 | [weather build has no inline post-build validation](0019-weather-build-no-inline-validation.md) | scripts | medium | 2026-04-14 |
+| 0027 | [.gitignore adds scripts/dev/data/ without explanatory comment](0027-gitignore-dev-data-comment.md) | infra | low | 2026-04-14 |
 | 0001 | [seed.mjs embed loop passes strings to embedDocuments](0001-seed-embed-type-mismatch.md) | scripts | critical | 2026-04-14 |
 | 0002 | [seed.mjs embedArticles swallows batch errors; seed exits 0](0002-seed-embed-error-swallow.md) | scripts | critical | 2026-04-14 |
 | 0003 | [embed.mjs exits 0 even when per-batch retries fail](0003-embed-mjs-exit-zero-on-errors.md) | scripts | critical | 2026-04-14 |
