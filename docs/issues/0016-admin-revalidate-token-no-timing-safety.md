@@ -1,11 +1,21 @@
 ---
 id: 0016
 title: /api/admin/revalidate uses string-equality token check, no rate limit
-status: open
+status: fixed
 severity: medium
 area: api
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `admin/revalidate/route.ts` now uses `timingSafeEqual` from
+> `node:crypto` (wrapped in a length-guarded `safeEqual` helper to avoid
+> the buffer-length-mismatch throw) instead of `===`, and is wrapped in a
+> 5-req/min per-IP rate limiter via `createRateLimiter` from
+> `src/lib/rate-limit.ts`. Brute force probes now hit a 429 before the
+> token check and timing comparison is constant-time, closing both
+> attack surfaces from the issue.
+
 
 ## Symptom
 

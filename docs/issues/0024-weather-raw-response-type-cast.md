@@ -1,11 +1,20 @@
 ---
 id: 0024
 title: weather.ts uses `as unknown as` double-cast for raw OpenMeteo response
-status: open
+status: fixed
 severity: low
 area: api
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `src/lib/weather.ts:481` replaced `parsed as unknown as
+> Record<string, unknown>` with a single `parsed as Record<string,
+> unknown>` cast. The `parsed` variable is already a structured object
+> literal, and no code reads any field off `raw`, so the single cast is
+> sufficient and no longer bypasses the type system entirely. tsc stays
+> clean.
+
 
 ## Symptom
 

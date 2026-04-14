@@ -1,11 +1,21 @@
 ---
 id: 0023
 title: embed.mjs silently degrades to text-only when local images missing
-status: open
+status: fixed
 severity: medium
 area: scripts
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `scripts/db/embed.mjs` tracks `imagesExpected` and
+> `imagesMissing` counters inside `loadFirstImage` and emits a WARNING at
+> end-of-run if any articles had `image_urls` but no local mirror. The
+> embedding still runs text-only for those articles (preserving current
+> behavior), but operators now see the degradation instead of silently
+> shipping a partially-multimodal index. Did NOT add a `--require-images`
+> flag — that's a new feature, not a bug fix.
+
 
 ## Symptom
 

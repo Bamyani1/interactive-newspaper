@@ -1,11 +1,20 @@
 ---
 id: 0025
 title: /api/weather route doesn't bound-check lat/lon/location_name
-status: open
+status: fixed
 severity: low
 area: api
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `src/app/api/weather/route.ts` now rejects out-of-range
+> coordinates (`lat` ∉ [-90, 90], `lon` ∉ [-180, 180]) and over-long
+> `location_name` / `country` / `state` / `station_id` params before
+> forwarding the query downstream. Each returns a 400 with a specific
+> error string. Downstream API quota is no longer wasted on obviously-
+> invalid requests.
+
 
 ## Symptom
 
