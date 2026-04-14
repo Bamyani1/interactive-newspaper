@@ -837,4 +837,129 @@ describe("POST /api/ask", () => {
     expect(second).toBe(first); // same cached object reference
     expect(third).toBe(first);
   });
+
+  // ── Coverage gaps identified during the RAG health review ─────────────
+  // The three tests below cover failure modes that were previously
+  // uncovered: reranker filtering everything below minScore, Gemini
+  // 503-class errors during embed, and a streaming generator that throws
+  // mid-delta. See the master plan in warm-soaring-willow.md.
+
+  it("returns low-confidence 'not enough info' when reranker filters all articles", async () => {
+    // Retrieval succeeds with 2 articles, but reranker drops them all
+    // (everything scored below minScore=5). route.ts passes the empty
+    // array to generateAnswer, which returns the canned insufficient-info
+    // response with confidence=low. Previously this path had no explicit
+    // test — coverage reached via golden suite only.
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      mockArticle,
+      { ...mockArticle, id: "1960-01-07-1" },
+    ]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer:
+        "I don't have enough information in the archive to answer this question.",
+      citations: [],
+      confidence: "low",
+    });
+
+    const response = await POST(
+      makeRequest({ question: "something totally off-topic" }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.confidence).toBe("low");
+    expect(body.citations).toEqual([]);
+    expect(body.answer).toMatch(/don.?t have enough information/i);
+    // sourceArticles should be empty because nothing survived reranking
+    expect(body.sourceArticles).toEqual([]);
+    // generateAnswer must still be called with the empty array so the
+    // canned low-confidence response path is reachable from the route
+    expect(generateAnswer).toHaveBeenCalledWith(
+      "something totally off-topic",
+      [],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("returns 502 with stage='embed' when embed throws a Gemini 503-style error", async () => {
+    // Gemini SERVICE_UNAVAILABLE (503) is not a QuotaExhaustedError and
+    // not a timeout — it's a transient 5xx. Today the route collapses
+    // all non-quota embed failures into a generic 502. This test pins
+    // that behavior so a future change that surfaces 503 distinctly
+    // (e.g., a dedicated 503 passthrough) breaks this test on purpose
+    // and forces explicit migration instead of silent drift.
+    const serviceUnavailable = Object.assign(
+      new Error("Gemini API error: 503 SERVICE_UNAVAILABLE upstream connect error"),
+      { status: "UNAVAILABLE", code: 503 },
+    );
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(serviceUnavailable);
+
+    const response = await POST(
+      makeRequest({ question: "Kennedy visit to Ohio" }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.stage).toBe("embed");
+    expect(body.error).toBe("Failed to process question. Please try again.");
+    expect(typeof body.requestId).toBe("string");
+    expect(body.requestId.length).toBeGreaterThan(0);
+    // Retry-After header is NOT set for generic 502 (only for quota 429)
+    expect(response.headers.get("Retry-After")).toBeNull();
+  });
+
+  it("emits delta events then an error event when generateAnswerStream throws mid-stream", async () => {
+    // The streaming path yields deltas as they arrive from Gemini, then
+    // yields a final 'done' event. If the underlying model call fails
+    // after producing some output, the client should still receive the
+    // partial deltas AND a subsequent error event so the UI can clean up
+    // gracefully instead of hanging.
+    //
+    // NOTE on stage tagging: the non-streaming path wraps generateAnswer
+    // in wrapStage("generate", ...) so its errors surface as
+    // `stage: "generate"`. The streaming path's for-await loop does NOT
+    // have a dedicated try/catch around generateAnswerStream — the error
+    // falls through to the top-level safety net in handleStreamingAsk
+    // which tags it as `stage: "unknown"` (or "deadline"). This test pins
+    // that current behavior. A follow-up could wrap the for-await in a
+    // stage="generate" try/catch for consistency.
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "Partial " };
+        yield { type: "delta", text: "answer before crash" };
+        throw new Error("Gemini stream interrupted");
+      })(),
+    );
+
+    const response = await POST(
+      makeRequest({ question: "What happened?" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    // Expect at least the two delta events we yielded before the throw,
+    // then an error event carrying requestId. Ordering matters — deltas
+    // must come first so the client can render them.
+    const deltas = events.filter((e) => e.type === "delta");
+    expect(deltas.length).toBeGreaterThanOrEqual(2);
+    expect(deltas[0]).toMatchObject({ type: "delta", text: "Partial " });
+    expect(deltas[1]).toMatchObject({
+      type: "delta",
+      text: "answer before crash",
+    });
+
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    // Current behavior: top-level safety net uses stage="unknown" for any
+    // non-deadline throw escaping the for-await. See the NOTE above.
+    expect(errorEvent?.stage).toBe("unknown");
+    expect(errorEvent?.message).toMatch(/Gemini stream interrupted/);
+    expect(typeof errorEvent?.requestId).toBe("string");
+    expect((errorEvent?.requestId as string).length).toBeGreaterThan(0);
+
+    // No 'done' event should be emitted when the stream errors out — the
+    // client differentiates by receiving 'error' instead.
+    const doneEvent = events.find((e) => e.type === "done");
+    expect(doneEvent).toBeUndefined();
+  });
 });
