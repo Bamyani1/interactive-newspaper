@@ -27,7 +27,7 @@ if (existsSync(envPath)) {
 
 // Dynamic import: tsx transpiles .ts → CJS at runtime; static named imports
 // from .ts files don't work in .mjs because Node resolves exports before tsx runs.
-const { embedDocuments, buildEmbeddingText, buildEmbeddingInput, hasApiKey, EMBEDDING_DIMS, EMBEDDING_MODEL } =
+const { embedDocuments, buildEmbeddingText, buildEmbeddingInput, hasApiKey, EMBEDDING_DIMS, EMBEDDING_MODEL, QuotaExhaustedError } =
     await import("../../src/lib/embeddings.ts");
 
 const isForce = process.argv.includes("--force");
@@ -140,6 +140,7 @@ async function main() {
     let embedded = 0;
     let errors = 0;
     let consecutiveFailures = 0;
+    let quotaExhausted = false;
 
     for (let i = 0; i < articles.length; i += BATCH_SIZE) {
         const batch = articles.slice(i, i + BATCH_SIZE);
@@ -176,6 +177,17 @@ async function main() {
                 `  Embedded ${embedded}/${articles.length} articles (${pct}%) [${imagesInBatch} with images]`,
             );
         } catch (err) {
+            // Hard stop on quota exhaustion. Retrying just burns more API
+            // calls on guaranteed failures. See docs/issues/0028.
+            if (QuotaExhaustedError && err instanceof QuotaExhaustedError) {
+                console.warn(
+                    `  Quota exhausted at batch starting index ${i}; stopping early. Retry after quota reset.`,
+                );
+                quotaExhausted = true;
+                errors += articles.length - embedded;
+                break;
+            }
+
             errors += batch.length;
             console.error(
                 `  ERROR embedding batch starting at index ${i}:`,
@@ -201,6 +213,15 @@ async function main() {
                 consecutiveFailures = 0;
                 console.log(`  Retry succeeded: ${embedded}/${articles.length}`);
             } catch (retryErr) {
+                // Same early-abort check on the retry path
+                if (QuotaExhaustedError && retryErr instanceof QuotaExhaustedError) {
+                    console.warn(
+                        `  Retry also hit quota exhaustion; stopping early.`,
+                    );
+                    quotaExhausted = true;
+                    errors += articles.length - embedded - batch.length;
+                    break;
+                }
                 console.error(`  Retry also failed:`, retryErr.message || retryErr);
             }
         }
@@ -209,7 +230,18 @@ async function main() {
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
     console.log(`\nDone in ${elapsed}s.`);
     console.log(`  Embedded: ${embedded}`);
-    if (errors > 0) console.log(`  Errors: ${errors}`);
+    if (quotaExhausted) {
+        console.log(`  Status: quota exhausted, stopped early`);
+        throw new Error(
+            `Embedding stopped early due to Gemini quota exhaustion; ${embedded} of ${articles.length} article(s) embedded. Retry after the daily quota reset.`,
+        );
+    }
+    if (errors > 0) {
+        console.log(`  Errors: ${errors}`);
+        throw new Error(
+            `Embedding failed: ${errors} article(s) could not be embedded`,
+        );
+    }
 }
 
 main().catch((err) => {

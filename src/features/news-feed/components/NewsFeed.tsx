@@ -143,9 +143,14 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     const editionHeaderDate = useMemo(() => {
         if (!resolvedEditionDate) return "No date selected";
         try {
+            // Append T12:00:00 (no Z) so Date parses as local noon on both
+            // server (UTC) and client (any TZ). Guards against the ECMAScript
+            // rule that bare "YYYY-MM-DD" parses as UTC midnight, which would
+            // shift to the previous calendar day in any negative-UTC client
+            // timezone and produce a hydration mismatch with the SSR output.
             return new Intl.DateTimeFormat("en-US", {
                 weekday: "long", month: "long", day: "numeric", year: "numeric",
-            }).format(new Date(resolvedEditionDate));
+            }).format(new Date(resolvedEditionDate + "T12:00:00"));
         } catch { return resolvedEditionDate; }
     }, [resolvedEditionDate]);
 

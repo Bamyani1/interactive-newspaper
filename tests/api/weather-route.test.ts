@@ -17,7 +17,6 @@ describe("/api/weather – missing date param", () => {
     vi.doMock("@/src/lib/weather-local-archive", () => ({
       isDateWithinLocalArchive: vi.fn(() => false),
       getLocalWeatherByDate: vi.fn(),
-      parseScope: vi.fn(() => "delaware"),
     }));
     vi.doMock("@/src/lib/weather", () => ({
       lookupHistoricalWeatherCached: vi.fn(),
@@ -54,7 +53,6 @@ describe("/api/weather – local archive path (in-range date)", () => {
     vi.doMock("@/src/lib/weather-local-archive", () => ({
       isDateWithinLocalArchive: vi.fn(() => true),
       getLocalWeatherByDate,
-      parseScope: vi.fn(() => "delaware"),
     }));
     vi.doMock("@/src/lib/weather", () => ({
       lookupHistoricalWeatherCached,
@@ -65,7 +63,7 @@ describe("/api/weather – local archive path (in-range date)", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(getLocalWeatherByDate).toHaveBeenCalledWith("1975-06-15", "delaware");
+    expect(getLocalWeatherByDate).toHaveBeenCalledWith("1975-06-15");
     expect(lookupHistoricalWeatherCached).not.toHaveBeenCalled();
     expect(body.record?.date).toBe("1975-06-15");
   });
@@ -98,7 +96,6 @@ describe("/api/weather – live lookup path (out-of-range date)", () => {
     vi.doMock("@/src/lib/weather-local-archive", () => ({
       isDateWithinLocalArchive: vi.fn(() => false),
       getLocalWeatherByDate,
-      parseScope: vi.fn(() => "delaware"),
     }));
     vi.doMock("@/src/lib/weather", () => ({
       lookupHistoricalWeatherCached,
@@ -113,54 +110,6 @@ describe("/api/weather – live lookup path (out-of-range date)", () => {
   });
 });
 
-// ── Scope parsing ─────────────────────────────────────────────────────
-
-describe("/api/weather – scope parsing (via local archive path)", () => {
-  const mockLocalRecord = {
-    date: "1975-06-15",
-    tmax_c: 20,
-    tmin_c: 10,
-    precip_mm: 0,
-    source: "NOAA_GHCN_DAILY_ARCHIVE",
-    source_station_id: "TEST",
-    quality_flag: null,
-    is_estimated: false,
-    raw: {},
-  };
-
-  async function setupLocalRoute(parsedScope: string) {
-    const getLocalWeatherByDate = vi.fn(async () => mockLocalRecord);
-    vi.doMock("@/src/lib/weather-local-archive", () => ({
-      isDateWithinLocalArchive: vi.fn(() => true),
-      getLocalWeatherByDate,
-      parseScope: vi.fn(() => parsedScope),
-    }));
-    vi.doMock("@/src/lib/weather", () => ({
-      lookupHistoricalWeatherCached: vi.fn(),
-    }));
-    const route = await import("../../src/app/api/weather/route");
-    return { route, getLocalWeatherByDate };
-  }
-
-  it("no scope param → getLocalWeatherByDate called with 'delaware'", async () => {
-    const { route, getLocalWeatherByDate } = await setupLocalRoute("delaware");
-    await route.GET(makeRequest("http://localhost/api/weather?date=1975-06-15"));
-    expect(getLocalWeatherByDate).toHaveBeenCalledWith("1975-06-15", "delaware");
-  });
-
-  it("scope=statewide → getLocalWeatherByDate called with 'statewide'", async () => {
-    const { route, getLocalWeatherByDate } = await setupLocalRoute("statewide");
-    await route.GET(makeRequest("http://localhost/api/weather?date=1975-06-15&scope=statewide"));
-    expect(getLocalWeatherByDate).toHaveBeenCalledWith("1975-06-15", "statewide");
-  });
-
-  it("scope=invalid → parseScope returns 'delaware'", async () => {
-    const { route, getLocalWeatherByDate } = await setupLocalRoute("delaware");
-    await route.GET(makeRequest("http://localhost/api/weather?date=1975-06-15&scope=invalid"));
-    expect(getLocalWeatherByDate).toHaveBeenCalledWith("1975-06-15", "delaware");
-  });
-});
-
 // ── Numeric param parsing (lat) ───────────────────────────────────────
 
 describe("/api/weather – numeric param parsing via live path", () => {
@@ -168,7 +117,6 @@ describe("/api/weather – numeric param parsing via live path", () => {
     vi.doMock("@/src/lib/weather-local-archive", () => ({
       isDateWithinLocalArchive: vi.fn(() => false),
       getLocalWeatherByDate: vi.fn(),
-      parseScope: vi.fn(() => "delaware"),
     }));
     vi.doMock("@/src/lib/weather", () => ({
       lookupHistoricalWeatherCached: spy,
@@ -210,7 +158,6 @@ describe("/api/weather – live lookup error status codes", () => {
     vi.doMock("@/src/lib/weather-local-archive", () => ({
       isDateWithinLocalArchive: vi.fn(() => false),
       getLocalWeatherByDate: vi.fn(),
-      parseScope: vi.fn(() => "delaware"),
     }));
     vi.doMock("@/src/lib/weather", () => ({
       lookupHistoricalWeatherCached: vi.fn(async () => lookupResult),

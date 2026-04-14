@@ -12,28 +12,43 @@ interface UseMonthlyTrendingMusicResult {
   reason: MonthlyTrendingReason;
 }
 
-interface RawTrack {
-  rank: number;
-  title: string;
-  artist: string;
-  youtube_id: string;
+type TrackTuple = [string, string, string];
+
+interface PackedArchive {
+  start: string;
+  end: string;
+  months: Array<TrackTuple[] | null>;
 }
 
-type YearData = Record<string, RawTrack[]>;
+interface NormalizedArchive extends PackedArchive {
+  startYear: number;
+  endYear: number;
+}
 
-const yearCache = new Map<string, YearData>();
-const inFlight = new Map<string, Promise<YearData | null>>();
+const ARCHIVE_URL = "/top-10-music/chart-1950-2010.json";
 
-const MAX_CACHE_SIZE = 20;
-const MIN_YEAR = 1960;
-const MAX_YEAR = 2000;
+let archivePromise: Promise<NormalizedArchive | null> | null = null;
 
-function cacheSet(key: string, value: YearData): void {
-  if (yearCache.size >= MAX_CACHE_SIZE) {
-    const firstKey = yearCache.keys().next().value;
-    if (firstKey !== undefined) yearCache.delete(firstKey);
+function parseYear(value: string): number | null {
+  const match = /^(\d{4})-\d{2}$/.exec(value);
+  if (!match) return null;
+  return Number(match[1]);
+}
+
+function loadArchive(): Promise<NormalizedArchive | null> {
+  if (!archivePromise) {
+    archivePromise = fetch(ARCHIVE_URL)
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const raw = (await response.json()) as PackedArchive;
+        const startYear = parseYear(raw.start);
+        const endYear = parseYear(raw.end);
+        if (startYear == null || endYear == null) return null;
+        return { ...raw, startYear, endYear };
+      })
+      .catch(() => null);
   }
-  yearCache.set(key, value);
+  return archivePromise;
 }
 
 function isIsoDate(value: string): boolean {
@@ -61,58 +76,28 @@ function formatMonthNameOnly(month: string): string {
   }).format(date);
 }
 
-async function fetchYear(year: string): Promise<YearData | null> {
-  const cached = yearCache.get(year);
-  if (cached) return cached;
-
-  const existing = inFlight.get(year);
-  if (existing) return existing;
-
-  const pending = fetch(`/top-10-music/${year}.json`)
-    .then(async (response) => {
-      if (!response.ok) return null;
-      const data = (await response.json()) as YearData;
-      cacheSet(year, data);
-      return data;
-    })
-    .catch(() => null)
-    .finally(() => {
-      inFlight.delete(year);
-    });
-
-  inFlight.set(year, pending);
-  return pending;
+function monthIndex(year: number, month: number, startYear: number): number {
+  return (year - startYear) * 12 + (month - 1);
 }
 
 export function useMonthlyTrendingMusic(date: string | null): UseMonthlyTrendingMusicResult {
-  const [yearData, setYearData] = useState<YearData | null>(null);
+  const [tuples, setTuples] = useState<TrackTuple[] | null>(null);
   const [reason, setReason] = useState<MonthlyTrendingReason>(null);
   const [isLoading, setIsLoading] = useState(Boolean(date));
   const [error, setError] = useState<Error | null>(null);
 
-  const year = date && isIsoDate(date) ? date.slice(0, 4) : null;
-  const monthKey = date && isIsoDate(date) ? date.slice(5, 7) : null;
+  const year = date && isIsoDate(date) ? Number(date.slice(0, 4)) : null;
+  const month = date && isIsoDate(date) ? Number(date.slice(5, 7)) : null;
   const monthStr = date && isIsoDate(date) ? date.slice(0, 7) : null;
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      if (!date || !year || !monthKey) {
+      if (!date || year == null || month == null) {
         if (!cancelled) {
-          setYearData(null);
+          setTuples(null);
           setReason(date ? "INVALID_DATE" : null);
-          setError(null);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      const yearNum = parseInt(year, 10);
-      if (yearNum < MIN_YEAR || yearNum > MAX_YEAR) {
-        if (!cancelled) {
-          setYearData(null);
-          setReason("NO_DATA");
           setError(null);
           setIsLoading(false);
         }
@@ -123,19 +108,28 @@ export function useMonthlyTrendingMusic(date: string | null): UseMonthlyTrending
       setError(null);
 
       try {
-        const data = await fetchYear(year);
-        if (!cancelled) {
-          if (data) {
-            setYearData(data);
-            setReason(data[monthKey] ? null : "NO_DATA");
-          } else {
-            setYearData(null);
-            setReason("NO_DATA");
-          }
+        const archive = await loadArchive();
+        if (cancelled) return;
+
+        if (!archive) {
+          setTuples(null);
+          setReason("NO_DATA");
+          return;
         }
+
+        if (year < archive.startYear || year > archive.endYear) {
+          setTuples(null);
+          setReason("NO_DATA");
+          return;
+        }
+
+        const idx = monthIndex(year, month, archive.startYear);
+        const monthTuples = archive.months[idx] ?? null;
+        setTuples(monthTuples);
+        setReason(monthTuples ? null : "NO_DATA");
       } catch (value) {
         if (!cancelled) {
-          setYearData(null);
+          setTuples(null);
           setReason(null);
           setError(value instanceof Error ? value : new Error("Failed to load monthly music"));
         }
@@ -151,19 +145,17 @@ export function useMonthlyTrendingMusic(date: string | null): UseMonthlyTrending
     return () => {
       cancelled = true;
     };
-  }, [date, year, monthKey]);
+  }, [date, year, month]);
 
   const tracks = useMemo<MonthlyTrendingTrack[]>(() => {
-    if (!yearData || !monthKey) return [];
-    const rawTracks = yearData[monthKey];
-    if (!rawTracks) return [];
-    return rawTracks.map((track) => ({
-      rank: track.rank,
-      title: track.title,
-      artist: track.artist,
-      youtubeId: track.youtube_id,
+    if (!tuples) return [];
+    return tuples.map((tuple, i) => ({
+      rank: i + 1,
+      title: tuple[0],
+      artist: tuple[1],
+      youtubeId: tuple[2],
     }));
-  }, [yearData, monthKey]);
+  }, [tuples]);
 
   const monthLabel = useMemo(() => {
     return monthStr ? formatMonth(monthStr) : "";
@@ -181,4 +173,8 @@ export function useMonthlyTrendingMusic(date: string | null): UseMonthlyTrending
     error,
     reason,
   };
+}
+
+export function clearMonthlyTrendingMusicCacheForTests(): void {
+  archivePromise = null;
 }

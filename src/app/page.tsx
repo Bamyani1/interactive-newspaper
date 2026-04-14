@@ -2,18 +2,26 @@
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { PageShell, CathedralBackground, Ticker, useTickerAnimation, EditionPicker } from "@/shared";
 import { headlines } from "@/shared/landing/data/headlines";
 import { landingCardVariants, TRANSITIONS } from "@/shared/motion/motionTokens";
 
+// The stained-glass SVG has its own inline reveal script: panels appear
+// progressively with data-delay values up to ~2955ms plus an 800ms reveal
+// duration per panel. By ~2.5s most panels are visible, so the card waits
+// this long on first visit before gliding in. Return visits are instant
+// via the cinema-instant class.
+const BACKGROUND_REVEAL_DELAY = 2.5;
+const CARD_REVEAL_DURATION = 1.0;
+
 let hasPlayedEntrance = false;
 
 export default function Home() {
     const router = useRouter();
-    const { editions, isLoading } = useArchive();
+    const { editions } = useArchive();
     const [isExiting, setIsExiting] = useState(false);
 
     // Use the extracted animation hook
@@ -36,7 +44,16 @@ export default function Home() {
     );
 
     return (
-        <PageShell variant="cinema" backgroundContent={<CathedralBackground />}>
+        <>
+            {/* Preload the torn-paper asset so it streams in during the
+                background's fade-in and is already cached by the time the
+                card reveals. Invisible to the user. */}
+            <link rel="preload" href="/shape/1.webp" as="image" type="image/webp" />
+            <PageShell
+                variant="cinema"
+                backgroundContent={<CathedralBackground />}
+                className={hasPlayedEntrance ? "cinema-instant" : ""}
+            >
             {/* TOP TICKER */}
             <Ticker items={tickerItems} />
 
@@ -47,7 +64,11 @@ export default function Home() {
                     variants={landingCardVariants}
                     initial={hasPlayedEntrance ? false : "hidden"}
                     animate="show"
-                    transition={TRANSITIONS.slow}
+                    transition={
+                        hasPlayedEntrance
+                            ? TRANSITIONS.slow
+                            : { ...TRANSITIONS.slow, duration: CARD_REVEAL_DURATION, delay: BACKGROUND_REVEAL_DELAY }
+                    }
                     onAnimationComplete={(definition) => {
                         if (definition === "show") {
                             hasPlayedEntrance = true;
@@ -76,7 +97,6 @@ export default function Home() {
                                 editions={editions}
                                 selectedEdition={selectedEdition}
                                 onSelect={setUserSelectedEdition}
-                                isLoading={isLoading}
                                 onOpenChange={setIsPickerOpen}
                             />
                         </div>
@@ -89,19 +109,10 @@ export default function Home() {
                             type="button"
                             className="cinema-btn"
                             onClick={handleEnter}
-                            disabled={isLoading || !selectedEdition}
+                            disabled={!selectedEdition}
                         >
-                            {isLoading ? (
-                                <>
-                                    <span>Loading Editions...</span>
-                                    <Loader2 size={20} className="animate-spin" />
-                                </>
-                            ) : (
-                                <>
-                                    <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
-                                    <ArrowRight size={20} />
-                                </>
-                            )}
+                            <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
+                            <ArrowRight size={20} />
                         </button>
                     )}
                 </motion.div>
@@ -123,6 +134,7 @@ export default function Home() {
                     }
                 }}
             />
-        </PageShell>
+            </PageShell>
+        </>
     );
 }

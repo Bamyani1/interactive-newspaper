@@ -56,6 +56,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                 caption={heroArticle.imageCaptions?.[0] ?? heroArticle.imageCaption}
                 byline={heroArticle.byline}
                 onImageClick={() => setLightboxSrc(heroArticle.imageUrls[0])}
+                priority
               />
               {heroArticle.imageUrls.length > 1 && (
                 <ImageGallery
@@ -101,7 +102,6 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                         onClick={() => setLightboxSrc(url)}
                         priority={i === 0}
                         width="full"
-                        maxWidth={heroArticle.imageUrls.length > 1 ? "90%" : "100%"}
                       />
                     ))
                   : undefined
@@ -136,6 +136,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
             const isLong = plainText.length > LONG_ARTICLE_THRESHOLD;
             const hasImage = article.imageUrls.length > 0;
             const isPhotoOnly = paragraphs.length === 0 && hasImage;
+            const isAboveFold = _index === 0;
 
             return (
               <React.Fragment key={article.id}>
@@ -160,6 +161,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                         onImageClick={() =>
                           setLightboxSrc(article.imageUrls[0])
                         }
+                        priority={isAboveFold}
                       />
                       {article.imageUrls.length > 1 && (
                         <ImageGallery
@@ -206,8 +208,8 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                                   alt={article.headline}
                                   caption={article.imageCaptions?.[i] ?? (i === 0 ? article.imageCaption : null)}
                                   onClick={() => setLightboxSrc(url)}
+                                  priority={isAboveFold && i === 0}
                                   width="full"
-                                  maxWidth={article.imageUrls.length > 1 ? "90%" : "100%"}
                                 />
                               ))
                             : undefined
@@ -248,8 +250,8 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                                   alt={article.headline}
                                   caption={article.imageCaptions?.[i] ?? (i === 0 ? article.imageCaption : null)}
                                   onClick={() => setLightboxSrc(url)}
+                                  priority={isAboveFold && i === 0}
                                   width="full"
-                                  maxWidth={article.imageUrls.length > 1 ? "90%" : "100%"}
                                 />
                               ))
                             : undefined

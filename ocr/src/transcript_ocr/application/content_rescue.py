@@ -151,6 +151,7 @@ def triage_edition(edition_path: str, client, force: bool = False) -> tuple[bool
                     "continues_on": "",
                     "continued_from": "",
                     "source_pages": [],
+                    "triage_promoted": True,
                 })
             else:
                 promoted_articles.append({
@@ -164,6 +165,7 @@ def triage_edition(edition_path: str, client, force: bool = False) -> tuple[bool
                     "continues_on": "",
                     "continued_from": "",
                     "source_pages": [],
+                    "triage_promoted": True,
                 })
 
     # Build new articles list (remove demoted, add promoted)

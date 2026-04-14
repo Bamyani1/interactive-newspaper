@@ -358,35 +358,17 @@ export function mergeWithFallback({ date, observedRecord, fallbackValues, mode }
   };
 }
 
-function aggregateStatewide(observedRecords) {
-  const sum = { tmax: 0, tmin: 0, precip: 0 };
-  const count = { tmax: 0, tmin: 0, precip: 0 };
-
-  for (const record of observedRecords) {
-    if (record.tmax_c != null) {
-      sum.tmax += record.tmax_c;
-      count.tmax += 1;
-    }
-    if (record.tmin_c != null) {
-      sum.tmin += record.tmin_c;
-      count.tmin += 1;
-    }
-    if (record.precip_mm != null) {
-      sum.precip += record.precip_mm;
-      count.precip += 1;
-    }
+export function recordsToSlimArchive(records) {
+  if (records.length === 0) {
+    throw new Error('Cannot build slim archive from empty records.');
   }
 
   return {
-    tmax_c: count.tmax > 0 ? round2(sum.tmax / count.tmax) : null,
-    tmin_c: count.tmin > 0 ? round2(sum.tmin / count.tmin) : null,
-    precip_mm: count.precip > 0 ? round2(sum.precip / count.precip) : null,
-    station_count: observedRecords.length,
-    station_counts: {
-      tmax: count.tmax,
-      tmin: count.tmin,
-      precip: count.precip,
-    },
+    start_date: records[0].date,
+    end_date: records[records.length - 1].date,
+    tmax_c: records.map((r) => r.tmax_c),
+    tmin_c: records.map((r) => r.tmin_c),
+    is_estimated: records.map((r) => (r.is_estimated ? '1' : '0')).join(''),
   };
 }
 
@@ -480,7 +462,6 @@ function buildYearIndexes({ year, records, stationMetaById, fallbackByDate }) {
   const yearEnd = `${year}-12-31`;
 
   const delaware = [];
-  const statewide = [];
 
   for (const date of eachDateInclusive(yearStart, yearEnd)) {
     if (date < START_DATE || date > END_DATE) continue;
@@ -504,33 +485,10 @@ function buildYearIndexes({ year, records, stationMetaById, fallbackByDate }) {
       mode: 'DELAWARE_NEAREST_BEST',
     });
 
-    const stateAgg = aggregateStatewide(observedForDate);
-    const statewideObserved = {
-      date,
-      station_id: null,
-      tmax_c: stateAgg.tmax_c,
-      tmin_c: stateAgg.tmin_c,
-      precip_mm: stateAgg.precip_mm,
-    };
-
-    const statewideRecord = mergeWithFallback({
-      date,
-      observedRecord: statewideObserved,
-      fallbackValues: fallback,
-      mode: 'STATEWIDE_MEAN',
-    });
-
-    statewideRecord.raw.station_count = stateAgg.station_count;
-    statewideRecord.raw.station_counts = stateAgg.station_counts;
-
     delaware.push(delawareRecord);
-    statewide.push(statewideRecord);
   }
 
-  return {
-    delaware,
-    statewide,
-  };
+  return { delaware };
 }
 
 async function ensureDirectories() {
@@ -541,6 +499,10 @@ async function ensureDirectories() {
 
 async function writeJson(filePath, payload) {
   await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
+async function writeSlimArchive(filePath, archive) {
+  await writeFile(filePath, JSON.stringify(archive), 'utf8');
 }
 
 function relativeFromRoot(filePath) {
@@ -566,7 +528,6 @@ export async function buildOhioWeatherArchive() {
   await writeJson(stationsOutPath, stationList);
 
   const delawareIndex = [];
-  const statewideIndex = [];
   const rawFiles = [];
 
   for (let year = START_YEAR; year <= END_YEAR; year += 1) {
@@ -597,7 +558,6 @@ export async function buildOhioWeatherArchive() {
     });
 
     delawareIndex.push(...indexes.delaware);
-    statewideIndex.push(...indexes.statewide);
 
     console.log(
       `Year ${year} done: ${records.length.toLocaleString()} records, ${indexes.delaware.length} daily index rows.`,
@@ -605,24 +565,19 @@ export async function buildOhioWeatherArchive() {
   }
 
   delawareIndex.sort((left, right) => left.date.localeCompare(right.date));
-  statewideIndex.sort((left, right) => left.date.localeCompare(right.date));
 
-  if (delawareIndex.length !== TOTAL_DAYS || statewideIndex.length !== TOTAL_DAYS) {
+  if (delawareIndex.length !== TOTAL_DAYS) {
     throw new Error(
-      `Daily index count mismatch: delaware=${delawareIndex.length}, statewide=${statewideIndex.length}, expected=${TOTAL_DAYS}`,
+      `Daily index count mismatch: delaware=${delawareIndex.length}, expected=${TOTAL_DAYS}`,
     );
   }
 
   const delawareOutPath = path.join(INDEX_DIR, 'delaware-by-date-1950-2000.json');
-  const statewideOutPath = path.join(INDEX_DIR, 'statewide-by-date-1950-2000.json');
-
-  await writeJson(delawareOutPath, delawareIndex);
-  await writeJson(statewideOutPath, statewideIndex);
+  const slimArchive = recordsToSlimArchive(delawareIndex);
+  await writeSlimArchive(delawareOutPath, slimArchive);
 
   const delawareSha = await sha256File(delawareOutPath);
-  const statewideSha = await sha256File(statewideOutPath);
   const delawareStat = await stat(delawareOutPath);
-  const statewideStat = await stat(statewideOutPath);
 
   const manifestPath = path.join(ROOT, 'manifest.json');
   const manifest = {
@@ -655,12 +610,6 @@ export async function buildOhioWeatherArchive() {
           rows: delawareIndex.length,
           bytes: delawareStat.size,
           sha256: delawareSha,
-        },
-        statewide: {
-          file: relativeFromRoot(statewideOutPath),
-          rows: statewideIndex.length,
-          bytes: statewideStat.size,
-          sha256: statewideSha,
         },
       },
     },

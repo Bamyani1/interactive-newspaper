@@ -49,8 +49,6 @@ describe("TimeControls theme tokens", () => {
             editions: ["1988-10-12", "1988-10-05"],
             editionInfo: [],
             hasEditions: true,
-            isLoading: false,
-            error: null,
         });
     });
 

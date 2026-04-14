@@ -11,6 +11,7 @@ import { ThemeModeManager } from "@/features/theme";
 import { MotionProvider } from "@/shared/motion/MotionProvider";
 import { PageTransition } from "@/shared/motion/PageTransition";
 import { ErrorBoundary } from "@/shared";
+import { getEditionsList } from "@/src/lib/editions-server";
 import ColorCustomizer from "../../font-color/components/ColorCustomizer";
 import FontCustomizer from "../../font-color/components/FontCustomizer";
 
@@ -45,11 +46,13 @@ export const metadata: Metadata = {
   description: "The Transcript Archive — explore OWU's historic student newspaper, 1960–2000",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const initialEditions = await getEditionsList();
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body
@@ -59,7 +62,7 @@ export default function RootLayout({
       >
         <ThemeModeManager />
         <MotionProvider>
-          <ArchiveProvider>
+          <ArchiveProvider initialEditions={initialEditions}>
             <ErrorBoundary>
               <PageTransition>{children}</PageTransition>
             </ErrorBoundary>
