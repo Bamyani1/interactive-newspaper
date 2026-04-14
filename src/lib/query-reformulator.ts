@@ -49,6 +49,7 @@ MODE: text|visual`;
 
 export async function reformulateQuery(
     originalQuestion: string,
+    opts: { signal?: AbortSignal } = {},
 ): Promise<ReformulatedQuery> {
     const fallback: ReformulatedQuery = {
         embeddingQuery: originalQuestion,
@@ -65,6 +66,12 @@ export async function reformulateQuery(
             REFORMULATION_TIMEOUT_MS,
         );
 
+        // Combine the outer request signal (from /api/ask's global deadline)
+        // with the internal 5s timeout. Either firing aborts the SDK call.
+        const combinedSignal = opts.signal
+            ? AbortSignal.any([opts.signal, controller.signal])
+            : controller.signal;
+
         const response = await client.models.generateContent({
             model: REFORMULATION_MODEL,
             contents: [
@@ -78,7 +85,7 @@ export async function reformulateQuery(
                 maxOutputTokens: REFORMULATION_MAX_TOKENS,
                 temperature: 0.0,
                 thinkingConfig: { thinkingBudget: 0 },
-                abortSignal: controller.signal,
+                abortSignal: combinedSignal,
             },
         });
 

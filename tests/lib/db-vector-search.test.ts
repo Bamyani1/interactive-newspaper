@@ -11,7 +11,12 @@ vi.mock("@neondatabase/serverless", () => ({
   neon: vi.fn(() => mockSql),
 }));
 
-import { queryArticlesByEmbedding, hybridSearch } from "@/src/lib/db";
+import {
+  queryArticlesByEmbedding,
+  hybridSearch,
+  DbTimeoutError,
+  _clearHybridSearchCacheForTests,
+} from "@/src/lib/db";
 import type { RetrievedArticle } from "@/src/lib/db";
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -107,6 +112,108 @@ describe("queryArticlesByEmbedding", () => {
 
     expect(results[0].byline).toBeNull();
   });
+
+  it("coalesces null distance to null (not NaN) — issue 0006", async () => {
+    const rows = [makeVectorRow({ distance: null })];
+    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+
+    const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
+
+    expect(results[0].distance).toBeNull();
+    expect(Number.isNaN(results[0].distance)).toBe(false);
+  });
+
+  it("coalesces undefined distance to null (not NaN) — issue 0006", async () => {
+    const rows = [makeVectorRow({ distance: undefined })];
+    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+
+    const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
+
+    expect(results[0].distance).toBeNull();
+  });
+
+  it("coalesces 'NaN' string distance to null — issue 0006", async () => {
+    const rows = [makeVectorRow({ distance: "NaN" })];
+    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+
+    const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
+
+    expect(results[0].distance).toBeNull();
+  });
+
+  it("coalesces non-numeric distance string to null — issue 0006", async () => {
+    const rows = [makeVectorRow({ distance: "not a number" })];
+    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+
+    const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
+
+    expect(results[0].distance).toBeNull();
+  });
+
+  it("preserves valid decimal distance", async () => {
+    const rows = [makeVectorRow({ distance: "0.1234" })];
+    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+
+    const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
+
+    expect(results[0].distance).toBeCloseTo(0.1234, 4);
+  });
+
+  // Signal + timeout handling (Step 2 / senior-engineer review fix)
+  // The vector-only fallback path in /api/ask was calling
+  // queryArticlesByEmbedding without a signal, so a hung DB call would
+  // orphan until the global deadline fired. Now the function has its
+  // own early-exit + raceWithTimeout guard.
+
+  it("throws DbTimeoutError immediately if signal is pre-aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      queryArticlesByEmbedding(DUMMY_EMBEDDING, {
+        signal: controller.signal,
+        timeoutMs: 5000,
+      }),
+    ).rejects.toBeInstanceOf(DbTimeoutError);
+
+    // Must NOT have touched sql.transaction — we short-circuited
+    expect(mockSql.transaction).not.toHaveBeenCalled();
+  });
+
+  it("throws DbTimeoutError when sql.transaction hangs past the timeout", async () => {
+    mockSql.transaction.mockImplementationOnce(
+      () => new Promise<never>(() => {}),
+    );
+
+    const start = Date.now();
+    await expect(
+      queryArticlesByEmbedding(DUMMY_EMBEDDING, { timeoutMs: 100 }),
+    ).rejects.toBeInstanceOf(DbTimeoutError);
+    const elapsed = Date.now() - start;
+
+    // Must fire near the budget, not hang on the fake transaction
+    expect(elapsed).toBeGreaterThanOrEqual(90);
+    expect(elapsed).toBeLessThan(400);
+  });
+
+  it("DbTimeoutError from queryArticlesByEmbedding carries op name + budget", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    try {
+      await queryArticlesByEmbedding(DUMMY_EMBEDDING, {
+        signal: controller.signal,
+        timeoutMs: 3000,
+      });
+      throw new Error("expected DbTimeoutError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(DbTimeoutError);
+      if (err instanceof DbTimeoutError) {
+        expect(err.op).toBe("queryArticlesByEmbedding");
+        expect(err.timeoutMs).toBe(3000);
+      }
+    }
+  });
 });
 
 // ── hybridSearch ──────────────────────────────────────────────────────
@@ -114,6 +221,7 @@ describe("queryArticlesByEmbedding", () => {
 describe("hybridSearch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _clearHybridSearchCacheForTests();
   });
 
   // Helper: mock the three sql calls that hybridSearch triggers:
@@ -211,5 +319,123 @@ describe("hybridSearch", () => {
     const results = await hybridSearch("test question", DUMMY_EMBEDDING, { limit: 3 });
 
     expect(results.length).toBeLessThanOrEqual(3);
+  });
+
+  // Helper: make both underlying calls hang forever so the timeout wrapper
+  // is the only thing that can settle the promise. Queues the same three
+  // mockSql returns as mockHybridCalls (SET LOCAL + SELECT inside the
+  // vector transaction array, FTS query call) plus one sql.transaction.
+  function mockHybridHang() {
+    const hang = () => new Promise<never>(() => {});
+    mockSql
+      .mockResolvedValueOnce([]) // SET LOCAL placeholder inside transaction array
+      .mockResolvedValueOnce([]) // SELECT placeholder inside transaction array
+      .mockImplementationOnce(hang); // FTS tagged template — hangs
+    mockSql.transaction.mockImplementationOnce(hang); // vector transaction — hangs
+  }
+
+  it("throws DbTimeoutError when sql hangs past the timeout budget", async () => {
+    mockHybridHang();
+
+    const start = Date.now();
+    await expect(
+      hybridSearch("test question", DUMMY_EMBEDDING, { timeoutMs: 100 }),
+    ).rejects.toBeInstanceOf(DbTimeoutError);
+    const elapsed = Date.now() - start;
+
+    // The promise should reject near the 100ms budget, not block on the hung sql.
+    expect(elapsed).toBeGreaterThanOrEqual(90);
+    expect(elapsed).toBeLessThan(400);
+  });
+
+  it("DbTimeoutError carries op name and timeout budget for diagnostics", async () => {
+    mockHybridHang();
+
+    try {
+      await hybridSearch("test question", DUMMY_EMBEDDING, { timeoutMs: 80 });
+      throw new Error("expected DbTimeoutError to be thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(DbTimeoutError);
+      if (err instanceof DbTimeoutError) {
+        expect(err.op).toBe("hybridSearch");
+        expect(err.timeoutMs).toBe(80);
+        expect(err.name).toBe("DbTimeoutError");
+        expect(err.message).toContain("hybridSearch");
+        expect(err.message).toContain("80ms");
+      }
+    }
+  });
+
+  // Hybrid-search result cache (5min TTL, LRU).
+  // Repeated identical questions within the same function instance skip
+  // the double SQL round trip + RRF merge.
+
+  it("caches results: second identical call skips the SQL round trip", async () => {
+    const vectorRows = [makeVectorRow({ id: "cached-v1", distance: "0.1000" })];
+    const ftsRows = [makeFtsRow({ id: "cached-f1", rank: "0.9000" })];
+    mockHybridCalls(vectorRows, ftsRows);
+
+    // First call populates cache
+    const first = await hybridSearch("cache-me", DUMMY_EMBEDDING);
+    expect(first.length).toBe(2);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+
+    // Second identical call hits cache — no new sql activity
+    const second = await hybridSearch("cache-me", DUMMY_EMBEDDING);
+    expect(second).toEqual(first);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("cache key distinguishes different questions", async () => {
+    mockHybridCalls(
+      [makeVectorRow({ id: "v1", distance: "0.1000" })],
+      [makeFtsRow({ id: "f1", rank: "0.9" })],
+    );
+    await hybridSearch("question one", DUMMY_EMBEDDING);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+
+    mockHybridCalls(
+      [makeVectorRow({ id: "v2", distance: "0.2000" })],
+      [makeFtsRow({ id: "f2", rank: "0.8" })],
+    );
+    await hybridSearch("question two", DUMMY_EMBEDDING);
+    // Different question — cache miss → second SQL round trip
+    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("cache key distinguishes different filters for the same question", async () => {
+    mockHybridCalls(
+      [makeVectorRow({ id: "v1", distance: "0.1000" })],
+      [makeFtsRow({ id: "f1", rank: "0.9" })],
+    );
+    await hybridSearch("same-q", DUMMY_EMBEDDING, { category: "News" });
+    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+
+    mockHybridCalls(
+      [makeVectorRow({ id: "v2", distance: "0.2000" })],
+      [makeFtsRow({ id: "f2", rank: "0.8" })],
+    );
+    await hybridSearch("same-q", DUMMY_EMBEDDING, { category: "Sports" });
+    // Different filter → cache miss → new SQL round trip
+    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("cache is cleared by _clearHybridSearchCacheForTests", async () => {
+    mockHybridCalls(
+      [makeVectorRow({ id: "v1", distance: "0.1000" })],
+      [makeFtsRow({ id: "f1", rank: "0.9" })],
+    );
+    await hybridSearch("clear-me", DUMMY_EMBEDDING);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+
+    _clearHybridSearchCacheForTests();
+
+    mockHybridCalls(
+      [makeVectorRow({ id: "v1", distance: "0.1000" })],
+      [makeFtsRow({ id: "f1", rank: "0.9" })],
+    );
+    await hybridSearch("clear-me", DUMMY_EMBEDDING);
+    // Cache cleared → another SQL round trip
+    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
   });
 });

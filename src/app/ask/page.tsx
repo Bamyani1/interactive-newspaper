@@ -6,15 +6,31 @@ import { TimeControls } from "@/features/time-controls";
 import { SiteFooter } from "@/features/footer";
 import { AskInput, AnswerPanel, SourceList, AskEmptyState, TimelineGallery, useAskArchive } from "@/features/ask-archive";
 
+const STAGE_LABELS: Record<string, string> = {
+  reformulate: "Understanding the question…",
+  embed: "Encoding the query…",
+  retrieve: "Searching the archive…",
+  rerank: "Ranking articles by relevance…",
+  generate: "Writing the answer…",
+};
+
 export default function AskPage() {
-  const { answer, isLoading, error, submit, reset } = useAskArchive();
+  const { answer, isStreaming, stage, isLoading, error, submit, reset } = useAskArchive();
   const answerRef = useRef<HTMLDivElement>(null);
 
+  // Focus the answer container when the first non-null answer appears so
+  // screen readers jump to the content.
   useEffect(() => {
-    if (answer) {
+    if (answer && !isStreaming) {
       answerRef.current?.focus();
     }
-  }, [answer]);
+  }, [answer, isStreaming]);
+
+  // Pre-generation loading shows a stage label instead of a blank skeleton.
+  // Once metadata arrives, `answer` is populated (even though the `answer.answer`
+  // text is empty/growing) and we render the progressive AnswerPanel + SourceList.
+  const showPreGenLoading = isLoading && !answer && !error;
+  const stageLabel = stage ? STAGE_LABELS[stage] ?? "Searching the archive…" : null;
 
   return (
     <PageShell variant="default" hasHeader>
@@ -29,9 +45,17 @@ export default function AskPage() {
           <AskInput onSubmit={submit} isLoading={isLoading} />
 
           <div aria-live="polite" aria-atomic="false">
-            {isLoading && (
+            {showPreGenLoading && (
               <div className="ask-loading-skeleton mt-8" role="status">
-                <span className="sr-only">Searching the archive...</span>
+                <span className="sr-only">{stageLabel ?? "Searching the archive..."}</span>
+                {stageLabel && (
+                  <p
+                    className="text-sm mb-3"
+                    style={{ color: "var(--color-text-secondary)" }}
+                  >
+                    {stageLabel}
+                  </p>
+                )}
                 <div className="ask-loading-bar ask-loading-bar--long" />
                 <div className="ask-loading-bar ask-loading-bar--medium" />
                 <div className="ask-loading-bar ask-loading-bar--short" />
@@ -59,9 +83,15 @@ export default function AskPage() {
             )}
 
             {answer && (
-              <div ref={answerRef} tabIndex={-1} className="outline-none ask-answer-enter">
-                {answer.mode === "visual" && <TimelineGallery response={answer} />}
-                <AnswerPanel response={answer} />
+              <div
+                ref={answerRef}
+                tabIndex={-1}
+                className={`outline-none ${isStreaming ? "" : "ask-answer-enter"}`}
+              >
+                {answer.mode === "visual" && !isStreaming && (
+                  <TimelineGallery response={answer} />
+                )}
+                <AnswerPanel response={answer} isStreaming={isStreaming} />
                 <SourceList sources={answer.sourceArticles} />
               </div>
             )}

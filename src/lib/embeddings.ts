@@ -14,8 +14,100 @@ import { getGeminiClient } from "@/src/lib/gemini-client";
 const EMBEDDING_MODEL = "gemini-embedding-2-preview";
 const EMBEDDING_DIMS = 768;
 const MAX_BATCH_SIZE = 100; // API limit per request
-const EMBED_TIMEOUT_MS = 5_000;
+// Query embed budget: 10s. Previously 5s, but under Gemini load (or
+// adjacent rapid calls from the rest of the /api/ask pipeline) the
+// p95 query-embed latency spikes to 5-8s, which blew through the old
+// budget and raised spurious 502s. 10s is still well inside the 30s
+// global deadline and consistent with the 30s document-batch budget
+// (where batches are up to 100 items).
+const EMBED_TIMEOUT_MS = 10_000;
+const EMBED_DOCUMENTS_TIMEOUT_MS = 30_000; // per-batch budget for document embedding
 const MAX_EMBEDDING_CHARS = 30_000; // ~7,500 tokens; conservative buffer under 8,192 token API limit
+
+/**
+ * Thrown when an embedding call exceeds its timeout budget. Callers should
+ * treat this as a transient / retry-worthy error, distinct from permanent
+ * failures like bad API keys or quota exhaustion.
+ */
+export class EmbedTimeoutError extends Error {
+    constructor(
+        public readonly op: string,
+        public readonly timeoutMs: number,
+    ) {
+        super(`Embedding operation timed out: ${op} after ${timeoutMs}ms`);
+        this.name = "EmbedTimeoutError";
+    }
+}
+
+/**
+ * Thrown when Gemini returns a 429 / RESOURCE_EXHAUSTED quota error.
+ * Distinct from EmbedTimeoutError so callers can early-abort instead of
+ * retrying endlessly. /api/ask returns 429 + Retry-After; seed/embed
+ * scripts break out of their batch loops. See docs/issues/0028.
+ */
+export class QuotaExhaustedError extends Error {
+    constructor(
+        public readonly op: string,
+        public readonly cause?: unknown,
+    ) {
+        super(`Gemini API quota exhausted (${op})`);
+        this.name = "QuotaExhaustedError";
+    }
+}
+
+/**
+ * Detect a Gemini RESOURCE_EXHAUSTED / 429 error across the various shapes
+ * the SDK might surface (raw fetch error, JSON-stringified error body,
+ * structured object). Returns true if any signal matches.
+ */
+function isQuotaError(err: unknown): boolean {
+    if (!err) return false;
+    const e = err as {
+        code?: number;
+        status?: string;
+        error?: { code?: number; status?: string };
+    };
+    if (e.code === 429) return true;
+    if (e.status === "RESOURCE_EXHAUSTED") return true;
+    if (e.error?.code === 429) return true;
+    if (e.error?.status === "RESOURCE_EXHAUSTED") return true;
+    const msg = err instanceof Error ? err.message : String(err);
+    return /RESOURCE_EXHAUSTED|"code"\s*:\s*429|exceeded your current quota/i.test(msg);
+}
+
+/**
+ * Wrap an embedContent invocation with a hard timeout. Uses
+ * AbortController (so the SDK can cancel the underlying fetch if it
+ * honors the signal) PLUS Promise.race against a timeoutPromise so we
+ * never block the caller even if the SDK ignores the signal. On fire,
+ * throws EmbedTimeoutError.
+ */
+async function embedWithTimeout<T>(
+    op: string,
+    fn: (signal: AbortSignal) => Promise<T>,
+    timeoutMs: number,
+): Promise<T> {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+            controller.abort();
+            reject(new EmbedTimeoutError(op, timeoutMs));
+        }, timeoutMs);
+    });
+    try {
+        return await Promise.race([fn(controller.signal), timeoutPromise]);
+    } catch (err) {
+        // Convert Gemini quota errors into a typed error so callers (route,
+        // seed scripts) can early-abort instead of retrying endlessly.
+        if (isQuotaError(err)) {
+            throw new QuotaExhaustedError(op, err);
+        }
+        throw err;
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
 
 // ─── Query Embedding Cache ─────────────────────────────────────
 // Simple TTL cache to avoid redundant API calls for repeated queries.
@@ -83,11 +175,19 @@ export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> 
   for (let i = 0; i < textOnly.length; i += MAX_BATCH_SIZE) {
     const batch = textOnly.slice(i, i + MAX_BATCH_SIZE);
 
-    const response = await client.models.embedContent({
-      model: EMBEDDING_MODEL,
-      contents: batch.map((inp) => ({ parts: [{ text: inp.text }] })),
-      config: { outputDimensionality: EMBEDDING_DIMS },
-    });
+    const response = await embedWithTimeout(
+      "embedDocuments.textBatch",
+      (signal) =>
+        client.models.embedContent({
+          model: EMBEDDING_MODEL,
+          contents: batch.map((inp) => ({ parts: [{ text: inp.text }] })),
+          config: {
+            outputDimensionality: EMBEDDING_DIMS,
+            abortSignal: signal,
+          },
+        }),
+      EMBED_DOCUMENTS_TIMEOUT_MS,
+    );
 
     if (!response.embeddings || response.embeddings.length !== batch.length) {
       throw new Error(
@@ -109,22 +209,46 @@ export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> 
     }
   }
 
-  // Process multimodal embeddings individually
+  // Process multimodal embeddings individually. If any image fails, the
+  // throw propagates out of this loop and out of embedDocuments — callers
+  // must handle the batch as a whole (atomic semantics). See docs/issues
+  // for the "multimodal partial-failure atomicity" finding.
   const imageEmbeddings: number[][] = [];
-  for (const inp of withImages) {
-    const response = await client.models.embedContent({
-      model: EMBEDDING_MODEL,
-      contents: [{
-        parts: [
-          { text: inp.text },
-          { inlineData: { mimeType: inp.imageMimeType || "image/jpeg", data: inp.imageBase64! } },
-        ],
-      }],
-      config: { outputDimensionality: EMBEDDING_DIMS },
-    });
+  for (let idx = 0; idx < withImages.length; idx++) {
+    const inp = withImages[idx];
+    let response;
+    try {
+      response = await embedWithTimeout(
+        "embedDocuments.multimodal",
+        (signal) =>
+          client.models.embedContent({
+            model: EMBEDDING_MODEL,
+            contents: [{
+              parts: [
+                { text: inp.text },
+                { inlineData: { mimeType: inp.imageMimeType || "image/jpeg", data: inp.imageBase64! } },
+              ],
+            }],
+            config: {
+              outputDimensionality: EMBEDDING_DIMS,
+              abortSignal: signal,
+            },
+          }),
+        EMBED_DOCUMENTS_TIMEOUT_MS,
+      );
+    } catch (err) {
+      // Re-throw with context so operators know WHERE the partial failure
+      // landed — helps distinguish "batch-wide outage" from "one bad image".
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Multimodal embedding failed on image ${idx + 1} of ${withImages.length}: ${msg}`,
+      );
+    }
 
     if (!response.embeddings || response.embeddings.length !== 1) {
-      throw new Error("Failed to generate multimodal embedding");
+      throw new Error(
+        `Failed to generate multimodal embedding for image ${idx + 1} of ${withImages.length}`,
+      );
     }
     const emb = response.embeddings[0];
     if (!emb.values || emb.values.length !== EMBEDDING_DIMS) {
@@ -134,6 +258,22 @@ export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> 
     }
     imageEmbeddings.push(emb.values);
     await sleep(200);
+  }
+
+  // Invariant check before reassembly: each branch must return exactly as
+  // many vectors as we asked for. If this fires, there's a programming
+  // error somewhere (not just a transient failure); surfacing it loudly
+  // is correct because silently reassembling a partially-filled array
+  // would poison retrieval downstream.
+  if (textEmbeddings.length !== textIndices.length) {
+    throw new Error(
+      `embedDocuments text branch length mismatch: ${textEmbeddings.length}/${textIndices.length}`,
+    );
+  }
+  if (imageEmbeddings.length !== imageIndices.length) {
+    throw new Error(
+      `embedDocuments image branch length mismatch: ${imageEmbeddings.length}/${imageIndices.length}`,
+    );
   }
 
   // Reassemble in original input order
@@ -155,7 +295,17 @@ export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> 
  * format required by gemini-embedding-2-preview. Includes a 5s timeout and
  * a short-lived LRU cache for repeated queries.
  */
-export async function embedQuery(question: string): Promise<number[]> {
+export async function embedQuery(
+  question: string,
+  opts: { signal?: AbortSignal } = {},
+): Promise<number[]> {
+  // Early-exit on already-aborted signal so callers with an expired
+  // deadline don't dispatch a doomed SDK call. Mirrors hybridSearch's
+  // early-exit (db.ts) for symmetry across the pipeline.
+  if (opts.signal?.aborted) {
+    throw new Error("embedQuery: signal already aborted");
+  }
+
   const prefixed = `task: search result | query: ${question}`;
 
   // Check cache first
@@ -167,13 +317,18 @@ export async function embedQuery(question: string): Promise<number[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), EMBED_TIMEOUT_MS);
 
+  // Combine outer request signal with the internal 5s timeout.
+  const combinedSignal = opts.signal
+    ? AbortSignal.any([opts.signal, controller.signal])
+    : controller.signal;
+
   try {
     const response = await client.models.embedContent({
       model: EMBEDDING_MODEL,
       contents: [{ parts: [{ text: prefixed }] }],
       config: {
         outputDimensionality: EMBEDDING_DIMS,
-        abortSignal: controller.signal,
+        abortSignal: combinedSignal,
       },
     });
 
@@ -194,6 +349,11 @@ export async function embedQuery(question: string): Promise<number[]> {
     return values;
   } catch (err) {
     clearTimeout(timeout);
+    // Detect Gemini quota exhaustion and surface as a typed error so
+    // /api/ask can return 429 + Retry-After instead of an opaque 502.
+    if (isQuotaError(err)) {
+      throw new QuotaExhaustedError("embedQuery", err);
+    }
     throw err;
   }
 }
