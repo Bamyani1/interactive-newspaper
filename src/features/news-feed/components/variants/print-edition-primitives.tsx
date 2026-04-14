@@ -172,6 +172,10 @@ export function Byline({
   );
 }
 
+// Each ArticleImage sits in a CSS column inside the main feed area
+// (feed area = viewport minus the two sidebars on desktop).
+const ARTICLE_IMAGE_SIZES = "(max-width: 768px) 100vw, (max-width: 1280px) 30vw, 25vw";
+
 /** Article image with consistent sizing — placed outside CSS columns. */
 export function ArticleImage({
   src,
@@ -201,6 +205,7 @@ export function ArticleImage({
           src={src}
           alt={alt}
           fill
+          sizes={ARTICLE_IMAGE_SIZES}
           className="object-cover"
           style={{ objectPosition: "center 20%" }}
           priority={priority}
@@ -222,6 +227,9 @@ export function ArticleImage({
     </div>
   );
 }
+
+// Gallery occupies 90% of the feed area and splits into N tiles.
+const GALLERY_IMAGE_SIZES = "(max-width: 768px) 90vw, (max-width: 1280px) 40vw, 30vw";
 
 /** Row of additional images (index 1+) displayed below the column text. */
 export function ImageGallery({
@@ -247,6 +255,7 @@ export function ImageGallery({
               src={img.src}
               alt={`${alt} — image ${i + 2}`}
               fill
+              sizes={GALLERY_IMAGE_SIZES}
               className="object-cover"
               style={{ objectPosition: "center 20%" }}
             />
@@ -268,6 +277,33 @@ export function ImageGallery({
       ))}
     </div>
   );
+}
+
+/**
+ * Compute insertion positions for images interleaved between paragraphs.
+ * Returns an array of length N where positions[i] is the paragraph index
+ * BEFORE which image i should be inserted (range 0..P inclusive).
+ * Returns [] when interleaving is not applicable — caller should stack
+ * images at the top instead.
+ *
+ * Rules:
+ *   - N < 2 or P < 1 → []  (single-image or no-body articles use top-stack)
+ *   - First image is always anchored at position 0 (top of body)
+ *   - Remaining images distribute via round(i * P / N), shifted forward on
+ *     collision so two images never share an anchor (until clamped to P)
+ */
+export function computeImagePositions(N: number, P: number): number[] {
+  if (N < 2 || P < 1) return [];
+  const positions: number[] = [];
+  let minNext = 0;
+  for (let i = 0; i < N; i++) {
+    let pos = i === 0 ? 0 : Math.round((i * P) / N);
+    if (pos < minNext) pos = minNext;
+    if (pos > P) pos = P;
+    positions.push(pos);
+    minNext = pos + 1;
+  }
+  return positions;
 }
 
 /** Multi-column text block for body paragraphs. */
@@ -300,6 +336,36 @@ export function ColumnText({
     )
   );
 
+  const N = images.length;
+  const P = bodyText.length;
+  const positions = computeImagePositions(N, P);
+  const canInterleave = positions.length > 0;
+
+  const wrapImage = (img: React.ReactNode, i: number) => (
+    <div key={`img-${i}`} style={{ breakInside: "avoid", marginBottom: "0.75rem" }}>
+      {img}
+    </div>
+  );
+
+  const flow: React.ReactNode[] = [];
+  if (!canInterleave) {
+    images.forEach((img, i) => flow.push(wrapImage(img, i)));
+    bodyText.forEach((p) => flow.push(p));
+  } else {
+    let imgIdx = 0;
+    for (let p = 0; p < P; p++) {
+      while (imgIdx < N && positions[imgIdx] === p) {
+        flow.push(wrapImage(images[imgIdx], imgIdx));
+        imgIdx++;
+      }
+      flow.push(bodyText[p]);
+    }
+    while (imgIdx < N) {
+      flow.push(wrapImage(images[imgIdx], imgIdx));
+      imgIdx++;
+    }
+  }
+
   return (
     <div
       className="text-[var(--color-text-primary)]"
@@ -319,15 +385,13 @@ export function ColumnText({
           {header}
         </div>
       )}
-      {images.map((img, i) => (
-        <div key={i} style={{ breakInside: "avoid", marginBottom: "0.75rem" }}>
-          {img}
-        </div>
-      ))}
-      {bodyText}
+      {flow}
     </div>
   );
 }
+
+// PhotoFeature image is a 40% column on the right of the feed area.
+const PHOTO_FEATURE_SIZES = "(max-width: 768px) 40vw, (max-width: 1280px) 22vw, 18vw";
 
 /** Side-by-side photo-feature layout for articles with image but no body text. */
 export function PhotoFeature({
@@ -337,6 +401,7 @@ export function PhotoFeature({
   caption,
   byline,
   onImageClick,
+  priority,
 }: {
   headline: string;
   imageSrc: string;
@@ -344,6 +409,7 @@ export function PhotoFeature({
   caption?: string | null;
   byline?: string | null;
   onImageClick: () => void;
+  priority?: boolean;
 }) {
   return (
     <div className="flex gap-6 items-start">
@@ -396,7 +462,15 @@ export function PhotoFeature({
         style={{ width: "40%", aspectRatio: "4/3" }}
         onClick={onImageClick}
       >
-        <Image src={imageSrc} alt={alt} fill className="object-cover" style={{ objectPosition: "center 20%" }} />
+        <Image
+          src={imageSrc}
+          alt={alt}
+          fill
+          sizes={PHOTO_FEATURE_SIZES}
+          className="object-cover"
+          style={{ objectPosition: "center 20%" }}
+          priority={priority}
+        />
       </div>
     </div>
   );

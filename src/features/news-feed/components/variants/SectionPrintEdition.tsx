@@ -50,6 +50,7 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
               caption={heroArticle.imageCaptions?.[0] ?? heroArticle.imageCaption}
               byline={heroArticle.byline}
               onImageClick={() => setLightboxSrc(heroArticle.imageUrls[0])}
+              priority
             />
             {heroArticle.imageUrls.length > 1 && (
               <ImageGallery
@@ -95,7 +96,6 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
                       onClick={() => setLightboxSrc(url)}
                       priority={i === 0}
                       width="full"
-                      maxWidth={heroArticle.imageUrls.length > 1 ? "90%" : "100%"}
                     />
                   ))
                 : undefined
@@ -129,6 +129,7 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
             const hasImage = article.imageUrls.length > 0;
             const isPhotoOnly = paragraphs.length === 0 && hasImage;
             const cols = hasImage || isLong ? 3 : 2;
+            const isAboveFold = _index === 0;
 
             return (
               <React.Fragment key={article.id}>
@@ -153,6 +154,7 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
                         onImageClick={() =>
                           setLightboxSrc(article.imageUrls[0])
                         }
+                        priority={isAboveFold}
                       />
                       {article.imageUrls.length > 1 && (
                         <ImageGallery
@@ -196,8 +198,8 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
                                 alt={article.headline}
                                 caption={article.imageCaptions?.[i] ?? (i === 0 ? article.imageCaption : null)}
                                 onClick={() => setLightboxSrc(url)}
+                                priority={isAboveFold && i === 0}
                                 width="full"
-                                maxWidth={article.imageUrls.length > 1 ? "90%" : "100%"}
                               />
                             ))
                           : undefined

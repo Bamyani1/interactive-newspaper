@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import path from 'path';
 
-export const dynamic = 'force-dynamic';
-
 const OCR_OUTPUT_DIR = path.join(process.cwd(), 'public', 'editions');
 const GOLD_DIR = path.join(process.cwd(), 'gold');
 

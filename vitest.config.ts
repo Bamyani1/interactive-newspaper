@@ -23,6 +23,10 @@ export default defineConfig({
       "@/styles": resolve(__dirname, "./src/styles"),
       "@/font-color": resolve(__dirname, "./font-color"),
       "@": resolve(__dirname, "./src"),
+      // `server-only` is a Next.js build-time guard that throws if imported
+      // from a client component. In Vitest there is no client/server split,
+      // so we stub it out to a no-op and let module logic run normally.
+      "server-only": resolve(__dirname, "./tests/stubs/server-only.ts"),
     },
   },
 });

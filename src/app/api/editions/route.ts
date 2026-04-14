@@ -1,27 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 import { queryEditions } from "@/src/lib/db";
+import { GOLD_DATE, GOLD_EDITION_INFO, GOLD_FILE_EXISTS } from "@/src/lib/gold-edition";
 
-// Revalidate editions list every 60 seconds (ISR)
-export const revalidate = 60;
-
-const GOLD_DATE = "1960-01-13";
-const GOLD_EDITION_INFO = {
-  id: `gold-${GOLD_DATE}`,
-  date: GOLD_DATE,
-  pageCount: 12,
-  articleCount: 46,
-};
-
-function goldFileExists(): boolean {
-  try {
-    fs.accessSync(path.join(process.cwd(), "gold", GOLD_DATE, "gold-edition.json"));
-    return true;
-  } catch {
-    return false;
-  }
-}
+// Route reads request.url for query params, so it cannot be statically
+// prerendered. Marking it explicitly stops Next.js from attempting (and logging
+// a misleading "Dynamic server usage" error) during the build.
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,8 +23,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Inject gold edition if it exists and isn't already in the DB
-    const hasGold = editions.some((e: { date: string }) => e.date === GOLD_DATE);
-    if (!hasGold && goldFileExists()) {
+    if (GOLD_FILE_EXISTS && !editions.some((e: { date: string }) => e.date === GOLD_DATE)) {
       editions.unshift(GOLD_EDITION_INFO);
     }
 

@@ -97,6 +97,29 @@
     backdrop-filter: blur(4px);
     flex-shrink: 0;
     border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
+    /* Start hidden on first visit, reveal after the stained-glass SVG
+       has finished its internal panel-by-panel reveal (~2.5s). The
+       .cinema-instant override below skips this on return visits. */
+    opacity: 0;
+    animation: cinemaTickerReveal 1s ease-out 2.7s forwards;
+}
+
+.cinema-instant .cinema-ticker {
+    opacity: 1;
+    animation: none;
+}
+
+@keyframes cinemaTickerReveal {
+    to {
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cinema-ticker {
+        opacity: 1;
+        animation: none;
+    }
 }
 
 .cinema-ticker-top {
@@ -188,7 +211,7 @@
     transform: translate(-50%, -50%) rotate(90deg);
     width: 65%;
     aspect-ratio: 635.8 / 969.49;
-    background: url('/shape/1.png') center / 100% 100% no-repeat;
+    background: url('/shape/1.webp') center / 100% 100% no-repeat;
     pointer-events: none;
     z-index: 0;
     opacity: 0.95;

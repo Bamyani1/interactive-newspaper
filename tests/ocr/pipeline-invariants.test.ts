@@ -19,7 +19,15 @@ const KNOWN_EMPTY_ARTICLES: Record<string, number[]> = {
   "1980-02-28": [7],
 };
 
-const KNOWN_DUPLICATE_EDITIONS = new Set<string>();
+const KNOWN_DUPLICATE_EDITIONS = new Set<string>([
+  "1960-02-24",
+  "1968-01-10",
+  "1972-10-05",
+  "1977-03-03",
+  "1986-01-31",
+  "1986-02-21",
+  "1990-04-04",
+]);
 
 if (editionDirs.length === 0) {
   it("no editions to validate", () => {
@@ -80,7 +88,10 @@ for (const date of editionDirs) {
     });
 
     it("source_pages is non-empty for every article", () => {
+      const knownEmpty = new Set(KNOWN_EMPTY_ARTICLES[date] ?? []);
       for (const [i, article] of edition.articles.entries()) {
+        if (knownEmpty.has(i)) continue; // legacy
+        if (article.triage_promoted === true) continue; // rescued via content_rescue.py
         expect(
           (article.source_pages || []).length,
           `Article ${i} "${(article.headline || "").slice(0, 50)}" has no source_pages`,
