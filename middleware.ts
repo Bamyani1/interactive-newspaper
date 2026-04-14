@@ -12,10 +12,10 @@ function getLimiter(pathname: string) {
   return generalLimiter;
 }
 
-export async function middleware(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const ip = getClientIp(request);
   const limiter = getLimiter(request.nextUrl.pathname);
-  const result = await limiter(ip);
+  const result = limiter(ip);
 
   if (!result.allowed) {
     const retryAfter = Math.ceil((result.resetAt - Date.now()) / 1000);

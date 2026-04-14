@@ -16,7 +16,6 @@ import { rerankArticles } from "@/src/lib/reranker";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { AskResponse, Citation } from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
-import { isKvAvailable, kvGet, kvSet } from "@/src/lib/kv-client";
 
 const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
@@ -129,31 +128,6 @@ function freshResponseFromCached(data: DedupExtracted): NextResponse {
         status: data.status,
         headers: data.headers,
     });
-}
-
-// ── KV dedup layer (Bundle 2 #8) ──
-// Cross-instance response cache. The in-memory Map above handles
-// same-instance Promise coalescing; this adds a second tier keyed by
-// the same dedupId so a second request within DEDUP_TTL_MS that
-// happens to land on a different Fluid Compute instance also skips
-// the pipeline. KV absent / errors = no-op (kv-client swallows them).
-//
-// Fundamentally a *response cache*, not a coalescer — Promises can't
-// cross processes. If two cross-instance requests race, both will run
-// the pipeline; whichever writes to KV last wins.
-
-const DEDUP_TTL_SECONDS = Math.floor(DEDUP_TTL_MS / 1000);
-
-function kvDedupKey(dedupId: string): string {
-    return `ask:dedup:${dedupId}`;
-}
-
-async function kvDedupGet(dedupId: string): Promise<DedupExtracted | null> {
-    return kvGet<DedupExtracted>(kvDedupKey(dedupId));
-}
-
-async function kvDedupSet(dedupId: string, data: DedupExtracted): Promise<void> {
-    await kvSet(kvDedupKey(dedupId), data, DEDUP_TTL_SECONDS);
 }
 
 // Test hook: clears the in-flight dedup map between tests so prior runs
@@ -660,7 +634,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // ── Rate limit (outside the deadline race so a 429 returns instantly) ──
     const ip = getClientIp(request);
-    const rateResult = await askRateLimiter(ip);
+    const rateResult = askRateLimiter(ip);
     if (!rateResult.allowed) {
         return NextResponse.json(
             { error: "Too many questions. Please wait a moment and try again." },
@@ -732,18 +706,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return freshResponseFromCached(data);
         } catch {
             // Existing pipeline rejected; fall through.
-        }
-    }
-
-    // ── Cross-instance response cache (Upstash KV) ──
-    // A request that ran on a different Fluid Compute instance within
-    // the last DEDUP_TTL_MS may have populated KV. Check it before
-    // paying the full pipeline cost. Guarded by isKvAvailable() so
-    // env-less test runs skip this branch entirely.
-    if (isKvAvailable()) {
-        const cached = await kvDedupGet(dedupId);
-        if (cached) {
-            return freshResponseFromCached(cached);
         }
     }
 
@@ -987,21 +949,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     inFlightAsk.set(dedupId, dedupEntry);
 
     try {
-        const response = await racePromise;
-        // Populate cross-instance KV cache (fire-and-forget). Only
-        // reached on success — the pipeline path only resolves with a
-        // 200 response; errors go to the catch block below. Extraction
-        // reuses the existing `getOrExtract` helper so same-instance
-        // waiters and this write share a single clone().json() call.
-        if (isKvAvailable()) {
-            getOrExtract(dedupEntry)
-                .then((extracted) => kvDedupSet(dedupId, extracted))
-                .catch(() => {
-                    // kvSet already logs at warn level; swallow here
-                    // to keep the hot path noise-free.
-                });
-        }
-        return response;
+        return await racePromise;
     } catch (err) {
         if (err instanceof DeadlineExceededError) {
             return NextResponse.json(
