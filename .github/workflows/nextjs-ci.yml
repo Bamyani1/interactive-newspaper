@@ -1,0 +1,35 @@
+name: nextjs-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Vitest
+        run: npm run test:run
+
+      # npm run build intentionally not included here — it requires
+      # DATABASE_URL to pre-render edition pages via generateStaticParams
+      # (see CLAUDE.md Build and Caching). Closes docs/issues/0004 for
+      # the tsc/lint/test surface; the build gate is a follow-up that
+      # needs a CI_DATABASE_URL secret wired up first.

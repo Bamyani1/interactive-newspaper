@@ -316,6 +316,7 @@ async function handleStreamingAsk(params: {
                 try {
                     const reformulated = await reformulateQuery(question, {
                         signal: globalController.signal,
+                        requestId,
                     });
                     embeddingQuery = reformulated.embeddingQuery;
                     ftsQuery = reformulated.ftsQuery;
@@ -485,6 +486,7 @@ async function handleStreamingAsk(params: {
                         maxArticles: keepTopK,
                         minScore: mode === "visual" ? 3 : 5,
                         signal: globalController.signal,
+                        requestId,
                     });
                 } catch (err) {
                     console.error(
@@ -548,6 +550,7 @@ async function handleStreamingAsk(params: {
 
                 for await (const event of generateAnswerStream(question, rankedArticles, {
                     signal: globalController.signal,
+                    requestId,
                 })) {
                     if (event.type === "delta") {
                         send({ type: "delta", text: event.text });
@@ -729,6 +732,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             () =>
                 reformulateQuery(question, {
                     signal: globalController.signal,
+                    requestId,
                 }),
         );
 
@@ -894,6 +898,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 maxArticles: keepTopK,
                 minScore: mode === "visual" ? 3 : 5,
                 signal: globalController.signal,
+                requestId,
             }),
         );
 
@@ -904,6 +909,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             () =>
                 generateAnswer(question, rankedArticles, {
                     signal: globalController.signal,
+                    requestId,
                 }),
         );
         const generationTimeMs = Date.now() - generationStart;

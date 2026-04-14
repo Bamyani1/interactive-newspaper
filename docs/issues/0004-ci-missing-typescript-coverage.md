@@ -1,11 +1,19 @@
 ---
 id: 0004
 title: CI workflow has no Next.js TS build / lint / test coverage
-status: open
+status: fixed
 severity: critical
 area: ci
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `.github/workflows/nextjs-ci.yml` added. Runs on `pull_request`
+> and `push` to `main`: `npm ci`, `tsc --noEmit`, `npm run lint`,
+> `npm run test:run`. `npm run build` is intentionally deferred — it
+> requires a `CI_DATABASE_URL` secret (see Build & Caching in CLAUDE.md),
+> which is a separate follow-up.
+
 
 ## Symptom
 

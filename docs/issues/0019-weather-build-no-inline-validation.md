@@ -1,11 +1,17 @@
 ---
 id: 0019
 title: weather build has no inline post-build validation
-status: open
+status: fixed
 severity: medium
 area: scripts
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** Option 2 from the issue body. `package.json` `weather:build:ohio`
+> script now chains to `npm run weather:verify:ohio` so a broken archive
+> fails the build with a non-zero exit. No script code change needed.
+
 
 ## Symptom
 
