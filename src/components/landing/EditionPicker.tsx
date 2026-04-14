@@ -7,7 +7,6 @@ interface EditionPickerProps {
     editions: string[];               // "YYYY-MM-DD" sorted earliest-first
     selectedEdition: string | null;   // currently selected date
     onSelect: (date: string) => void;
-    isLoading?: boolean;
     onOpenChange?: (isOpen: boolean) => void;
 }
 
@@ -59,7 +58,6 @@ export function EditionPicker({
     editions,
     selectedEdition,
     onSelect,
-    isLoading = false,
     onOpenChange,
 }: EditionPickerProps) {
     const [isOpen, setIsOpen] = useState(false);
@@ -97,17 +95,8 @@ export function EditionPicker({
         closePicker();
     }, [onSelect, closePicker]);
 
-    /* ── Loading ────────────── */
-    if (isLoading && editions.length === 0) {
-        return (
-            <div className="ep-container">
-                <p className="ep-loading">Loading archive…</p>
-            </div>
-        );
-    }
-
     /* ── Empty ──────────────── */
-    if (!isLoading && editions.length === 0) {
+    if (editions.length === 0) {
         return (
             <div className="ep-container">
                 <p className="ep-empty">No editions available</p>

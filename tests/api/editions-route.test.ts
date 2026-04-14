@@ -40,12 +40,12 @@ describe("/api/editions – input bounds", () => {
     );
   });
 
-  it("handles NaN limit gracefully (falls back to 100)", async () => {
+  it("handles NaN limit gracefully (falls back to 500)", async () => {
     const route = await import("../../src/app/api/editions/route");
     await route.GET(makeRequest("http://localhost/api/editions?limit=abc"));
 
     expect(mockQueryEditions).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 100 }),
+      expect.objectContaining({ limit: 500 }),
     );
   });
 
@@ -63,7 +63,7 @@ describe("/api/editions – input bounds", () => {
     await route.GET(makeRequest("http://localhost/api/editions"));
 
     expect(mockQueryEditions).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 100, offset: 0 }),
+      expect.objectContaining({ limit: 500, offset: 0 }),
     );
   });
 });
