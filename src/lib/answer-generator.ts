@@ -95,7 +95,7 @@ Date: ${a.editionDate}
 Category: ${a.category}
 ${a.byline ? `Author: ${a.byline}` : ""}
 Content:
-${a.bodyPlain.slice(0, MAX_SOURCE_CHARS)}`,
+${(a.bodyPlain || "").slice(0, MAX_SOURCE_CHARS)}`,
         )
         .join("\n\n");
 
@@ -110,7 +110,7 @@ ${sourcesBlock}
 export async function generateAnswer(
     question: string,
     sourceArticles: RankedArticle[],
-    opts: { signal?: AbortSignal } = {},
+    opts: { signal?: AbortSignal; requestId?: string } = {},
 ): Promise<GeneratedAnswer> {
     if (sourceArticles.length === 0) {
         return {
@@ -232,6 +232,8 @@ export async function generateAnswer(
         console.error(
             JSON.stringify({
                 level: "error",
+                route: "/api/ask",
+                requestId: opts.requestId,
                 stage: "generate",
                 msg: "answer generation failed",
                 err: err instanceof Error ? err.message : String(err),
@@ -263,7 +265,7 @@ export async function generateAnswer(
 export async function* generateAnswerStream(
     question: string,
     sourceArticles: RankedArticle[],
-    opts: { signal?: AbortSignal } = {},
+    opts: { signal?: AbortSignal; requestId?: string } = {},
 ): AsyncGenerator<AnswerStreamEvent, void, void> {
     if (sourceArticles.length === 0) {
         yield {
@@ -433,6 +435,8 @@ export async function* generateAnswerStream(
         console.error(
             JSON.stringify({
                 level: "error",
+                route: "/api/ask",
+                requestId: opts.requestId,
                 stage: "generate",
                 msg: "answer stream generation failed",
                 err: err instanceof Error ? err.message : String(err),
@@ -496,8 +500,8 @@ function computeConfidence(
 
     // Vector-aware path. Thresholds calibrated for gemini-embedding-2-preview
     // distance distribution:
-    // - Strong matches: < 0.24 (protests, Greek life, cagers)
-    // - Good matches: 0.24 - 0.30 (food, war, general topics)
+    // - Strong matches: < 0.26 (protests, Greek life, cagers)
+    // - Good matches: 0.26 - 0.30 (food, war, general topics)
     // - Weak matches: > 0.30 (quantum physics, off-topic)
     //
     // Reranker scores (0-10) provide an independent relevance signal:

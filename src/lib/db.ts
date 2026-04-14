@@ -459,21 +459,22 @@ export async function hybridSearch(
   );
 
   // Reciprocal Rank Fusion (RRF): score = sum(weight / (k + rank))
-  // K=40 (vs standard 60) gives better rank differentiation for our small corpus
+  // Standard RRF uses 1-indexed rank, so rank 1 scores weight/(k+1).
+  // K=40 (vs standard 60) gives better rank differentiation for our small corpus.
   const RRF_K = 40;
   const scoreMap = new Map<string, { score: number; article: RetrievedArticle }>();
 
-  // Score vector results
+  // Score vector results (i+1 → 1-indexed rank)
   for (let i = 0; i < vectorResults.length; i++) {
     const article = vectorResults[i];
-    const rrfScore = vectorWeight / (RRF_K + i);
+    const rrfScore = vectorWeight / (RRF_K + i + 1);
     scoreMap.set(article.id, { score: rrfScore, article });
   }
 
-  // Score FTS results and merge
+  // Score FTS results and merge (i+1 → 1-indexed rank)
   for (let i = 0; i < ftsResults.length; i++) {
     const article = ftsResults[i];
-    const rrfScore = ftsWeight / (RRF_K + i);
+    const rrfScore = ftsWeight / (RRF_K + i + 1);
     const existing = scoreMap.get(article.id);
     if (existing) {
       existing.score += rrfScore;

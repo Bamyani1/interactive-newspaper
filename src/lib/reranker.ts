@@ -26,6 +26,7 @@ interface RerankOptions {
     minScore?: number;
     maxArticles?: number;
     signal?: AbortSignal;
+    requestId?: string;
 }
 
 const RERANKER_PROMPT = `You are a relevance judge for a 1960s university newspaper archive search system.
@@ -94,6 +95,8 @@ export async function rerankArticles(
             console.warn(
                 JSON.stringify({
                     level: "warn",
+                    route: "/api/ask",
+                    requestId: options.requestId,
                     stage: "rerank",
                     msg: "failed to parse reranker scores, returning original articles",
                 }),
@@ -112,6 +115,8 @@ export async function rerankArticles(
         console.warn(
             JSON.stringify({
                 level: "warn",
+                route: "/api/ask",
+                requestId: options.requestId,
                 stage: "rerank",
                 msg: isTimeout
                     ? "reranker timed out, returning original articles"
