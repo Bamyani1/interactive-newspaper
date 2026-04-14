@@ -1,269 +1,77 @@
-"use client";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { queryEditionByDate } from "@/src/lib/db";
+import { getEditionsList } from "@/src/lib/editions-server";
+import { GOLD_DATE, loadGoldEdition, type GoldEditionData } from "@/src/lib/gold-edition";
+import { normalizeArticles } from "@/features/news-feed/lib/normalize-articles";
+import { EditionDateClient } from "./EditionDateClient";
 
-import React, { useMemo, useState, useEffect, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
-import { TimeControls } from "@/features/time-controls";
-import { NavigationSidebar } from "@/features/navigation";
-import { ContextSidebar } from "@/features/context-panel/components/ContextSidebar";
-import { MobileNav } from "@/features/navigation/components/MobileNav";
-import {
-    NewsFeed,
-    useEditionArticles,
-} from "@/features/news-feed";
-import { useArchive } from "@/features/archive";
-import { PageShell, SkeletonFeed } from "@/shared";
-import { editionSwapVariants } from "@/shared/motion/motionTokens";
+export const dynamicParams = true;
+export const revalidate = false;
 
-import type { SectionId } from "@/src/types";
-import { SECTION_ORDER } from "@/features/news-feed/components/NewsFeed";
+type EditionData = GoldEditionData;
 
-export default function EditionDatePage() {
-    const params = useParams<{ date: string }>();
-    const router = useRouter();
-    const { setDate, editions, hasEditions, isLoading: isLoadingEditions } = useArchive();
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-    const dateParam = params.date;
+interface EditionPageProps {
+  params: Promise<{ date: string }>;
+}
 
-    // Sync URL date into ArchiveContext
-    useEffect(() => {
-        if (dateParam) {
-            setDate(dateParam);
-        }
-    }, [dateParam, setDate]);
+export async function generateMetadata({ params }: EditionPageProps): Promise<Metadata> {
+  const { date } = await params;
+  if (!DATE_RE.test(date)) return {};
+  // Pin formatting to UTC so build-host TZ never shifts the calendar day.
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(date + "T12:00:00Z"));
+  return {
+    title: `${formatted} — The Transcript Archive`,
+    description: `OWU's student newspaper for ${formatted}.`,
+  };
+}
 
-    // Redirect to latest edition if date not found
-    useEffect(() => {
-        if (isLoadingEditions || !hasEditions) return;
-        if (dateParam && !editions.includes(dateParam)) {
-            router.replace(`/edition/${editions[editions.length - 1]}`);
-        }
-    }, [dateParam, editions, hasEditions, isLoadingEditions, router]);
-
-    const handleDateChange = (newDate: string) => {
-        router.push(`/edition/${newDate}`);
+async function loadEdition(date: string): Promise<EditionData | null> {
+  const result = await queryEditionByDate(date);
+  if (result) {
+    return {
+      articles: normalizeArticles(result.articles, date),
+      ads: result.ads,
+      publicationInfo: result.edition.publicationInfo,
     };
-
-    return (
-        <EditionBody
-            currentDate={dateParam}
-            editions={editions}
-            onDateChange={handleDateChange}
-            hasEditions={hasEditions}
-            isLoadingEditions={isLoadingEditions}
-        />
-    );
+  }
+  if (date === GOLD_DATE) {
+    return loadGoldEdition();
+  }
+  return null;
 }
 
-interface EditionBodyProps {
-    currentDate: string | null;
-    editions: string[];
-    onDateChange: (date: string) => void;
-    hasEditions: boolean;
-    isLoadingEditions: boolean;
+export async function generateStaticParams() {
+  const editions = await getEditionsList();
+  return editions.map((e) => ({ date: e.date }));
 }
 
-function ErrorState({ error }: { error: Error }) {
-    return (
-        <div className="mx-auto w-full max-w-4xl px-6 py-16">
-            <div className="border border-red-500/30 bg-[var(--color-bg-secondary)]/70 p-8">
-                <h2 className="font-header text-3xl uppercase tracking-wide mb-4">
-                    Failed to Load Edition
-                </h2>
-                <p className="text-[var(--color-text-secondary)] mb-6">
-                    {error.message || "An unexpected error occurred while loading this edition."}
-                </p>
-                <button
-                    onClick={() => window.location.reload()}
-                    className="px-6 py-3 border border-current hover:bg-[var(--color-text-primary)] hover:text-[var(--color-text-inverse)] transition-colors uppercase tracking-widest text-sm font-bold"
-                >
-                    Retry
-                </button>
-            </div>
-        </div>
-    );
-}
+export default async function EditionDatePage({ params }: EditionPageProps) {
+  const { date } = await params;
 
-function EmptyState() {
-    return (
-        <div className="mx-auto w-full max-w-4xl px-6 py-16">
-            <div className="border border-[var(--stroke-accent-soft)] bg-[var(--color-bg-secondary)]/70 p-8">
-                <h2 className="font-header text-3xl uppercase tracking-wide mb-4">
-                    No Editions Loaded
-                </h2>
-                <p className="text-[var(--color-text-secondary)] mb-3">
-                    This archive is currently clean and ready for real material.
-                </p>
-                <p className="text-[var(--color-text-secondary)] mb-6">
-                    Import at least one edition, seed the database, then refresh this page.
-                </p>
-                <div className="font-mono text-xs uppercase tracking-widest space-y-2 text-[var(--color-text-primary)]">
-                    <p>1. Run `npm run prepare:real-material`</p>
-                    <p>2. Run pipeline scripts for your real scans</p>
-                    <p>3. Seed articles and reopen this page</p>
-                </div>
-            </div>
-        </div>
-    );
-}
+  if (!DATE_RE.test(date)) {
+    notFound();
+  }
 
-function EditionBody({
-    currentDate,
-    editions,
-    onDateChange,
-    hasEditions,
-    isLoadingEditions,
-}: EditionBodyProps) {
-    const [activeSection, setActiveSection] = useState<SectionId>("Top");
-    const {
-        articles,
-        ads,
-        publicationInfo,
-        hasActiveEdition,
-        isLoading: isLoadingArticles,
-        error,
-    } = useEditionArticles(currentDate);
+  const data = await loadEdition(date);
+  if (!data) {
+    notFound();
+  }
 
-    const articlesForDate = articles;
-    const isLoading = isLoadingEditions || isLoadingArticles;
-
-    const displayAds = useMemo(() => ads.filter(a => a.adType ? a.adType === "display" : a.body.length >= 200), [ads]);
-    const classifiedAds = useMemo(() => ads.filter(a => a.adType ? a.adType === "classified" : (a.body.length >= 80 && a.body.length < 200)), [ads]);
-
-    const sections = useMemo(() => {
-        const counts = SECTION_ORDER.map((category) => ({
-            id: category as SectionId,
-            label: category,
-            count: articlesForDate.filter((article) => article.category === category).length,
-        }));
-
-        const filtered = counts.filter((item) => item.count > 0);
-
-        const result: { id: SectionId; label: string; count?: number }[] = [
-            { id: "Top" as SectionId, label: "Top Stories" },
-            ...filtered,
-        ];
-
-        if (displayAds.length > 0) {
-            result.push({ id: "Ads" as SectionId, label: "Ads", count: displayAds.length });
-        }
-        if (classifiedAds.length > 0) {
-            result.push({ id: "Classifieds" as SectionId, label: "Classifieds", count: classifiedAds.length });
-        }
-
-        return result;
-    }, [articlesForDate, displayAds, classifiedAds]);
-
-    const handleSectionChange = (sectionId: SectionId) => {
-        setActiveSection(sectionId);
-    };
-
-    const feedRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (feedRef.current) {
-            feedRef.current.scrollTop = 0;
-        }
-    }, [activeSection, currentDate]);
-
-    const [direction, setDirection] = useState(1);
-    const prevDateRef = useRef<string | null>(null);
-    useEffect(() => {
-        if (prevDateRef.current && currentDate) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- derives direction from previous vs current date
-            setDirection(currentDate > prevDateRef.current ? 1 : -1);
-        }
-        if (currentDate) prevDateRef.current = currentDate;
-    }, [currentDate]);
-
-    return (
-        <PageShell variant="default" hasHeader className="edition-background-shell">
-            <div className="paper-texture-overlay" aria-hidden="true" />
-            <TimeControls />
-
-            {!isLoadingEditions && !hasEditions ? (
-                <main className="min-h-screen w-full">
-                    <EmptyState />
-                </main>
-            ) : (
-                <main className="min-h-screen w-full lg:min-h-0 lg:h-[calc(100vh-var(--header-offset-total))] lg:overflow-hidden">
-                    <div className="grid grid-cols-1 lg:grid-cols-[var(--sidebar-nav-width)_1fr_var(--sidebar-context-width)] w-full min-h-full lg:h-full">
-                        {/* Left Sidebar: Navigation */}
-                        <div className="hidden lg:block lg:h-full lg:overflow-y-auto lg:min-h-0 border-r border-[var(--color-accent)]/50">
-                            <NavigationSidebar
-                                sections={sections}
-                                activeSection={activeSection}
-                                onSelect={handleSectionChange}
-                            />
-                        </div>
-
-                        {/* Main Feed */}
-                        <div ref={feedRef} className="lg:overflow-y-auto lg:h-full scrollbar-hide pb-20 lg:pb-0">
-                            <div style={{ display: "grid" }}>
-                                <AnimatePresence mode="sync" custom={direction}>
-                                    {isLoading || !hasActiveEdition ? (
-                                        <motion.div
-                                            key="skeleton"
-                                            style={{ gridArea: "1 / 1" }}
-                                            initial={{ opacity: 0 }}
-                                            animate={{ opacity: 1 }}
-                                            exit={{ opacity: 0 }}
-                                            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                                        >
-                                            <SkeletonFeed count={4} />
-                                        </motion.div>
-                                    ) : error ? (
-                                        <motion.div
-                                            key="error"
-                                            style={{ gridArea: "1 / 1" }}
-                                            initial={{ opacity: 0 }}
-                                            animate={{ opacity: 1 }}
-                                            exit={{ opacity: 0 }}
-                                            transition={{ duration: 0.2 }}
-                                        >
-                                            <ErrorState error={error} />
-                                        </motion.div>
-                                    ) : (
-                                        <motion.div
-                                            key={currentDate ?? "content"}
-                                            style={{ gridArea: "1 / 1" }}
-                                            custom={direction}
-                                            variants={editionSwapVariants}
-                                            initial="enter"
-                                            animate="center"
-                                            exit="exit"
-                                        >
-                                            <NewsFeed
-                                                articles={articles}
-                                                displayAds={displayAds}
-                                                classifiedAds={classifiedAds}
-                                                editionDate={currentDate}
-                                                editions={editions}
-                                                onDateChange={onDateChange}
-                                                activeSection={activeSection}
-                                                onSectionChange={handleSectionChange}
-                                                publicationInfo={publicationInfo}
-                                            />
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            </div>
-                        </div>
-
-                        {/* Right Sidebar: Weather + Player */}
-                        <div className="hidden lg:block lg:h-full lg:overflow-hidden border-l border-[var(--color-accent)]/50">
-                            <ContextSidebar currentDate={currentDate} />
-                        </div>
-                    </div>
-                </main>
-            )}
-
-            {/* Mobile Bottom Navigation */}
-            <MobileNav
-                sections={sections}
-                activeSection={activeSection}
-                onSelect={handleSectionChange}
-            />
-        </PageShell>
-    );
+  return (
+    <EditionDateClient
+      currentDate={date}
+      articles={data.articles}
+      ads={data.ads}
+      publicationInfo={data.publicationInfo}
+    />
+  );
 }

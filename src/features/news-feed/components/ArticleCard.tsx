@@ -190,6 +190,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                                     src={article.imageUrls[0]}
                                     alt={article.headline}
                                     fill
+                                    sizes="(max-width: 768px) 96px, 120px"
                                     className="card-image object-cover"
                                     style={{ objectPosition: "center 20%" }}
                                     onError={() => handleImgError(article.imageUrls[0])}
@@ -252,6 +253,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                                             src={validUrls[0]}
                                             alt={article.headline}
                                             fill
+                                            sizes="(max-width: 768px) 100vw, (max-width: 1280px) 60vw, 50vw"
                                             className="object-contain object-left sepia-vintage"
                                             onError={() => handleImgError(validUrls[0])}
                                         />
@@ -277,6 +279,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                                                     src={url}
                                                     alt={`${article.headline} — image ${idx + 1}`}
                                                     fill
+                                                    sizes="(max-width: 768px) 50vw, (max-width: 1280px) 30vw, 25vw"
                                                     className="object-contain sepia-vintage"
                                                     onError={() => handleImgError(url)}
                                                 />

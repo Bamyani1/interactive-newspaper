@@ -180,6 +180,7 @@ export const ScanViewer: React.FC<ScanViewerProps> = ({
                                             width={120}
                                             height={160}
                                             className="object-cover"
+                                            loading="lazy"
                                         />
                                         <span className={`
                                             absolute top-1 left-1 text-[10px] font-mono px-2 py-1 rounded

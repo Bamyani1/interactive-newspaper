@@ -59,12 +59,12 @@ const formatDateInPicker = (dateStr: string): string => {
 export const TimeControls = () => {
     const router = useRouter();
     const pathname = usePathname();
-    const { currentDate, setDate, editions, hasEditions, isLoading } = useArchive();
+    const { currentDate, setDate, editions, hasEditions } = useArchive();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [expandedYear, setExpandedYear] = useState<string | null>(null);
     const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
-    const canOpenDropdown = hasEditions && !isLoading;
+    const canOpenDropdown = hasEditions;
     const hasCurrentEdition =
         Boolean(currentDate) && currentDate !== null && editions.includes(currentDate);
     const hierarchy = groupEditionsByHierarchy(editions);
@@ -84,8 +84,6 @@ export const TimeControls = () => {
 
     // Set default date to first available edition when loaded
     useEffect(() => {
-        if (isLoading) return;
-
         if (!hasEditions) {
             if (currentDate !== null) {
                 setDate(null);
@@ -97,7 +95,7 @@ export const TimeControls = () => {
         if (!hasCurrentEdition && !pathname?.startsWith("/edition")) {
             setDate(editions[editions.length - 1]);
         }
-    }, [editions, currentDate, hasCurrentEdition, hasEditions, isLoading, setDate, pathname]);
+    }, [editions, currentDate, hasCurrentEdition, hasEditions, setDate, pathname]);
 
     const handleEditionSelect = (date: string) => {
         setDate(date);
@@ -186,11 +184,9 @@ export const TimeControls = () => {
                 >
                     <Calendar className="w-4 h-4 opacity-60" />
                     <span className="font-mono tracking-wider uppercase text-xs">
-                        {isLoading
-                            ? "Loading..."
-                            : hasCurrentEdition && currentDate
-                                ? formatDisplayDate(currentDate)
-                                : "No editions loaded"}
+                        {hasCurrentEdition && currentDate
+                            ? formatDisplayDate(currentDate)
+                            : "No editions loaded"}
                     </span>
                     <ChevronDown
                         className={`w-3 h-3 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""

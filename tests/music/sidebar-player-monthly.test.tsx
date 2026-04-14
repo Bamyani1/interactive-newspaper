@@ -2,6 +2,15 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SidebarPlayer } from "../../src/features/music-player/components/SidebarPlayer";
+import { clearMonthlyTrendingMusicCacheForTests } from "../../src/features/music-player/hooks/useMonthlyTrendingMusic";
+
+const ARCHIVE_URL = "/top-10-music/chart-1950-2010.json";
+const START_YEAR = 1950;
+const END_YEAR = 2010;
+const TOTAL_MONTHS = (END_YEAR - START_YEAR + 1) * 12;
+
+type TrackTuple = [string, string, string];
+type RawTrack = { title: string; artist: string; youtube_id: string };
 
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -10,22 +19,32 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+function monthIndex(year: number, month: number): number {
+  return (year - START_YEAR) * 12 + (month - 1);
+}
+
+function packedArchiveWithMonth(year: number, month: number, tracks: RawTrack[]): unknown {
+  const months: Array<TrackTuple[] | null> = new Array(TOTAL_MONTHS).fill(null);
+  months[monthIndex(year, month)] = tracks.map(
+    (t): TrackTuple => [t.title, t.artist, t.youtube_id],
+  );
+  return { start: `${START_YEAR}-01`, end: `${END_YEAR}-12`, months };
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
+  clearMonthlyTrendingMusicCacheForTests();
 });
 
 describe("SidebarPlayer monthly mode", () => {
   it("shows edition-month top 10 when data exists", async () => {
-    const yearData = {
-      "10": Array.from({ length: 10 }, (_, i) => ({
-        rank: i + 1,
-        title: `Song ${i + 1}`,
-        artist: `Artist ${i + 1}`,
-        youtube_id: i === 0 ? "dQw4w9WgXcQ" : "",
-      })),
-    };
+    const tracks: RawTrack[] = Array.from({ length: 10 }, (_, i) => ({
+      title: `Song ${i + 1}`,
+      artist: `Artist ${i + 1}`,
+      youtube_id: i === 0 ? "dQw4w9WgXcQ" : "",
+    }));
 
-    const fetchMock = vi.fn(async () => jsonResponse(yearData));
+    const fetchMock = vi.fn(async () => jsonResponse(packedArchiveWithMonth(1988, 10, tracks)));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<SidebarPlayer currentDate="1988-10-12" />);
@@ -34,21 +53,18 @@ describe("SidebarPlayer monthly mode", () => {
     expect(screen.getAllByText("Song 1").length).toBeGreaterThan(0);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/top-10-music/1988.json");
+      expect(fetchMock).toHaveBeenCalledWith(ARCHIVE_URL);
     });
   });
 
   it("falls back to list mode when no youtube id exists", async () => {
-    const yearData = {
-      "11": Array.from({ length: 10 }, (_, i) => ({
-        rank: i + 1,
-        title: i === 0 ? "No Video Song" : `Song ${i + 1}`,
-        artist: i === 0 ? "No Video Artist" : `Artist ${i + 1}`,
-        youtube_id: "",
-      })),
-    };
+    const tracks: RawTrack[] = Array.from({ length: 10 }, (_, i) => ({
+      title: i === 0 ? "No Video Song" : `Song ${i + 1}`,
+      artist: i === 0 ? "No Video Artist" : `Artist ${i + 1}`,
+      youtube_id: "",
+    }));
 
-    const fetchMock = vi.fn(async () => jsonResponse(yearData));
+    const fetchMock = vi.fn(async () => jsonResponse(packedArchiveWithMonth(1989, 11, tracks)));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<SidebarPlayer currentDate="1989-11-01" />);
@@ -63,20 +79,17 @@ describe("SidebarPlayer monthly mode", () => {
   });
 
   it("auto-selects the first track with a youtubeId in monthly mode", async () => {
-    const yearData = {
-      "10": [
-        { rank: 1, title: "No Embed Song", artist: "Artist 1", youtube_id: "" },
-        { rank: 2, title: "Embedded Song", artist: "Artist 2", youtube_id: "dQw4w9WgXcQ" },
-        ...Array.from({ length: 8 }, (_, i) => ({
-          rank: i + 3,
-          title: `Song ${i + 3}`,
-          artist: `Artist ${i + 3}`,
-          youtube_id: "",
-        })),
-      ],
-    };
+    const tracks: RawTrack[] = [
+      { title: "No Embed Song", artist: "Artist 1", youtube_id: "" },
+      { title: "Embedded Song", artist: "Artist 2", youtube_id: "dQw4w9WgXcQ" },
+      ...Array.from({ length: 8 }, (_, i) => ({
+        title: `Song ${i + 3}`,
+        artist: `Artist ${i + 3}`,
+        youtube_id: "",
+      })),
+    ];
 
-    const fetchMock = vi.fn(async () => jsonResponse(yearData));
+    const fetchMock = vi.fn(async () => jsonResponse(packedArchiveWithMonth(1990, 10, tracks)));
     vi.stubGlobal("fetch", fetchMock);
 
     const { container } = render(<SidebarPlayer currentDate="1990-10-18" />);
@@ -96,10 +109,18 @@ describe("SidebarPlayer monthly mode", () => {
   });
 
   it("shows NO_DATA message for out-of-range dates", async () => {
-    const fetchMock = vi.fn(async () => new Response("Not Found", { status: 404 }));
+    // Mock a valid archive — the year (1949) is outside the archive's
+    // 1950-2010 range, so the hook should still surface NO_DATA.
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        start: `${START_YEAR}-01`,
+        end: `${END_YEAR}-12`,
+        months: new Array(TOTAL_MONTHS).fill(null),
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<SidebarPlayer currentDate="1955-01-15" />);
+    render(<SidebarPlayer currentDate="1949-12-15" />);
 
     await screen.findByText("Monthly Top 10");
     expect(screen.getByText("No chart data was found for this month.")).toBeTruthy();

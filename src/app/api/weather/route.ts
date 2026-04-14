@@ -3,7 +3,6 @@ import { lookupHistoricalWeatherCached } from '@/src/lib/weather';
 import {
   getLocalWeatherByDate,
   isDateWithinLocalArchive,
-  parseScope,
 } from '@/src/lib/weather-local-archive';
 import type { WeatherQuery } from '@/src/types';
 
@@ -19,23 +18,19 @@ function parseNumericParam(value: string | null): number | undefined {
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const date = params.get('date');
-  const scope = parseScope(params.get('scope'));
 
   if (!date) {
     return NextResponse.json({ error: 'Missing required query parameter: date' }, { status: 400 });
   }
 
   if (isDateWithinLocalArchive(date)) {
-    const localRecord = await getLocalWeatherByDate(date, scope);
+    const localRecord = await getLocalWeatherByDate(date);
     if (localRecord) {
       return NextResponse.json({
-        query: {
-          date,
-          scope,
-        },
+        query: { date },
         record: localRecord,
         reason: null,
-        attempts: [`LOCAL_ARCHIVE:${scope}`],
+        attempts: ['LOCAL_ARCHIVE:delaware'],
       });
     }
   }

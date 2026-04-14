@@ -303,7 +303,7 @@ function AdImage({ ad, compact }: { ad: VintageAd; compact?: boolean }) {
     if (!ad.imageUrls || ad.imageUrls.length === 0) return null;
     return (
         <div className="w-full overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element -- ad images have unknown dimensions */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- ad images have unknown intrinsic dimensions; <Image> would force a fixed-aspect crop */}
             <img
                 src={ad.imageUrls[0]}
                 alt={`${ad.title} advertisement`}
@@ -373,10 +373,11 @@ export const AdsSection: React.FC<AdsSectionProps> = ({ displayAds }) => {
                 </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 items-start gap-4 md:gap-5 mb-8">
+            <div className="columns-1 sm:columns-2 gap-4 md:gap-5 mb-8">
                 {visibleAds.map((ad, idx) => (
                     <div
                         key={`display-${ad.title}-${idx}`}
+                        className="break-inside-avoid mb-4 md:mb-5"
                     >
                         <DisplayAd ad={ad} variant={variants[idx]} />
                     </div>
@@ -432,10 +433,11 @@ export const ClassifiedsSection: React.FC<ClassifiedsSectionProps> = ({ classifi
                 </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 items-start gap-4 md:gap-5 mb-8">
+            <div className="columns-1 sm:columns-2 gap-4 md:gap-5 mb-8">
                 {visibleAds.map((ad, idx) => (
                     <div
                         key={`classified-${ad.title}-${idx}`}
+                        className="break-inside-avoid mb-4 md:mb-5"
                     >
                         <DisplayAd ad={ad} variant={variants[idx]} />
                     </div>
