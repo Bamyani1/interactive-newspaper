@@ -144,8 +144,12 @@ function scoreRelevance(caption, articleHeadline, articleBody, articleCategory) 
   const articleTokens = new Set(tokenize(articleText));
 
   // Signal 1: Token overlap (weight 0.35)
+  // Co-located zero guard — the upstream early return at captionTokens.length
+  // === 0 already protects today, but a refactor that removes or reshapes
+  // that guard would silently reintroduce NaN into the weighted score and
+  // corrupt downstream ranking. Belt and suspenders. See docs/issues/0018.
   const overlap = captionTokens.filter((t) => articleTokens.has(t)).length;
-  const tokenScore = overlap / captionTokens.length;
+  const tokenScore = captionTokens.length > 0 ? overlap / captionTokens.length : 0;
 
   // Signal 2: Proper name matching (weight 0.40)
   const captionNames = extractProperNames(caption);

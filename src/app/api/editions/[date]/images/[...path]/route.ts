@@ -56,14 +56,45 @@ export async function GET(
 
   try {
     return respond(await readFile(filePath));
-  } catch {
-    // Fallback: check gold/ directory
+  } catch (err) {
+    // Only treat genuine "file missing" as a 404. Permissions errors, disk
+    // issues, stale mounts, etc. should surface in logs so operators can
+    // tell a configuration bug from a legitimately missing asset. We still
+    // fall through to the gold-dir fallback in all cases, and still return
+    // 404 if neither path works (to avoid leaking error details).
+    // See docs/issues/0007.
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code && code !== 'ENOENT') {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          route: '/api/editions/[date]/images',
+          msg: 'primary image read failed',
+          filePath,
+          code,
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
     try {
       const goldPath = path.join(GOLD_DIR, date, 'images', filename);
       if (goldPath.startsWith(path.join(GOLD_DIR, date, 'images'))) {
         return respond(await readFile(goldPath));
       }
-    } catch { /* fall through */ }
+    } catch (goldErr) {
+      const goldCode = (goldErr as NodeJS.ErrnoException)?.code;
+      if (goldCode && goldCode !== 'ENOENT') {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            route: '/api/editions/[date]/images',
+            msg: 'gold fallback read failed',
+            code: goldCode,
+            err: goldErr instanceof Error ? goldErr.message : String(goldErr),
+          }),
+        );
+      }
+    }
     return new NextResponse('Image not found', { status: 404 });
   }
 }
