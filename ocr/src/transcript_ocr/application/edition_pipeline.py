@@ -37,6 +37,40 @@ from .content_rescue import triage_edition
 from .page_pipeline import extract_page_docai, structure_and_link_page
 
 
+def _is_gemini_transient(exc: BaseException) -> bool:
+    """Return True if `exc` looks like a transient Gemini 5xx / quota failure.
+
+    Used by the broad `except` blocks in Phases 4 and 5 to tag warning
+    messages so operators can distinguish transient outages from genuine
+    config or schema errors in logs, without narrowing the except itself
+    (which would start failing editions that currently tolerate these).
+    """
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if code is not None:
+        try:
+            code_int = int(code)
+            if code_int in {429, 500, 502, 503, 504}:
+                return True
+        except (ValueError, TypeError):
+            pass
+    exc_str = str(exc).lower()
+    return any(
+        term in exc_str
+        for term in (
+            "503",
+            "502",
+            "504",
+            "unavailable",
+            "resource exhausted",
+            "resource_exhausted",
+            "quota",
+            "rate limit",
+            "deadline exceeded",
+            "deadline_exceeded",
+        )
+    )
+
+
 def process_edition(
     settings: Any,
     client: Any,
@@ -299,7 +333,15 @@ def process_edition(
             else:
                 substep("Ad enrichment: skipped (already enriched or no ads)")
         except Exception as exc:
-            warning(f"Ad enrichment failed (non-fatal): {exc}")
+            # Kept intentionally broad — narrowing it would start failing
+            # editions that currently complete under transient Gemini hiccups.
+            # We add a cause tag for Gemini 5xx / quota so operators can
+            # distinguish "bad day" from "bad config" in logs without losing
+            # the tolerant behavior. See docs/issues/0011.
+            warning(
+                f"Ad enrichment failed (non-fatal): {exc}"
+                + (" [cause=gemini_5xx_or_quota]" if _is_gemini_transient(exc) else "")
+            )
 
     # ── Phase 5: Content triage ────────────────────────────────────
     if os.path.isfile(edition_json_path):
@@ -312,7 +354,11 @@ def process_edition(
             else:
                 substep("Content triage: skipped (already triaged or nothing to triage)")
         except Exception as exc:
-            warning(f"Content triage failed (non-fatal): {exc}")
+            # See Phase 4 comment above — same reasoning, same tolerant policy.
+            warning(
+                f"Content triage failed (non-fatal): {exc}"
+                + (" [cause=gemini_5xx_or_quota]" if _is_gemini_transient(exc) else "")
+            )
 
     # ── Phase 6: Summary + diagnostics ────────────────────────────
     report.total_time_seconds = time.time() - pipeline_start

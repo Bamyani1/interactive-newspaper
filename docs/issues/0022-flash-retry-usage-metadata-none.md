@@ -1,11 +1,20 @@
 ---
 id: 0022
 title: flash-retry reads usage_metadata without chained None check
-status: open
+status: fixed
 severity: medium
 area: ocr
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `llm_merge.py` flash-retry path now uses
+> `getattr(response, "usage_metadata", None)` and inner
+> `getattr(flash_usage, "prompt_token_count", None) or 0` chains, so a
+> partial usage_metadata object (non-None outer, None inner) can no
+> longer crash the retry path and bury the original Pro error under an
+> AttributeError.
+
 
 ## Symptom
 
