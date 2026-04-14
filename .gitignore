@@ -70,6 +70,10 @@ scripts/dev/data/
 !public/top-10-music/*.json
 !scripts/db/locked-editions.json
 !tests/api/rag-golden-questions.json
+# Pre-built offline weather archive — canonical dataset per CLAUDE.md's
+# "Do Not Modify" list. Tests at tests/weather/ depend on this being
+# available in CI, not just locally.
+!public/data/weather/ohio/index/*.json
 
 # Large Files
 public/GOPR0363 copy.png
