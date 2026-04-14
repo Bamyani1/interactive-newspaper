@@ -68,7 +68,7 @@ function isCitation(value: unknown): value is Citation {
 export async function POST(request: NextRequest): Promise<NextResponse> {
     // ── Rate limit ──
     const ip = getClientIp(request);
-    const rate = await feedbackRateLimiter(ip);
+    const rate = feedbackRateLimiter(ip);
     if (!rate.allowed) {
         return NextResponse.json(
             { error: "Too many feedback submissions. Try again shortly." },

@@ -18,24 +18,6 @@ const { MockQuotaExhaustedError } = vi.hoisted(() => {
   return { MockQuotaExhaustedError };
 });
 
-// KV dedup mocks. Default to "KV unavailable" so all existing tests
-// exercise the in-memory path exactly as they did pre-Bundle-2-#8.
-// Individual tests can override via mockReturnValue / mockResolvedValue.
-const { mockIsKvAvailable, mockKvGet, mockKvSet } = vi.hoisted(() => ({
-  mockIsKvAvailable: vi.fn(() => false),
-  mockKvGet: vi.fn(async () => null),
-  mockKvSet: vi.fn(async () => false),
-}));
-
-vi.mock("@/src/lib/kv-client", () => ({
-  isKvAvailable: mockIsKvAvailable,
-  kvGet: mockKvGet,
-  kvSet: mockKvSet,
-  kvDel: vi.fn(async () => false),
-  getRedisClient: vi.fn(() => null),
-  _resetKvForTests: vi.fn(),
-}));
-
 vi.mock("@/src/lib/embeddings", () => ({
   embedQuery: vi.fn(),
   QuotaExhaustedError: MockQuotaExhaustedError,
@@ -140,14 +122,6 @@ describe("POST /api/ask", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    // Reset KV mocks to default (unavailable) so each test starts
-    // from a known state. Individual tests opt into the KV path.
-    mockIsKvAvailable.mockReset();
-    mockIsKvAvailable.mockReturnValue(false);
-    mockKvGet.mockReset();
-    mockKvGet.mockResolvedValue(null);
-    mockKvSet.mockReset();
-    mockKvSet.mockResolvedValue(false);
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "What happened at OWU?",
       ftsQuery: "What happened at OWU?",
@@ -615,86 +589,6 @@ describe("POST /api/ask", () => {
     // Second one falls through and runs its own pipeline
     expect(r2.status).toBe(200);
     expect(reformulateQuery).toHaveBeenCalledTimes(2);
-  });
-
-  // KV dedup layer (Bundle 2 #8) — cross-instance response cache.
-  // The in-memory Map handles same-instance coalescing; KV is a pure
-  // response cache keyed by dedupId, populated after pipeline success
-  // and checked before running a fresh pipeline. Tests below exercise
-  // each branch of the hybrid lookup.
-
-  it("returns KV-cached response when in-memory Map misses and KV has a hit", async () => {
-    mockIsKvAvailable.mockReturnValue(true);
-    mockKvGet.mockResolvedValueOnce({
-      body: {
-        question: "Cross-instance cached?",
-        answer: "Pre-cached from another instance",
-        citations: [],
-        confidence: "high",
-        mode: "text",
-        requestId: "cached-req",
-        sourceArticles: [],
-        meta: { retrievalTimeMs: 0, generationTimeMs: 0, totalTimeMs: 0, articlesSearched: 0, method: "cache" },
-      },
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-
-    const response = await POST(makeRequest({ question: "Cross-instance cached?" }));
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.answer).toBe("Pre-cached from another instance");
-    // Critical: no pipeline stage was invoked — the cached KV response
-    // was served directly.
-    expect(reformulateQuery).not.toHaveBeenCalled();
-    expect(embedQuery).not.toHaveBeenCalled();
-    expect(hybridSearch).not.toHaveBeenCalled();
-    expect(rerankArticles).not.toHaveBeenCalled();
-    expect(generateAnswer).not.toHaveBeenCalled();
-    // KV was checked exactly once for this dedupId.
-    expect(mockKvGet).toHaveBeenCalledTimes(1);
-    expect(mockKvGet.mock.calls[0][0]).toMatch(/^ask:dedup:/);
-  });
-
-  it("writes response to KV after successful pipeline completion", async () => {
-    mockIsKvAvailable.mockReturnValue(true);
-    // KV miss on lookup — the pipeline runs normally.
-    mockKvGet.mockResolvedValueOnce(null);
-
-    const response = await POST(makeRequest({ question: "Write me to KV" }));
-    expect(response.status).toBe(200);
-
-    // The KV write is fire-and-forget inside the route. It's scheduled
-    // after the response is returned but awaited via microtask ordering.
-    // Flush with a zero-delay await so the .then() chain can run.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(mockKvSet).toHaveBeenCalledTimes(1);
-    const [key, value, ttl] = mockKvSet.mock.calls[0];
-    expect(key).toMatch(/^ask:dedup:/);
-    expect(ttl).toBe(30);
-    // The cached shape matches DedupExtracted: body + status + headers.
-    expect(value).toMatchObject({
-      status: 200,
-      body: expect.objectContaining({
-        question: "Write me to KV",
-        answer: "Test answer [Source 1]",
-      }),
-    });
-  });
-
-  it("skips KV lookup and write when isKvAvailable returns false", async () => {
-    // Default mock state: isKvAvailable = false.
-    const response = await POST(makeRequest({ question: "KV disabled" }));
-    expect(response.status).toBe(200);
-
-    // Neither kvGet nor kvSet was ever called — the isKvAvailable()
-    // guard short-circuits the KV branches.
-    expect(mockKvGet).not.toHaveBeenCalled();
-    expect(mockKvSet).not.toHaveBeenCalled();
-    // But the pipeline still ran (in-memory path is untouched).
-    expect(reformulateQuery).toHaveBeenCalledTimes(1);
-    expect(generateAnswer).toHaveBeenCalledTimes(1);
   });
 
   // Direct-unit test for the dedup body re-consumption race fix.
