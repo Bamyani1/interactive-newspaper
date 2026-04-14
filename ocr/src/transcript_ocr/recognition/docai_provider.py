@@ -164,6 +164,51 @@ def _extract_continuation_markers(text: str) -> list[str]:
     return markers
 
 
+def _detect_truncated_continuation(text: str) -> bool:
+    """
+    Detect whether the tail of a page's DocAI text looks like a truncated
+    continuation marker (e.g. "Cont", "Continued on pa...") that the
+    regex-based extractor would have missed.
+
+    Pure diagnostic — does NOT alter the extracted marker list. When this
+    fires, the operator gets a warning on stderr indicating that the
+    regex-based marker extraction may have lost a cross-page continuation
+    signal. See docs/issues/0014.
+    """
+    if not text:
+        return False
+    tail = text[-64:].rstrip()
+    if not tail:
+        return False
+    # Heuristic: the tail starts a continuation phrase but doesn't end with a
+    # page number or terminal punctuation, and no full marker was matched in
+    # the tail. We only check the tail because truncation by definition cuts
+    # the end of the text, not the middle.
+    truncation_heads = (
+        "cont",
+        "see pa",
+        "see pag",
+        "turn to",
+    )
+    tail_lower = tail.lower()
+    # Look for a partial phrase at or near the very end (last ~32 chars)
+    near_end = tail_lower[-32:]
+    for head in truncation_heads:
+        if head in near_end:
+            # If any real marker was already matched by the regex, don't flag.
+            fully_matched = False
+            for pattern in _CONTINUATION_PATTERNS:
+                for match in pattern.finditer(text[-128:]):
+                    if head in match.group(0).lower():
+                        fully_matched = True
+                        break
+                if fully_matched:
+                    break
+            if not fully_matched:
+                return True
+    return False
+
+
 def _extract_token_confidences(document) -> tuple[list[str], float]:
     """
     Return (low_confidence_words, mean_confidence) from Document AI tokens.
@@ -284,6 +329,11 @@ def extract_page_text(image: Image.Image) -> DocAIResult:
 
     paragraphs = _extract_paragraphs(document)
     continuation_markers = _extract_continuation_markers(raw_text)
+    if _detect_truncated_continuation(raw_text):
+        warning(
+            "DocAI page text appears truncated near a continuation marker — "
+            "cross-page merge may miss a continuation link on this page."
+        )
     low_confidence_words, mean_confidence = _extract_token_confidences(document)
 
     return DocAIResult(

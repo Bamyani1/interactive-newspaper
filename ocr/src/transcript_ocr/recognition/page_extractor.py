@@ -102,7 +102,15 @@ def process_page_with_docai(
         diag.timings["gemini"] = gemini_elapsed
 
     if response.parsed:
-        page_num = _extract_page_number_from_filename(os.path.basename(image_path)) or response.parsed.page_number or "0"
+        # Defensive getattr: even inside the `if response.parsed:` guard, use
+        # getattr with a default so a future refactor that moves this out of
+        # the guard (or a Gemini response shape shift) can't crash the page
+        # with an opaque AttributeError. See docs/issues/0008.
+        page_num = (
+            _extract_page_number_from_filename(os.path.basename(image_path))
+            or getattr(response.parsed, "page_number", None)
+            or "0"
+        )
         save_snapshot(snapshots_dir, f"raw_gemini_page{page_num}.json", response.parsed)
 
         _sanitize_null_strings(response.parsed)

@@ -1,11 +1,19 @@
 ---
 id: 0020
 title: OCR tempfile creation in content_rescue/ad_enrichment uses suffix-only
-status: open
+status: fixed
 severity: medium
 area: ocr
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** both `content_rescue.py` and `ad_enrichment.py` now pass
+> explicit `prefix="rescue_"` / `prefix="ads_"` to `tempfile.mkstemp`, so
+> two concurrent processes touching the same edition directory cannot
+> produce colliding tempfile names. The surrounding atomic-write logic
+> (`os.replace`) is unchanged.
+
 
 ## Symptom
 
