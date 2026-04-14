@@ -5,6 +5,108 @@ import type { Article, EditionInfo, VintageAd } from "@/src/types";
 // Each query is a single HTTP request, ideal for Vercel serverless functions.
 const sql = neon(process.env.DATABASE_URL!);
 
+const HYBRID_SEARCH_TIMEOUT_MS = 8_000;
+
+// ── hybridSearch LRU cache ──
+// Short-TTL cache for full hybrid-search results so repeated identical
+// questions within the same function instance skip the double SQL round
+// trip + RRF merge. Mirrors the shape of embeddings.ts's query cache.
+const HYBRID_CACHE_TTL_MS = 5 * 60 * 1000;
+const HYBRID_CACHE_MAX_SIZE = 50;
+
+interface HybridCacheEntry {
+    results: RetrievedArticle[];
+    ts: number;
+}
+
+const hybridCache = new Map<string, HybridCacheEntry>();
+
+function hybridCacheKey(
+    question: string,
+    options: {
+        limit?: number;
+        vectorWeight?: number;
+        category?: string | null;
+        startDate?: string | null;
+        endDate?: string | null;
+        onlyWithImages?: boolean;
+    },
+): string {
+    return JSON.stringify({
+        q: question,
+        l: options.limit ?? 8,
+        v: options.vectorWeight ?? 0.7,
+        c: options.category ?? null,
+        s: options.startDate ?? null,
+        e: options.endDate ?? null,
+        oi: options.onlyWithImages ?? false,
+    });
+}
+
+function getCachedHybridSearch(key: string): RetrievedArticle[] | null {
+    const entry = hybridCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.ts > HYBRID_CACHE_TTL_MS) {
+        hybridCache.delete(key);
+        return null;
+    }
+    // Promote to most-recently-used
+    hybridCache.delete(key);
+    hybridCache.set(key, entry);
+    return entry.results;
+}
+
+function setCachedHybridSearch(key: string, results: RetrievedArticle[]): void {
+    if (hybridCache.size >= HYBRID_CACHE_MAX_SIZE) {
+        const oldest = hybridCache.keys().next().value;
+        if (oldest !== undefined) hybridCache.delete(oldest);
+    }
+    hybridCache.set(key, { results, ts: Date.now() });
+}
+
+// Test hook: clears the module-level cache between tests so prior runs
+// don't leak into new ones.
+export function _clearHybridSearchCacheForTests(): void {
+    hybridCache.clear();
+}
+
+/**
+ * Thrown by db.ts when a database operation exceeds its timeout budget.
+ * Callers can check `err instanceof DbTimeoutError` to return a 504 instead
+ * of an opaque 500. The orphaned underlying request may still keep running
+ * on Neon's side because @neondatabase/serverless doesn't accept an
+ * AbortSignal — this wrapper protects the caller, not the server.
+ */
+export class DbTimeoutError extends Error {
+    constructor(
+        public readonly op: string,
+        public readonly timeoutMs: number,
+    ) {
+        super(`Database operation timed out: ${op} after ${timeoutMs}ms`);
+        this.name = "DbTimeoutError";
+    }
+}
+
+function raceWithTimeout<T>(
+    op: string,
+    promise: Promise<T>,
+    timeoutMs: number,
+): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+            () => reject(new DbTimeoutError(op, timeoutMs)),
+            timeoutMs,
+        );
+    });
+    return Promise.race([
+        promise.finally(() => {
+            if (timer) clearTimeout(timer);
+        }),
+        timeoutPromise,
+    ]);
+}
+
 // ─── Edition Queries ─────────────────────────────────────────────
 
 interface QueryEditionsOptions {
@@ -16,27 +118,35 @@ interface QueryEditionsOptions {
 
 export async function queryEditions(
   options: QueryEditionsOptions = {},
-): Promise<{ editions: EditionInfo[]; pagination: { total: number; limit: number; offset: number; hasMore: boolean } }> {
+): Promise<{
+  editions: EditionInfo[];
+  pagination: { total: number; limit: number; offset: number; hasMore: boolean };
+}> {
   const limit = options.limit ?? 100;
   const offset = options.offset ?? 0;
   const startDate = options.startDate ?? null;
   const endDate = options.endDate ?? null;
 
-  const countResult = await sql`
-    SELECT COUNT(*)::int as total FROM editions
-    WHERE (${startDate}::text IS NULL OR date >= ${startDate})
-      AND (${endDate}::text IS NULL OR date <= ${endDate})
-  `;
+  // The internal layout helper (src/lib/editions-server.ts) calls this with a
+  // large limit and ignores `pagination` — so the COUNT query is only relevant
+  // when /api/editions is hit by an external/paginating consumer. Keeping it
+  // here gives those consumers a correct `total` and `hasMore`.
+  const [countResult, rows] = await sql.transaction([
+    sql`
+      SELECT COUNT(*)::int as total FROM editions
+      WHERE (${startDate}::text IS NULL OR date >= ${startDate})
+        AND (${endDate}::text IS NULL OR date <= ${endDate})
+    `,
+    sql`
+      SELECT date, publication_info, page_count, article_count
+      FROM editions
+      WHERE (${startDate}::text IS NULL OR date >= ${startDate})
+        AND (${endDate}::text IS NULL OR date <= ${endDate})
+      ORDER BY date DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `,
+  ]);
   const total = countResult[0].total;
-
-  const rows = await sql`
-    SELECT date, publication_info, page_count, article_count
-    FROM editions
-    WHERE (${startDate}::text IS NULL OR date >= ${startDate})
-      AND (${endDate}::text IS NULL OR date <= ${endDate})
-    ORDER BY date DESC
-    LIMIT ${limit} OFFSET ${offset}
-  `;
 
   const editions: EditionInfo[] = rows.map((r) => ({
     id: r.date,
@@ -173,16 +283,23 @@ export async function searchArticles(
   `;
 
   return {
-    results: rows.map((r) => ({
-      id: r.id,
-      editionDate: r.edition_date,
-      category: r.category,
-      headline: r.headline,
-      summary: r.summary,
-      byline: r.byline ?? null,
-      snippet: r.snippet,
-      rank: parseFloat(r.rank),
-    })),
+    results: rows.map((r) => {
+      // Guard against NaN from parseFloat(null) or malformed rank values.
+      // FTS rank is a ts_rank float; if something weird comes back from the
+      // DB we'd rather serve 0 than let NaN corrupt downstream sort/compare.
+      // See docs/issues/0006.
+      const rankValue = parseFloat(r.rank);
+      return {
+        id: r.id,
+        editionDate: r.edition_date,
+        category: r.category,
+        headline: r.headline,
+        summary: r.summary,
+        byline: r.byline ?? null,
+        snippet: r.snippet,
+        rank: Number.isFinite(rankValue) ? rankValue : 0,
+      };
+    }),
     total: countResult[0].total,
   };
 }
@@ -208,6 +325,8 @@ interface VectorSearchOptions {
   startDate?: string | null;
   endDate?: string | null;
   onlyWithImages?: boolean;
+  timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -224,38 +343,56 @@ export async function queryArticlesByEmbedding(
   const startDate = options.startDate ?? null;
   const endDate = options.endDate ?? null;
   const onlyWithImages = options.onlyWithImages ?? false;
+  const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
   const vecStr = `[${embeddingVec.join(",")}]`;
 
-  const [, rows] = await sql.transaction([
-    sql`SET LOCAL hnsw.ef_search = 100`,
-    sql`
-      SELECT
-        a.id, a.edition_date, a.category, a.headline, a.summary,
-        a.byline, a.body_plain, a.image_urls,
-        (a.embedding <=> ${vecStr}::vector) as distance
-      FROM articles a
-      WHERE a.embedding IS NOT NULL
-        AND (${category}::text IS NULL OR a.category = ${category})
-        AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-        AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-        AND (${onlyWithImages}::boolean = false OR (a.image_urls IS NOT NULL AND jsonb_array_length(a.image_urls) > 0))
-      ORDER BY a.embedding <=> ${vecStr}::vector
-      LIMIT ${limit}
-    `,
-  ]);
+  // Mirror hybridSearch's early-exit so the /api/ask fallback path
+  // doesn't orphan a DB call when the global deadline has already fired.
+  if (options.signal?.aborted) {
+    throw new DbTimeoutError("queryArticlesByEmbedding", timeoutMs);
+  }
 
-  return rows.map((r) => ({
-    id: r.id,
-    editionDate: r.edition_date,
-    category: r.category,
-    headline: r.headline,
-    summary: r.summary,
-    byline: r.byline ?? null,
-    bodyPlain: r.body_plain,
-    distance: parseFloat(r.distance),
-    source: "vector" as const,
-    imageUrls: r.image_urls ?? [],
-  }));
+  const [, rows] = await raceWithTimeout(
+    "queryArticlesByEmbedding",
+    sql.transaction([
+      sql`SET LOCAL hnsw.ef_search = 100`,
+      sql`
+        SELECT
+          a.id, a.edition_date, a.category, a.headline, a.summary,
+          a.byline, a.body_plain, a.image_urls,
+          (a.embedding <=> ${vecStr}::vector) as distance
+        FROM articles a
+        WHERE a.embedding IS NOT NULL
+          AND (${category}::text IS NULL OR a.category = ${category})
+          AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+          AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+          AND (${onlyWithImages}::boolean = false OR (a.image_urls IS NOT NULL AND jsonb_array_length(a.image_urls) > 0))
+        ORDER BY a.embedding <=> ${vecStr}::vector
+        LIMIT ${limit}
+      `,
+    ]),
+    timeoutMs,
+  );
+
+  return rows.map((r) => {
+    // Guard against NaN from parseFloat(null/undefined/malformed).
+    // Downstream confidence math (answer-generator.ts:109-112) already
+    // filters out null distance; a NaN would silently corrupt the sum.
+    // See docs/issues/0006.
+    const distValue = parseFloat(r.distance);
+    return {
+      id: r.id,
+      editionDate: r.edition_date,
+      category: r.category,
+      headline: r.headline,
+      summary: r.summary,
+      byline: r.byline ?? null,
+      bodyPlain: r.body_plain,
+      distance: Number.isFinite(distValue) ? distValue : null,
+      source: "vector" as const,
+      imageUrls: r.image_urls ?? [],
+    };
+  });
 }
 
 /**
@@ -266,30 +403,60 @@ export async function queryArticlesByEmbedding(
 export async function hybridSearch(
   question: string,
   embeddingVec: number[],
-  options: { limit?: number; vectorWeight?: number; category?: string | null; startDate?: string | null; endDate?: string | null; onlyWithImages?: boolean } = {},
+  options: {
+    limit?: number;
+    vectorWeight?: number;
+    category?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    onlyWithImages?: boolean;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<RetrievedArticle[]> {
   const limit = options.limit ?? 8;
   const vectorWeight = options.vectorWeight ?? 0.7;
   const ftsWeight = 1 - vectorWeight;
   const fetchK = Math.min(3 * limit, 100); // fetch from each source before fusion
+  const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
 
-  // Run vector search and FTS search in parallel
-  const [vectorResults, ftsResults] = await Promise.all([
-    queryArticlesByEmbedding(embeddingVec, {
-      limit: fetchK,
-      category: options.category,
-      startDate: options.startDate,
-      endDate: options.endDate,
-      onlyWithImages: options.onlyWithImages,
-    }),
-    searchArticlesForRag(question, {
-      limit: fetchK,
-      category: options.category ?? undefined,
-      startDate: options.startDate ?? undefined,
-      endDate: options.endDate ?? undefined,
-      onlyWithImages: options.onlyWithImages,
-    }),
-  ]);
+  // If the outer deadline has already fired, short-circuit.
+  if (options.signal?.aborted) {
+    throw new DbTimeoutError("hybridSearch", timeoutMs);
+  }
+
+  // Cache check: identical (question, filters, limit, weights) hits skip
+  // the full double-SQL + RRF round trip. Keyed on the question string
+  // (not the embedding) since embedQuery's cache ensures the same
+  // question produces the same vector.
+  const cacheKey = hybridCacheKey(question, options);
+  const cached = getCachedHybridSearch(cacheKey);
+  if (cached) return cached;
+
+  // Run vector search and FTS search in parallel, wrapped in a single
+  // timeout budget. A hung Neon call would otherwise block /api/ask
+  // indefinitely because @neondatabase/serverless has no AbortSignal
+  // support. See docs/issues/0005.
+  const [vectorResults, ftsResults] = await raceWithTimeout(
+    "hybridSearch",
+    Promise.all([
+      queryArticlesByEmbedding(embeddingVec, {
+        limit: fetchK,
+        category: options.category,
+        startDate: options.startDate,
+        endDate: options.endDate,
+        onlyWithImages: options.onlyWithImages,
+      }),
+      searchArticlesForRag(question, {
+        limit: fetchK,
+        category: options.category ?? undefined,
+        startDate: options.startDate ?? undefined,
+        endDate: options.endDate ?? undefined,
+        onlyWithImages: options.onlyWithImages,
+      }),
+    ]),
+    timeoutMs,
+  );
 
   // Reciprocal Rank Fusion (RRF): score = sum(weight / (k + rank))
   // K=40 (vs standard 60) gives better rank differentiation for our small corpus
@@ -317,10 +484,13 @@ export async function hybridSearch(
   }
 
   // Sort by fused score (descending) and return top-K
-  return Array.from(scoreMap.values())
+  const fused = Array.from(scoreMap.values())
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map((entry) => entry.article);
+
+  setCachedHybridSearch(cacheKey, fused);
+  return fused;
 }
 
 /**

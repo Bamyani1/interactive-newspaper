@@ -1,8 +1,44 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
+// Re-declare QuotaExhaustedError shape inside the mock so tests can throw
+// it without dragging in the real module. vi.hoisted ensures the class is
+// defined when the hoisted vi.mock factory runs.
+const { MockQuotaExhaustedError } = vi.hoisted(() => {
+  class MockQuotaExhaustedError extends Error {
+    readonly op: string;
+    readonly cause?: unknown;
+    constructor(op: string, cause?: unknown) {
+      super(`Gemini API quota exhausted (${op})`);
+      this.name = "QuotaExhaustedError";
+      this.op = op;
+      this.cause = cause;
+    }
+  }
+  return { MockQuotaExhaustedError };
+});
+
+// KV dedup mocks. Default to "KV unavailable" so all existing tests
+// exercise the in-memory path exactly as they did pre-Bundle-2-#8.
+// Individual tests can override via mockReturnValue / mockResolvedValue.
+const { mockIsKvAvailable, mockKvGet, mockKvSet } = vi.hoisted(() => ({
+  mockIsKvAvailable: vi.fn(() => false),
+  mockKvGet: vi.fn(async () => null),
+  mockKvSet: vi.fn(async () => false),
+}));
+
+vi.mock("@/src/lib/kv-client", () => ({
+  isKvAvailable: mockIsKvAvailable,
+  kvGet: mockKvGet,
+  kvSet: mockKvSet,
+  kvDel: vi.fn(async () => false),
+  getRedisClient: vi.fn(() => null),
+  _resetKvForTests: vi.fn(),
+}));
+
 vi.mock("@/src/lib/embeddings", () => ({
   embedQuery: vi.fn(),
+  QuotaExhaustedError: MockQuotaExhaustedError,
 }));
 
 vi.mock("@/src/lib/db", () => ({
@@ -12,6 +48,7 @@ vi.mock("@/src/lib/db", () => ({
 
 vi.mock("@/src/lib/answer-generator", () => ({
   generateAnswer: vi.fn(),
+  generateAnswerStream: vi.fn(),
 }));
 
 vi.mock("@/src/lib/query-reformulator", () => ({
@@ -27,19 +64,63 @@ vi.mock("@/src/lib/rate-limit", () => ({
   getClientIp: () => "127.0.0.1",
 }));
 
-import { POST } from "@/src/app/api/ask/route";
+import {
+  POST,
+  _setGlobalDeadlineForTests,
+  _setRetrievalTimeoutForTests,
+  _clearAskDedupForTests,
+  _askDedupInternalsForTests,
+} from "@/src/app/api/ask/route";
+import type { NextResponse } from "next/server";
 import { embedQuery } from "@/src/lib/embeddings";
 import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
-import { generateAnswer } from "@/src/lib/answer-generator";
+import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
 
-function makeRequest(body: Record<string, unknown>): NextRequest {
-  return new NextRequest("http://localhost:3000/api/ask", {
+function makeRequest(
+  body: Record<string, unknown>,
+  opts: { stream?: boolean } = {},
+): NextRequest {
+  const url = opts.stream
+    ? "http://localhost:3000/api/ask?stream=1"
+    : "http://localhost:3000/api/ask";
+  return new NextRequest(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+// Helper: consume an SSE ReadableStream and return the parsed events in order.
+// Each SSE frame is `data: {json}\n\n`; split on `\n\n` and JSON.parse each.
+async function readSseEvents(
+  response: Response | NextResponse,
+): Promise<Array<Record<string, unknown>>> {
+  const body = response.body;
+  if (!body) throw new Error("Response has no body");
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  const events: Array<Record<string, unknown>> = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (value) buf += decoder.decode(value, { stream: true });
+    if (done) break;
+  }
+  buf += decoder.decode();
+  for (const frame of buf.split("\n\n")) {
+    const trimmed = frame.trim();
+    if (!trimmed) continue;
+    const dataMatch = trimmed.match(/^data:\s*(.*)$/s);
+    if (!dataMatch) continue;
+    try {
+      events.push(JSON.parse(dataMatch[1]) as Record<string, unknown>);
+    } catch {
+      // skip malformed
+    }
+  }
+  return events;
 }
 
 const mockArticle = {
@@ -58,6 +139,15 @@ const mockArticle = {
 describe("POST /api/ask", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _clearAskDedupForTests();
+    // Reset KV mocks to default (unavailable) so each test starts
+    // from a known state. Individual tests opt into the KV path.
+    mockIsKvAvailable.mockReset();
+    mockIsKvAvailable.mockReturnValue(false);
+    mockKvGet.mockReset();
+    mockKvGet.mockResolvedValue(null);
+    mockKvSet.mockReset();
+    mockKvSet.mockResolvedValue(false);
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "What happened at OWU?",
       ftsQuery: "What happened at OWU?",
@@ -75,6 +165,25 @@ describe("POST /api/ask", () => {
       ],
       confidence: "high",
     });
+    // Default streaming mock: yields 2 deltas then a done event
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "Stream " };
+        yield { type: "delta", text: "answer." };
+        yield {
+          type: "done",
+          answer: "Stream answer.",
+          citations: [
+            {
+              articleId: "1960-01-07-0",
+              headline: "Test Headline",
+              editionDate: "1960-01-07",
+            },
+          ],
+          confidence: "high",
+        };
+      })(),
+    );
   });
 
   it("returns 400 when question field is missing", async () => {
@@ -111,6 +220,75 @@ describe("POST /api/ask", () => {
 
     expect(response.status).toBe(502);
     expect(body.error).toBe("Failed to process question. Please try again.");
+  });
+
+  it("returns 429 + Retry-After when embedQuery throws QuotaExhaustedError", async () => {
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new MockQuotaExhaustedError("embedQuery", { code: 429 }),
+    );
+
+    const response = await POST(makeRequest({ question: "What happened?" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body.error).toMatch(/quota/i);
+    expect(body.cause).toBe("quota_exhausted");
+    expect(body.stage).toBe("embed");
+    expect(typeof body.requestId).toBe("string");
+    expect(body.requestId.length).toBeGreaterThan(0);
+    expect(response.headers.get("Retry-After")).toBe("3600");
+  });
+
+  it("tags reformulator errors with stage='reformulate'", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("reformulator unexpected crash"),
+    );
+
+    const response = await POST(makeRequest({ question: "What happened?" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.stage).toBe("reformulate");
+    expect(body.requestId).toMatch(/^[a-z0-9]+$/);
+  });
+
+  it("tags reranker errors with stage='rerank'", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("reranker crashed"),
+    );
+
+    const response = await POST(makeRequest({ question: "What happened?" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.stage).toBe("rerank");
+    expect(body.requestId).toBeDefined();
+  });
+
+  it("tags answer-gen errors with stage='generate'", async () => {
+    (generateAnswer as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("generation crashed"),
+    );
+
+    const response = await POST(makeRequest({ question: "What happened?" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.stage).toBe("generate");
+    expect(body.requestId).toBeDefined();
+  });
+
+  it("502 embed failure includes stage='embed' and requestId", async () => {
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("network error"),
+    );
+
+    const response = await POST(makeRequest({ question: "What happened?" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.stage).toBe("embed");
+    expect(body.requestId).toBeDefined();
   });
 
   it("returns 200 with correct response structure on success", async () => {
@@ -194,12 +372,20 @@ describe("POST /api/ask", () => {
 
     await POST(makeRequest({ question: "What happened at OWU?" }));
 
-    expect(reformulateQuery).toHaveBeenCalledWith("What happened at OWU?");
-    expect(embedQuery).toHaveBeenCalledWith("expanded OWU query");
+    // Step 3 added an optional { signal } second param to propagate the
+    // global deadline. Existing assertions must tolerate the extra arg.
+    expect(reformulateQuery).toHaveBeenCalledWith(
+      "What happened at OWU?",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(embedQuery).toHaveBeenCalledWith(
+      "expanded OWU query",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(hybridSearch).toHaveBeenCalledWith(
       "OWU OR Ohio Wesleyan",
       expect.any(Array),
-      expect.objectContaining({ limit: 8 }),
+      expect.objectContaining({ limit: 8, signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -215,6 +401,7 @@ describe("POST /api/ask", () => {
     expect(generateAnswer).toHaveBeenCalledWith(
       "Original question?",
       expect.any(Array),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -226,8 +413,20 @@ describe("POST /api/ask", () => {
 
     await POST(makeRequest({ question: "Test?" }));
 
-    expect(rerankArticles).toHaveBeenCalledWith("Test?", retrieved, { maxArticles: 5 });
-    expect(generateAnswer).toHaveBeenCalledWith("Test?", reranked);
+    expect(rerankArticles).toHaveBeenCalledWith(
+      "Test?",
+      retrieved,
+      expect.objectContaining({
+        maxArticles: 5,
+        minScore: 5,
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(generateAnswer).toHaveBeenCalledWith(
+      "Test?",
+      reranked,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("includes reformulatedQuery in meta when query was reformulated", async () => {
@@ -255,5 +454,493 @@ describe("POST /api/ask", () => {
     const body = await response.json();
 
     expect(body.meta.reformulatedQuery).toBeUndefined();
+  });
+
+  it("returns 504 when the global deadline fires", async () => {
+    // Shrink the deadline so we can exercise the hang-forever path in
+    // real wall time (~150ms instead of 30s). Vitest mocks ignore the
+    // AbortSignal so the outer Promise.race is what actually cuts off.
+    _setGlobalDeadlineForTests(150);
+    try {
+      (reformulateQuery as ReturnType<typeof vi.fn>).mockImplementation(
+        () => new Promise(() => {}),
+      );
+
+      const start = Date.now();
+      const response = await POST(makeRequest({ question: "Hangs forever" }));
+      const elapsed = Date.now() - start;
+      const body = await response.json();
+
+      expect(response.status).toBe(504);
+      expect(body.error).toMatch(/took too long/i);
+      expect(body.stage).toBe("deadline");
+      expect(body.requestId).toBeDefined();
+      // Must return within roughly the deadline budget, not hang
+      expect(elapsed).toBeLessThan(600);
+      expect(elapsed).toBeGreaterThanOrEqual(140);
+    } finally {
+      _setGlobalDeadlineForTests(null);
+    }
+  });
+
+  it("global deadline does not fire for normal fast requests", async () => {
+    _setGlobalDeadlineForTests(5000);
+    try {
+      const response = await POST(makeRequest({ question: "Fast happy path?" }));
+      expect(response.status).toBe(200);
+    } finally {
+      _setGlobalDeadlineForTests(null);
+    }
+  });
+
+  // Retrieval timeout should fire BEFORE the global deadline when
+  // hybridSearch hangs — the inner 10s budget must win over the outer
+  // 30s budget. Uses short deadlines so the test runs in real wall time.
+  it("retrieval timeout fires before the global deadline (stage=retrieve, not deadline)", async () => {
+    _setGlobalDeadlineForTests(2000);
+    _setRetrievalTimeoutForTests(150);
+    try {
+      // Both hybrid AND the vector-only fallback hang; the inner retrieval
+      // timeout should fire for hybrid, return 504 with stage=retrieve.
+      (hybridSearch as ReturnType<typeof vi.fn>).mockImplementation(
+        () => new Promise(() => {}),
+      );
+
+      const start = Date.now();
+      const response = await POST(makeRequest({ question: "Retrieval hang test" }));
+      const elapsed = Date.now() - start;
+      const body = await response.json();
+
+      expect(response.status).toBe(504);
+      // Critical: stage must be "retrieve", NOT "deadline"
+      expect(body.stage).toBe("retrieve");
+      expect(body.error).toMatch(/retrieval took too long/i);
+      expect(body.requestId).toBeDefined();
+      // Must fire near the 150ms retrieval budget, well before the 2s deadline
+      expect(elapsed).toBeLessThan(600);
+      expect(elapsed).toBeGreaterThanOrEqual(140);
+    } finally {
+      _setGlobalDeadlineForTests(null);
+      _setRetrievalTimeoutForTests(null);
+    }
+  });
+
+  // Concurrent request dedup (Step 10)
+  // Two identical concurrent POSTs should coalesce so the pipeline only
+  // calls reformulator/embed/rerank/answer-gen once total. This saves
+  // the expensive Gemini calls on rapid duplicate clicks.
+
+  it("dedups two concurrent identical requests — pipeline runs once", async () => {
+    const responses = await Promise.all([
+      POST(makeRequest({ question: "Same question?" })),
+      POST(makeRequest({ question: "Same question?" })),
+    ]);
+
+    expect(responses[0].status).toBe(200);
+    expect(responses[1].status).toBe(200);
+
+    const bodies = await Promise.all(responses.map((r) => r.json()));
+    // Both responses should have the same answer (came from same pipeline run)
+    expect(bodies[0].answer).toBe(bodies[1].answer);
+
+    // Critical: each pipeline stage was called exactly ONCE total
+    expect(reformulateQuery).toHaveBeenCalledTimes(1);
+    expect(embedQuery).toHaveBeenCalledTimes(1);
+    expect(hybridSearch).toHaveBeenCalledTimes(1);
+    expect(rerankArticles).toHaveBeenCalledTimes(1);
+    expect(generateAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  it("dedups three concurrent identical requests — pipeline runs once", async () => {
+    const [a, b, c] = await Promise.all([
+      POST(makeRequest({ question: "Triple-fire" })),
+      POST(makeRequest({ question: "Triple-fire" })),
+      POST(makeRequest({ question: "Triple-fire" })),
+    ]);
+
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(c.status).toBe(200);
+    expect(reformulateQuery).toHaveBeenCalledTimes(1);
+    expect(generateAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT dedup distinct questions from the same IP", async () => {
+    await Promise.all([
+      POST(makeRequest({ question: "Question one" })),
+      POST(makeRequest({ question: "Question two" })),
+    ]);
+
+    expect(reformulateQuery).toHaveBeenCalledTimes(2);
+    expect(generateAnswer).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT dedup same question with different filters", async () => {
+    await Promise.all([
+      POST(
+        makeRequest({
+          question: "Same question",
+          filters: { category: "News" },
+        }),
+      ),
+      POST(
+        makeRequest({
+          question: "Same question",
+          filters: { category: "Sports" },
+        }),
+      ),
+    ]);
+
+    expect(reformulateQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls through if the in-flight pipeline rejects", async () => {
+    // First call rejects, second call should run its own pipeline successfully
+    let callCount = 0;
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) throw new Error("first call boom");
+      return {
+        embeddingQuery: "x",
+        ftsQuery: "x",
+        mode: "text",
+      };
+    });
+
+    // Fire serially so the second call sees the first as already-rejected
+    const r1 = await POST(makeRequest({ question: "Recover?" }));
+    const r2 = await POST(makeRequest({ question: "Recover?" }));
+
+    expect(r1.status).toBe(500);
+    // Second one falls through and runs its own pipeline
+    expect(r2.status).toBe(200);
+    expect(reformulateQuery).toHaveBeenCalledTimes(2);
+  });
+
+  // KV dedup layer (Bundle 2 #8) — cross-instance response cache.
+  // The in-memory Map handles same-instance coalescing; KV is a pure
+  // response cache keyed by dedupId, populated after pipeline success
+  // and checked before running a fresh pipeline. Tests below exercise
+  // each branch of the hybrid lookup.
+
+  it("returns KV-cached response when in-memory Map misses and KV has a hit", async () => {
+    mockIsKvAvailable.mockReturnValue(true);
+    mockKvGet.mockResolvedValueOnce({
+      body: {
+        question: "Cross-instance cached?",
+        answer: "Pre-cached from another instance",
+        citations: [],
+        confidence: "high",
+        mode: "text",
+        requestId: "cached-req",
+        sourceArticles: [],
+        meta: { retrievalTimeMs: 0, generationTimeMs: 0, totalTimeMs: 0, articlesSearched: 0, method: "cache" },
+      },
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+    const response = await POST(makeRequest({ question: "Cross-instance cached?" }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.answer).toBe("Pre-cached from another instance");
+    // Critical: no pipeline stage was invoked — the cached KV response
+    // was served directly.
+    expect(reformulateQuery).not.toHaveBeenCalled();
+    expect(embedQuery).not.toHaveBeenCalled();
+    expect(hybridSearch).not.toHaveBeenCalled();
+    expect(rerankArticles).not.toHaveBeenCalled();
+    expect(generateAnswer).not.toHaveBeenCalled();
+    // KV was checked exactly once for this dedupId.
+    expect(mockKvGet).toHaveBeenCalledTimes(1);
+    expect(mockKvGet.mock.calls[0][0]).toMatch(/^ask:dedup:/);
+  });
+
+  it("writes response to KV after successful pipeline completion", async () => {
+    mockIsKvAvailable.mockReturnValue(true);
+    // KV miss on lookup — the pipeline runs normally.
+    mockKvGet.mockResolvedValueOnce(null);
+
+    const response = await POST(makeRequest({ question: "Write me to KV" }));
+    expect(response.status).toBe(200);
+
+    // The KV write is fire-and-forget inside the route. It's scheduled
+    // after the response is returned but awaited via microtask ordering.
+    // Flush with a zero-delay await so the .then() chain can run.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockKvSet).toHaveBeenCalledTimes(1);
+    const [key, value, ttl] = mockKvSet.mock.calls[0];
+    expect(key).toMatch(/^ask:dedup:/);
+    expect(ttl).toBe(30);
+    // The cached shape matches DedupExtracted: body + status + headers.
+    expect(value).toMatchObject({
+      status: 200,
+      body: expect.objectContaining({
+        question: "Write me to KV",
+        answer: "Test answer [Source 1]",
+      }),
+    });
+  });
+
+  it("skips KV lookup and write when isKvAvailable returns false", async () => {
+    // Default mock state: isKvAvailable = false.
+    const response = await POST(makeRequest({ question: "KV disabled" }));
+    expect(response.status).toBe(200);
+
+    // Neither kvGet nor kvSet was ever called — the isKvAvailable()
+    // guard short-circuits the KV branches.
+    expect(mockKvGet).not.toHaveBeenCalled();
+    expect(mockKvSet).not.toHaveBeenCalled();
+    // But the pipeline still ran (in-memory path is untouched).
+    expect(reformulateQuery).toHaveBeenCalledTimes(1);
+    expect(generateAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  // Direct-unit test for the dedup body re-consumption race fix.
+  // The old impl cached only the settled value, so concurrent waiters past
+  // the second check could both call response.clone().json() in parallel.
+  // The new impl caches the extraction promise itself, guaranteeing one
+  // response.clone() call regardless of concurrency.
+  it("getOrExtract shares extraction across concurrent waiters — response.clone called exactly once", async () => {
+    const jsonSpy = vi.fn().mockResolvedValue({ answer: "shared", confidence: "high" });
+    const cloneSpy = vi.fn(() => ({ json: jsonSpy }));
+    const mockResponse = {
+      clone: cloneSpy,
+      status: 200,
+      headers: {
+        forEach: (cb: (v: string, k: string) => void) => {
+          cb("application/json", "content-type");
+        },
+      },
+    } as unknown as NextResponse;
+
+    const entry = _askDedupInternalsForTests.makeEntry(mockResponse);
+
+    const [a, b, c] = await Promise.all([
+      _askDedupInternalsForTests.getOrExtract(entry),
+      _askDedupInternalsForTests.getOrExtract(entry),
+      _askDedupInternalsForTests.getOrExtract(entry),
+    ]);
+
+    // Critical: clone and json were each called exactly ONCE total
+    expect(cloneSpy).toHaveBeenCalledTimes(1);
+    expect(jsonSpy).toHaveBeenCalledTimes(1);
+
+    // All three waiters received the same extracted shape
+    expect(a.body).toEqual({ answer: "shared", confidence: "high" });
+    expect(a.status).toBe(200);
+    expect(a.headers).toEqual({ "content-type": "application/json" });
+    expect(a).toEqual(b);
+    expect(b).toEqual(c);
+  });
+
+  // ── Streaming (SSE) path ─────────────────────────────────
+  // ?stream=1 returns a text/event-stream response with typed events:
+  // stage → stage → stage → metadata → delta(s) → done
+  //
+  // Errors mid-stream become `error` events (status 200 already sent).
+
+  it("streaming: returns text/event-stream content type for ?stream=1", async () => {
+    const response = await POST(makeRequest({ question: "stream ct" }, { stream: true }));
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    expect(response.headers.get("cache-control")).toContain("no-cache");
+    // Drain the body so the test doesn't leak resources
+    await readSseEvents(response);
+  });
+
+  it("streaming: happy path emits stage*4 → metadata → delta*2 → done", async () => {
+    const response = await POST(
+      makeRequest({ question: "streaming happy path" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    const types = events.map((e) => e.type);
+    // Order matters: reformulate → embed → retrieve → rerank stages,
+    // then metadata (needs reranked source articles), then deltas from
+    // generateAnswerStream, then the final done event.
+    expect(types).toEqual([
+      "stage",
+      "stage",
+      "stage",
+      "stage",
+      "metadata",
+      "delta",
+      "delta",
+      "done",
+    ]);
+
+    const stageEvents = events.filter((e) => e.type === "stage");
+    expect(stageEvents.map((e) => e.name)).toEqual([
+      "reformulate",
+      "embed",
+      "retrieve",
+      "rerank",
+    ]);
+    for (const stage of stageEvents) {
+      expect(typeof stage.elapsedMs).toBe("number");
+    }
+
+    const metadata = events.find((e) => e.type === "metadata");
+    expect(metadata).toBeDefined();
+    expect(Array.isArray(metadata!.sourceArticles)).toBe(true);
+    expect((metadata!.sourceArticles as unknown[]).length).toBe(1);
+    expect(metadata!.mode).toBe("text");
+    expect(metadata!.question).toBe("streaming happy path");
+
+    const deltas = events.filter((e) => e.type === "delta");
+    expect(deltas.map((e) => e.text)).toEqual(["Stream ", "answer."]);
+
+    const done = events.find((e) => e.type === "done");
+    expect(done).toBeDefined();
+    expect(done!.answer).toBe("Stream answer.");
+    expect(done!.confidence).toBe("high");
+    expect(Array.isArray(done!.citations)).toBe(true);
+    expect((done!.citations as unknown[]).length).toBe(1);
+    const doneMeta = done!.meta as Record<string, unknown>;
+    expect(typeof doneMeta.retrievalTimeMs).toBe("number");
+    expect(typeof doneMeta.generationTimeMs).toBe("number");
+    expect(typeof doneMeta.totalTimeMs).toBe("number");
+    expect(doneMeta.method).toBe("hybrid");
+    expect(doneMeta.articlesSearched).toBe(1);
+  });
+
+  it("streaming: metadata event appears BEFORE any delta event (sidebar renders first)", async () => {
+    const response = await POST(
+      makeRequest({ question: "metadata ordering" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+    const metadataIdx = events.findIndex((e) => e.type === "metadata");
+    const firstDeltaIdx = events.findIndex((e) => e.type === "delta");
+    expect(metadataIdx).toBeGreaterThanOrEqual(0);
+    expect(firstDeltaIdx).toBeGreaterThan(metadataIdx);
+  });
+
+  it("streaming: reformulate error → error event with stage=reformulate", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("reformulator boom"),
+    );
+
+    const response = await POST(
+      makeRequest({ question: "err reformulate" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent!.stage).toBe("reformulate");
+    expect(typeof errorEvent!.requestId).toBe("string");
+    expect(events.find((e) => e.type === "done")).toBeUndefined();
+  });
+
+  it("streaming: embed quota → error with cause=quota_exhausted", async () => {
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new MockQuotaExhaustedError("embedQuery", { code: 429 }),
+    );
+
+    const response = await POST(
+      makeRequest({ question: "err embed quota" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent!.stage).toBe("embed");
+    expect(errorEvent!.cause).toBe("quota_exhausted");
+    expect(errorEvent!.message).toMatch(/quota/i);
+  });
+
+  it("streaming: embed generic failure → error with stage=embed", async () => {
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("network failed"),
+    );
+
+    const response = await POST(
+      makeRequest({ question: "err embed generic" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent!.stage).toBe("embed");
+    expect(errorEvent!.cause).toBeUndefined();
+  });
+
+  it("streaming: rerank error → error with stage=rerank", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("reranker boom"),
+    );
+
+    const response = await POST(
+      makeRequest({ question: "err rerank" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent!.stage).toBe("rerank");
+  });
+
+  it("streaming: deltas received as emitted (preserves order + text)", async () => {
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "First " };
+        yield { type: "delta", text: "second " };
+        yield { type: "delta", text: "third." };
+        yield {
+          type: "done",
+          answer: "First second third.",
+          citations: [],
+          confidence: "medium",
+        };
+      })(),
+    );
+
+    const response = await POST(
+      makeRequest({ question: "delta order" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    const deltas = events.filter((e) => e.type === "delta");
+    expect(deltas.map((e) => e.text)).toEqual(["First ", "second ", "third."]);
+  });
+
+  it("streaming: does NOT invoke dedup (concurrent streams both run the pipeline)", async () => {
+    const [r1, r2] = await Promise.all([
+      POST(makeRequest({ question: "no dedup streaming" }, { stream: true })),
+      POST(makeRequest({ question: "no dedup streaming" }, { stream: true })),
+    ]);
+
+    await readSseEvents(r1);
+    await readSseEvents(r2);
+
+    // Pipeline ran TWICE (dedup is bypassed for streaming)
+    expect(reformulateQuery).toHaveBeenCalledTimes(2);
+    expect(embedQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("getOrExtract returns cached extraction for sequential waiters too", async () => {
+    const jsonSpy = vi.fn().mockResolvedValue({ answer: "cached" });
+    const cloneSpy = vi.fn(() => ({ json: jsonSpy }));
+    const mockResponse = {
+      clone: cloneSpy,
+      status: 200,
+      headers: { forEach: (cb: (v: string, k: string) => void) => cb("application/json", "content-type") },
+    } as unknown as NextResponse;
+
+    const entry = _askDedupInternalsForTests.makeEntry(mockResponse);
+
+    const first = await _askDedupInternalsForTests.getOrExtract(entry);
+    const second = await _askDedupInternalsForTests.getOrExtract(entry);
+    const third = await _askDedupInternalsForTests.getOrExtract(entry);
+
+    expect(cloneSpy).toHaveBeenCalledTimes(1);
+    expect(jsonSpy).toHaveBeenCalledTimes(1);
+    expect(first.body).toEqual({ answer: "cached" });
+    expect(second).toBe(first); // same cached object reference
+    expect(third).toBe(first);
   });
 });

@@ -168,6 +168,12 @@ export interface AskResponse {
     citations: Citation[];
     confidence: "low" | "medium" | "high";
     mode: "text" | "visual";
+    /**
+     * Opaque correlation id for this request. Surfaced to the client so
+     * feedback (thumbs up/down) can be attributed back to a specific
+     * answer via POST /api/ask/feedback.
+     */
+    requestId: string;
     sourceArticles: {
         id: string;
         headline: string;
