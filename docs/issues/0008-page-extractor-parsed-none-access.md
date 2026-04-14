@@ -1,11 +1,18 @@
 ---
 id: 0008
 title: page_extractor accesses .page_number on possibly-None response.parsed
-status: open
+status: fixed
 severity: high
 area: ocr
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `page_extractor.py:105` now uses `getattr(response.parsed,
+> "page_number", None)` with an explicit default, so any shape shift in the
+> Gemini response can't crash the page with an opaque AttributeError. No-op
+> in the current working path.
+
 
 ## Symptom
 

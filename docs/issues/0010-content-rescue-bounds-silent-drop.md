@@ -1,11 +1,19 @@
 ---
 id: 0010
 title: content_rescue silently drops out-of-bounds index decisions
-status: open
+status: fixed
 severity: high
 area: ocr
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `content_rescue.py` now tracks a `dropped_oob` list across both
+> the demote and promote decision loops and emits a warning line at the end
+> of the function if any out-of-bounds indices were dropped. No behavior
+> change — drops still happen silently in terms of downstream state, but
+> operators now see how many Gemini triage decisions were lost.
+
 
 ## Symptom
 

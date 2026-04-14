@@ -1,11 +1,24 @@
 ---
 id: 0014
 title: continuation marker extraction returns [] on truncated page text
-status: open
+status: fixed
 severity: high
 area: ocr
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix (partial — diagnostic only):** `docai_provider.py` now has a
+> `_detect_truncated_continuation` helper called after
+> `_extract_continuation_markers`. When the tail of a page's DocAI text
+> looks like a half-formed continuation phrase ("Cont", "Continued on pa")
+> that the regex didn't match, we emit a warning so operators can see the
+> lost signal. The heuristic is deliberately conservative (last 64 chars,
+> only flags when a known prefix is present AND no full regex match
+> covered it). **We did NOT add the Gemini-based fallback extraction** —
+> that would add new LLM calls and change which continuations get linked,
+> which is a behavior change.
+
 
 ## Symptom
 

@@ -1,11 +1,19 @@
 ---
 id: 0012
 title: llm_merge parse-failure error message truncated to 500 chars
-status: open
+status: fixed
 severity: high
 area: ocr
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `llm_merge.py` now dumps the full raw response to
+> `<snapshots_dir>/merge_raw_response.txt` on parse failure and includes
+> the path in the console warning. The 500-char preview is kept for quick
+> glances at the stderr line, but operators can now see the entire payload
+> for post-mortem debugging.
+
 
 ## Symptom
 

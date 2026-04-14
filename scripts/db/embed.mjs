@@ -52,6 +52,13 @@ const BATCH_SIZE = 50; // articles per embedding API call
 
 const EDITIONS_DIR = path.resolve(__dirnameEnv, "../../public/editions");
 
+// Degradation counters for #0023. Incremented in loadFirstImage() and
+// reported once at the end of main() so operators can see when a
+// production-mirror dev environment is silently falling back to text-only
+// embedding because the local images directory isn't mirrored.
+let imagesExpected = 0;
+let imagesMissing = 0;
+
 /**
  * Load the first image for an article as base64.
  * Returns null if no images or file not found.
@@ -60,11 +67,16 @@ function loadFirstImage(article) {
     const imageUrls = article.image_urls;
     if (!imageUrls || imageUrls.length === 0) return null;
 
+    imagesExpected++;
+
     const firstUrl = imageUrls[0];
     // Extract date and filename from URL patterns:
     //   /api/editions/DATE/images/FILE or https://cdn/DATE/images/FILE
     const match = firstUrl.match(/(\d{4}-\d{2}-\d{2})\/images\/(.+?)$/);
-    if (!match) return null;
+    if (!match) {
+        imagesMissing++;
+        return null;
+    }
 
     const [, date, rawName] = match;
     // Strip .webp extension if present (CDN converts to webp, but local files are jpg)
@@ -79,10 +91,12 @@ function loadFirstImage(article) {
                 const mimeType = ext === ".png" ? "image/png" : "image/jpeg";
                 return { base64: buf.toString("base64"), mimeType };
             } catch {
+                imagesMissing++;
                 return null;
             }
         }
     }
+    imagesMissing++;
     return null;
 }
 
@@ -230,6 +244,22 @@ async function main() {
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
     console.log(`\nDone in ${elapsed}s.`);
     console.log(`  Embedded: ${embedded}`);
+
+    // Surface any silent image-degradation so operators can see when the
+    // production-mirror dev env is embedding text-only because local images
+    // aren't mirrored. Previously this dropped the multimodal embedding
+    // quality silently with zero signal. See docs/issues/0023.
+    if (imagesMissing > 0) {
+        console.warn(
+            `  WARNING: ${imagesMissing}/${imagesExpected} articles had image_urls ` +
+                `but no local mirror — multimodal embedding was skipped for those.`,
+        );
+        console.warn(
+            `  If you expect local images, check that public/editions/<date>/images/ ` +
+                `is populated. The embedding still runs text-only for these articles.`,
+        );
+    }
+
     if (quotaExhausted) {
         console.log(`  Status: quota exhausted, stopped early`);
         throw new Error(

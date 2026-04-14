@@ -1,11 +1,20 @@
 ---
 id: 0021
 title: llm_merge tolerates out-of-bounds article_ids with only a warning
-status: open
+status: fixed
 severity: medium
 area: ocr
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `llm_merge.py` now tracks an aggregate `oob_ids_total` count
+> and `oob_groups_dropped` count across all merge groups, and appends a
+> single summary line to `md.duplicate_warnings` with the total, a
+> 10-element sample of the offending ids, and the count of groups that
+> had only out-of-bounds ids. Per-offense warnings are preserved for
+> quick-glance debugging. Merge-group drop behavior is unchanged.
+
 
 ## Symptom
 
