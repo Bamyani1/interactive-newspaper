@@ -1,0 +1,32 @@
+name: rag-golden-nightly
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Run RAG golden regression suite
+        env:
+          RUN_RAG_GOLDEN: "1"
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          GOOGLE_API_KEY: ${{ secrets.CI_GOOGLE_API_KEY }}
+        run: npm run test:run -- tests/api/rag-golden-questions
+
+      # Intentional: this workflow is non-blocking. It fails visibly in the
+      # Actions tab but does NOT gate PRs. Real-network Gemini calls are
+      # flaky and costly per run, so the golden suite stays opt-in for PRs
+      # and only runs on schedule here.
