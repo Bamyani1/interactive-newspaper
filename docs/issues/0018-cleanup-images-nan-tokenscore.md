@@ -1,11 +1,19 @@
 ---
 id: 0018
 title: cleanup-images.mjs tokenScore can become NaN on empty captionTokens
-status: open
+status: fixed
 severity: medium
 area: scripts
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `scripts/cleanup-images.mjs` now uses
+> `captionTokens.length > 0 ? overlap / captionTokens.length : 0` at the
+> division site (belt-and-suspenders with the existing upstream early
+> return). A refactor that removes or reshapes the upstream guard can no
+> longer silently reintroduce NaN into the weighted score.
+
 
 ## Symptom
 

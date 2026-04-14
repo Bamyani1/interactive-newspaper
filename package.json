@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test": "vitest",
     "test:run": "vitest run",
-    "weather:build:ohio": "node scripts/weather/build-ohio-weather-archive.mjs",
+    "weather:build:ohio": "node scripts/weather/build-ohio-weather-archive.mjs && npm run weather:verify:ohio",
     "weather:verify:ohio": "node scripts/weather/verify-ohio-weather-archive.mjs",
     "glass:build": "node scripts/dev/generate-stained-glass-svg.mjs",
     "canopy:build": "node scripts/dev/generate-autumn-canopy-svg.mjs",

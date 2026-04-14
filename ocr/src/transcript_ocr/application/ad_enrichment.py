@@ -91,7 +91,11 @@ def enrich_edition(edition_path: str, client, force: bool = False) -> tuple[bool
     substep(f"Categories: {', '.join(f'{k}({v})' for k, v in sorted(categories.items()))}")
 
     edition["enriched_ads"] = enriched_list
-    tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(edition_path), suffix=".json")
+    # Explicit prefix avoids collisions when two processes touch the same
+    # edition directory concurrently. See docs/issues/0020.
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(edition_path), prefix="ads_", suffix=".json"
+    )
     try:
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
             json.dump(edition, f, indent=2)

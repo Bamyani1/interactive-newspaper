@@ -1,11 +1,20 @@
 ---
 id: 0007
 title: Image proxy silent catch at route.ts:66 opaques all FS errors as 404
-status: open
+status: fixed
 severity: high
 area: api
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** `editions/[date]/images/[...path]/route.ts` now inspects the
+> Node error code in both the primary and gold-fallback catches. `ENOENT`
+> still returns a silent 404 (legitimate "file missing"), but any other
+> error code (`EACCES`, `EIO`, `EMFILE`, etc.) is logged via a structured
+> JSON `console.error` with `route`, `filePath`, `code`, and `err` fields.
+> The response stays 404 to avoid leaking error details to clients.
+
 
 ## Symptom
 

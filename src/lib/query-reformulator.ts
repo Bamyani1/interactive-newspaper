@@ -49,7 +49,7 @@ MODE: text|visual`;
 
 export async function reformulateQuery(
     originalQuestion: string,
-    opts: { signal?: AbortSignal } = {},
+    opts: { signal?: AbortSignal; requestId?: string } = {},
 ): Promise<ReformulatedQuery> {
     const fallback: ReformulatedQuery = {
         embeddingQuery: originalQuestion,
@@ -98,6 +98,8 @@ export async function reformulateQuery(
         console.warn(
             JSON.stringify({
                 level: "warn",
+                route: "/api/ask",
+                requestId: opts.requestId,
                 stage: "reformulate",
                 msg: isTimeout
                     ? "reformulation timed out, using original query"
