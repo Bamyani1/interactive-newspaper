@@ -25,6 +25,7 @@ export interface RankedArticle extends RetrievedArticle {
 interface RerankOptions {
     minScore?: number;
     maxArticles?: number;
+    signal?: AbortSignal;
 }
 
 const RERANKER_PROMPT = `You are a relevance judge for a 1960s university newspaper archive search system.
@@ -68,6 +69,10 @@ export async function rerankArticles(
             RERANKER_TIMEOUT_MS,
         );
 
+        const combinedSignal = options.signal
+            ? AbortSignal.any([options.signal, controller.signal])
+            : controller.signal;
+
         const response = await client.models.generateContent({
             model: RERANKER_MODEL,
             contents: [{ role: "user", parts: [{ text: userPrompt }] }],
@@ -76,7 +81,7 @@ export async function rerankArticles(
                 maxOutputTokens: RERANKER_MAX_TOKENS,
                 temperature: 0.0,
                 thinkingConfig: { thinkingBudget: 0 },
-                abortSignal: controller.signal,
+                abortSignal: combinedSignal,
             },
         });
 

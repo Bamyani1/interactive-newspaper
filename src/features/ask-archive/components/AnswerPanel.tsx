@@ -3,9 +3,17 @@
 import React from "react";
 import type { AskResponse } from "@/src/types";
 import { ConfidenceBadge } from "./ConfidenceBadge";
+import { FeedbackButtons } from "./FeedbackButtons";
 
 interface AnswerPanelProps {
   response: AskResponse;
+  /**
+   * When true, the response is still being streamed in from the server.
+   * The panel renders the partial answer text but hides the confidence
+   * badge + timing meta (which are only valid after the `done` event),
+   * and appends a blinking cursor to signal that more text is coming.
+   */
+  isStreaming?: boolean;
 }
 
 /**
@@ -97,18 +105,32 @@ function renderAnswerWithCitations(text: string): React.ReactNode[] {
   return blocks;
 }
 
-export const AnswerPanel: React.FC<AnswerPanelProps> = ({ response }) => {
+export const AnswerPanel: React.FC<AnswerPanelProps> = ({ response, isStreaming = false }) => {
+  const hasAnswerText = response.answer.trim().length > 0;
   return (
     <div className="mt-8">
       <div className="ask-answer">
-        {renderAnswerWithCitations(response.answer)}
+        {hasAnswerText && renderAnswerWithCitations(response.answer)}
+        {isStreaming && (
+          <span
+            className="ask-answer-cursor"
+            aria-hidden="true"
+          >
+            ▊
+          </span>
+        )}
       </div>
 
-      <div className="ask-meta mt-4">
-        <ConfidenceBadge confidence={response.confidence} />
-        <span>{response.meta.articlesSearched} articles searched</span>
-        <span>{(response.meta.totalTimeMs / 1000).toFixed(1)}s</span>
-      </div>
+      {!isStreaming && (
+        <>
+          <div className="ask-meta mt-4">
+            <ConfidenceBadge confidence={response.confidence} />
+            <span>{response.meta.articlesSearched} articles searched</span>
+            <span>{(response.meta.totalTimeMs / 1000).toFixed(1)}s</span>
+          </div>
+          <FeedbackButtons response={response} />
+        </>
+      )}
     </div>
   );
 };

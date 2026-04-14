@@ -204,7 +204,7 @@ describe("generateAnswer", () => {
       expect(mockGenerateContent).not.toHaveBeenCalled();
     });
 
-    it("defaults to medium confidence when only FTS results are present", async () => {
+    it("FTS-only with mid reranker score (6) gives medium confidence", async () => {
       const generateAnswer = await importGenerateAnswer();
       mockGenerateContent.mockResolvedValue({
         text: "Found via text search [Source 1].",
@@ -218,6 +218,61 @@ describe("generateAnswer", () => {
       const result = await generateAnswer("question", articles);
 
       expect(result.confidence).toBe("medium");
+    });
+
+    it("FTS-only with strong reranker score (>=8) gives HIGH confidence (issue 0029-related)", async () => {
+      // Before Step 9, FTS-only paths were capped at medium because a fake
+      // 0.27 default distance failed the < 0.26 high gate. After fix: high
+      // reranker score lifts FTS-only to high.
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue({
+        text: "Strong match found [Source 1] [Source 2].",
+      });
+
+      const articles = [
+        makeArticle({ id: "a", distance: null, source: "fts", relevanceScore: 9 }),
+        makeArticle({ id: "b", distance: null, source: "fts", relevanceScore: 8 }),
+      ];
+
+      const result = await generateAnswer("question", articles);
+
+      expect(result.confidence).toBe("high");
+    });
+
+    it("FTS-only with weak reranker score (<5) gives low confidence", async () => {
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue({
+        text: "Weak match [Source 1].",
+      });
+
+      const articles = [
+        makeArticle({ id: "a", distance: null, source: "fts", relevanceScore: 3 }),
+        makeArticle({ id: "b", distance: null, source: "fts", relevanceScore: 4 }),
+      ];
+
+      const result = await generateAnswer("question", articles);
+
+      expect(result.confidence).toBe("low");
+    });
+
+    it("FTS-only does NOT trigger the 'don't seem to be closely related' skip", async () => {
+      // The skip-Gemini check used to fire on the fake 0.27 default; after
+      // Step 9 it only fires when actual vector distance > 0.30. FTS-only
+      // questions should always reach the LLM.
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue({
+        text: "FTS path reached the LLM [Source 1].",
+      });
+
+      const articles = [
+        makeArticle({ id: "a", distance: null, source: "fts", relevanceScore: 4 }),
+        makeArticle({ id: "b", distance: null, source: "fts", relevanceScore: 3 }),
+      ];
+
+      const result = await generateAnswer("question", articles);
+
+      expect(mockGenerateContent).toHaveBeenCalledTimes(1);
+      expect(result.answer).toContain("FTS path reached the LLM");
     });
 
     it("uses only vector distances when mixed with FTS results", async () => {

@@ -46,10 +46,12 @@
     "eslint-config-next": "16.0.7",
     "jsdom": "^24.0.0",
     "oslllo-potrace": "^5.0.0",
+    "p-limit": "^7.3.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "youtubei.js": "^17.0.1"
   }
 }

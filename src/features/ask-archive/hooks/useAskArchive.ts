@@ -3,16 +3,75 @@
 import { useState, useRef, useCallback } from "react";
 import type { AskResponse } from "@/src/types";
 
+export type AskStage = "reformulate" | "embed" | "retrieve" | "rerank" | "generate";
+
 interface UseAskArchiveReturn {
+  /**
+   * The progressive answer state. During streaming this is populated in
+   * stages: first with source articles + placeholder answer="" when the
+   * metadata event arrives, then with `answer` text growing as deltas
+   * arrive, and finally replaced with the fully-cleaned answer when the
+   * server's `done` event arrives.
+   */
   answer: AskResponse | null;
+  /** True while the server is still streaming the answer (generate stage). */
+  isStreaming: boolean;
+  /** Current pipeline stage (null when idle or done). */
+  stage: AskStage | null;
   isLoading: boolean;
   error: string | null;
   submit: (question: string) => void;
   reset: () => void;
 }
 
+// Discriminated union of SSE event shapes from /api/ask?stream=1
+type StreamEvent =
+  | { type: "stage"; name: AskStage; elapsedMs: number }
+  | {
+      type: "metadata";
+      question: string;
+      mode: "text" | "visual";
+      requestId: string;
+      sourceArticles: AskResponse["sourceArticles"];
+      meta: Partial<AskResponse["meta"]>;
+    }
+  | { type: "delta"; text: string }
+  | {
+      type: "done";
+      answer: string;
+      citations: AskResponse["citations"];
+      confidence: AskResponse["confidence"];
+      meta: AskResponse["meta"];
+    }
+  | {
+      type: "error";
+      stage?: string;
+      cause?: string;
+      message: string;
+      requestId?: string;
+    };
+
+/**
+ * Parse an SSE data frame buffer into one event (or null if malformed).
+ * Frames are formatted as `data: {json}\n\n`.
+ */
+function parseEventFrame(frame: string): StreamEvent | null {
+  const trimmed = frame.trim();
+  if (!trimmed) return null;
+  // Avoid the /s (dotall) flag for ES2017 targets by using [\s\S].
+  const match = trimmed.match(/^data:\s*([\s\S]*)$/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]) as StreamEvent;
+  } catch {
+    return null;
+  }
+}
+
 export function useAskArchive(): UseAskArchiveReturn {
   const [answer, setAnswer] = useState<AskResponse | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [stage, setStage] = useState<AskStage | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -29,44 +88,133 @@ export function useAskArchive(): UseAskArchiveReturn {
     setIsLoading(true);
     setError(null);
     setAnswer(null);
+    setIsStreaming(false);
+    setStage(null);
 
-    fetch("/api/ask", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: trimmed }),
-      signal: controller.signal,
-    })
-      .then(async (res) => {
+    // Runs the streaming request in a closure so we can use async/await
+    // without exposing submit() as async (React callback semantics).
+    (async () => {
+      try {
+        const res = await fetch("/api/ask?stream=1", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: trimmed }),
+          signal: controller.signal,
+        });
+
         if (!res.ok) {
+          // Non-2xx: validation / rate-limit / auth errors are returned as JSON,
+          // not as an SSE stream. Parse and throw.
           const body = await res.json().catch(() => null);
           throw new Error(body?.error || `Request failed: ${res.status}`);
         }
-        return res.json();
-      })
-      .then((data: AskResponse) => {
-        if (!controller.signal.aborted) {
-          setAnswer(data);
+
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("text/event-stream") || !res.body) {
+          // Server didn't return a stream — fall back to JSON shape so the
+          // hook still works if streaming is disabled server-side.
+          const data = (await res.json()) as AskResponse;
+          if (!controller.signal.aborted) {
+            setAnswer(data);
+            setStage(null);
+            setIsStreaming(false);
+          }
+          return;
         }
-      })
-      .catch((err) => {
+
+        // Placeholder response that gets progressively populated as events
+        // arrive. Non-streaming consumers (old UI, tests) never see this
+        // intermediate shape because they await the done event.
+        // requestId is filled in when the metadata event arrives; until
+        // then it's an empty string so the feedback button stays disabled.
+        let pending: AskResponse = {
+          question: trimmed,
+          answer: "",
+          citations: [],
+          confidence: "low",
+          mode: "text",
+          requestId: "",
+          sourceArticles: [],
+          meta: {
+            retrievalTimeMs: 0,
+            generationTimeMs: 0,
+            totalTimeMs: 0,
+            articlesSearched: 0,
+            method: "hybrid",
+          },
+        };
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (value) buf += decoder.decode(value, { stream: true });
+          // Split complete frames; keep any trailing partial frame in `buf`.
+          let sepIdx = buf.indexOf("\n\n");
+          while (sepIdx !== -1) {
+            const frame = buf.slice(0, sepIdx);
+            buf = buf.slice(sepIdx + 2);
+            const event = parseEventFrame(frame);
+            if (event && !controller.signal.aborted) {
+              if (event.type === "stage") {
+                setStage(event.name);
+              } else if (event.type === "metadata") {
+                pending = {
+                  ...pending,
+                  mode: event.mode,
+                  requestId: event.requestId,
+                  sourceArticles: event.sourceArticles,
+                  meta: { ...pending.meta, ...event.meta },
+                };
+                setAnswer(pending);
+                setStage("generate");
+                setIsStreaming(true);
+              } else if (event.type === "delta") {
+                pending = { ...pending, answer: pending.answer + event.text };
+                setAnswer(pending);
+              } else if (event.type === "done") {
+                pending = {
+                  ...pending,
+                  answer: event.answer,
+                  citations: event.citations,
+                  confidence: event.confidence,
+                  meta: event.meta,
+                };
+                setAnswer(pending);
+                setIsStreaming(false);
+                setStage(null);
+              } else if (event.type === "error") {
+                throw new Error(event.message || "Request failed");
+              }
+            }
+            sepIdx = buf.indexOf("\n\n");
+          }
+          if (done) break;
+        }
+      } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (!controller.signal.aborted) {
           setError(err instanceof Error ? err.message : "Something went wrong");
+          setIsStreaming(false);
         }
-      })
-      .finally(() => {
+      } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false);
         }
-      });
+      }
+    })();
   }, []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setAnswer(null);
+    setIsStreaming(false);
+    setStage(null);
     setError(null);
     setIsLoading(false);
   }, []);
 
-  return { answer, isLoading, error, submit, reset };
+  return { answer, isStreaming, stage, isLoading, error, submit, reset };
 }

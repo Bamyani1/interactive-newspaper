@@ -103,6 +103,24 @@ CREATE TABLE IF NOT EXISTS music (
   PRIMARY KEY (year, month, rank)
 );
 
+-- ─── Ask feedback (👍 / 👎 on RAG answers) ──────────────────────
+
+CREATE TABLE IF NOT EXISTS ask_feedback (
+  id          BIGSERIAL PRIMARY KEY,
+  request_id  TEXT NOT NULL,
+  question    TEXT NOT NULL,
+  answer      TEXT NOT NULL,
+  confidence  TEXT,
+  mode        TEXT,
+  citations   JSONB NOT NULL DEFAULT '[]',
+  vote        TEXT NOT NULL CHECK (vote IN ('up', 'down')),
+  comment     TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ask_feedback_request ON ask_feedback(request_id);
+CREATE INDEX IF NOT EXISTS idx_ask_feedback_created ON ask_feedback(created_at DESC);
+
 -- ─── Search Vector Trigger ──────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION articles_search_vector_update() RETURNS trigger AS $$

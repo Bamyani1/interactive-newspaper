@@ -29,22 +29,35 @@ const mockResponse: AskResponse = {
   },
 };
 
+// Helper: build a fake Response-like object that the hook's streaming
+// code path can consume. The hook checks res.headers.get("content-type")
+// and either takes the SSE branch or falls back to res.json(). Returning
+// a JSON content-type forces the fallback path, which is what these
+// legacy unit tests exercise — the SSE path is tested in the ask-route
+// integration suite.
+function makeJsonResponse(body: unknown, overrides: Partial<{ ok: boolean; status: number }> = {}) {
+  return {
+    ok: overrides.ok ?? true,
+    status: overrides.status ?? 200,
+    headers: {
+      get: (key: string) =>
+        key.toLowerCase() === "content-type" ? "application/json" : null,
+    },
+    body: null,
+    json: () => Promise.resolve(body),
+  };
+}
+
 describe("useAskArchive", () => {
   beforeEach(() => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-      })
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeJsonResponse(mockResponse)));
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("calls /api/ask with the question on submit", async () => {
+  it("calls /api/ask?stream=1 with the question on submit", async () => {
     const { result } = renderHook(() => useAskArchive());
 
     act(() => {
@@ -56,7 +69,7 @@ describe("useAskArchive", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "/api/ask",
+      "/api/ask?stream=1",
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -102,11 +115,9 @@ describe("useAskArchive", () => {
   it("sets error on failed response", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        json: () => Promise.resolve({ error: "Server error" }),
-      })
+      vi.fn().mockResolvedValue(
+        makeJsonResponse({ error: "Server error" }, { ok: false, status: 500 }),
+      ),
     );
 
     const { result } = renderHook(() => useAskArchive());
@@ -130,6 +141,8 @@ describe("useAskArchive", () => {
       vi.fn().mockResolvedValue({
         ok: false,
         status: 502,
+        headers: { get: () => null },
+        body: null,
         json: () => Promise.reject(new Error("parse error")),
       })
     );
@@ -170,7 +183,7 @@ describe("useAskArchive", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "/api/ask",
+      "/api/ask?stream=1",
       expect.objectContaining({
         body: JSON.stringify({ question: "What happened?" }),
       })
@@ -206,10 +219,9 @@ describe("useAskArchive", () => {
     const fetchFn = vi
       .fn()
       .mockReturnValueOnce(firstFetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ ...mockResponse, question: "Second?" }),
-      });
+      .mockResolvedValueOnce(
+        makeJsonResponse({ ...mockResponse, question: "Second?" }),
+      );
 
     vi.stubGlobal("fetch", fetchFn);
 
@@ -232,10 +244,7 @@ describe("useAskArchive", () => {
     expect(firstCallSignal.aborted).toBe(true);
 
     // Resolve first (should be ignored due to abort)
-    resolveFirst!({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
+    resolveFirst!(makeJsonResponse(mockResponse));
 
     await waitFor(() => {
       expect(result.current.answer).not.toBeNull();
