@@ -94,11 +94,17 @@ export async function reformulateQuery(
         const text = response.text?.trim() ?? "";
         return parseReformulationResponse(text, fallback);
     } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-            console.warn("Query reformulation timed out, using original query");
-        } else {
-            console.warn("Query reformulation failed, using original query:", err);
-        }
+        const isTimeout = err instanceof Error && err.name === "AbortError";
+        console.warn(
+            JSON.stringify({
+                level: "warn",
+                stage: "reformulate",
+                msg: isTimeout
+                    ? "reformulation timed out, using original query"
+                    : "reformulation failed, using original query",
+                err: err instanceof Error ? err.message : String(err),
+            }),
+        );
         return fallback;
     }
 }
