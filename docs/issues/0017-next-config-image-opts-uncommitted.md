@@ -1,11 +1,17 @@
 ---
 id: 0017
 title: next.config.ts image optimization changes uncommitted on image-embedding branch
-status: open
+status: fixed
 severity: medium
 area: infra
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Fix:** landed in PR #20 (`643ac14`). `next.config.ts` now has
+> `formats: ['image/avif', 'image/webp']`, `minimumCacheTTL: 31_536_000`,
+> and `deviceSizes: [640, 828, 1200, 1920]` committed.
+
 
 ## Symptom
 
