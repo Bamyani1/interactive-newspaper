@@ -42,7 +42,7 @@ const WEATHER_INDEX = path.join(
   ROOT,
   "public/data/weather/ohio/index/delaware-by-date-1950-2000.json",
 );
-const MUSIC_DIR = path.join(ROOT, "public/top-10-music");
+const MUSIC_ARCHIVE = path.join(ROOT, "public/top-10-music/chart-1950-2010.json");
 const SCHEMA_FILE = path.join(__dirnameEnv, "schema.sql");
 
 const isReset = process.argv.includes("--reset");
@@ -100,23 +100,107 @@ function stripHtml(html) {
   return sanitize(html).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Stable content fingerprint keyed on the four fields that materially affect
+ * an article's embedding vector. Used by seedEditions to preserve embeddings
+ * across the DELETE+INSERT re-seed cycle so we don't wipe and re-embed
+ * unchanged content on every run. See docs/issues/0029.
+ */
+function articleContentFingerprint({ headline, byline, bodyPlain, category }) {
+  return JSON.stringify([
+    headline ?? "",
+    byline ?? "",
+    bodyPlain ?? "",
+    category ?? "",
+  ]);
+}
+
 // ─── Schema ──────────────────────────────────────────────────────
+
+// Split raw SQL into top-level statements. Respects dollar-quoted
+// blocks ($$...$$ and $tag$...$tag$) and single-quoted strings so that
+// PL/pgSQL function bodies and DO blocks don't get chopped mid-body.
+function splitSqlStatements(sql) {
+  const out = [];
+  let cur = "";
+  let i = 0;
+  let inSingle = false; // inside '...'
+  let dollarTag = null; // null when not in $tag$...$tag$; '' for $$, 'tag' for $tag$
+
+  while (i < sql.length) {
+    const ch = sql[i];
+
+    if (dollarTag !== null) {
+      const closeTag = `$${dollarTag}$`;
+      if (sql.startsWith(closeTag, i)) {
+        cur += closeTag;
+        i += closeTag.length;
+        dollarTag = null;
+        continue;
+      }
+      cur += ch;
+      i += 1;
+      continue;
+    }
+
+    if (inSingle) {
+      cur += ch;
+      i += 1;
+      if (ch === "'") {
+        if (sql[i] === "'") {
+          cur += "'";
+          i += 1;
+        } else {
+          inSingle = false;
+        }
+      }
+      continue;
+    }
+
+    if (ch === "'") {
+      inSingle = true;
+      cur += ch;
+      i += 1;
+      continue;
+    }
+
+    if (ch === "$") {
+      const match = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i));
+      if (match) {
+        dollarTag = match[1] ?? "";
+        cur += match[0];
+        i += match[0].length;
+        continue;
+      }
+    }
+
+    if (ch === ";") {
+      const trimmed = cur.trim();
+      if (trimmed.length > 0) out.push(trimmed);
+      cur = "";
+      i += 1;
+      continue;
+    }
+
+    cur += ch;
+    i += 1;
+  }
+
+  const tail = cur.trim();
+  if (tail.length > 0) out.push(tail);
+  return out;
+}
 
 async function applySchema() {
   const schemaSql = await readFile(SCHEMA_FILE, "utf-8");
-
-  // Strip SQL comment lines, then split by semicolon
   const cleaned = schemaSql.replace(/--.*$/gm, "");
-  const statements = cleaned
-    .split(";")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  const statements = splitSqlStatements(cleaned);
 
   for (const stmt of statements) {
     await sql.query(stmt);
   }
 
-  console.log("Schema applied.");
+  console.log(`Schema applied (${statements.length} statements).`);
 }
 
 // ─── DB-Level Lock: Export / Restore ────────────────────────────
@@ -175,6 +259,7 @@ async function restoreLockedEditions(savedData) {
 }
 
 async function dropAllTables() {
+  await sql`DROP TABLE IF EXISTS ask_feedback CASCADE`;
   await sql`DROP TABLE IF EXISTS music CASCADE`;
   await sql`DROP TABLE IF EXISTS weather CASCADE`;
   await sql`DROP TABLE IF EXISTS ads CASCADE`;
@@ -226,6 +311,29 @@ async function seedEditions(scopedDate = "") {
         article_count = EXCLUDED.article_count
     `;
 
+    // Snapshot existing embeddings keyed by content fingerprint so we can
+    // restore them after the DELETE+INSERT. Without this, every seed run
+    // wipes ~9.5k embeddings and burns Gemini daily quota re-embedding
+    // unchanged content. See docs/issues/0029.
+    const existingRows = await sql`
+      SELECT headline, byline, body_plain, category, embedding, embedding_model
+      FROM articles
+      WHERE edition_date = ${date} AND embedding IS NOT NULL
+    `;
+    const preservedByFingerprint = new Map();
+    for (const row of existingRows) {
+      const fp = articleContentFingerprint({
+        headline: row.headline,
+        byline: row.byline,
+        bodyPlain: row.body_plain,
+        category: row.category,
+      });
+      preservedByFingerprint.set(fp, {
+        embedding: row.embedding,
+        model: row.embedding_model,
+      });
+    }
+
     // Delete existing articles for this edition, then re-insert.
     // This ensures articles removed by adapter filters are also removed from the DB.
     await sql`DELETE FROM articles WHERE edition_date = ${date}`;
@@ -250,6 +358,34 @@ async function seedEditions(scopedDate = "") {
               image_captions = EXCLUDED.image_captions`
       );
       await sql.transaction(articleQueries);
+
+      // Restore preserved embeddings for articles whose content fingerprint
+      // matches a row snapshotted before the DELETE. Articles whose content
+      // changed (or that are new) are left with NULL embeddings for
+      // embedArticles to fill in afterward.
+      if (preservedByFingerprint.size > 0) {
+        const restoreQueries = [];
+        for (const a of articles) {
+          const fp = articleContentFingerprint({
+            headline: sanitize(a.headline),
+            byline: sanitize(a.byline) ?? null,
+            bodyPlain: stripHtml(a.fullText),
+            category: sanitize(a.category),
+          });
+          const prev = preservedByFingerprint.get(fp);
+          if (prev) {
+            restoreQueries.push(
+              sql`UPDATE articles
+                  SET embedding = ${prev.embedding},
+                      embedding_model = ${prev.model}
+                  WHERE id = ${a.id}`
+            );
+          }
+        }
+        if (restoreQueries.length > 0) {
+          await sql.transaction(restoreQueries);
+        }
+      }
     }
 
     // Insert ads in a transaction
@@ -291,7 +427,31 @@ async function seedWeather() {
     return;
   }
 
-  const records = JSON.parse(raw);
+  const archive = JSON.parse(raw);
+  if (!archive || !Array.isArray(archive.tmax_c) || !Array.isArray(archive.tmin_c)) {
+    console.warn("Weather index file is not in expected slim format, skipping weather seed.");
+    return;
+  }
+
+  const startMs = Date.UTC(
+    Number(archive.start_date.slice(0, 4)),
+    Number(archive.start_date.slice(5, 7)) - 1,
+    Number(archive.start_date.slice(8, 10)),
+  );
+  const totalDays = archive.tmax_c.length;
+  const isEstimated = typeof archive.is_estimated === "string" ? archive.is_estimated : "";
+
+  const records = [];
+  for (let i = 0; i < totalDays; i += 1) {
+    const date = new Date(startMs + i * 86400000).toISOString().slice(0, 10);
+    records.push({
+      date,
+      tmax_c: archive.tmax_c[i],
+      tmin_c: archive.tmin_c[i],
+      is_estimated: isEstimated[i] === "1",
+    });
+  }
+
   console.log(`Seeding ${records.length} weather records...`);
 
   // Batch insert in chunks of 500
@@ -300,7 +460,7 @@ async function seedWeather() {
     const batch = records.slice(i, i + BATCH_SIZE);
     const queries = batch.map((r) =>
       sql`INSERT INTO weather (date, scope, tmax_c, tmin_c, precip_mm, source, source_station_id, quality_flag, is_estimated)
-          VALUES (${r.date}, ${"delaware"}, ${r.tmax_c ?? null}, ${r.tmin_c ?? null}, ${r.precip_mm ?? null}, ${r.source}, ${r.source_station_id ?? null}, ${r.quality_flag ?? null}, ${r.is_estimated ?? false})
+          VALUES (${r.date}, ${"delaware"}, ${r.tmax_c ?? null}, ${r.tmin_c ?? null}, ${null}, ${"NOAA_GHCN_DAILY_ARCHIVE"}, ${null}, ${null}, ${r.is_estimated})
           ON CONFLICT (date, scope) DO UPDATE SET
             tmax_c = EXCLUDED.tmax_c,
             tmin_c = EXCLUDED.tmin_c,
@@ -319,40 +479,50 @@ async function seedWeather() {
 // ─── Seed Music ──────────────────────────────────────────────────
 
 async function seedMusic() {
-  let files;
+  let raw;
   try {
-    files = await readdir(MUSIC_DIR);
+    raw = await readFile(MUSIC_ARCHIVE, "utf-8");
   } catch {
-    console.warn("Music directory not found, skipping music seed.");
+    console.warn("Music archive not found, skipping music seed.");
     return;
   }
 
-  const jsonFiles = files.filter((f) => f.endsWith(".json")).sort();
-  console.log(`Seeding music from ${jsonFiles.length} year file(s)...`);
+  const archive = JSON.parse(raw);
+  if (!archive || !Array.isArray(archive.months) || typeof archive.start !== "string") {
+    console.warn("Music archive is not in expected packed format, skipping music seed.");
+    return;
+  }
+
+  const startYearMatch = /^(\d{4})-\d{2}$/.exec(archive.start);
+  if (!startYearMatch) {
+    console.warn(`Music archive has invalid start "${archive.start}", skipping music seed.`);
+    return;
+  }
+  const startYear = Number(startYearMatch[1]);
+
+  console.log(
+    `Seeding music from packed archive (${archive.months.length} month buckets, starting ${archive.start})...`,
+  );
 
   let totalTracks = 0;
 
-  for (const file of jsonFiles) {
-    const year = parseInt(path.basename(file, ".json"), 10);
-    if (isNaN(year)) continue;
+  for (let i = 0; i < archive.months.length; i += 1) {
+    const monthTracks = archive.months[i];
+    if (!Array.isArray(monthTracks) || monthTracks.length === 0) continue;
 
-    const raw = await readFile(path.join(MUSIC_DIR, file), "utf-8");
-    const data = JSON.parse(raw); // { "01": [...], "02": [...], ... }
+    const year = startYear + Math.floor(i / 12);
+    const month = String((i % 12) + 1).padStart(2, "0");
 
-    for (const [month, tracks] of Object.entries(data)) {
-      if (!Array.isArray(tracks) || tracks.length === 0) continue;
-
-      const queries = tracks.map((t) =>
-        sql`INSERT INTO music (year, month, rank, title, artist, youtube_id)
-            VALUES (${year}, ${month}, ${t.rank}, ${t.title}, ${t.artist}, ${t.youtube_id})
-            ON CONFLICT (year, month, rank) DO UPDATE SET
-              title = EXCLUDED.title,
-              artist = EXCLUDED.artist,
-              youtube_id = EXCLUDED.youtube_id`
-      );
-      await sql.transaction(queries);
-      totalTracks += tracks.length;
-    }
+    const queries = monthTracks.map((tuple, rankIdx) =>
+      sql`INSERT INTO music (year, month, rank, title, artist, youtube_id)
+          VALUES (${year}, ${month}, ${rankIdx + 1}, ${tuple[0]}, ${tuple[1]}, ${tuple[2]})
+          ON CONFLICT (year, month, rank) DO UPDATE SET
+            title = EXCLUDED.title,
+            artist = EXCLUDED.artist,
+            youtube_id = EXCLUDED.youtube_id`
+    );
+    await sql.transaction(queries);
+    totalTracks += monthTracks.length;
   }
 
   console.log(`  Music: ${totalTracks} tracks seeded.`);
@@ -387,12 +557,13 @@ async function buildSearchVectors(scopedDate = "") {
 
 async function embedArticles(scopedDate = "") {
   // Lazy-import to avoid errors when the key is not set
-  let embedDocuments, buildEmbeddingText, hasApiKey;
+  let embedDocuments, buildEmbeddingInput, hasApiKey, QuotaExhaustedError;
   try {
     const mod = await import("../../src/lib/embeddings.ts");
     embedDocuments = mod.embedDocuments;
-    buildEmbeddingText = mod.buildEmbeddingText;
+    buildEmbeddingInput = mod.buildEmbeddingInput;
     hasApiKey = mod.hasApiKey;
+    QuotaExhaustedError = mod.QuotaExhaustedError;
   } catch (err) {
     console.warn("Skipping embedding: could not load embeddings module.", err.message);
     return;
@@ -415,13 +586,16 @@ async function embedArticles(scopedDate = "") {
 
   const BATCH = 50;
   let done = 0;
+  let failedBatches = 0;
+  let quotaExhausted = false;
+  const totalBatches = Math.ceil(unembedded.length / BATCH);
 
   for (let i = 0; i < unembedded.length; i += BATCH) {
     const batch = unembedded.slice(i, i + BATCH);
-    const texts = batch.map((a) => buildEmbeddingText({ headline: a.headline, byline: a.byline, body_plain: a.body_plain, edition_date: a.edition_date, category: a.category }));
+    const inputs = batch.map((a) => buildEmbeddingInput({ headline: a.headline, byline: a.byline, body_plain: a.body_plain, edition_date: a.edition_date, category: a.category }));
 
     try {
-      const vectors = await embedDocuments(texts);
+      const vectors = await embedDocuments(inputs);
       const updates = batch.map((a, idx) => {
         const vecStr = `[${vectors[idx].join(",")}]`;
         return sql`UPDATE articles SET embedding = ${vecStr}::vector WHERE id = ${a.id}`;
@@ -430,11 +604,32 @@ async function embedArticles(scopedDate = "") {
       done += batch.length;
       console.log(`  Embedded ${done}/${unembedded.length}`);
     } catch (err) {
+      // Hard stop on quota exhaustion — every subsequent batch will 429
+      // anyway, so keep going wastes API calls and prolongs the run for
+      // no benefit. See docs/issues/0028.
+      if (QuotaExhaustedError && err instanceof QuotaExhaustedError) {
+        console.warn(
+          `  Quota exhausted at batch ${Math.floor(i / BATCH) + 1}/${totalBatches}; stopping early. Retry after quota reset.`,
+        );
+        quotaExhausted = true;
+        break;
+      }
+      failedBatches++;
       console.error(`  Embedding batch error:`, err.message || err);
     }
   }
 
   console.log(`  Embedding complete: ${done} articles.`);
+  if (quotaExhausted) {
+    throw new Error(
+      `Embedding stopped early due to Gemini quota exhaustion; ${done} of ${unembedded.length} article(s) embedded. Retry after the daily quota reset.`,
+    );
+  }
+  if (failedBatches > 0) {
+    throw new Error(
+      `Embedding failed: ${failedBatches} of ${totalBatches} batch(es) errored; ${done} article(s) embedded.`
+    );
+  }
 }
 
 // ─── Ensure Locked Editions ─────────────────────────────────────
@@ -553,6 +748,15 @@ async function main() {
     console.log(`Seed summary written to ${summaryPath}`);
   }
   console.log(`\nDone in ${elapsed}s.`);
+  console.log(
+    "\nNote: the running Next.js server caches the editions list (tag \"editions\")\n" +
+      "      for up to 1h. To drop the cache immediately:\n" +
+      "\n" +
+      "        curl -X POST <host>/api/admin/revalidate \\\n" +
+      "          -H \"X-Admin-Token: $ADMIN_REVALIDATE_TOKEN\"\n" +
+      "\n" +
+      "      Or redeploy. See CLAUDE.md → Environment Variables for the token setup."
+  );
 }
 
 main().catch((err) => {

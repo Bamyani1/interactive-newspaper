@@ -34,7 +34,7 @@ export const TimelineGallery: React.FC<TimelineGalleryProps> = ({ response }) =>
                 src={article.imageUrls[0]}
                 alt={article.headline || "Archive photo"}
                 fill
-                sizes="(max-width: 480px) 50vw, (max-width: 768px) 33vw, 240px"
+                sizes="(max-width: 480px) 50vw, (max-width: 768px) 33vw, 256px"
                 style={{ objectFit: "cover", objectPosition: "center" }}
                 priority={index < 2}
               />
