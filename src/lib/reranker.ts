@@ -91,7 +91,13 @@ export async function rerankArticles(
         const scores = parseScores(text, articles.length);
 
         if (!scores) {
-            console.warn("Failed to parse reranker scores, returning original articles");
+            console.warn(
+                JSON.stringify({
+                    level: "warn",
+                    stage: "rerank",
+                    msg: "failed to parse reranker scores, returning original articles",
+                }),
+            );
             return articles.map((a) => ({ ...a, relevanceScore: 5 }));
         }
 
@@ -102,11 +108,17 @@ export async function rerankArticles(
             .sort((a, b) => b.relevanceScore - a.relevanceScore)
             .slice(0, maxArticles);
     } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-            console.warn("Reranker timed out, returning original articles");
-        } else {
-            console.warn("Reranker failed, returning original articles:", err);
-        }
+        const isTimeout = err instanceof Error && err.name === "AbortError";
+        console.warn(
+            JSON.stringify({
+                level: "warn",
+                stage: "rerank",
+                msg: isTimeout
+                    ? "reranker timed out, returning original articles"
+                    : "reranker failed, returning original articles",
+                err: err instanceof Error ? err.message : String(err),
+            }),
+        );
         return articles.map((a) => ({ ...a, relevanceScore: 5 }));
     }
 }
