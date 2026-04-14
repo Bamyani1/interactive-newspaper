@@ -478,7 +478,10 @@ async function fetchOpenMeteoDaily(
     source_station_id: null,
     quality_flag: null,
     is_estimated: true,
-    raw: parsed as unknown as Record<string, unknown>,
+    // Store as parsed JSON without the double-cast so the type system
+    // retains a structural claim. The `raw` field is purely informational
+    // for now, so the indexable-record shape is safe. See docs/issues/0024.
+    raw: parsed as Record<string, unknown>,
   };
 }
 
