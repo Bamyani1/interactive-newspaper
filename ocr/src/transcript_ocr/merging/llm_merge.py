@@ -364,8 +364,27 @@ def merge_edition_articles(
                 )
 
             if not response.parsed:
-                raw = (response.text or "")[:500]
-                warning(f"Pro merge unparseable (raw: {raw!r}), retrying with Flash...")
+                full_raw = response.text or ""
+                raw = full_raw[:500]
+                # Dump the full raw response to the snapshots dir so operators
+                # can post-mortem parse failures — the 500-char console line is
+                # fine for a quick glance but loses the rest of the payload,
+                # which is exactly what you need when Gemini returns truncated
+                # JSON or an unexpected schema. See docs/issues/0012.
+                raw_dump_path = ""
+                if snapshots_dir and full_raw:
+                    try:
+                        os.makedirs(snapshots_dir, exist_ok=True)
+                        raw_dump_path = os.path.join(snapshots_dir, "merge_raw_response.txt")
+                        with open(raw_dump_path, "w", encoding="utf-8") as _f:
+                            _f.write(full_raw)
+                    except OSError:
+                        raw_dump_path = ""
+                warning(
+                    f"Pro merge unparseable (raw: {raw!r}"
+                    + (f", full: {raw_dump_path}" if raw_dump_path else "")
+                    + "), retrying with Flash..."
+                )
                 if md is not None:
                     md.error = f"Pro merge failed (raw: {raw!r})"
 
@@ -386,14 +405,23 @@ def merge_edition_articles(
                             **({"thinking_config": fallback_thinking} if fallback_thinking else {}),
                         ),
                     )
-                    flash_usage = response.usage_metadata
-                    if flash_usage:
-                        substep(f"Flash retry tokens: {flash_usage.prompt_token_count} in, {flash_usage.candidates_token_count} out")
+                    # Defensive getattr: the Gemini SDK's usage_metadata can be
+                    # a partial object where the outer field is truthy but
+                    # inner counts are None. Direct attribute access on a
+                    # partial object would crash the Flash retry path and
+                    # bury the original Pro error under an AttributeError.
+                    # See docs/issues/0022.
+                    flash_usage = getattr(response, "usage_metadata", None)
+                    if flash_usage is not None:
+                        f_prompt = getattr(flash_usage, "prompt_token_count", None) or 0
+                        f_cand = getattr(flash_usage, "candidates_token_count", None) or 0
+                        f_total = getattr(flash_usage, "total_token_count", None) or 0
+                        substep(f"Flash retry tokens: {f_prompt} in, {f_cand} out")
                         if md is not None:
                             md.tokens = TokenUsage(
-                                prompt_tokens=(md.tokens.prompt_tokens if md.tokens else 0) + flash_usage.prompt_token_count,
-                                candidates_tokens=(md.tokens.candidates_tokens if md.tokens else 0) + flash_usage.candidates_token_count,
-                                total_tokens=(md.tokens.total_tokens if md.tokens else 0) + flash_usage.total_token_count,
+                                prompt_tokens=(md.tokens.prompt_tokens if md.tokens else 0) + f_prompt,
+                                candidates_tokens=(md.tokens.candidates_tokens if md.tokens else 0) + f_cand,
+                                total_tokens=(md.tokens.total_tokens if md.tokens else 0) + f_total,
                             )
                 except Exception as flash_err:
                     warning(f"Flash retry also failed: {flash_err}")
@@ -426,12 +454,20 @@ def merge_edition_articles(
         if md is not None:
             md.tokens = TokenUsage(prompt_tokens=0, candidates_tokens=0, total_tokens=0)
 
+    # Track aggregate OOB / dropped-group counts across all decisions so
+    # operators can see whether Gemini is hallucinating article_ids at a
+    # rate that's degrading merge quality — previously only per-offense
+    # warnings existed with no roll-up. See docs/issues/0021.
     referenced = set()
+    oob_ids_total: list[int] = []
+    oob_groups_dropped = 0
     for group in decisions.groups:
         deduped_ids = []
+        group_had_valid = False
         for aid in group.article_ids:
             if not (0 <= aid < len(article_data)):
                 warning(f"Article {aid} out of range (0..{len(article_data)-1}), skipping")
+                oob_ids_total.append(aid)
                 if md is not None:
                     md.duplicate_warnings.append(f"Article {aid} out of range")
                 continue
@@ -442,7 +478,16 @@ def merge_edition_articles(
             else:
                 referenced.add(aid)
                 deduped_ids.append(aid)
+                group_had_valid = True
         group.article_ids = deduped_ids
+        if not group_had_valid and group.article_ids == [] and group.merged_headline:
+            oob_groups_dropped += 1
+
+    if oob_ids_total and md is not None:
+        md.duplicate_warnings.append(
+            f"oob_article_ids_total={len(oob_ids_total)} "
+            f"sample={oob_ids_total[:10]} groups_with_only_oob={oob_groups_dropped}"
+        )
 
     all_ids = set(range(len(article_data)))
     missing = all_ids - referenced
