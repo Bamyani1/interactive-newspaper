@@ -229,7 +229,14 @@ export async function generateAnswer(
             };
         }
 
-        console.error("Answer generation failed:", err);
+        console.error(
+            JSON.stringify({
+                level: "error",
+                stage: "generate",
+                msg: "answer generation failed",
+                err: err instanceof Error ? err.message : String(err),
+            }),
+        );
         return {
             answer:
                 "I encountered an error while generating an answer. Please try again.",
@@ -423,7 +430,14 @@ export async function* generateAnswerStream(
             return;
         }
 
-        console.error("Answer stream generation failed:", err);
+        console.error(
+            JSON.stringify({
+                level: "error",
+                stage: "generate",
+                msg: "answer stream generation failed",
+                err: err instanceof Error ? err.message : String(err),
+            }),
+        );
         yield {
             type: "done",
             answer:
