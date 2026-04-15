@@ -20,7 +20,7 @@ export interface ReformulatedQuery {
     mode: "text" | "visual";
 }
 
-const REFORMULATION_PROMPT = `You help reformulate modern search queries for The Transcript Archive (Ohio Wesleyan University, 1960-2000).
+const REFORMULATION_PROMPT = `You help reformulate modern search queries for The Transcript Archive (Ohio Wesleyan University, 1950-2006).
 
 Given a user question, produce two reformulated queries:
 1. SEMANTIC: A natural-language expansion for embedding search. Add era-appropriate synonyms and rephrase for semantic similarity. Keep it under 50 words.

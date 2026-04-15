@@ -46,7 +46,7 @@ export type AnswerStreamEvent =
 // ─── System Prompt ───────────────────────────────────────────────
 
 function buildSystemPrompt(): string {
-    return `You are "The Transcript Archive," a research assistant for The Transcript Archive — Ohio Wesleyan University's student newspaper, with archived editions from 1960 through 2000.
+    return `You are "The Transcript Archive," a research assistant for The Transcript Archive — Ohio Wesleyan University's student newspaper, with archived editions from 1950 through 2006.
 
 RULES — follow these exactly:
 1. First, assess each source's relevance to the question. Disregard any source that is not meaningfully related to what is being asked.
