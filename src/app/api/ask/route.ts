@@ -393,7 +393,7 @@ async function handleStreamingAsk(params: {
                 const retrievalTimeoutMs =
                     _testRetrievalTimeoutMsOverride ?? RETRIEVAL_TIMEOUT_MS;
                 const retrievalStart = Date.now();
-                const retrievalLimit = mode === "visual" ? 30 : 8;
+                const retrievalLimit = mode === "visual" ? 30 : 20;
                 const vectorWeight = mode === "visual" ? 0.7 : 0.6;
                 const onlyWithImages = mode === "visual";
 
@@ -477,14 +477,14 @@ async function handleStreamingAsk(params: {
                 send({ type: "stage", name: "retrieve", elapsedMs: stageElapsed() });
 
                 // ── Step 4: Rerank ──
-                const keepTopK = mode === "visual" ? 15 : 5;
+                const keepTopK = mode === "visual" ? 15 : 10;
                 logRerankSignals(requestId, computeRerankSignals(articles), mode, "streaming");
 
                 let rankedArticles: RankedArticle[];
                 try {
                     rankedArticles = await rerankArticles(question, articles, {
                         maxArticles: keepTopK,
-                        minScore: mode === "visual" ? 3 : 5,
+                        minScore: mode === "visual" ? 3 : 4,
                         signal: globalController.signal,
                         requestId,
                     });
@@ -817,7 +817,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         let method: "hybrid" | "vector" = "hybrid";
         // Visual mode retrieves more candidates since we pre-filter to articles
         // with images (smaller pool, need wider net to find relevant photos)
-        const retrievalLimit = mode === "visual" ? 30 : 8;
+        const retrievalLimit = mode === "visual" ? 30 : 20;
 
         const retrievalTimeoutMs =
             _testRetrievalTimeoutMsOverride ?? RETRIEVAL_TIMEOUT_MS;
@@ -910,13 +910,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // Visual mode uses a lower threshold (3 = tangentially related) because
         // the user's goal is seeing photos, not precise answers — "somewhat related"
         // photos are still valuable. Text mode stays strict at 5.
-        const keepTopK = mode === "visual" ? 15 : 5;
+        const keepTopK = mode === "visual" ? 15 : 10;
         logRerankSignals(requestId, computeRerankSignals(articles), mode, "default");
 
         const rankedArticles: RankedArticle[] = await wrapStage("rerank", () =>
             rerankArticles(question, articles, {
                 maxArticles: keepTopK,
-                minScore: mode === "visual" ? 3 : 5,
+                minScore: mode === "visual" ? 3 : 4,
                 signal: globalController.signal,
                 requestId,
             }),
