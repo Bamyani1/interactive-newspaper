@@ -29,7 +29,7 @@ interface RerankOptions {
     requestId?: string;
 }
 
-const RERANKER_PROMPT = `You are a relevance judge for a 1960s university newspaper archive search system.
+const RERANKER_PROMPT = `You are a relevance judge for a university newspaper archive search system (Ohio Wesleyan University, 1950-2006).
 
 Given a user question and a list of article summaries, rate each article's relevance to the question on a scale of 0-10:
 - 0: Completely irrelevant

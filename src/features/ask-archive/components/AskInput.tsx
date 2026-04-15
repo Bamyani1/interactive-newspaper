@@ -9,7 +9,7 @@ interface AskInputProps {
 }
 
 const EXAMPLE_QUESTIONS = [
-  "What was campus life like in 1960?",
+  "How did campus life change from the 1950s to the 2000s?",
   "Tell me about OWU sports teams",
   "What were students protesting?",
   "What plays were performed on campus?",
