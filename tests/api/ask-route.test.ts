@@ -916,14 +916,10 @@ describe("POST /api/ask", () => {
     // partial deltas AND a subsequent error event so the UI can clean up
     // gracefully instead of hanging.
     //
-    // NOTE on stage tagging: the non-streaming path wraps generateAnswer
-    // in wrapStage("generate", ...) so its errors surface as
-    // `stage: "generate"`. The streaming path's for-await loop does NOT
-    // have a dedicated try/catch around generateAnswerStream — the error
-    // falls through to the top-level safety net in handleStreamingAsk
-    // which tags it as `stage: "unknown"` (or "deadline"). This test pins
-    // that current behavior. A follow-up could wrap the for-await in a
-    // stage="generate" try/catch for consistency.
+    // Both the streaming and non-streaming paths tag generation errors
+    // with stage="generate" so operators can grep logs by a single stage
+    // value. Streaming wraps the for-await loop in a dedicated try/catch
+    // (route.ts) to achieve this.
     (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
       (async function* () {
         yield { type: "delta", text: "Partial " };
@@ -950,9 +946,9 @@ describe("POST /api/ask", () => {
 
     const errorEvent = events.find((e) => e.type === "error");
     expect(errorEvent).toBeDefined();
-    // Current behavior: top-level safety net uses stage="unknown" for any
-    // non-deadline throw escaping the for-await. See the NOTE above.
-    expect(errorEvent?.stage).toBe("unknown");
+    // Streaming generation errors tag stage="generate", matching the
+    // non-streaming path's wrapStage("generate", ...) behavior.
+    expect(errorEvent?.stage).toBe("generate");
     expect(errorEvent?.message).toMatch(/Gemini stream interrupted/);
     expect(typeof errorEvent?.requestId).toBe("string");
     expect((errorEvent?.requestId as string).length).toBeGreaterThan(0);
