@@ -442,10 +442,18 @@ def merge_edition_articles(
 
             decisions: MergeDecisions
             save_snapshot(snapshots_dir, "merge_decisions.json", decisions)
+        except TimeoutError as e:
+            warning(f"Merge retry budget exhausted ({e}) — emitting unmerged page-level articles.")
+            if md is not None:
+                md.error = f"merge_retry_exhausted — {e}"
+                md.merge_skipped = True
+            _finalize_merge_diagnostics(md, merge_timer, report)
+            return None
         except Exception as e:
             error(f"Merge failed: {e} — aborting merge.")
             if md is not None:
                 md.error = f"llm_merge_failed — {e}"
+                md.merge_skipped = True
             _finalize_merge_diagnostics(md, merge_timer, report)
             return None
     else:

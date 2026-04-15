@@ -22,7 +22,6 @@ the row to the "Closed issues" section with the closing date).
 | ID | Title | Area | Severity | Opened |
 |---:|---|---|---|---|
 | 0013 | [merge retry exhaustion raises without fallback to unmerged edition](0013-merge-retry-exhaustion-no-fallback.md) | ocr | high | 2026-04-13 |
-| 0026 | [p-limit resolves to two versions in the lockfile](0026-p-limit-duplicate-versions.md) | deps | low | 2026-04-13 |
 
 ## Closed issues
 
@@ -62,3 +61,4 @@ the row to the "Closed issues" section with the closing date).
 | 0034 | [/api/search has no length limit, no timeout, silent 500 swallow](0034-api-search-hardening.md) | api | medium | 2026-04-14 |
 | 0035 | [answer-generator confidence-default brittleness for FTS-only retrieval](0035-confidence-default-brittleness.md) | rag | medium | 2026-04-14 |
 | 0036 | [/api/ask runs full pipeline twice for concurrent identical requests](0036-api-ask-no-concurrent-dedup.md) | rag | low | 2026-04-14 |
+| 0026 | [p-limit resolves to two versions in the lockfile (wontfix)](0026-p-limit-duplicate-versions.md) | deps | low | 2026-04-14 |

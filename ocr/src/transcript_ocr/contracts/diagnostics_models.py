@@ -119,6 +119,7 @@ class MergePassDiagnostics:
     tokens: TokenUsage = field(default_factory=TokenUsage)
     time_seconds: float = 0.0
     error: str = ""
+    merge_skipped: bool = False
 
 
 @dataclass
