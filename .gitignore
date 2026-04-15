@@ -70,6 +70,11 @@ scripts/dev/data/
 !public/top-10-music/*.json
 !scripts/db/locked-editions.json
 !tests/api/rag-golden-questions.json
+# Baseline snapshot for the nightly RAG regression workflow. Must be
+# committed so rag-golden-nightly can compare each run against a stable
+# reference — without this, every CI run writes a throwaway baseline
+# and drift is never detected.
+!tests/api/rag-golden-baseline.json
 # Pre-built offline weather archive — canonical dataset per CLAUDE.md's
 # "Do Not Modify" list. Tests at tests/weather/ depend on this being
 # available in CI, not just locally.
