@@ -1,14 +1,11 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import sanitizeHtmlLib from "sanitize-html";
 import type { Article } from "@/src/types";
 import { Share2, Printer, Check, FileText, ChevronDown } from "lucide-react";
 import Image from "next/image";
 
-/**
- * Basic HTML sanitizer — strips dangerous tags and event-handler attributes.
- * Sufficient for OCR-generated HTML; for user-generated content, use DOMPurify.
- */
 function escapeHtml(text: string): string {
     return text
         .replace(/&/g, "&amp;")
@@ -22,16 +19,33 @@ function isSafeImageUrl(url: string): boolean {
     return url.startsWith("/") || url.startsWith("https://");
 }
 
+// Whitelist-based sanitizer config for OCR'd article content. Stricter
+// than the prior hand-rolled regex stripper — closes gaps on data: URIs
+// in CSS, SVG <foreignObject> injection, and similar vectors that the
+// old pattern missed.
+const ARTICLE_SANITIZE_OPTIONS: sanitizeHtmlLib.IOptions = {
+    allowedTags: [
+        "p", "br", "strong", "em", "b", "i", "u",
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "ul", "ol", "li",
+        "a", "blockquote",
+        "mark",
+    ],
+    allowedAttributes: {
+        a: ["href", "title", "target", "rel"],
+        "*": ["class"],
+    },
+    allowedSchemes: ["http", "https", "mailto"],
+    disallowedTagsMode: "discard",
+    transformTags: {
+        a: sanitizeHtmlLib.simpleTransform("a", {
+            rel: "noopener noreferrer",
+        }),
+    },
+};
+
 function sanitizeHtml(html: string): string {
-    // Remove <script>, <style>, <iframe>, <object>, <embed>, <form> tags and their content
-    let clean = html.replace(/<(script|style|iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1>/gi, "");
-    // Remove self-closing dangerous tags
-    clean = clean.replace(/<(script|iframe|object|embed|form)[^>]*\/>/gi, "");
-    // Remove on* event handler attributes
-    clean = clean.replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi, "");
-    // Remove javascript: URIs
-    clean = clean.replace(/(href|src|action)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, "$1=$2#$2");
-    return clean;
+    return sanitizeHtmlLib(html, ARTICLE_SANITIZE_OPTIONS);
 }
 
 interface ArticleCardProps {
