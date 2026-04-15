@@ -130,9 +130,33 @@ public/editions/*/
 # Gold reference data — lives locally + in DB/R2, not in git
 gold/
 
-# Project docs — kept local only
+# Project docs — kept local only, with exceptions for notes referenced from source
 CLAUDE.md
-docs/PROJECT_MASTER_GUIDE.md
+docs/*
+!docs/issues/
+docs/issues/*
+!docs/issues/README.md
+!docs/issues/TEMPLATE.md
+!docs/issues/0004-*.md
+!docs/issues/0005-*.md
+!docs/issues/0006-*.md
+!docs/issues/0007-*.md
+!docs/issues/0008-*.md
+!docs/issues/0009-*.md
+!docs/issues/0010-*.md
+!docs/issues/0011-*.md
+!docs/issues/0012-*.md
+!docs/issues/0014-*.md
+!docs/issues/0016-*.md
+!docs/issues/0018-*.md
+!docs/issues/0020-*.md
+!docs/issues/0021-*.md
+!docs/issues/0022-*.md
+!docs/issues/0023-*.md
+!docs/issues/0024-*.md
+!docs/issues/0025-*.md
+!docs/issues/0028-*.md
+!docs/issues/0029-*.md
 
 # Debug output
 debug/
@@ -145,9 +169,6 @@ debug/
 
 # Brainstorming session state (Superpowers skill)
 .superpowers/
-
-# AI planning artifacts — kept local only
-docs/superpowers/
 
 # OCR intermediate workspace (large per-edition artifacts)
 ocr/workspace/

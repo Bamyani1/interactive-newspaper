@@ -43,7 +43,7 @@ const workSans = Work_Sans({
 
 export const metadata: Metadata = {
   title: "The Transcript Archive",
-  description: "The Transcript Archive — explore OWU's historic student newspaper, 1960–2000",
+  description: "The Transcript Archive — explore OWU's historic student newspaper, 1950–2006",
 };
 
 export default async function RootLayout({
