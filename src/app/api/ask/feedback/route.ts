@@ -179,9 +179,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             JSON.stringify({
                 level: "error",
                 route: "/api/ask/feedback",
+                requestId: body.requestId,
+                stage: "feedback",
                 msg: "insert failed",
                 err: err instanceof Error ? err.message : String(err),
-                requestId: body.requestId,
             }),
         );
         return NextResponse.json(

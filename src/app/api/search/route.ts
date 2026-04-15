@@ -1,14 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchArticles } from "@/src/lib/db";
+import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 
 const MAX_QUERY_LENGTH = 200;
 const SEARCH_TIMEOUT_MS = 8_000;
+
+const searchRateLimiter = createRateLimiter({ limit: 20, windowMs: 60_000 });
 
 function newRequestId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
 export async function GET(request: NextRequest) {
+  const ip = getClientIp(request);
+  const rate = searchRateLimiter(ip);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "Too many search requests. Please wait a moment and try again." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(Math.ceil((rate.resetAt - Date.now()) / 1000)),
+        },
+      },
+    );
+  }
+
   const requestId = newRequestId();
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.trim();
