@@ -4,10 +4,13 @@ import {
   getLocalWeatherByDate,
   isDateWithinLocalArchive,
 } from '@/src/lib/weather-local-archive';
+import { createRateLimiter, getClientIp } from '@/src/lib/rate-limit';
 import type { WeatherQuery } from '@/src/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+const weatherRateLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 });
 
 // Bounds for user-facing input fields. The route is primarily consumed by
 // the app's own UI (which always supplies valid inputs), but rejecting
@@ -26,6 +29,20 @@ function parseNumericParam(value: string | null): number | undefined {
 }
 
 export async function GET(request: NextRequest) {
+  const ip = getClientIp(request);
+  const rate = weatherRateLimiter(ip);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Too many weather requests. Please wait a moment and try again.' },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(Math.ceil((rate.resetAt - Date.now()) / 1000)),
+        },
+      },
+    );
+  }
+
   const params = request.nextUrl.searchParams;
   const date = params.get('date');
 

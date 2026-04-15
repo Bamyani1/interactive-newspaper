@@ -1,7 +1,17 @@
 "use client";
 
 import React from "react";
+import sanitizeHtml from "sanitize-html";
 import type { SearchResult } from "@/src/types";
+
+// Whitelist only the <mark> tags that PostgreSQL ts_headline() emits.
+// Everything else in the OCR'd body gets escaped, preventing raw HTML
+// from reaching the browser via the search snippet.
+const SNIPPET_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: ["mark"],
+  allowedAttributes: {},
+  disallowedTagsMode: "escape",
+};
 
 interface SearchResultCardProps {
   result: SearchResult;
@@ -47,7 +57,9 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) =>
         <p
           className="text-sm mt-2 leading-relaxed opacity-80"
           style={{ color: "var(--color-text-primary)" }}
-          dangerouslySetInnerHTML={{ __html: result.snippet }}
+          dangerouslySetInnerHTML={{
+            __html: sanitizeHtml(result.snippet, SNIPPET_SANITIZE_OPTIONS),
+          }}
         />
       )}
     </article>
