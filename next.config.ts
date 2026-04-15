@@ -10,6 +10,29 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              // Next.js hydration + Tailwind need inline scripts/styles
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline'",
+              // R2 images + data: for inline SVGs + blob: for next/image
+              "img-src 'self' data: blob: https:",
+              "font-src 'self' data:",
+              // Gemini + any external HTTPS the front-end might call
+              "connect-src 'self' https:",
+              // Block frame embedding (equivalent to X-Frame-Options: DENY)
+              "frame-ancestors 'none'",
+              "form-action 'self'",
+              "base-uri 'self'",
+              "object-src 'none'",
+            ].join("; "),
+          },
         ],
       },
     ];
