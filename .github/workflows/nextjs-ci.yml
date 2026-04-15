@@ -8,7 +8,13 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    env:
+      # Job-level env maps the secret to a variable so the step-level
+      # `if:` gate can check for its presence. Secrets can't be
+      # referenced directly in `if:` conditions — this is the canonical
+      # GitHub Actions pattern for conditional-on-secret steps.
+      CI_DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,8 +34,22 @@ jobs:
       - name: Vitest
         run: npm run test:run
 
-      # npm run build intentionally not included here — it requires
-      # DATABASE_URL to pre-render edition pages via generateStaticParams
-      # (see CLAUDE.md Build and Caching). Closes docs/issues/0004 for
-      # the tsc/lint/test surface; the build gate is a follow-up that
-      # needs a CI_DATABASE_URL secret wired up first.
+      # `next build` requires a reachable DATABASE_URL because
+      # src/app/edition/[date]/page.tsx calls generateStaticParams(),
+      # which reads the editions list from Neon via
+      # src/lib/editions-server.ts. That loader explicitly throws in
+      # production builds when the DB is unreachable and no gold
+      # fallback exists — gold data is gitignored, so a bare CI runner
+      # without CI_DATABASE_URL cannot build.
+      #
+      # The step is gated on CI_DATABASE_URL being set so:
+      #   1. Forks and the bootstrap window (before the secret is
+      #      configured on this repo) keep the workflow green.
+      #   2. Once the secret is stable, the `if:` can be removed in a
+      #      one-line follow-up to make the build gate mandatory on
+      #      every PR. See docs/issues/0004 for the full history.
+      - name: Next.js build
+        if: ${{ env.CI_DATABASE_URL != '' }}
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: npm run build
