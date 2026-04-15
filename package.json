@@ -31,6 +31,7 @@
     "next": "^16.2.3",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "sanitize-html": "^2.17.3",
     "three": "^0.183.2"
   },
   "devDependencies": {
@@ -40,6 +41,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sanitize-html": "^2.16.1",
     "@types/three": "^0.183.1",
     "@vitejs/plugin-react": "^4.2.1",
     "eslint": "^9",
