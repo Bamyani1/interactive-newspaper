@@ -49,16 +49,16 @@ describe("AskInput", () => {
   it("renders example question chips", () => {
     render(<AskInput onSubmit={onSubmit} isLoading={false} />);
 
-    expect(screen.getByText("What was campus life like in 1960?")).toBeInTheDocument();
+    expect(screen.getByText("How did campus life change from the 1950s to the 2000s?")).toBeInTheDocument();
     expect(screen.getByText("Tell me about OWU sports teams")).toBeInTheDocument();
   });
 
   it("submits when clicking an example chip", () => {
     render(<AskInput onSubmit={onSubmit} isLoading={false} />);
 
-    fireEvent.click(screen.getByText("What was campus life like in 1960?"));
+    fireEvent.click(screen.getByText("How did campus life change from the 1950s to the 2000s?"));
 
-    expect(onSubmit).toHaveBeenCalledWith("What was campus life like in 1960?");
+    expect(onSubmit).toHaveBeenCalledWith("How did campus life change from the 1950s to the 2000s?");
   });
 
   it("does not submit empty or whitespace-only input", () => {
