@@ -548,17 +548,37 @@ async function handleStreamingAsk(params: {
                 let finalCitations: Citation[] = [];
                 let finalConfidence: "low" | "medium" | "high" = "low";
 
-                for await (const event of generateAnswerStream(question, rankedArticles, {
-                    signal: globalController.signal,
-                    requestId,
-                })) {
-                    if (event.type === "delta") {
-                        send({ type: "delta", text: event.text });
-                    } else if (event.type === "done") {
-                        finalAnswer = event.answer;
-                        finalCitations = event.citations;
-                        finalConfidence = event.confidence;
+                try {
+                    for await (const event of generateAnswerStream(question, rankedArticles, {
+                        signal: globalController.signal,
+                        requestId,
+                    })) {
+                        if (event.type === "delta") {
+                            send({ type: "delta", text: event.text });
+                        } else if (event.type === "done") {
+                            finalAnswer = event.answer;
+                            finalCitations = event.citations;
+                            finalConfidence = event.confidence;
+                        }
                     }
+                } catch (err) {
+                    console.error(
+                        JSON.stringify({
+                            level: "error",
+                            route: "/api/ask",
+                            requestId,
+                            stage: "generate",
+                            msg: "generate stream failed (streaming)",
+                            err: err instanceof Error ? err.message : String(err),
+                        }),
+                    );
+                    send({
+                        type: "error",
+                        stage: "generate",
+                        message: err instanceof Error ? err.message : String(err),
+                        requestId,
+                    });
+                    return;
                 }
 
                 const generationTimeMs = Date.now() - generationStart;
