@@ -12,6 +12,7 @@
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-B80D3E?style=flat-square&logo=python&logoColor=E8E8E8&labelColor=1A1F24)](https://python.org)
 [![Postgres pgvector](https://img.shields.io/badge/Postgres-pgvector-B80D3E?style=flat-square&logo=postgresql&logoColor=E8E8E8&labelColor=1A1F24)](https://github.com/pgvector/pgvector)
 [![Google Gemini](https://img.shields.io/badge/Google-Gemini-B80D3E?style=flat-square&logo=google&logoColor=E8E8E8&labelColor=1A1F24)](https://ai.google.dev)
+[![CI](https://img.shields.io/github/actions/workflow/status/Bamyani1/interactive-newspaper/nextjs-ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=E8E8E8&labelColor=1A1F24&label=CI)](https://github.com/Bamyani1/interactive-newspaper/actions/workflows/nextjs-ci.yml)
 [![License MIT](https://img.shields.io/badge/License-MIT-B80D3E?style=flat-square&labelColor=1A1F24)](./LICENSE)
 
 </div>
@@ -146,7 +147,7 @@ flowchart LR
 
 **AI / Machine Learning**
 
-- **Google Gemini** (`@google/genai`) — OCR structuring, embeddings (`gemini-embedding-001`, 768-dim), reranking, and RAG answer generation
+- **Google Gemini** (`@google/genai`) — OCR structuring, embeddings (`gemini-embedding-2-preview`, 768-dim), reranking, and RAG answer generation
 - **Google Document AI** — layout parser for character-level OCR with confidence scoring
 - **DocLayout-YOLO** — photo/illustration region detection on scanned pages
 
@@ -180,7 +181,7 @@ If reformulation fails or times out, the pipeline falls back to the original use
 
 ### Embedding
 
-`embeddings.ts` calls Google's `gemini-embedding-001` model to produce a 768-dim vector. The input is guarded against token-limit truncation — a pre-flight token count trims at a sentence boundary before sending rather than letting the API silently truncate mid-sentence. For visual queries, the embedding is **multimodal**: query text and any reference image are combined into a single embedding call (see [Multimodal Image Embedding](#multimodal-image-embedding)).
+`embeddings.ts` calls Google's `gemini-embedding-2-preview` model to produce a 768-dim vector. The input is guarded against token-limit truncation — a pre-flight token count trims at a sentence boundary before sending rather than letting the API silently truncate mid-sentence. For visual queries, the embedding is **multimodal**: query text and any reference image are combined into a single embedding call (see [Multimodal Image Embedding](#multimodal-image-embedding)).
 
 ### Hybrid Search
 
@@ -264,7 +265,7 @@ The goal: allow *"show me photos of the homecoming parade"* to actually surface 
 
 ### Embed-Time
 
-`scripts/db/embed.mjs` loads each article's primary image (from `image_urls[]`) at embed time and sends it to `gemini-embedding-001` *alongside* the article text as a single multimodal embedding call. The resulting 768-dim vector lives in `articles.embedding` — same table, same column, same HNSW index. There is no separate "image embedding" column; text and image live in a shared embedding space so a single vector search can match both text queries and visual queries.
+`scripts/db/embed.mjs` loads each article's primary image (from `image_urls[]`) at embed time and sends it to `gemini-embedding-2-preview` *alongside* the article text as a single multimodal embedding call. The resulting 768-dim vector lives in `articles.embedding` — same table, same column, same HNSW index. There is no separate "image embedding" column; text and image live in a shared embedding space so a single vector search can match both text queries and visual queries.
 
 ### Query-Time
 
@@ -493,7 +494,7 @@ Create `.env.local` from `.env.example`:
 │   │   ├── ask/                  # Ask the Archive page (RAG UI)
 │   │   └── edition/[date]/       # Edition reader
 │   ├── features/                 # Feature modules (news-feed, ask-archive, search, …)
-│   ├── lib/                      # Shared: db, embeddings, answer-generator, reranker, query-reformulator, gemini-client
+│   ├── lib/                      # Shared services — RAG (db, embeddings, query-reformulator, reranker, answer-generator, gemini-client) + weather, rate-limit, editions-server, gold-edition, ocr-adapter, image-url, parse-publication-info
 │   ├── styles/tokens/            # Design tokens (colors, typography, spacing)
 │   └── server/                   # Server-only: ocr-adapter (edition.json → DB rows)
 │
