@@ -1,11 +1,17 @@
 ---
 id: 0026
 title: p-limit resolves to two versions in the lockfile
-status: open
+status: wontfix
 severity: low
 area: deps
 opened: 2026-04-13
+closed: 2026-04-14
 ---
+
+> **Decision:** wontfix — accept the duplicate. Transitive
+> `p-limit@3.1.0` via `eslint → locate-path → p-locate` is unavoidable
+> without eslint internals churn; forcing an `overrides` block risks
+> breaking lint. Revisit on next major eslint upgrade.
 
 ## Symptom
 
