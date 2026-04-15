@@ -359,7 +359,7 @@ describe("POST /api/ask", () => {
     expect(hybridSearch).toHaveBeenCalledWith(
       "OWU OR Ohio Wesleyan",
       expect.any(Array),
-      expect.objectContaining({ limit: 8, signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ limit: 20, signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -391,8 +391,8 @@ describe("POST /api/ask", () => {
       "Test?",
       retrieved,
       expect.objectContaining({
-        maxArticles: 5,
-        minScore: 5,
+        maxArticles: 10,
+        minScore: 4,
         signal: expect.any(AbortSignal),
       }),
     );
