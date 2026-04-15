@@ -28,7 +28,7 @@ cp .env.example .env.local     # fill DATABASE_URL, GOOGLE_API_KEY, etc.
 npm run dev                    # http://localhost:3000
 
 # Tests + lint
-npm run lint                   # ESLint, zero warnings required
+npm run lint                   # ESLint (zero errors; one known pre-existing warning is acceptable)
 npm run test:run               # Vitest run mode
 python -m pytest tests/ocr/ -x # Python OCR suite (if working on the pipeline)
 ```
