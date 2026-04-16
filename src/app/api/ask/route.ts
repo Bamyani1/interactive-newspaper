@@ -454,8 +454,13 @@ async function handleStreamingAsk(params: {
                     return;
                 }
 
-                // ── Cache check (pipeline path only) ──
-                const cached = getCachedAnswer(question, filters);
+                // ── Cache check (pipeline path only; skipped when
+                // conversation history is in play so we don't serve a
+                // prior session's context-flavored answer to a fresh one).
+                const cached =
+                    conversationHistory.length === 0
+                        ? getCachedAnswer(question, filters)
+                        : null;
                 if (cached) {
                     const cachedSourceArticles = cached.sourceArticles;
                     const cachedMeta = cached.meta;
@@ -770,7 +775,9 @@ async function handleStreamingAsk(params: {
                     },
                 };
 
-                setCachedAnswer(question, filters, streamingResponse);
+                if (conversationHistory.length === 0) {
+                    setCachedAnswer(question, filters, streamingResponse);
+                }
 
                 send({
                     type: "done",
@@ -1050,8 +1057,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return NextResponse.json(response);
         }
 
-        // ── Cache check (pipeline path only) ──
-        const cachedResponse = getCachedAnswer(question, body.filters);
+        // ── Cache check (pipeline path only; skipped when conversation
+        // history is in play to avoid cross-session context pollution).
+        const cachedResponse =
+            conversationHistory.length === 0
+                ? getCachedAnswer(question, body.filters)
+                : null;
         if (cachedResponse) {
             const overridden: AskResponse = {
                 ...cachedResponse,
@@ -1335,7 +1346,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             },
         };
 
-        setCachedAnswer(question, filters, response);
+        if (conversationHistory.length === 0) {
+            setCachedAnswer(question, filters, response);
+        }
 
         return NextResponse.json(response);
     })();
