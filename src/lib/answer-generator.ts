@@ -70,6 +70,11 @@ Respond with a JSON object with exactly two keys:
 
 The "answer" string should begin with "Relevant sources: [Source N, Source M, ...]" on its own line listing only sources you actually cite, followed by a blank line, followed by your answer with inline [Source N] citations. Use ## section headers to organize multi-topic answers and paragraph breaks between distinct points. Do not use bullet points or numbered lists.
 
+Markdown rules — the client renderer only understands a strict subset:
+- Use ONLY ## for headings — never ### or deeper levels.
+- Use **bold** for emphasis; never single-asterisk *italic* (it conflicts with the bullet markers the renderer strips).
+- Do not begin any line with "* " or "- ". No bullets, no lists.
+
 The "follow_ups" array must contain 2-3 follow-up questions (max 3) that:
 - Are ≤ 100 characters each
 - Reference specific facts, names, dates, or topics from the sources
