@@ -358,6 +358,17 @@ async function handleStreamingAsk(params: {
                 // ── Agent path for complex questions ──
                 if (complexity === "complex") {
                     send({ type: "stage", name: "agent", elapsedMs: stageElapsed() });
+                    send({
+                        type: "metadata",
+                        question,
+                        mode,
+                        requestId,
+                        sourceArticles: [],
+                        meta: {
+                            reformulatedQuery:
+                                embeddingQuery !== question ? embeddingQuery : undefined,
+                        },
+                    });
 
                     const conversationContext = conversationHistory.length > 0
                         ? formatHistoryForPrompt(conversationHistory)

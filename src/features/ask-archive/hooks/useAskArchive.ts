@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import type { AskResponse } from "@/src/types";
 
-export type AskStage = "reformulate" | "embed" | "retrieve" | "rerank" | "generate";
+export type AskStage = "reformulate" | "embed" | "retrieve" | "rerank" | "generate" | "agent";
 
 interface UseAskArchiveReturn {
   /**
@@ -45,6 +45,8 @@ type StreamEvent =
       sessionId?: string;
       meta: AskResponse["meta"];
     }
+  | { type: "tool_call"; tool: string; round: number; args?: Record<string, unknown> }
+  | { type: "tool_result"; tool: string; round: number; summary?: string }
   | {
       type: "error";
       stage?: string;
@@ -173,6 +175,25 @@ export function useAskArchive(): UseAskArchiveReturn {
                 setAnswer(pending);
                 setStage("generate");
                 setIsStreaming(true);
+              } else if (event.type === "tool_call") {
+                // Agent progress: show what tool is being called
+                const toolLabels: Record<string, string> = {
+                  search_archive: "Searching the archive…",
+                  read_article: "Reading an article…",
+                  list_editions: "Checking available editions…",
+                };
+                setStage("agent" as AskStage);
+                pending = {
+                  ...pending,
+                  answer: toolLabels[event.tool] ?? "Researching…",
+                };
+                setAnswer(pending);
+              } else if (event.type === "tool_result") {
+                // Show what the tool found
+                if (event.summary) {
+                  pending = { ...pending, answer: event.summary };
+                  setAnswer(pending);
+                }
               } else if (event.type === "delta") {
                 pending = { ...pending, answer: pending.answer + event.text };
                 setAnswer(pending);
