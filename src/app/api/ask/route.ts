@@ -30,7 +30,7 @@ const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
 const GLOBAL_DEADLINE_MS = 30_000;
 
-const askRateLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 });
+const askRateLimiter = createRateLimiter({ bucket: "ask", limit: 10, windowMs: 60_000 });
 
 /**
  * Thrown when the request exceeds the global deadline. The top-level catch
@@ -846,7 +846,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // ── Rate limit (outside the deadline race so a 429 returns instantly) ──
     const ip = getClientIp(request);
-    const rateResult = askRateLimiter(ip);
+    const rateResult = await askRateLimiter(ip);
     if (!rateResult.allowed) {
         return NextResponse.json(
             { error: "Too many questions. Please wait a moment and try again." },

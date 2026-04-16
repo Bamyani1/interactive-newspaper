@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // legitimate reason to be hit more than a few times per minute, so the
 // limit doubles as a brute-force shield for the token check below.
 // See docs/issues/0016.
-const revalidateLimiter = createRateLimiter({ limit: 5, windowMs: 60_000 });
+const revalidateLimiter = createRateLimiter({ bucket: "revalidate", limit: 5, windowMs: 60_000 });
 
 /**
  * Constant-time string comparison that avoids the timing-leak vulnerability
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   // Throttle before the token check so online brute force is bounded. The
   // limiter is keyed by client IP — same pattern used by /api/ask.
   const ip = getClientIp(request);
-  const limit = revalidateLimiter(ip);
+  const limit = await revalidateLimiter(ip);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: "Too many requests" },

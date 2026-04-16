@@ -10,7 +10,7 @@ import type { WeatherQuery } from '@/src/types';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const weatherRateLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 });
+const weatherRateLimiter = createRateLimiter({ bucket: "weather", limit: 10, windowMs: 60_000 });
 
 // Bounds for user-facing input fields. The route is primarily consumed by
 // the app's own UI (which always supplies valid inputs), but rejecting
@@ -30,7 +30,7 @@ function parseNumericParam(value: string | null): number | undefined {
 
 export async function GET(request: NextRequest) {
   const ip = getClientIp(request);
-  const rate = weatherRateLimiter(ip);
+  const rate = await weatherRateLimiter(ip);
   if (!rate.allowed) {
     return NextResponse.json(
       { error: 'Too many weather requests. Please wait a moment and try again.' },
