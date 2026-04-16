@@ -190,6 +190,50 @@ describe("rerankArticles", () => {
     expect(result.every((a) => a.relevanceScore === 5)).toBe(true);
   });
 
+  it("caps fallback output at maxArticles on unparseable response", async () => {
+    (GoogleGenAI as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      models: {
+        generateContent: vi.fn().mockResolvedValue({
+          text: "Not a JSON array of scores.",
+        }),
+      },
+    }));
+
+    vi.resetModules();
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const mod = await import("@/src/lib/reranker");
+
+    const articles = Array.from({ length: 15 }, (_, i) =>
+      makeArticle({ id: `a${i}` }),
+    );
+
+    const result = await mod.rerankArticles("test?", articles, { maxArticles: 5 });
+    // Fallback must respect the maxArticles cap — otherwise the answer
+    // generator gets flooded with the full retrieval set when the
+    // reranker silently fails.
+    expect(result).toHaveLength(5);
+    expect(result.every((a) => a.relevanceScore === 5)).toBe(true);
+  });
+
+  it("caps fallback output at maxArticles on API error", async () => {
+    (GoogleGenAI as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      models: {
+        generateContent: vi.fn().mockRejectedValue(new Error("API boom")),
+      },
+    }));
+
+    vi.resetModules();
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const mod = await import("@/src/lib/reranker");
+
+    const articles = Array.from({ length: 12 }, (_, i) =>
+      makeArticle({ id: `a${i}` }),
+    );
+
+    const result = await mod.rerankArticles("test?", articles, { maxArticles: 5 });
+    expect(result).toHaveLength(5);
+  });
+
   it("passes exactly 2000 chars of article body to the reranker LLM", async () => {
     const generateContentMock = vi.fn().mockResolvedValue({ text: "[8, 7, 6]" });
     (GoogleGenAI as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
