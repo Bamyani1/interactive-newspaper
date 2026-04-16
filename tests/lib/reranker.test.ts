@@ -189,4 +189,30 @@ describe("rerankArticles", () => {
     expect(result).toHaveLength(3);
     expect(result.every((a) => a.relevanceScore === 5)).toBe(true);
   });
+
+  it("passes exactly 2000 chars of article body to the reranker LLM", async () => {
+    const generateContentMock = vi.fn().mockResolvedValue({ text: "[8, 7, 6]" });
+    (GoogleGenAI as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      models: { generateContent: generateContentMock },
+    }));
+
+    vi.resetModules();
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const mod = await import("@/src/lib/reranker");
+
+    const longBody = "X".repeat(5000);
+    const articles = [
+      makeArticle({ id: "a", bodyPlain: longBody }),
+      makeArticle({ id: "b", bodyPlain: "short" }),
+      makeArticle({ id: "c", bodyPlain: "short" }),
+    ];
+
+    await mod.rerankArticles("test?", articles, { minScore: 0 });
+
+    const call = generateContentMock.mock.calls[0][0];
+    const userPrompt = call.contents[0].parts[0].text as string;
+    const m = userPrompt.match(/Excerpt:\s*(X+)/);
+    expect(m).toBeTruthy();
+    expect(m![1].length).toBe(2000);
+  });
 });

@@ -14,7 +14,7 @@ import type { RetrievedArticle } from "@/src/lib/db";
 const RERANKER_MODEL = "gemini-3-flash-preview";
 const RERANKER_TIMEOUT_MS = 8_000;
 const RERANKER_MAX_TOKENS = 150;
-const RERANKER_BODY_CHARS = 1000; // body excerpt sent to reranker per article
+const RERANKER_BODY_CHARS = 2000; // body excerpt sent to reranker per article
 const DEFAULT_MIN_SCORE = 5;
 const DEFAULT_MAX_ARTICLES = 5;
 
