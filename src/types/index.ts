@@ -194,5 +194,7 @@ export interface AskResponse {
         method: "hybrid" | "vector";
         reformulatedQuery?: string;
         complexity?: "simple" | "complex";
+        agentSteps?: number;
+        agentToolCalls?: number;
     };
 }
