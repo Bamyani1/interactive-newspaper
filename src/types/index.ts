@@ -192,5 +192,6 @@ export interface AskResponse {
         articlesSearched: number;
         method: "hybrid" | "vector";
         reformulatedQuery?: string;
+        erasUsed?: { label: string; startDate: string; endDate: string }[];
     };
 }

@@ -10,6 +10,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { embedQuery, QuotaExhaustedError } from "@/src/lib/embeddings";
 import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
 import type { RetrievedArticle } from "@/src/lib/db";
+import { retrieveMultiEra } from "@/src/lib/retrieve-multi-era";
+import type { MultiEraArticle } from "@/src/lib/retrieve-multi-era";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
@@ -836,17 +838,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             );
         }
 
-        // ── Step 3: Retrieve relevant articles (with timeout) ──
+        // ── Step 3: Retrieve relevant articles ──
         const retrievalStart = Date.now();
         const filters = body.filters ?? {};
-        let articles: RetrievedArticle[];
-        let method: "hybrid" | "vector" = "hybrid";
-        // Visual mode retrieves more candidates since we pre-filter to articles
-        // with images (smaller pool, need wider net to find relevant photos)
         const retrievalLimit = mode === "visual" ? 30 : 20;
-
+        const vectorWeight = mode === "visual" ? 0.7 : 0.6;
+        const onlyWithImages = mode === "visual";
         const retrievalTimeoutMs =
             _testRetrievalTimeoutMsOverride ?? RETRIEVAL_TIMEOUT_MS;
+
         const retrievalTimeout = new Promise<never>((_, reject) =>
             setTimeout(
                 () => reject(new Error("Retrieval timeout")),
@@ -854,27 +854,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             ),
         );
 
-        // Adaptive vector/FTS weighting based on query mode:
-        // Visual queries (conceptual "show me X") favor vector similarity (0.7)
-        // Text queries (factual, often keyword-heavy) get more FTS weight (0.4)
-        const vectorWeight = mode === "visual" ? 0.7 : 0.6;
-        // Visual mode restricts retrieval to articles with images so the gallery
-        // has enough content even after reranking filters out weak matches.
-        const onlyWithImages = mode === "visual";
-
+        let articles: MultiEraArticle[];
+        let method: "hybrid" | "vector";
+        let erasUsed: import("@/src/lib/era-parser").Era[];
         try {
-            articles = await Promise.race([
-                hybridSearch(ftsQuery, questionEmbedding, {
-                    limit: retrievalLimit,
-                    category: filters.category ?? null,
-                    startDate: filters.startDate ?? null,
-                    endDate: filters.endDate ?? null,
+            const result = await Promise.race([
+                retrieveMultiEra(ftsQuery, questionEmbedding, eras, {
+                    retrievalLimit,
                     vectorWeight,
+                    category: filters.category ?? null,
+                    filterStartDate: filters.startDate ?? null,
+                    filterEndDate: filters.endDate ?? null,
                     onlyWithImages,
+                    timeoutMs: retrievalTimeoutMs,
                     signal: globalController.signal,
+                    requestId,
                 }),
                 retrievalTimeout,
             ]);
+            articles = result.articles;
+            method = result.method;
+            erasUsed = result.erasUsed;
         } catch (err) {
             if (err instanceof Error && err.message === "Retrieval timeout") {
                 return NextResponse.json(
@@ -886,49 +886,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     { status: 504 },
                 );
             }
-            console.warn(
-                JSON.stringify({
-                    level: "warn",
-                    route: "/api/ask",
-                    requestId,
-                    stage: "retrieve",
-                    msg: "hybrid search failed — falling back to vector-only",
-                    err: err instanceof Error ? err.message : String(err),
-                }),
-            );
-            method = "vector";
-            const fallbackTimeout = new Promise<never>((_, reject) =>
-                setTimeout(
-                    () => reject(new Error("Retrieval timeout")),
-                    retrievalTimeoutMs,
-                ),
-            );
-            try {
-                articles = await Promise.race([
-                    queryArticlesByEmbedding(questionEmbedding, {
-                        limit: retrievalLimit,
-                        category: filters.category ?? null,
-                        startDate: filters.startDate ?? null,
-                        endDate: filters.endDate ?? null,
-                        onlyWithImages,
-                        signal: globalController.signal,
-                    }),
-                    fallbackTimeout,
-                ]);
-            } catch (fallbackErr) {
-                if (fallbackErr instanceof Error && fallbackErr.message === "Retrieval timeout") {
-                    return NextResponse.json(
-                        {
-                            error: "Retrieval took too long. Please try again.",
-                            stage: "retrieve",
-                            requestId,
-                        },
-                        { status: 504 },
-                    );
-                }
-                // Re-throw with stage tag so the outer catch reports it correctly
-                throw new StageError("retrieve", fallbackErr);
-            }
+            throw new StageError("retrieve", err);
         }
         const retrievalTimeMs = Date.now() - retrievalStart;
 
@@ -986,6 +944,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 articlesSearched: articles.length,
                 method,
                 reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+                erasUsed: erasUsed.length > 0 ? erasUsed : undefined,
             },
         };
 
