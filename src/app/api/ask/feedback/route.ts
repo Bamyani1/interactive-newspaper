@@ -46,7 +46,6 @@ interface FeedbackBody {
     mode?: unknown;
     citations?: unknown;
     comment?: unknown;
-    sessionId?: unknown;
 }
 
 function isStringArrayOfShape(
@@ -156,13 +155,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         comment = trimmed === "" ? null : trimmed;
     }
 
-    // sessionId is optional. Stored so the feedback export CLI can
-    // correlate votes with the conversation they came from.
-    let sessionId: string | null = null;
-    if (typeof body.sessionId === "string" && body.sessionId.trim() !== "") {
-        sessionId = body.sessionId.trim().slice(0, 128);
-    }
-
     // ── Insert ──
     // The table has CREATE INDEX on request_id for grouping, but we don't
     // dedupe — a user can vote, change their mind, and vote again. Each
@@ -170,7 +162,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
         await sql`
             INSERT INTO ask_feedback
-              (request_id, question, answer, confidence, mode, citations, vote, comment, session_id)
+              (request_id, question, answer, confidence, mode, citations, vote, comment)
             VALUES (
               ${body.requestId},
               ${body.question},
@@ -179,8 +171,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               ${mode},
               ${JSON.stringify(citations)}::jsonb,
               ${body.vote},
-              ${comment},
-              ${sessionId}
+              ${comment}
             )
         `;
     } catch (err) {

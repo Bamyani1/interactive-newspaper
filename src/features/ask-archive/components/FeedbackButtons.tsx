@@ -44,17 +44,6 @@ export const FeedbackButtons: React.FC<FeedbackButtonsProps> = ({ response }) =>
     if (includeComment && trimmed.length > 0) {
       payload.comment = trimmed.slice(0, MAX_COMMENT_LENGTH);
     }
-    // Best-effort: attach the session id so votes can be joined back to
-    // the conversation the answer came from. Missing/unavailable storage
-    // is non-fatal — the feedback row is still useful without it.
-    if (typeof window !== "undefined") {
-      try {
-        const sessionId = window.localStorage.getItem("owu-ask-session-id");
-        if (sessionId) payload.sessionId = sessionId;
-      } catch {
-        // storage disabled; skip
-      }
-    }
 
     try {
       const res = await fetch("/api/ask/feedback", {
