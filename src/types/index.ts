@@ -174,6 +174,7 @@ export interface AskResponse {
      * answer via POST /api/ask/feedback.
      */
     requestId: string;
+    sessionId?: string;
     sourceArticles: {
         id: string;
         headline: string;
@@ -192,5 +193,6 @@ export interface AskResponse {
         articlesSearched: number;
         method: "hybrid" | "vector";
         reformulatedQuery?: string;
+        complexity?: "simple" | "complex";
     };
 }
