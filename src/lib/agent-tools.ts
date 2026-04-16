@@ -116,6 +116,7 @@ async function executeSearchArchive(
       category: r.category,
       summary: r.summary,
       excerpt: r.bodyPlain.slice(0, 500),
+      imageUrls: r.imageUrls,
     })),
   };
 }

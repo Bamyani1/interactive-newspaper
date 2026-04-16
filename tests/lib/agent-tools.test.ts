@@ -123,6 +123,7 @@ describe("agent-tools", () => {
                         category: "News",
                         summary: "Test summary",
                         excerpt: "Full article body text here for testing excerpt truncation",
+                        imageUrls: [],
                     },
                 ],
             });

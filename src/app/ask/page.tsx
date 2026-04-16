@@ -12,6 +12,7 @@ const STAGE_LABELS: Record<string, string> = {
   retrieve: "Searching the archive…",
   rerank: "Ranking articles by relevance…",
   generate: "Writing the answer…",
+  agent: "Researching your question…",
 };
 
 export default function AskPage() {
