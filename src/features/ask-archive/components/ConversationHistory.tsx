@@ -10,7 +10,13 @@ interface ConversationTurn {
 }
 
 interface ConversationHistoryProps {
-    onSelect: (question: string) => void;
+    /**
+     * Called when a user clicks a history item. The page-level handler
+     * should populate the input with the question text (and focus the
+     * input) — it must NOT auto-submit. History items are breadcrumbs
+     * for re-asking, not shortcut submits.
+     */
+    onPickQuestion: (question: string) => void;
     disabled?: boolean;
     /**
      * Optional trigger so callers can force a refetch after a new
@@ -18,14 +24,21 @@ interface ConversationHistoryProps {
      * re-pull from /api/ask/session.
      */
     refreshKey?: string | number;
+    /**
+     * Increments whenever the parent calls `newConversation()` on the
+     * useAskArchive hook. Used to clear the visible history list
+     * immediately on reset, even before the next refetch completes.
+     */
+    sessionGen?: number;
 }
 
 const SESSION_STORAGE_KEY = "owu-ask-session-id";
 
 export const ConversationHistory: React.FC<ConversationHistoryProps> = ({
-    onSelect,
+    onPickQuestion,
     disabled,
     refreshKey,
+    sessionGen,
 }) => {
     const [turns, setTurns] = useState<ConversationTurn[]>([]);
 
@@ -35,9 +48,16 @@ export const ConversationHistory: React.FC<ConversationHistoryProps> = ({
         try {
             sessionId = window.localStorage.getItem(SESSION_STORAGE_KEY);
         } catch {
+            // localStorage unavailable — no history to show
+            setTurns([]);
             return;
         }
-        if (!sessionId) return;
+        // No session id (e.g. right after "New conversation") → clear
+        // any stale turns immediately instead of keeping the old list.
+        if (!sessionId) {
+            setTurns([]);
+            return;
+        }
 
         let cancelled = false;
         (async () => {
@@ -57,7 +77,7 @@ export const ConversationHistory: React.FC<ConversationHistoryProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [refreshKey]);
+    }, [refreshKey, sessionGen]);
 
     if (turns.length === 0) return null;
 
@@ -70,8 +90,9 @@ export const ConversationHistory: React.FC<ConversationHistoryProps> = ({
                         <button
                             type="button"
                             className="ask-history-item"
-                            onClick={() => onSelect(turn.question)}
+                            onClick={() => onPickQuestion(turn.question)}
                             disabled={disabled}
+                            title="Click to reuse this question in the input"
                         >
                             {turn.question}
                         </button>

@@ -1,11 +1,20 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useRef, useEffect } from "react";
 import { MessageCircleQuestion, Send } from "lucide-react";
 
 interface AskInputProps {
-  onSubmit: (question: string) => void;
+  /** Controlled value — owned by the page so history-click can set it. */
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: (v: string) => void;
   isLoading: boolean;
+  /**
+   * Monotonic counter. When it changes, the input re-focuses and
+   * selects its current text so the user can immediately edit a
+   * question populated by clicking a history item.
+   */
+  focusSignal?: number;
 }
 
 const EXAMPLE_QUESTIONS = [
@@ -15,13 +24,26 @@ const EXAMPLE_QUESTIONS = [
   "What plays were performed on campus?",
 ];
 
-export const AskInput: React.FC<AskInputProps> = ({ onSubmit, isLoading }) => {
-  const [value, setValue] = useState("");
+export const AskInput: React.FC<AskInputProps> = ({
+  value,
+  onChange,
+  onSubmit,
+  isLoading,
+  focusSignal,
+}) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    // Re-focus + select when the caller bumps focusSignal (e.g. after
+    // picking a question from history).
+    if (focusSignal === undefined) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [focusSignal]);
 
   const handleSubmit = () => {
     const trimmed = value.trim();
@@ -37,7 +59,7 @@ export const AskInput: React.FC<AskInputProps> = ({ onSubmit, isLoading }) => {
   };
 
   const handleExampleClick = (question: string) => {
-    setValue(question);
+    onChange(question);
     inputRef.current?.focus();
     onSubmit(question);
   };
@@ -54,7 +76,7 @@ export const AskInput: React.FC<AskInputProps> = ({ onSubmit, isLoading }) => {
           ref={inputRef}
           type="text"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Ask a question about OWU history..."
           aria-label="Ask the archive a question"

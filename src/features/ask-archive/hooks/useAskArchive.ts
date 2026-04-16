@@ -25,6 +25,13 @@ interface UseAskArchiveReturn {
    * questions no longer carry prior context into the reformulator.
    */
   newConversation: () => void;
+  /**
+   * Monotonic counter that increments every time `newConversation()` is
+   * called. Callers can pass this to `ConversationHistory` as a trigger
+   * so the history panel clears immediately on reset instead of waiting
+   * for the next answer.
+   */
+  sessionGen: number;
 }
 
 // localStorage key under which the current conversation's sessionId
@@ -109,6 +116,7 @@ export function useAskArchive(): UseAskArchiveReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
+  const [sessionGen, setSessionGen] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const feedIdRef = useRef(0);
   const feedRef = useRef<FeedEntry[]>([]);
@@ -342,8 +350,9 @@ export function useAskArchive(): UseAskArchiveReturn {
       }
     }
     sessionIdRef.current = null;
+    setSessionGen((n) => n + 1);
     reset();
   }, [reset]);
 
-  return { answer, isStreaming, stage, isLoading, error, feedEntries, submit, reset, newConversation };
+  return { answer, isStreaming, stage, isLoading, error, feedEntries, submit, reset, newConversation, sessionGen };
 }
