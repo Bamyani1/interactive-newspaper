@@ -46,6 +46,17 @@ vi.mock("@/src/lib/rate-limit", () => ({
   getClientIp: () => "127.0.0.1",
 }));
 
+vi.mock("@/src/lib/agent-loop", () => ({
+  runAgentLoop: vi.fn(),
+}));
+
+vi.mock("@/src/lib/conversation-store", () => ({
+  getConversationHistory: vi.fn(() => []),
+  addConversationTurn: vi.fn(),
+  newSessionId: vi.fn(() => "test-session-id"),
+  formatHistoryForPrompt: vi.fn(() => ""),
+}));
+
 import {
   POST,
   _setGlobalDeadlineForTests,
@@ -59,6 +70,8 @@ import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
+import { runAgentLoop } from "@/src/lib/agent-loop";
+import { addConversationTurn } from "@/src/lib/conversation-store";
 
 function makeRequest(
   body: Record<string, unknown>,
@@ -957,5 +970,322 @@ describe("POST /api/ask", () => {
     // client differentiates by receiving 'error' instead.
     const doneEvent = events.find((e) => e.type === "done");
     expect(doneEvent).toBeUndefined();
+  });
+});
+
+describe("Complexity routing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Pipeline answer",
+      citations: [],
+      confidence: "medium",
+    });
+  });
+
+  it("routes to agent when complexity=complex (JSON path)", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "evolution of Greek life",
+      ftsQuery: "Greek life fraternity sorority",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Greek life changed significantly [1965-03-15-4].",
+      citations: [
+        { articleId: "1965-03-15-4", headline: "Greek Life Review", editionDate: "1965-03-15" },
+      ],
+      confidence: "high",
+      toolCallCount: 3,
+      rounds: 2,
+      articleMeta: new Map([
+        ["1965-03-15-4", {
+          headline: "Greek Life Review",
+          editionDate: "1965-03-15",
+          category: "Campus News",
+          summary: "A review of Greek life",
+          byline: "Staff",
+          bodySnippet: "Fraternities and sororities...",
+          imageUrls: [],
+        }],
+      ]),
+    });
+
+    const response = await POST(makeRequest({ question: "How did Greek life evolve from 1960 to 2000?" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(runAgentLoop).toHaveBeenCalledTimes(1);
+    expect(embedQuery).not.toHaveBeenCalled();
+    expect(body.answer).toContain("Greek life changed");
+    expect(body.meta.complexity).toBe("complex");
+    expect(body.meta.agentSteps).toBe(2);
+    expect(body.meta.agentToolCalls).toBe(3);
+  });
+
+  it("populates sourceArticles from agent metadata", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Answer [1965-03-15-4].",
+      citations: [
+        { articleId: "1965-03-15-4", headline: "Test", editionDate: "1965-03-15" },
+      ],
+      confidence: "high",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map([
+        ["1965-03-15-4", {
+          headline: "Test",
+          editionDate: "1965-03-15",
+          category: "News",
+          summary: "Summary",
+          byline: "Author",
+          bodySnippet: "Snippet",
+          imageUrls: ["img.jpg"],
+        }],
+      ]),
+    });
+
+    const response = await POST(makeRequest({ question: "complex question" }));
+    const body = await response.json();
+
+    expect(body.sourceArticles).toHaveLength(1);
+    expect(body.sourceArticles[0].id).toBe("1965-03-15-4");
+    expect(body.sourceArticles[0].category).toBe("News");
+    expect(body.sourceArticles[0].bodySnippet).toBe("Snippet");
+    expect(body.sourceArticles[0].imageUrls).toEqual(["img.jpg"]);
+  });
+
+  it("uses pipeline when complexity=simple", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "homecoming 1965",
+      ftsQuery: "homecoming 1965",
+      mode: "text",
+      complexity: "simple",
+    });
+
+    const response = await POST(makeRequest({ question: "What was the 1965 homecoming like?" }));
+    expect(response.status).toBe(200);
+    expect(runAgentLoop).not.toHaveBeenCalled();
+    expect(embedQuery).toHaveBeenCalled();
+  });
+
+  it("stores conversation turn for agent path", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Agent answer.",
+      citations: [{ articleId: "a1", headline: "H", editionDate: "1960-01-01" }],
+      confidence: "high",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map(),
+    });
+
+    await POST(makeRequest({ question: "complex q" }));
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "complex q",
+      "Agent answer.",
+      ["a1"],
+    );
+  });
+});
+
+describe("CRAG retry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "obscure topic",
+      ftsQuery: "obscure topic",
+      mode: "text",
+      complexity: "simple",
+    });
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+  });
+
+  it("retries with broader query when reranker filters all articles", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ ...mockArticle, relevanceScore: 5 }]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Found on retry.",
+      citations: [],
+      confidence: "medium",
+    });
+
+    const response = await POST(makeRequest({ question: "obscure topic" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(reformulateQuery).toHaveBeenCalledTimes(2);
+    expect(rerankArticles).toHaveBeenCalledTimes(2);
+    expect(body.answer).toBe("Found on retry.");
+  });
+
+  it("returns low confidence when retry also yields no articles", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Not enough information.",
+      citations: [],
+      confidence: "low",
+    });
+
+    const response = await POST(makeRequest({ question: "obscure topic" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.confidence).toBe("low");
+  });
+});
+
+describe("Streaming + agent", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "Answer." };
+        yield { type: "done", answer: "Answer.", citations: [], confidence: "medium" };
+      })(),
+    );
+  });
+
+  it("routes streaming complex questions to agent with SSE events", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "Greek life evolution",
+      ftsQuery: "Greek life",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Agent streaming answer.",
+      citations: [{ articleId: "1965-03-15-4", headline: "GL", editionDate: "1965-03-15" }],
+      confidence: "high",
+      toolCallCount: 2,
+      rounds: 1,
+      articleMeta: new Map(),
+    });
+
+    const response = await POST(makeRequest({ question: "How did Greek life evolve?" }, { stream: true }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("text/event-stream");
+
+    const events = await readSseEvents(response);
+    const stageEvents = events.filter((e) => e.type === "stage");
+    expect(stageEvents.some((e) => e.name === "agent")).toBe(true);
+
+    const doneEvent = events.find((e) => e.type === "done");
+    expect(doneEvent).toBeDefined();
+    expect(doneEvent?.answer).toBe("Agent streaming answer.");
+    expect((doneEvent?.meta as Record<string, unknown>)?.complexity).toBe("complex");
+    expect((doneEvent?.meta as Record<string, unknown>)?.agentSteps).toBe(1);
+  });
+
+  it("stores conversation turn in streaming agent path", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Streaming agent answer.",
+      citations: [],
+      confidence: "medium",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map(),
+    });
+
+    const response = await POST(makeRequest({ question: "streaming complex q" }, { stream: true }));
+    await readSseEvents(response);
+
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "streaming complex q",
+      "Streaming agent answer.",
+      [],
+    );
+  });
+
+  it("includes complexity in streaming pipeline done event", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "simple question",
+      ftsQuery: "simple question",
+      mode: "text",
+      complexity: "simple",
+    });
+
+    const response = await POST(makeRequest({ question: "simple question" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    const doneEvent = events.find((e) => e.type === "done");
+    expect(doneEvent).toBeDefined();
+    expect((doneEvent?.meta as Record<string, unknown>)?.complexity).toBe("simple");
+  });
+
+  it("emits generic error for streaming agent failure", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("Gemini API key invalid"),
+    );
+
+    const response = await POST(makeRequest({ question: "fail question" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent?.stage).toBe("agent");
+    expect(errorEvent?.message).not.toContain("Gemini API key");
+    expect(errorEvent?.message).toContain("error occurred");
+  });
+
+  it("stores conversation turn in streaming pipeline path", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "simple pipeline",
+      ftsQuery: "simple pipeline",
+      mode: "text",
+      complexity: "simple",
+    });
+
+    const response = await POST(makeRequest({ question: "pipeline streaming q" }, { stream: true }));
+    await readSseEvents(response);
+
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "pipeline streaming q",
+      "Answer.",
+      [],
+    );
   });
 });
