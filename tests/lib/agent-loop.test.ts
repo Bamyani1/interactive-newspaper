@@ -121,7 +121,7 @@ describe("agent-loop", () => {
                 results: [],
             });
 
-            for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < 8; i++) {
                 mockGenerateContent({
                     functionCalls: [{ name: "search_archive", args: { query: `attempt ${i}` } }],
                     parts: [{ functionCall: { name: "search_archive", args: { query: `attempt ${i}` } } }],
@@ -129,7 +129,7 @@ describe("agent-loop", () => {
             }
 
             const result = await runAgentLoop("impossible question");
-            expect(result.rounds).toBe(5);
+            expect(result.rounds).toBe(8);
             expect(result.answer).toContain("unable to complete my research");
             expect(result.confidence).toBe("low");
         });
@@ -139,18 +139,18 @@ describe("agent-loop", () => {
                 results: [],
             });
 
-            for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < 8; i++) {
                 mockGenerateContent({
                     functionCalls: [{ name: "search_archive", args: { query: `q${i}` } }],
                     parts: [
-                        { text: i === 4 ? "Partial answer so far" : undefined },
+                        { text: i === 7 ? "Partial answer so far" : undefined },
                         { functionCall: { name: "search_archive", args: { query: `q${i}` } } },
                     ],
                 });
             }
 
             const result = await runAgentLoop("hard question");
-            expect(result.rounds).toBe(5);
+            expect(result.rounds).toBe(8);
             expect(result.answer).toContain("Partial answer so far");
             expect(result.answer).toContain("incomplete");
         });
