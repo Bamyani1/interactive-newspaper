@@ -7,3 +7,5 @@ export { SourceList } from "./components/SourceList";
 export { TimelineGallery } from "./components/TimelineGallery";
 export { ResearchFeed } from "./components/ResearchFeed";
 export { ResearchSummary } from "./components/ResearchSummary";
+export { LowConfidenceCaveat } from "./components/LowConfidenceCaveat";
+export { FollowUpQuestions } from "./components/FollowUpQuestions";
