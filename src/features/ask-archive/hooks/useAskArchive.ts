@@ -78,6 +78,7 @@ export function useAskArchive(): UseAskArchiveReturn {
   const [error, setError] = useState<string | null>(null);
   const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const feedIdRef = useRef(0);
 
   const submit = useCallback((question: string) => {
     const trimmed = question.trim();
@@ -151,10 +152,9 @@ export function useAskArchive(): UseAskArchiveReturn {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buf = "";
-        let feedId = 0;
         const addFeed = (text: string, type: FeedEntry["type"]) => {
-          feedId++;
-          setFeedEntries(prev => [...prev, { id: `fe-${feedId}`, text, type }]);
+          feedIdRef.current++;
+          setFeedEntries(prev => [...prev, { id: `fe-${feedIdRef.current}`, text, type }]);
         };
 
         while (true) {
