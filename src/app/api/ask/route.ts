@@ -24,6 +24,7 @@ import type { RankedArticle } from "@/src/lib/reranker";
 import type { AskResponse, Citation } from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 import { getCachedAnswer, setCachedAnswer } from "@/src/lib/answer-cache";
+import { checkDailyBudget, DailyBudgetExceededError } from "@/src/lib/cost-tracker";
 
 const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
@@ -887,6 +888,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             { error: `Question too long (${question.length} chars). Maximum is ${MAX_QUESTION_LENGTH}.` },
             { status: 400 },
         );
+    }
+
+    // ── Daily budget kill switch ──
+    // Fail fast if the project has already burned through today's AI
+    // spend ceiling. Covers both streaming and non-streaming paths
+    // before any Gemini call is issued.
+    try {
+        await checkDailyBudget();
+    } catch (err) {
+        if (err instanceof DailyBudgetExceededError) {
+            console.warn(
+                JSON.stringify({
+                    level: "warn",
+                    route: "/api/ask",
+                    requestId,
+                    stage: "budget",
+                    msg: "daily budget exceeded",
+                    spentUsd: err.spentUsd,
+                    budgetUsd: err.budgetUsd,
+                }),
+            );
+            return NextResponse.json(
+                {
+                    error: "Daily AI budget reached. Please try again tomorrow.",
+                    cause: "daily_budget_reached",
+                    stage: "budget",
+                    requestId,
+                },
+                {
+                    status: 429,
+                    headers: { "Retry-After": "3600" },
+                },
+            );
+        }
+        throw err;
     }
 
     // ── Session handling ──

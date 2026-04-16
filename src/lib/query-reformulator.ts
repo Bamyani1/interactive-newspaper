@@ -9,6 +9,7 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import { recordUsage } from "@/src/lib/cost-tracker";
 import { formatHistoryForPrompt } from "@/src/lib/conversation-store";
 import type { ConversationTurn } from "@/src/lib/conversation-store";
 
@@ -107,6 +108,13 @@ export async function reformulateQuery(
         });
 
         clearTimeout(timeout);
+
+        // Fire-and-forget; recordUsage swallows its own errors so this
+        // can't reject. `void` marks the intentional no-await.
+        void recordUsage(REFORMULATION_MODEL, response.usageMetadata, {
+            requestId: opts.requestId,
+            op: "reformulate",
+        });
 
         const text = response.text?.trim() ?? "";
         return parseReformulationResponse(text, fallback);

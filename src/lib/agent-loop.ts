@@ -9,6 +9,7 @@
 
 import type { Content, FunctionDeclaration, Part } from "@google/genai";
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import { recordUsage } from "@/src/lib/cost-tracker";
 import { AGENT_TOOL_DECLARATIONS, executeTool } from "@/src/lib/agent-tools";
 import type { Citation } from "@/src/types";
 
@@ -265,6 +266,11 @@ export async function runAgentLoop(
                     thinkingConfig: { thinkingBudget: 0 },
                     abortSignal: signal,
                 },
+            });
+
+            void recordUsage(AGENT_MODEL, response.usageMetadata, {
+                requestId,
+                op: `agent.round${round}`,
             });
 
             const functionCalls = response.functionCalls;
