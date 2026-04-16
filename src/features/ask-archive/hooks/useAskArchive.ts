@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import type { AskResponse } from "@/src/types";
 
 export type AskStage = "reformulate" | "embed" | "retrieve" | "rerank" | "generate" | "agent";
@@ -30,6 +30,10 @@ interface UseAskArchiveReturn {
 // localStorage key under which the current conversation's sessionId
 // is kept. Same tab → same session across page reloads.
 const SESSION_STORAGE_KEY = "owu-ask-session-id";
+// localStorage key under which the most recent answer is cached so
+// a page reload can restore the visible answer instead of an empty
+// input. Tied to sessionId so new-conversation wipes it.
+const LAST_ANSWER_STORAGE_KEY = "owu-ask-last-answer";
 
 function readOrCreateSessionId(): string {
   if (typeof window === "undefined") return "";
@@ -111,6 +115,22 @@ export function useAskArchive(): UseAskArchiveReturn {
   // Session id is lazy-initialized on first submit, not at mount, so
   // SSR/hydration doesn't clash with localStorage access.
   const sessionIdRef = useRef<string | null>(null);
+
+  // Restore the previous answer from localStorage on first render so
+  // reloading the Ask page doesn't wipe the answer the user was reading.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(LAST_ANSWER_STORAGE_KEY);
+      if (!raw) return;
+      const cached = JSON.parse(raw) as AskResponse;
+      if (cached && typeof cached.question === "string" && cached.answer) {
+        setAnswer(cached);
+      }
+    } catch {
+      // corrupt or unavailable storage — ignore
+    }
+  }, []);
 
   const submit = useCallback((question: string) => {
     const trimmed = question.trim();
@@ -265,6 +285,18 @@ export function useAskArchive(): UseAskArchiveReturn {
                 setAnswer(pending);
                 setIsStreaming(false);
                 setStage(null);
+                // Persist for reload recovery. JSON.stringify is safe
+                // on the AskResponse shape (plain objects/arrays/strings).
+                if (typeof window !== "undefined") {
+                  try {
+                    window.localStorage.setItem(
+                      LAST_ANSWER_STORAGE_KEY,
+                      JSON.stringify(pending),
+                    );
+                  } catch {
+                    // quota or disabled storage — skip persistence
+                  }
+                }
               } else if (event.type === "error") {
                 throw new Error(event.message || "Request failed");
               }
@@ -299,11 +331,12 @@ export function useAskArchive(): UseAskArchiveReturn {
   }, []);
 
   const newConversation = useCallback(() => {
-    // Drop the persisted id so the next submit gets a fresh session.
-    // Also clear the visible state so the UI reads as "starting over".
+    // Drop the persisted id and cached answer so the next submit
+    // starts fresh and no stale response re-hydrates on reload.
     if (typeof window !== "undefined") {
       try {
         window.localStorage.removeItem(SESSION_STORAGE_KEY);
+        window.localStorage.removeItem(LAST_ANSWER_STORAGE_KEY);
       } catch {
         // localStorage disabled; nothing to remove.
       }
