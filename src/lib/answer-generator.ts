@@ -58,6 +58,7 @@ RULES — follow these exactly:
 7. Preserve exact names, dates, and figures from the sources — do not paraphrase numbers or proper nouns.
 8. If multiple sources discuss the same topic, synthesize them and cite all relevant sources.
 9. Never make up quotes, statistics, or events not explicitly stated in the sources.
+10. If the question asks about change over time or compares two or more eras, organize the answer with ## section headers for each era, and be explicit when source coverage is asymmetric (e.g., "The archive has more coverage of the 1980s than the 1960s for this topic, so this comparison is partial"). Never imply balanced evidence when the sources are skewed.
 
 RESPONSE FORMAT:
 Begin with a line: "Relevant sources: [Source N, Source M, ...]" listing only sources you will actually cite.
@@ -136,7 +137,8 @@ export async function generateAnswer(
             : null;
     const avgRerankerScore =
         sourceArticles.reduce((s, a) => s + a.relevanceScore, 0) / sourceArticles.length;
-    const confidence = computeConfidence(avgDistance, sourceArticles.length, avgRerankerScore);
+    const eraDistribution = buildEraDistribution(sourceArticles);
+    const confidence = computeConfidence(avgDistance, sourceArticles.length, avgRerankerScore, eraDistribution);
 
     // If we have vector results AND they're all far away AND the reranker
     // agrees they're weak, skip the expensive Gemini call. Don't trigger
@@ -289,10 +291,12 @@ export async function* generateAnswerStream(
     const avgRerankerScore =
         sourceArticles.reduce((s, a) => s + a.relevanceScore, 0) /
         sourceArticles.length;
+    const eraDistribution = buildEraDistribution(sourceArticles);
     const confidence = computeConfidence(
         avgDistance,
         sourceArticles.length,
         avgRerankerScore,
+        eraDistribution,
     );
 
     // Same skip-gemini guard as generateAnswer — distant AND weak reranker
@@ -481,36 +485,72 @@ function parseCitations(
     return citations;
 }
 
+// ─── Era Distribution ────────────────────────────────────────────
+
+function buildEraDistribution(
+    articles: readonly unknown[],
+): Record<string, number> | undefined {
+    const dist: Record<string, number> = {};
+    let hasAny = false;
+    for (const a of articles) {
+        const era = (a as { matchedEra?: string }).matchedEra;
+        if (typeof era === "string") {
+            dist[era] = (dist[era] ?? 0) + 1;
+            hasAny = true;
+        }
+    }
+    return hasAny ? dist : undefined;
+}
+
 // ─── Confidence ──────────────────────────────────────────────────
 
 function computeConfidence(
     avgDistance: number | null,
     articleCount: number,
     avgRerankerScore: number,
+    eraDistribution?: Record<string, number>,
 ): "low" | "medium" | "high" {
+    let baseline: "low" | "medium" | "high";
+
     // FTS-only path: no vector results to ground confidence in distance.
     // Use the reranker score as the primary signal instead of inventing a
     // fake "medium" default distance, which used to cap FTS-only confidence
     // at medium even with strong reranker scores.
     if (avgDistance === null) {
-        if (avgRerankerScore >= 8) return "high";
-        if (avgRerankerScore >= 5) return "medium";
-        return "low";
+        if (avgRerankerScore >= 8) baseline = "high";
+        else if (avgRerankerScore >= 5) baseline = "medium";
+        else baseline = "low";
+    } else {
+        // Vector-aware path. Thresholds calibrated for gemini-embedding-2-preview
+        // distance distribution:
+        // - Strong matches: < 0.26 (protests, Greek life, cagers)
+        // - Good matches: 0.26 - 0.30 (food, war, general topics)
+        // - Weak matches: > 0.30 (quantum physics, off-topic)
+        //
+        // Reranker scores (0-10) provide an independent relevance signal:
+        // - >=7: reranker is confident articles are relevant
+        // - >=5: somewhat relevant
+        // - <5: tangential or worse
+        if (avgDistance < 0.26 && avgRerankerScore >= 7 && articleCount >= 2) baseline = "high";
+        else if (avgRerankerScore >= 8 && articleCount >= 2) baseline = "high";
+        else if (avgDistance < 0.30 && avgRerankerScore >= 5) baseline = "medium";
+        else if (avgRerankerScore >= 6) baseline = "medium";
+        else baseline = "low";
     }
 
-    // Vector-aware path. Thresholds calibrated for gemini-embedding-2-preview
-    // distance distribution:
-    // - Strong matches: < 0.26 (protests, Greek life, cagers)
-    // - Good matches: 0.26 - 0.30 (food, war, general topics)
-    // - Weak matches: > 0.30 (quantum physics, off-topic)
-    //
-    // Reranker scores (0-10) provide an independent relevance signal:
-    // - >=7: reranker is confident articles are relevant
-    // - >=5: somewhat relevant
-    // - <5: tangential or worse
-    if (avgDistance < 0.26 && avgRerankerScore >= 7 && articleCount >= 2) return "high";
-    if (avgRerankerScore >= 8 && articleCount >= 2) return "high"; // strong reranker rescues mediocre distance
-    if (avgDistance < 0.30 && avgRerankerScore >= 5) return "medium";
-    if (avgRerankerScore >= 6) return "medium";
-    return "low";
+    // Cap at "medium" when per-era coverage is skewed beyond 60/40.
+    // Prevents false-high confidence on comparative answers where one era
+    // has 8 sources and the other has 1.
+    if (eraDistribution && baseline === "high") {
+        const counts = Object.values(eraDistribution);
+        if (counts.length >= 2) {
+            const min = Math.min(...counts);
+            const max = Math.max(...counts);
+            if (max > 0 && min / max < 0.4) {
+                baseline = "medium";
+            }
+        }
+    }
+
+    return baseline;
 }
