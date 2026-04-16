@@ -1,15 +1,25 @@
-import { describe, it, expect, beforeEach } from "vitest";
+/** @vitest-environment node */
+import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
+
+// Mock the Neon SQL tag so tests can control each returned row.
+const { sqlMock } = vi.hoisted(() => ({ sqlMock: vi.fn() }));
+vi.mock("@neondatabase/serverless", () => ({ neon: () => sqlMock }));
+
+// Ensure lazy getSql() returns our mock (requires a non-empty URL).
+beforeAll(() => {
+    process.env.DATABASE_URL = process.env.DATABASE_URL ?? "postgres://fake/test";
+});
+
 import {
     getConversationHistory,
     addConversationTurn,
     newSessionId,
     formatHistoryForPrompt,
-    _clearSessionsForTests,
 } from "@/src/lib/conversation-store";
 
 describe("conversation-store", () => {
     beforeEach(() => {
-        _clearSessionsForTests();
+        sqlMock.mockReset();
     });
 
     it("generates unique session IDs", () => {
@@ -19,46 +29,76 @@ describe("conversation-store", () => {
         expect(a.length).toBeGreaterThan(8);
     });
 
-    it("returns empty history for unknown session", () => {
-        expect(getConversationHistory("nonexistent")).toEqual([]);
+    it("returns empty history when the DB returns no rows", async () => {
+        sqlMock.mockResolvedValueOnce([]);
+        expect(await getConversationHistory("unknown-session")).toEqual([]);
     });
 
-    it("stores and retrieves conversation turns", () => {
-        const sid = "test-session";
-        addConversationTurn(sid, "What was the 1965 homecoming?", "It was great.", ["art-1"]);
-        const history = getConversationHistory(sid);
-        expect(history).toHaveLength(1);
-        expect(history[0].question).toBe("What was the 1965 homecoming?");
-        expect(history[0].answer).toBe("It was great.");
+    it("maps DB rows to ConversationTurn objects in chronological order", async () => {
+        // The SELECT orders DESC so we pass newest first; the function
+        // reverses internally to return oldest-first.
+        const now = new Date("2026-04-16T12:00:00Z");
+        sqlMock.mockResolvedValueOnce([
+            {
+                question: "Q2",
+                answer: "A2",
+                cited_article_ids: ["art-2"],
+                created_at: now,
+            },
+            {
+                question: "Q1",
+                answer: "A1",
+                cited_article_ids: ["art-1"],
+                created_at: new Date(now.getTime() - 1000),
+            },
+        ]);
+
+        const history = await getConversationHistory("sid");
+        expect(history).toHaveLength(2);
+        expect(history[0].question).toBe("Q1");
+        expect(history[1].question).toBe("Q2");
         expect(history[0].citedArticleIds).toEqual(["art-1"]);
+        expect(history[1].citedArticleIds).toEqual(["art-2"]);
     });
 
-    it("caps at 5 turns (sliding window)", () => {
-        const sid = "test-session";
-        for (let i = 0; i < 7; i++) {
-            addConversationTurn(sid, `Q${i}`, `A${i}`, []);
-        }
-        const history = getConversationHistory(sid);
-        expect(history).toHaveLength(5);
-        expect(history[0].question).toBe("Q2");
-        expect(history[4].question).toBe("Q6");
-    });
-
-    it("truncates long answers to 500 chars", () => {
-        const sid = "test-session";
+    it("issues INSERT with truncated answer on addConversationTurn", async () => {
+        sqlMock.mockResolvedValueOnce(undefined);
         const longAnswer = "x".repeat(1000);
-        addConversationTurn(sid, "Q", longAnswer, []);
-        const history = getConversationHistory(sid);
-        expect(history[0].answer).toHaveLength(500);
+        await addConversationTurn("sid", "What?", longAnswer, ["a", "b"]);
+
+        expect(sqlMock).toHaveBeenCalledTimes(1);
+        const substitutions = sqlMock.mock.calls[0].slice(1);
+        // Answer substitution should be capped at 500 chars
+        const stringArgs = substitutions.filter((v: unknown) => typeof v === "string");
+        const truncatedMatch = stringArgs.find(
+            (s: unknown) => typeof s === "string" && (s as string).startsWith("x") && (s as string).length === 500,
+        );
+        expect(truncatedMatch).toBeDefined();
     });
 
-    it("returns a copy of history (not a reference)", () => {
-        const sid = "test-session";
-        addConversationTurn(sid, "Q1", "A1", []);
-        const h1 = getConversationHistory(sid);
-        const h2 = getConversationHistory(sid);
-        expect(h1).not.toBe(h2);
-        expect(h1).toEqual(h2);
+    it("does not throw when the DB read fails", async () => {
+        sqlMock.mockRejectedValueOnce(new Error("neon down"));
+        await expect(getConversationHistory("sid")).resolves.toEqual([]);
+    });
+
+    it("does not throw when the DB write fails", async () => {
+        sqlMock.mockRejectedValueOnce(new Error("neon down"));
+        await expect(
+            addConversationTurn("sid", "Q", "A", []),
+        ).resolves.toBeUndefined();
+    });
+
+    it("treats a nullish cited_article_ids as an empty array", async () => {
+        sqlMock.mockResolvedValueOnce([
+            {
+                question: "Q",
+                answer: "A",
+                cited_article_ids: null,
+                created_at: new Date(),
+            },
+        ]);
+        const history = await getConversationHistory("sid");
+        expect(history[0].citedArticleIds).toEqual([]);
     });
 });
 

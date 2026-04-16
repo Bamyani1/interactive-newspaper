@@ -389,7 +389,7 @@ async function handleStreamingAsk(params: {
                             onProgress: (event) => send(event),
                         });
 
-                        addConversationTurn(
+                        void addConversationTurn(
                             sessionId,
                             question,
                             agentResult.answer,
@@ -473,7 +473,7 @@ async function handleStreamingAsk(params: {
                         },
                     });
                     send({ type: "delta", text: cached.answer });
-                    addConversationTurn(
+                    void addConversationTurn(
                         sessionId,
                         question,
                         cached.answer,
@@ -741,7 +741,7 @@ async function handleStreamingAsk(params: {
                 const generationTimeMs = Date.now() - generationStart;
                 const totalTimeMs = Date.now() - totalStart;
 
-                addConversationTurn(
+                void addConversationTurn(
                     sessionId,
                     question,
                     finalAnswer,
@@ -928,7 +928,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // ── Session handling ──
     const sessionId = body.sessionId ?? newSessionId();
     const conversationHistory = body.sessionId
-        ? getConversationHistory(body.sessionId)
+        ? await getConversationHistory(body.sessionId)
         : [];
 
     // ── Streaming branch ──
@@ -1004,7 +1004,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 }),
             );
 
-            addConversationTurn(
+            void addConversationTurn(
                 sessionId,
                 question,
                 agentResult.answer,
@@ -1064,7 +1064,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     complexity,
                 },
             };
-            addConversationTurn(
+            void addConversationTurn(
                 sessionId,
                 question,
                 cachedResponse.answer,
@@ -1296,7 +1296,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const generationTimeMs = Date.now() - generationStart;
 
         // ── Store conversation turn ──
-        addConversationTurn(
+        void addConversationTurn(
             sessionId,
             question,
             answer,
