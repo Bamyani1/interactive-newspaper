@@ -169,6 +169,12 @@
     text-decoration: underline;
 }
 
+.ask-citation-unlinked {
+    color: var(--color-accent);
+    font-size: 0.8em;
+    opacity: 0.6;
+}
+
 /* =========================================
    SOURCE CARD
    ========================================= */
