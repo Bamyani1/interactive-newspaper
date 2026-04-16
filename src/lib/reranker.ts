@@ -9,6 +9,7 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import { recordUsage } from "@/src/lib/cost-tracker";
 import type { RetrievedArticle } from "@/src/lib/db";
 
 const RERANKER_MODEL = "gemini-3-flash-preview";
@@ -87,6 +88,11 @@ export async function rerankArticles(
         });
 
         clearTimeout(timeout);
+
+        void recordUsage(RERANKER_MODEL, response.usageMetadata, {
+            requestId: options.requestId,
+            op: "rerank",
+        });
 
         const text = response.text?.trim() ?? "";
         const scores = parseScores(text, articles.length);

@@ -7,6 +7,7 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import { recordUsage } from "@/src/lib/cost-tracker";
 import type { RetrievedArticle } from "@/src/lib/db";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { Citation } from "@/src/types";
@@ -234,6 +235,11 @@ export async function generateAnswer(
 
         clearTimeout(timeout);
 
+        void recordUsage(GENERATION_MODEL, response.usageMetadata, {
+            requestId: opts.requestId,
+            op: "generate",
+        });
+
         const rawText = response.text?.trim() ?? "";
         const { answer: parsedAnswer, followUps } = parseAnswerResponse(rawText);
 
@@ -383,6 +389,9 @@ export async function* generateAnswerStream(
     // and showing partial JSON tokens to the user would be noise. Perceived
     // progress during loading is handled by the ResearchFeed component.
     let fullText = "";
+    // usageMetadata typically lands in the final streamed chunk; record
+    // the last non-empty one so our counters reflect the whole call.
+    let finalUsageMetadata: import("@google/genai").GenerateContentResponseUsageMetadata | undefined;
 
     try {
         const stream = await client.models.generateContentStream({
@@ -398,6 +407,7 @@ export async function* generateAnswerStream(
         });
 
         for await (const chunk of stream) {
+            if (chunk.usageMetadata) finalUsageMetadata = chunk.usageMetadata;
             const chunkText =
                 typeof chunk.text === "string" ? chunk.text : "";
             if (!chunkText) continue;
@@ -405,6 +415,11 @@ export async function* generateAnswerStream(
         }
 
         clearTimeout(timeout);
+
+        void recordUsage(GENERATION_MODEL, finalUsageMetadata, {
+            requestId: opts.requestId,
+            op: "generate.stream",
+        });
 
         const { answer: parsedAnswer, followUps } = parseAnswerResponse(fullText);
 
