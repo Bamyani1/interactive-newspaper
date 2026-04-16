@@ -41,6 +41,8 @@ type StreamEvent =
       answer: string;
       citations: AskResponse["citations"];
       confidence: AskResponse["confidence"];
+      sourceArticles?: AskResponse["sourceArticles"];
+      sessionId?: string;
       meta: AskResponse["meta"];
     }
   | {
@@ -181,6 +183,8 @@ export function useAskArchive(): UseAskArchiveReturn {
                   citations: event.citations,
                   confidence: event.confidence,
                   meta: event.meta,
+                  ...(event.sourceArticles ? { sourceArticles: event.sourceArticles } : {}),
+                  ...(event.sessionId ? { sessionId: event.sessionId } : {}),
                 };
                 setAnswer(pending);
                 setIsStreaming(false);
