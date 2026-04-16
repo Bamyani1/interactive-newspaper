@@ -30,15 +30,18 @@ function buildArticleIdIndex(sources: SourceArticle[]): Map<string, number> {
 
 /**
  * Renders a plain text segment with **bold** and *italic* formatting.
+ * The italic matcher caps spans at 80 chars and disallows newlines so
+ * unbalanced asterisks from the model don't cause italic to swallow
+ * whole paragraphs.
  */
 function renderFormattedText(text: string, keyPrefix: string): React.ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*\n]{1,80}\*)/g);
   return parts.map((part, i) => {
     const boldMatch = part.match(/^\*\*([^*]+)\*\*$/);
     if (boldMatch) {
       return <strong key={`${keyPrefix}-f${i}`}>{boldMatch[1]}</strong>;
     }
-    const italicMatch = part.match(/^\*([^*]+)\*$/);
+    const italicMatch = part.match(/^\*([^*\n]{1,80})\*$/);
     if (italicMatch) {
       return <em key={`${keyPrefix}-f${i}`}>{italicMatch[1]}</em>;
     }
@@ -114,8 +117,11 @@ function renderInlineWithCitations(
 }
 
 /**
- * Parses answer text into structured blocks: ## headers become <h3>,
- * double-newlines become paragraph breaks, and citations become links.
+ * Parses answer text into structured blocks: ## through ###### headers
+ * become <h3>, double-newlines become paragraph breaks, lines that
+ * start with `*` or `-` (bullet markers the model sometimes emits
+ * despite the prompt ban) have the marker stripped, and citations
+ * become links.
  */
 function renderAnswerWithCitations(
   text: string,
@@ -135,8 +141,8 @@ function renderAnswerWithCitations(
     currentParagraph = [];
   };
 
-  for (const line of lines) {
-    const headerMatch = line.match(/^##\s+(.+)$/);
+  for (const rawLine of lines) {
+    const headerMatch = rawLine.match(/^#{2,6}\s+(.+)$/);
     if (headerMatch) {
       flushParagraph();
       blocks.push(
@@ -145,11 +151,17 @@ function renderAnswerWithCitations(
         </h3>
       );
       blockIndex++;
-    } else if (line.trim() === "") {
-      flushParagraph();
-    } else {
-      currentParagraph.push(line);
+      continue;
     }
+    if (rawLine.trim() === "") {
+      flushParagraph();
+      continue;
+    }
+    // Strip leading bullet markers (* or -) the model emits despite the
+    // "no bullet points" rule in the system prompt. Only the line-start
+    // marker is stripped; inline *italic* is untouched.
+    const stripped = rawLine.replace(/^\s*[*\-]\s+/, "");
+    currentParagraph.push(stripped);
   }
   flushParagraph();
 
