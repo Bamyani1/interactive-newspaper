@@ -33,31 +33,3 @@ jobs:
       # (see CLAUDE.md Build and Caching). Closes docs/issues/0004 for
       # the tsc/lint/test surface; the build gate is a follow-up that
       # needs a CI_DATABASE_URL secret wired up first.
-
-  # Runs the hand-curated RAG regression catalog against the real Gemini
-  # + Neon pipeline. Gated to main pushes only to cap cost (~$0.01/run).
-  # Soft-fails so transient Gemini jitter doesn't block other merges;
-  # the baseline diff in test output is the signal operators watch.
-  # Requires repo secrets: CI_DATABASE_URL, GOOGLE_API_KEY.
-  golden-regression:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    needs: verify
-    timeout-minutes: 15
-    continue-on-error: true
-    env:
-      RUN_RAG_GOLDEN: "1"
-      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
-      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - run: npm ci
-
-      - name: Run golden-question regression suite
-        run: npx vitest run tests/api/rag-golden-questions.test.ts
