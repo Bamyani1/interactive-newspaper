@@ -5,10 +5,11 @@
  * newspaper articles using Gemini Flash and stores them in Postgres.
  *
  * Usage:
- *   node --import tsx scripts/extract-entities.ts              — extract from unprocessed articles
- *   node --import tsx scripts/extract-entities.ts --force      — reprocess all articles
- *   node --import tsx scripts/extract-entities.ts --dry-run    — show what would be processed
- *   node --import tsx scripts/extract-entities.ts --limit 50   — process only 50 articles
+ *   node --import tsx scripts/extract-entities.ts                    — extract from unprocessed articles
+ *   node --import tsx scripts/extract-entities.ts --force            — reprocess all articles
+ *   node --import tsx scripts/extract-entities.ts --dry-run          — show what would be processed
+ *   node --import tsx scripts/extract-entities.ts --limit 50         — process only 50 articles
+ *   node --import tsx scripts/extract-entities.ts --retry-failed     — retry previously failed articles
  */
 
 import { existsSync, readFileSync } from "fs";
@@ -33,6 +34,7 @@ if (existsSync(envPath)) {
 
 const isForce = process.argv.includes("--force");
 const isDryRun = process.argv.includes("--dry-run");
+const isRetryFailed = process.argv.includes("--retry-failed");
 const limitIdx = process.argv.indexOf("--limit");
 const limit = limitIdx !== -1 ? parseInt(process.argv[limitIdx + 1], 10) : null;
 
@@ -81,14 +83,38 @@ interface Article {
 // ─── Helpers ────────────────────────────────────────────────────
 
 function normalizeName(name: string): string {
-    return name
-        .toLowerCase()
-        .replace(/^(prof\.|dr\.|mr\.|mrs\.|ms\.)\s*/i, "")
-        .trim();
+    let n = name.toLowerCase().trim();
+    // Strip titles
+    n = n.replace(/^(prof\.|dr\.|mr\.|mrs\.|ms\.|rev\.|dean|president)\s*/i, "");
+    // Reverse "Last, First" → "first last"
+    if (/^[^,]+,\s*.+$/.test(n)) {
+        const [last, first] = n.split(",", 2);
+        n = `${first.trim()} ${last.trim()}`;
+    }
+    // Strip middle initials: "john m. smith" → "john smith"
+    n = n.replace(/\s+[a-z]\.\s+/g, " ");
+    // Collapse whitespace and strip trailing punctuation
+    n = n.replace(/\s+/g, " ").replace(/[.,;:]+$/, "").trim();
+    return n;
 }
 
 async function sleep(ms: number): Promise<void> {
     return new Promise((r) => setTimeout(r, ms));
+}
+
+async function recordFailure(articleId: string, errorMessage: string): Promise<void> {
+    try {
+        await sql`
+            INSERT INTO entity_extraction_failures (article_id, error_message, retry_count, last_attempt)
+            VALUES (${articleId}, ${errorMessage}, 1, NOW())
+            ON CONFLICT (article_id) DO UPDATE SET
+                error_message = ${errorMessage},
+                retry_count = entity_extraction_failures.retry_count + 1,
+                last_attempt = NOW()
+        `;
+    } catch {
+        // Don't let failure tracking break the main loop
+    }
 }
 
 async function extractEntities(article: Article): Promise<ExtractedEntity[]> {
@@ -160,20 +186,22 @@ Article body: ${(article.body_plain || "").slice(0, MAX_BODY_CHARS)}`;
                 }
             }
 
-            // JSON parse error or other failure
             console.error(
                 JSON.stringify({
                     level: "error",
                     script: "extract-entities",
-                    article_id: "unknown",
+                    article_id: article.id,
                     msg: "entity extraction failed",
                     err: message,
                 }),
             );
+            await recordFailure(article.id, message);
             return [];
         }
     }
 
+    // Exhausted retries
+    await recordFailure(article.id, "max retries exceeded");
     return [];
 }
 
@@ -184,7 +212,7 @@ async function main() {
 
     console.log(`\nStarting entity extraction...`);
     console.log(
-        `Mode: ${isForce ? "force (reprocess all)" : "incremental (use --force to reprocess all)"}`,
+        `Mode: ${isForce ? "force (reprocess all)" : isRetryFailed ? "retry-failed" : "incremental (use --force to reprocess all)"}`,
     );
 
     // Step 1: Create tables
@@ -213,20 +241,39 @@ async function main() {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_type_normalized
         ON entities(type, normalized_name)
     `;
+    await sql`
+        CREATE TABLE IF NOT EXISTS entity_extraction_failures (
+            article_id TEXT PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
+            error_message TEXT,
+            retry_count INTEGER DEFAULT 0,
+            last_attempt TIMESTAMP DEFAULT NOW()
+        )
+    `;
 
-    // Step 2: Find unprocessed articles
-    const articles = (isForce
-        ? await sql`
+    // Step 2: Find articles to process
+    let articles: Article[];
+    if (isRetryFailed) {
+        articles = (await sql`
+            SELECT a.id, a.headline, a.byline, a.body_plain, a.edition_date, a.category
+            FROM articles a
+            JOIN entity_extraction_failures f ON f.article_id = a.id
+            WHERE f.retry_count < 5
+            ORDER BY f.retry_count ASC, a.id
+        `) as unknown as Article[];
+    } else if (isForce) {
+        articles = (await sql`
             SELECT a.id, a.headline, a.byline, a.body_plain, a.edition_date, a.category
             FROM articles a
             ORDER BY a.id
-          `
-        : await sql`
+        `) as unknown as Article[];
+    } else {
+        articles = (await sql`
             SELECT a.id, a.headline, a.byline, a.body_plain, a.edition_date, a.category
             FROM articles a
             WHERE a.id NOT IN (SELECT DISTINCT article_id FROM article_entities)
             ORDER BY a.id
-          `) as unknown as Article[];
+        `) as unknown as Article[];
+    }
 
     const toProcess = limit ? articles.slice(0, limit) : articles;
 
