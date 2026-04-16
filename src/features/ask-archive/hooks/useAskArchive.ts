@@ -41,6 +41,7 @@ type StreamEvent =
       confidence: AskResponse["confidence"];
       sourceArticles?: AskResponse["sourceArticles"];
       sessionId?: string;
+      followUpQuestions?: string[];
       meta: AskResponse["meta"];
     }
   | { type: "tool_call"; tool: string; round: number; args?: Record<string, unknown> }
@@ -222,6 +223,7 @@ export function useAskArchive(): UseAskArchiveReturn {
                   meta: event.meta,
                   ...(event.sourceArticles ? { sourceArticles: event.sourceArticles } : {}),
                   ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+                  ...(event.followUpQuestions ? { followUpQuestions: event.followUpQuestions } : {}),
                 };
                 setAnswer(pending);
                 setIsStreaming(false);

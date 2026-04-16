@@ -4,7 +4,7 @@ import React, { useRef, useEffect } from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
 import { SiteFooter } from "@/features/footer";
-import { AskInput, AnswerPanel, SourceList, TimelineGallery, ResearchFeed, ResearchSummary, useAskArchive } from "@/features/ask-archive";
+import { AskInput, AnswerPanel, SourceList, TimelineGallery, ResearchFeed, ResearchSummary, LowConfidenceCaveat, FollowUpQuestions, useAskArchive } from "@/features/ask-archive";
 import { FeedbackButtons } from "@/features/ask-archive/components/FeedbackButtons";
 
 export default function AskPage() {
@@ -64,6 +64,9 @@ export default function AskPage() {
                 {answer.mode === "visual" && !isStreaming && (
                   <TimelineGallery response={answer} />
                 )}
+                {!isStreaming && (
+                  <LowConfidenceCaveat confidence={answer.confidence} />
+                )}
                 {(hasAnswerText || !isStreaming) && (
                   <AnswerPanel response={answer} isStreaming={isStreaming} />
                 )}
@@ -71,6 +74,11 @@ export default function AskPage() {
                   <>
                     <ResearchSummary response={answer} />
                     <FeedbackButtons response={answer} />
+                    <FollowUpQuestions
+                      questions={answer.followUpQuestions ?? []}
+                      onSelect={submit}
+                      disabled={isLoading}
+                    />
                   </>
                 )}
                 <SourceList sources={answer.sourceArticles} />
