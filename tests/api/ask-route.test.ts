@@ -1304,3 +1304,109 @@ describe("Streaming + agent", () => {
     );
   });
 });
+
+describe("Answer cache (streaming)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "cache test",
+      ftsQuery: "cache test",
+      mode: "text",
+      complexity: "simple",
+    });
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "Cached answer." };
+        yield {
+          type: "done",
+          answer: "Cached answer.",
+          citations: [
+            {
+              articleId: "1960-01-07-0",
+              headline: "Test Headline",
+              editionDate: "1960-01-07",
+            },
+          ],
+          confidence: "high",
+          followUps: ["Tell me more?", "Any sources?"],
+        };
+      })(),
+    );
+  });
+
+  it("replays the cached response with meta.cacheHit:true on the second streaming POST", async () => {
+    // First request populates the cache
+    const first = await POST(
+      makeRequest({ question: "cache test" }, { stream: true }),
+    );
+    const firstEvents = await readSseEvents(first);
+    const firstDone = firstEvents.find((e) => e.type === "done");
+    expect(firstDone).toBeDefined();
+    expect((firstDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
+    expect(generateAnswerStream).toHaveBeenCalledTimes(1);
+    expect(embedQuery).toHaveBeenCalledTimes(1);
+
+    // Second request hits the cache — skips embed/retrieve/rerank/generate
+    const second = await POST(
+      makeRequest({ question: "cache test" }, { stream: true }),
+    );
+    const secondEvents = await readSseEvents(second);
+    const secondDone = secondEvents.find((e) => e.type === "done");
+    expect(secondDone).toBeDefined();
+    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBe(true);
+    expect(secondDone?.answer).toBe("Cached answer.");
+    expect(secondDone?.followUpQuestions).toEqual(["Tell me more?", "Any sources?"]);
+    // Cache hit must not re-invoke the downstream pipeline
+    expect(generateAnswerStream).toHaveBeenCalledTimes(1);
+    expect(embedQuery).toHaveBeenCalledTimes(1);
+    expect(rerankArticles).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits a delta with the full cached answer before the done event on cache hit", async () => {
+    await readSseEvents(
+      await POST(makeRequest({ question: "cache test" }, { stream: true })),
+    );
+    const cached = await POST(
+      makeRequest({ question: "cache test" }, { stream: true }),
+    );
+    const events = await readSseEvents(cached);
+    const deltas = events.filter((e) => e.type === "delta");
+    expect(deltas.length).toBeGreaterThan(0);
+    const concatenated = deltas.map((d) => d.text).join("");
+    expect(concatenated).toBe("Cached answer.");
+  });
+
+  it("does not cache agent-path (complexity=complex) answers", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "complex q",
+      ftsQuery: "complex q",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Agent answer.",
+      citations: [],
+      confidence: "high",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map(),
+    });
+
+    // Two identical agent-path requests
+    await readSseEvents(
+      await POST(makeRequest({ question: "complex q" }, { stream: true })),
+    );
+    await readSseEvents(
+      await POST(makeRequest({ question: "complex q" }, { stream: true })),
+    );
+    // Agent path ran twice; cache didn't short-circuit
+    expect(runAgentLoop).toHaveBeenCalledTimes(2);
+  });
+});
