@@ -288,8 +288,10 @@ async function handleStreamingAsk(params: {
     requestId: string;
     totalStart: number;
     deadlineMs: number;
+    sessionId: string;
+    conversationHistory: import("@/src/lib/conversation-store").ConversationTurn[];
 }): Promise<NextResponse> {
-    const { body, requestId, totalStart, deadlineMs } = params;
+    const { body, requestId, totalStart, deadlineMs, sessionId, conversationHistory } = params;
     const question = body.question.trim();
     const filters = body.filters ?? {};
 
@@ -321,14 +323,17 @@ async function handleStreamingAsk(params: {
                 let embeddingQuery: string;
                 let ftsQuery: string;
                 let mode: "text" | "visual";
+                let complexity: "simple" | "complex";
                 try {
                     const reformulated = await reformulateQuery(question, {
                         signal: globalController.signal,
                         requestId,
+                        conversationHistory,
                     });
                     embeddingQuery = reformulated.embeddingQuery;
                     ftsQuery = reformulated.ftsQuery;
                     mode = reformulated.mode;
+                    complexity = reformulated.complexity;
                 } catch (err) {
                     console.error(
                         JSON.stringify({
@@ -350,7 +355,88 @@ async function handleStreamingAsk(params: {
                 }
                 send({ type: "stage", name: "reformulate", elapsedMs: stageElapsed() });
 
-                // ── Step 2: Embed ──
+                // ── Agent path for complex questions ──
+                if (complexity === "complex") {
+                    send({ type: "stage", name: "agent", elapsedMs: stageElapsed() });
+
+                    const conversationContext = conversationHistory.length > 0
+                        ? formatHistoryForPrompt(conversationHistory)
+                        : undefined;
+
+                    try {
+                        const agentResult = await runAgentLoop(question, {
+                            signal: globalController.signal,
+                            requestId,
+                            conversationContext,
+                            onProgress: (event) => send(event),
+                        });
+
+                        addConversationTurn(
+                            sessionId,
+                            question,
+                            agentResult.answer,
+                            agentResult.citations.map((c) => c.articleId),
+                        );
+
+                        const agentSourceArticles = agentResult.citations.map((c) => {
+                            const meta = agentResult.articleMeta.get(c.articleId);
+                            return {
+                                id: c.articleId,
+                                headline: c.headline,
+                                editionDate: c.editionDate,
+                                category: meta?.category ?? "",
+                                summary: meta?.summary ?? "",
+                                byline: meta?.byline ?? null,
+                                bodySnippet: meta?.bodySnippet ?? "",
+                                distance: null,
+                                imageUrls: meta?.imageUrls ?? [],
+                            };
+                        });
+
+                        const totalTimeMs = Date.now() - totalStart;
+
+                        send({
+                            type: "done",
+                            answer: agentResult.answer,
+                            citations: agentResult.citations,
+                            confidence: agentResult.confidence,
+                            sessionId,
+                            sourceArticles: agentSourceArticles,
+                            meta: {
+                                retrievalTimeMs: 0,
+                                generationTimeMs: 0,
+                                totalTimeMs,
+                                articlesSearched: 0,
+                                method: "hybrid",
+                                reformulatedQuery:
+                                    embeddingQuery !== question ? embeddingQuery : undefined,
+                                complexity,
+                                agentSteps: agentResult.rounds,
+                                agentToolCalls: agentResult.toolCallCount,
+                            },
+                        });
+                    } catch (err) {
+                        console.error(
+                            JSON.stringify({
+                                level: "error",
+                                route: "/api/ask",
+                                requestId,
+                                stage: "agent",
+                                msg: "agent loop failed (streaming)",
+                                err: err instanceof Error ? err.message : String(err),
+                            }),
+                        );
+                        send({
+                            type: "error",
+                            stage: "agent",
+                            message: "An error occurred while researching your question. Please try again.",
+                            requestId,
+                        });
+                    }
+                    return;
+                }
+
+                // ── Step 2: Embed (pipeline path) ──
                 let questionEmbedding: number[];
                 try {
                     questionEmbedding = await embedQuery(embeddingQuery, {
@@ -583,7 +669,7 @@ async function handleStreamingAsk(params: {
                     send({
                         type: "error",
                         stage: "generate",
-                        message: err instanceof Error ? err.message : String(err),
+                        message: "An error occurred during answer generation. Please try again.",
                         requestId,
                     });
                     return;
@@ -592,11 +678,19 @@ async function handleStreamingAsk(params: {
                 const generationTimeMs = Date.now() - generationStart;
                 const totalTimeMs = Date.now() - totalStart;
 
+                addConversationTurn(
+                    sessionId,
+                    question,
+                    finalAnswer,
+                    finalCitations.map((c) => c.articleId),
+                );
+
                 send({
                     type: "done",
                     answer: finalAnswer,
                     citations: finalCitations,
                     confidence: finalConfidence,
+                    sessionId,
                     meta: {
                         retrievalTimeMs,
                         generationTimeMs,
@@ -605,6 +699,7 @@ async function handleStreamingAsk(params: {
                         method,
                         reformulatedQuery:
                             embeddingQuery !== question ? embeddingQuery : undefined,
+                        complexity,
                     },
                 });
             } catch (err) {
@@ -612,9 +707,7 @@ async function handleStreamingAsk(params: {
                 const isDeadline = err instanceof DeadlineExceededError;
                 const message = isDeadline
                     ? "Request took too long. Please try a simpler question."
-                    : err instanceof Error
-                      ? err.message
-                      : String(err);
+                    : "An unexpected error occurred. Please try again.";
                 console.error(
                     JSON.stringify({
                         level: "error",
@@ -728,6 +821,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             requestId,
             totalStart,
             deadlineMs,
+            sessionId,
+            conversationHistory,
         });
     }
 
@@ -793,6 +888,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 agentResult.citations.map((c) => c.articleId),
             );
 
+            const agentSourceArticles = agentResult.citations.map((c) => {
+                const meta = agentResult.articleMeta.get(c.articleId);
+                return {
+                    id: c.articleId,
+                    headline: c.headline,
+                    editionDate: c.editionDate,
+                    category: meta?.category ?? "",
+                    summary: meta?.summary ?? "",
+                    byline: meta?.byline ?? null,
+                    bodySnippet: meta?.bodySnippet ?? "",
+                    distance: null,
+                    imageUrls: meta?.imageUrls ?? [],
+                };
+            });
+
             const response: AskResponse = {
                 question,
                 answer: agentResult.answer,
@@ -801,7 +911,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 mode,
                 requestId,
                 sessionId,
-                sourceArticles: [],
+                sourceArticles: agentSourceArticles,
                 meta: {
                     retrievalTimeMs: 0,
                     generationTimeMs: 0,
