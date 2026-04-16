@@ -107,7 +107,9 @@ export async function rerankArticles(
                     msg: "failed to parse reranker scores, returning original articles",
                 }),
             );
-            return articles.map((a) => ({ ...a, relevanceScore: 5 }));
+            return articles
+                .slice(0, maxArticles)
+                .map((a) => ({ ...a, relevanceScore: 5 }));
         }
 
         // Attach scores, filter, sort, and cap
@@ -130,7 +132,9 @@ export async function rerankArticles(
                 err: err instanceof Error ? err.message : String(err),
             }),
         );
-        return articles.map((a) => ({ ...a, relevanceScore: 5 }));
+        return articles
+            .slice(0, maxArticles)
+            .map((a) => ({ ...a, relevanceScore: 5 }));
     }
 }
 
