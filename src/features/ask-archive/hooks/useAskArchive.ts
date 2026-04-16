@@ -79,6 +79,7 @@ export function useAskArchive(): UseAskArchiveReturn {
   const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const feedIdRef = useRef(0);
+  const feedRef = useRef<FeedEntry[]>([]);
 
   const submit = useCallback((question: string) => {
     const trimmed = question.trim();
@@ -94,6 +95,7 @@ export function useAskArchive(): UseAskArchiveReturn {
     setAnswer(null);
     setIsStreaming(false);
     setStage(null);
+    feedRef.current = [];
     setFeedEntries([]);
 
     // Runs the streaming request in a closure so we can use async/await
@@ -154,7 +156,9 @@ export function useAskArchive(): UseAskArchiveReturn {
         let buf = "";
         const addFeed = (text: string, type: FeedEntry["type"]) => {
           feedIdRef.current++;
-          setFeedEntries(prev => [...prev, { id: `fe-${feedIdRef.current}`, text, type }]);
+          const entry: FeedEntry = { id: `fe-${feedIdRef.current}`, text, type };
+          feedRef.current = [...feedRef.current, entry];
+          setFeedEntries(feedRef.current);
         };
 
         while (true) {
@@ -251,6 +255,7 @@ export function useAskArchive(): UseAskArchiveReturn {
     setStage(null);
     setError(null);
     setIsLoading(false);
+    feedRef.current = [];
     setFeedEntries([]);
   }, []);
 
