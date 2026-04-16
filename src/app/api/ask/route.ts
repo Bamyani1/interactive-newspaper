@@ -17,7 +17,9 @@ import {
     getConversationHistory,
     addConversationTurn,
     newSessionId,
+    formatHistoryForPrompt,
 } from "@/src/lib/conversation-store";
+import { runAgentLoop } from "@/src/lib/agent-loop";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { AskResponse, Citation } from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
@@ -769,7 +771,53 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 }),
         );
 
-        // ── Step 2: Embed the reformulated query ──
+        // ── Agent path for complex questions ──
+        if (complexity === "complex") {
+            const agentStart = Date.now();
+            const conversationContext = conversationHistory.length > 0
+                ? formatHistoryForPrompt(conversationHistory)
+                : undefined;
+
+            const agentResult = await wrapStage("agent", () =>
+                runAgentLoop(question, {
+                    signal: globalController.signal,
+                    requestId,
+                    conversationContext,
+                }),
+            );
+
+            addConversationTurn(
+                sessionId,
+                question,
+                agentResult.answer,
+                agentResult.citations.map((c) => c.articleId),
+            );
+
+            const response: AskResponse = {
+                question,
+                answer: agentResult.answer,
+                citations: agentResult.citations,
+                confidence: agentResult.confidence,
+                mode,
+                requestId,
+                sessionId,
+                sourceArticles: [],
+                meta: {
+                    retrievalTimeMs: 0,
+                    generationTimeMs: 0,
+                    totalTimeMs: Date.now() - agentStart,
+                    articlesSearched: 0,
+                    method: "hybrid",
+                    reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+                    complexity,
+                    agentSteps: agentResult.rounds,
+                    agentToolCalls: agentResult.toolCallCount,
+                },
+            };
+            return NextResponse.json(response);
+        }
+
+        // ── Step 2: Embed the reformulated query (pipeline path) ──
         let questionEmbedding: number[];
         try {
             questionEmbedding = await embedQuery(embeddingQuery, {
