@@ -71,7 +71,7 @@ import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
 import { runAgentLoop } from "@/src/lib/agent-loop";
-import { addConversationTurn } from "@/src/lib/conversation-store";
+import { addConversationTurn, getConversationHistory } from "@/src/lib/conversation-store";
 import { clearAnswerCache } from "@/src/lib/answer-cache";
 
 function makeRequest(
@@ -1408,5 +1408,78 @@ describe("Answer cache (streaming)", () => {
     );
     // Agent path ran twice; cache didn't short-circuit
     expect(runAgentLoop).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips cache read when conversation history is present (follow-up)", async () => {
+    // Session with one prior turn — simulates a follow-up question where
+    // the generator would bake history into its answer. We must not serve
+    // any cached bare-question answer nor write one that could leak later.
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        question: "Who played basketball?",
+        answer: "The 1961 Bishops.",
+        citedArticleIds: ["1961-03-01-0"],
+        timestamp: Date.now(),
+      },
+    ]);
+
+    // First POST with sessionId: pipeline runs.
+    await readSseEvents(
+      await POST(
+        makeRequest(
+          { question: "cache test", sessionId: "sess-A" },
+          { stream: true },
+        ),
+      ),
+    );
+    expect(generateAnswerStream).toHaveBeenCalledTimes(1);
+
+    // Second POST, same sessionId + question: should re-run pipeline
+    // rather than reading from cache.
+    const second = await POST(
+      makeRequest(
+        { question: "cache test", sessionId: "sess-A" },
+        { stream: true },
+      ),
+    );
+    const secondEvents = await readSseEvents(second);
+    const secondDone = secondEvents.find((e) => e.type === "done");
+    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
+    expect(generateAnswerStream).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips cache write when conversation history is present", async () => {
+    // First POST — with history — should run the pipeline but NOT cache.
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        question: "Who played basketball?",
+        answer: "The 1961 Bishops.",
+        citedArticleIds: ["1961-03-01-0"],
+        timestamp: Date.now(),
+      },
+    ]);
+    await readSseEvents(
+      await POST(
+        makeRequest(
+          { question: "cache test", sessionId: "sess-A" },
+          { stream: true },
+        ),
+      ),
+    );
+    expect(generateAnswerStream).toHaveBeenCalledTimes(1);
+
+    // Second POST — fresh session, no history. Because the first call
+    // was not cached, this one must still run the pipeline.
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    const second = await POST(
+      makeRequest(
+        { question: "cache test", sessionId: "sess-B" },
+        { stream: true },
+      ),
+    );
+    const secondEvents = await readSseEvents(second);
+    const secondDone = secondEvents.find((e) => e.type === "done");
+    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
+    expect(generateAnswerStream).toHaveBeenCalledTimes(2);
   });
 });
