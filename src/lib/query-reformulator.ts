@@ -9,15 +9,18 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import { parseEraLabel, eraOverlapFraction } from "@/src/lib/era-parser";
+export type { Era } from "@/src/lib/era-parser";
 
 const REFORMULATION_MODEL = "gemini-3-flash-preview";
 const REFORMULATION_TIMEOUT_MS = 5_000;
-const REFORMULATION_MAX_TOKENS = 250;
+const REFORMULATION_MAX_TOKENS = 350;
 
 export interface ReformulatedQuery {
     embeddingQuery: string;
     ftsQuery: string;
     mode: "text" | "visual";
+    eras?: import("@/src/lib/era-parser").Era[];
 }
 
 const REFORMULATION_PROMPT = `You help reformulate modern search queries for The Transcript Archive (Ohio Wesleyan University, 1950-2006).
@@ -42,10 +45,13 @@ Expand abbreviations (OWU → Ohio Wesleyan University). Add era-appropriate ter
 - the newspaper → "The Transcript" OR "student newspaper" OR editor OR editorial
 - academics → curriculum OR course OR major OR professor OR faculty OR seminar
 
-Respond in EXACTLY this format (three lines, no extra text):
+When the question explicitly asks about change over time, compares two or more distinct eras (decades, named periods, years far apart), or asks "how did X change from A to B" — emit an additional ERAS line listing the era labels as a JSON array. Use labels like "1960s", "early 1970s", "late 1980s", "2000", "mid-century". Emit ERAS only when there are TWO OR MORE distinct eras. Omit ERAS entirely for single-era questions ("what was life like in 1965?") or for timeless questions ("how did the football team recruit?").
+
+Respond in EXACTLY this format (three lines, or four if the question is multi-era):
 SEMANTIC: <your semantic query>
 KEYWORDS: <your keyword query>
-MODE: text|visual`;
+MODE: text|visual
+ERAS: ["<label 1>", "<label 2>", ...]`;
 
 export async function reformulateQuery(
     originalQuestion: string,
@@ -133,5 +139,62 @@ export function parseReformulationResponse(
     const modeMatch = text.match(/^MODE:\s*(.+)$/m);
     const mode = modeMatch && modeMatch[1].trim().toLowerCase() === "visual" ? "visual" : "text";
 
-    return { embeddingQuery, ftsQuery, mode };
+    const eras = parseErasFromResponse(text);
+
+    return { embeddingQuery, ftsQuery, mode, ...(eras ? { eras } : {}) };
+}
+
+/**
+ * Parse, validate, and deduplicate the optional ERAS line. Returns
+ * undefined (not present/applicable), or an array of ≥2 non-overlapping
+ * parsed eras. Fewer than 2 valid eras after dedup → undefined.
+ */
+function parseErasFromResponse(
+    text: string,
+): import("@/src/lib/era-parser").Era[] | undefined {
+    const match = text.match(/^ERAS:\s*(.+)$/m);
+    if (!match) return undefined;
+
+    let labels: unknown;
+    try {
+        labels = JSON.parse(match[1].trim());
+    } catch {
+        return undefined;
+    }
+    if (!Array.isArray(labels)) return undefined;
+
+    // Parse each label through the deterministic era-parser.
+    const parsed = labels
+        .filter((l): l is string => typeof l === "string")
+        .map((l) => parseEraLabel(l))
+        .filter((e): e is import("@/src/lib/era-parser").Era => e !== null);
+
+    if (parsed.length < 2) return undefined;
+
+    // Collapse overlapping eras (>50% overlap → keep the wider one).
+    const deduped = collapseOverlappingEras(parsed);
+    return deduped.length >= 2 ? deduped : undefined;
+}
+
+function collapseOverlappingEras(
+    eras: import("@/src/lib/era-parser").Era[],
+): import("@/src/lib/era-parser").Era[] {
+    const result = [...eras];
+    for (let i = 0; i < result.length; i++) {
+        for (let j = i + 1; j < result.length; j++) {
+            if (eraOverlapFraction(result[i], result[j]) > 0.5) {
+                // Keep the wider of the two.
+                const iSpan = Date.parse(result[i].endDate) - Date.parse(result[i].startDate);
+                const jSpan = Date.parse(result[j].endDate) - Date.parse(result[j].startDate);
+                if (iSpan >= jSpan) {
+                    result.splice(j, 1);
+                } else {
+                    result.splice(i, 1);
+                }
+                // Restart the inner loop after a splice.
+                j = i;
+            }
+        }
+    }
+    return result;
 }

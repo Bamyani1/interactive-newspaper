@@ -321,6 +321,19 @@ async function handleStreamingAsk(params: {
                     embeddingQuery = reformulated.embeddingQuery;
                     ftsQuery = reformulated.ftsQuery;
                     mode = reformulated.mode;
+
+                    if (reformulated.eras && reformulated.eras.length >= 2) {
+                        console.warn(
+                            JSON.stringify({
+                                level: "info",
+                                route: "/api/ask",
+                                requestId,
+                                stage: "reformulate",
+                                msg: "era extraction (dark launch)",
+                                eras: reformulated.eras.map((e) => ({ label: e.label, start: e.startDate, end: e.endDate })),
+                            }),
+                        );
+                    }
                 } catch (err) {
                     console.error(
                         JSON.stringify({
@@ -747,7 +760,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const pipelinePromise = (async (): Promise<NextResponse> => {
         // ── Step 1: Reformulate query for better retrieval ──
-        const { embeddingQuery, ftsQuery, mode } = await wrapStage(
+        const { embeddingQuery, ftsQuery, mode, eras } = await wrapStage(
             "reformulate",
             () =>
                 reformulateQuery(question, {
@@ -755,6 +768,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     requestId,
                 }),
         );
+
+        if (eras && eras.length >= 2) {
+            console.warn(
+                JSON.stringify({
+                    level: "info",
+                    route: "/api/ask",
+                    requestId,
+                    stage: "reformulate",
+                    msg: "era extraction (dark launch)",
+                    eras: eras.map((e) => ({ label: e.label, start: e.startDate, end: e.endDate })),
+                }),
+            );
+        }
 
         // ── Step 2: Embed the reformulated query ──
         let questionEmbedding: number[];

@@ -82,6 +82,93 @@ describe("parseReformulationResponse", () => {
     );
     expect(result.mode).toBe("text");
   });
+
+  it("parses ERAS line with two valid eras", () => {
+    const text =
+      'SEMANTIC: student life changes\nKEYWORDS: life OR campus\nMODE: text\nERAS: ["1960s", "1990s"]';
+    const result = parseReformulationResponse(text, {
+      embeddingQuery: "fallback",
+      ftsQuery: "fallback",
+      mode: "text",
+    });
+    expect(result.eras).toBeDefined();
+    expect(result.eras).toHaveLength(2);
+    expect(result.eras![0].startDate).toBe("1960-01-01");
+    expect(result.eras![1].startDate).toBe("1990-01-01");
+  });
+
+  it("returns no eras when ERAS line is missing", () => {
+    const text =
+      "SEMANTIC: campus news\nKEYWORDS: campus OR news\nMODE: text";
+    const result = parseReformulationResponse(text, {
+      embeddingQuery: "fallback",
+      ftsQuery: "fallback",
+      mode: "text",
+    });
+    expect(result.eras).toBeUndefined();
+  });
+
+  it("returns no eras for single-era ERAS line (< 2 after parse)", () => {
+    const text =
+      'SEMANTIC: campus news\nKEYWORDS: campus OR news\nMODE: text\nERAS: ["1960s"]';
+    const result = parseReformulationResponse(text, {
+      embeddingQuery: "fallback",
+      ftsQuery: "fallback",
+      mode: "text",
+    });
+    expect(result.eras).toBeUndefined();
+  });
+
+  it("returns no eras for malformed ERAS JSON", () => {
+    const text =
+      "SEMANTIC: campus news\nKEYWORDS: campus OR news\nMODE: text\nERAS: not-json";
+    const result = parseReformulationResponse(text, {
+      embeddingQuery: "fallback",
+      ftsQuery: "fallback",
+      mode: "text",
+    });
+    expect(result.eras).toBeUndefined();
+  });
+
+  it("collapses overlapping eras to single → returns undefined", () => {
+    const text =
+      'SEMANTIC: campus news\nKEYWORDS: campus OR news\nMODE: text\nERAS: ["1970", "early 1970s"]';
+    const result = parseReformulationResponse(text, {
+      embeddingQuery: "fallback",
+      ftsQuery: "fallback",
+      mode: "text",
+    });
+    // "1970" is a single year (1970-01-01..1970-12-31), "early 1970s" is
+    // 1970-01-01..1973-12-31. The single year has >50% overlap with the
+    // qualified decade → collapse to one → only 1 remaining → undefined.
+    expect(result.eras).toBeUndefined();
+  });
+
+  it("keeps non-overlapping eras", () => {
+    const text =
+      'SEMANTIC: campus life\nKEYWORDS: campus OR life\nMODE: text\nERAS: ["early 1960s", "late 1990s"]';
+    const result = parseReformulationResponse(text, {
+      embeddingQuery: "fallback",
+      ftsQuery: "fallback",
+      mode: "text",
+    });
+    expect(result.eras).toBeDefined();
+    expect(result.eras).toHaveLength(2);
+    expect(result.eras![0].startDate).toBe("1960-01-01");
+    expect(result.eras![1].startDate).toBe("1997-01-01");
+  });
+
+  it("drops unparseable era labels and keeps valid ones", () => {
+    const text =
+      'SEMANTIC: campus life\nKEYWORDS: campus OR life\nMODE: text\nERAS: ["1960s", "notanera", "1990s"]';
+    const result = parseReformulationResponse(text, {
+      embeddingQuery: "fallback",
+      ftsQuery: "fallback",
+      mode: "text",
+    });
+    expect(result.eras).toBeDefined();
+    expect(result.eras).toHaveLength(2);
+  });
 });
 
 describe("reformulateQuery", () => {
