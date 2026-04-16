@@ -4,7 +4,7 @@ import React, { useRef, useEffect } from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
 import { SiteFooter } from "@/features/footer";
-import { AskInput, AnswerPanel, SourceList, AskEmptyState, TimelineGallery, ResearchFeed, ResearchSummary, useAskArchive } from "@/features/ask-archive";
+import { AskInput, AnswerPanel, SourceList, TimelineGallery, ResearchFeed, ResearchSummary, useAskArchive } from "@/features/ask-archive";
 import { FeedbackButtons } from "@/features/ask-archive/components/FeedbackButtons";
 
 export default function AskPage() {
@@ -24,13 +24,15 @@ export default function AskPage() {
     <PageShell variant="default" hasHeader>
       <TimeControls />
       <main className="w-full flex-1">
-        <div className="ask-container">
-          {!answer && !isLoading && !error && <AskEmptyState />}
-          {(answer || isLoading || error) && (
-            <h1 className="sr-only">Ask the Archive</h1>
-          )}
+        <div className="max-w-3xl mx-auto px-6 py-10">
+          <p className="text-xs uppercase tracking-widest mb-3" style={{ color: "var(--color-text-secondary)" }}>
+            Ask
+          </p>
+          <h1 className="font-header text-3xl mb-6">Ask the Archive</h1>
 
-          <AskInput onSubmit={submit} isLoading={isLoading} />
+          <div className="flex flex-col gap-4 mb-8">
+            <AskInput onSubmit={submit} isLoading={isLoading} />
+          </div>
 
           <div aria-live="polite" aria-atomic="false">
             <ResearchFeed entries={feedEntries} isActive={feedActive} />
