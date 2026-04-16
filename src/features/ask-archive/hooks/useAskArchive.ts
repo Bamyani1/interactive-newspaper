@@ -225,9 +225,9 @@ export function useAskArchive(): UseAskArchiveReturn {
           setIsStreaming(false);
         }
       } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
+        // Always clear loading — if a newer request is already in flight,
+        // it will have set isLoading=true before this finally runs.
+        setIsLoading(false);
       }
     })();
   }, []);
