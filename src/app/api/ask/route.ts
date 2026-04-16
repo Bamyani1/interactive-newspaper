@@ -13,6 +13,11 @@ import type { RetrievedArticle } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
+import {
+    getConversationHistory,
+    addConversationTurn,
+    newSessionId,
+} from "@/src/lib/conversation-store";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { AskResponse, Citation } from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
@@ -248,6 +253,7 @@ export const _computeRerankSignalsForTests = computeRerankSignals;
 
 interface AskRequestBody {
     question: string;
+    sessionId?: string;
     filters?: {
         category?: string;
         startDate?: string;
@@ -701,6 +707,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
     }
 
+    // ── Session handling ──
+    const sessionId = body.sessionId ?? newSessionId();
+    const conversationHistory = body.sessionId
+        ? getConversationHistory(body.sessionId)
+        : [];
+
     // ── Streaming branch ──
     // If the client requested ?stream=1, return an SSE stream that emits
     // stage/metadata/delta/done/error events as the pipeline progresses.
@@ -747,12 +759,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const pipelinePromise = (async (): Promise<NextResponse> => {
         // ── Step 1: Reformulate query for better retrieval ──
-        const { embeddingQuery, ftsQuery, mode } = await wrapStage(
+        const { embeddingQuery, ftsQuery, mode, complexity } = await wrapStage(
             "reformulate",
             () =>
                 reformulateQuery(question, {
                     signal: globalController.signal,
                     requestId,
+                    conversationHistory,
                 }),
         );
 
@@ -913,7 +926,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const keepTopK = mode === "visual" ? 15 : 10;
         logRerankSignals(requestId, computeRerankSignals(articles), mode, "default");
 
-        const rankedArticles: RankedArticle[] = await wrapStage("rerank", () =>
+        let rankedArticles: RankedArticle[] = await wrapStage("rerank", () =>
             rerankArticles(question, articles, {
                 maxArticles: keepTopK,
                 minScore: mode === "visual" ? 3 : 4,
@@ -921,6 +934,50 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 requestId,
             }),
         );
+
+        // ── Step 4b: CRAG retry — if reranker filtered everything, reformulate and retry once ──
+        if (rankedArticles.length === 0 && articles.length > 0 && !globalController.signal.aborted) {
+            console.warn(
+                JSON.stringify({
+                    level: "warn",
+                    route: "/api/ask",
+                    requestId,
+                    stage: "crag-retry",
+                    msg: "reranker filtered all articles, retrying with broader query",
+                }),
+            );
+            const retry = await wrapStage("reformulate-retry", () =>
+                reformulateQuery(`Try broader search terms for: ${question}`, {
+                    signal: globalController.signal,
+                    requestId,
+                }),
+            );
+            const retryEmbedding = await embedQuery(retry.embeddingQuery, {
+                signal: globalController.signal,
+            });
+            const retryArticles = await Promise.race([
+                hybridSearch(retry.ftsQuery, retryEmbedding, {
+                    limit: retrievalLimit,
+                    category: filters.category ?? null,
+                    startDate: filters.startDate ?? null,
+                    endDate: filters.endDate ?? null,
+                    vectorWeight,
+                    onlyWithImages,
+                    signal: globalController.signal,
+                }),
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error("Retrieval timeout")), retrievalTimeoutMs),
+                ),
+            ]);
+            rankedArticles = await wrapStage("rerank-retry", () =>
+                rerankArticles(question, retryArticles, {
+                    maxArticles: keepTopK,
+                    minScore: mode === "visual" ? 2 : 3,
+                    signal: globalController.signal,
+                    requestId,
+                }),
+            );
+        }
 
         // ── Step 5: Generate answer (using ORIGINAL question, not reformulated) ──
         const generationStart = Date.now();
@@ -934,6 +991,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
         const generationTimeMs = Date.now() - generationStart;
 
+        // ── Store conversation turn ──
+        addConversationTurn(
+            sessionId,
+            question,
+            answer,
+            citations.map((c) => c.articleId),
+        );
+
         // ── Build response ──
         const response: AskResponse = {
             question,
@@ -942,6 +1007,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             confidence,
             mode,
             requestId,
+            sessionId,
             sourceArticles: rankedArticles.map((a) => ({
                 id: a.id,
                 headline: a.headline,
@@ -960,6 +1026,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 articlesSearched: articles.length,
                 method,
                 reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+                complexity,
             },
         };
 
