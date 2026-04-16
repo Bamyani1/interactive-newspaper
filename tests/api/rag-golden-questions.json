@@ -82,5 +82,21 @@
     "minCitations": 0,
     "forbiddenInAnswer": ["haiku"],
     "mode": "text"
+  },
+  {
+    "id": "life-changes-temporal-span",
+    "question": "How has student life at Ohio Wesleyan changed from the 1960s to the 1990s?",
+    "minCitations": 4,
+    "keywordsAny": ["student", "life", "campus"],
+    "citationsSpanMinDistinctDecades": 2,
+    "confidenceMin": "medium",
+    "mode": "text"
+  },
+  {
+    "id": "thin-era-confidence-cap",
+    "question": "How did student life change from 1953 to 1958?",
+    "keywordsAny": ["student"],
+    "confidenceMax": "medium",
+    "mode": "text"
   }
 ]

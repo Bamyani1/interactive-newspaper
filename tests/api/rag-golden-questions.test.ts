@@ -51,6 +51,7 @@ interface GoldenQuestion {
     id: string;
     question: string;
     minCitations?: number;
+    citationsSpanMinDistinctDecades?: number;
     keywordsAny?: string[];
     forbiddenInAnswer?: string[];
     confidenceMin?: Confidence;
@@ -84,6 +85,7 @@ interface ObservedResult {
     status: number;
     confidence?: Confidence;
     citations: number;
+    citationEditionDates?: string[];
     mode?: "text" | "visual";
     totalTimeMs?: number;
     retrievalTimeMs?: number;
@@ -231,11 +233,15 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
                 const body = await response.json();
 
                 // Record observed shape for baseline snapshot (afterAll writes it)
+                const citationEditionDates = Array.isArray(body.citations)
+                    ? (body.citations as Array<{ editionDate: string }>).map((c) => c.editionDate)
+                    : [];
                 observed.push({
                     id: q.id,
                     status: response.status,
                     confidence: body.confidence,
-                    citations: Array.isArray(body.citations) ? body.citations.length : 0,
+                    citations: citationEditionDates.length,
+                    citationEditionDates,
                     mode: body.mode,
                     totalTimeMs: body.meta?.totalTimeMs,
                     retrievalTimeMs: body.meta?.retrievalTimeMs,
@@ -301,6 +307,18 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
                         got,
                         `confidence "${body.confidence}" above ceiling "${q.confidenceMax}"`,
                     ).toBeLessThanOrEqual(ceiling);
+                }
+
+                if (q.citationsSpanMinDistinctDecades !== undefined) {
+                    const decades = new Set(
+                        citationEditionDates.map(
+                            (d) => d.slice(0, 3) + "0s",
+                        ),
+                    );
+                    expect(
+                        decades.size,
+                        `Expected citations to span ≥${q.citationsSpanMinDistinctDecades} distinct decades; got ${Array.from(decades).join(", ")}`,
+                    ).toBeGreaterThanOrEqual(q.citationsSpanMinDistinctDecades);
                 }
 
                 if (q.mode) {
