@@ -129,4 +129,21 @@ describe("AnswerPanel", () => {
     expect(em).not.toBeNull();
     expect(em?.textContent).toBe("an emphasis");
   });
+
+  it("renders **bold** and [Source N] inside a ## heading", () => {
+    const answer =
+      "## Campus life in the **1960s** [Source 1]\n\nBody paragraph.";
+    const { container } = render(<AnswerPanel response={makeResponse({ answer })} />);
+
+    const h3 = container.querySelector("h3");
+    expect(h3).not.toBeNull();
+    // Bold is rendered as <strong>, not as literal **.
+    expect(h3?.querySelector("strong")?.textContent).toBe("1960s");
+    expect(h3?.textContent).not.toContain("**");
+    // Citation renders as a clickable [1] anchor, not a literal bracketed token.
+    const anchor = h3?.querySelector("a");
+    expect(anchor?.getAttribute("href")).toBe("#ask-source-1");
+    expect(anchor?.textContent).toBe("[1]");
+    expect(h3?.textContent).not.toContain("[Source 1]");
+  });
 });

@@ -147,7 +147,7 @@ function renderAnswerWithCitations(
       flushParagraph();
       blocks.push(
         <h3 key={`h-${blockIndex}`} className="ask-answer-heading">
-          {headerMatch[1]}
+          {renderInlineWithCitations(headerMatch[1], blockIndex, articleIdIndex)}
         </h3>
       );
       blockIndex++;
