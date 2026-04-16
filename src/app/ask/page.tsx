@@ -4,7 +4,7 @@ import React, { useRef, useEffect } from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
 import { SiteFooter } from "@/features/footer";
-import { AskInput, AnswerPanel, SourceList, TimelineGallery, ResearchFeed, ResearchSummary, LowConfidenceCaveat, FollowUpQuestions, useAskArchive } from "@/features/ask-archive";
+import { AskInput, AnswerPanel, SourceList, TimelineGallery, ResearchFeed, ResearchSummary, LowConfidenceCaveat, FollowUpQuestions, ConversationHistory, useAskArchive } from "@/features/ask-archive";
 import { FeedbackButtons } from "@/features/ask-archive/components/FeedbackButtons";
 
 export default function AskPage() {
@@ -44,6 +44,11 @@ export default function AskPage() {
 
           <div className="flex flex-col gap-4 mb-8">
             <AskInput onSubmit={submit} isLoading={isLoading} />
+            <ConversationHistory
+              onSelect={submit}
+              disabled={isLoading}
+              refreshKey={answer?.requestId}
+            />
           </div>
 
           <div aria-live="polite" aria-atomic="false">
