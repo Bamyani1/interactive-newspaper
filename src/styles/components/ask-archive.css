@@ -62,12 +62,51 @@
 }
 
 /* =========================================
+   NEW CONVERSATION BUTTON
+   ========================================= */
+.ask-newconv-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.65rem;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-accent);
+    background: transparent;
+    border: 1px dashed var(--stroke-accent-soft);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.ask-newconv-btn:hover:not(:disabled) {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.ask-newconv-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ask-newconv-btn {
+        transition: none;
+    }
+}
+
+/* =========================================
    CONVERSATION HISTORY
    ========================================= */
 .ask-history {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 0;
     border-top: 1px dashed var(--stroke-accent-soft);
+    border-bottom: 1px dashed var(--stroke-accent-soft);
 }
 
 .ask-history-label {
