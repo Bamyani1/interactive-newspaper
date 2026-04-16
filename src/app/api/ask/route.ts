@@ -406,7 +406,7 @@ async function handleStreamingAsk(params: {
                                 retrievalTimeMs: 0,
                                 generationTimeMs: 0,
                                 totalTimeMs,
-                                articlesSearched: 0,
+                                articlesSearched: agentResult.articleMeta.size,
                                 method: "hybrid",
                                 reformulatedQuery:
                                     embeddingQuery !== question ? embeddingQuery : undefined,
@@ -916,7 +916,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     retrievalTimeMs: 0,
                     generationTimeMs: 0,
                     totalTimeMs: Date.now() - agentStart,
-                    articlesSearched: 0,
+                    articlesSearched: agentResult.articleMeta.size,
                     method: "hybrid",
                     reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
                     complexity,
