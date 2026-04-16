@@ -7,7 +7,7 @@
  * deadline support.
  */
 
-import type { Content, FunctionDeclaration } from "@google/genai";
+import type { Content, FunctionDeclaration, Part } from "@google/genai";
 import { getGeminiClient } from "@/src/lib/gemini-client";
 import { AGENT_TOOL_DECLARATIONS, executeTool } from "@/src/lib/agent-tools";
 import type { Citation } from "@/src/types";
@@ -17,6 +17,8 @@ import type { Citation } from "@/src/types";
 const AGENT_MODEL = "gemini-3-flash-preview";
 const MAX_ROUNDS = 5;
 const MAX_OUTPUT_TOKENS = 4096;
+const MAX_BODY_CHARS_IN_CONTEXT = 3000;
+const MAX_EXCERPT_CHARS_IN_CONTEXT = 300;
 
 const AGENT_SYSTEM_PROMPT = `You are "The Transcript Archive," a research assistant for Ohio Wesleyan University's student newspaper archive (1950-2006).
 
@@ -33,28 +35,38 @@ RULES:
 
 // ─── Types ──────────────────────────────────────────────────────
 
+export interface ArticleMeta {
+    headline: string;
+    editionDate: string;
+    category: string;
+    summary: string;
+    byline: string | null;
+    bodySnippet: string;
+    imageUrls: string[];
+}
+
 export interface AgentResult {
     answer: string;
     citations: Citation[];
     confidence: "low" | "medium" | "high";
     toolCallCount: number;
     rounds: number;
+    articleMeta: Map<string, ArticleMeta>;
 }
 
-/**
- * Headline lookup accumulated from tool call results during the loop.
- * Keyed by article ID (e.g. "1965-03-15-4").
- */
-interface ArticleMeta {
-    headline: string;
-    editionDate: string;
+export interface AgentProgressEvent {
+    type: "tool_call" | "tool_result";
+    tool: string;
+    round: number;
+    args?: Record<string, unknown>;
+    summary?: string;
 }
 
 // ─── Citation Parsing ───────────────────────────────────────────
 
 const CITATION_RE = /\[(\d{4}-\d{2}-\d{2}-\d+)\]/g;
 
-function parseCitations(
+export function parseCitations(
     text: string,
     articleLookup: Map<string, ArticleMeta>,
 ): Citation[] {
@@ -80,7 +92,7 @@ function parseCitations(
 
 // ─── Confidence Scoring ─────────────────────────────────────────
 
-function scoreConfidence(
+export function scoreConfidence(
     answer: string,
     citations: Citation[],
     toolCallCount: number,
@@ -94,12 +106,7 @@ function scoreConfidence(
 
 // ─── Article Lookup Accumulator ─────────────────────────────────
 
-/**
- * Extract article metadata from tool call results so we can resolve
- * citations later. Handles both search_archive (array of results)
- * and read_article (single article) response shapes.
- */
-function accumulateArticleMeta(
+export function accumulateArticleMeta(
     toolName: string,
     result: Record<string, unknown>,
     lookup: Map<string, ArticleMeta>,
@@ -111,6 +118,11 @@ function accumulateArticleMeta(
                 lookup.set(rec.id, {
                     headline: rec.headline as string,
                     editionDate: (rec.editionDate as string) ?? (rec.id as string).slice(0, 10),
+                    category: (rec.category as string) ?? "",
+                    summary: (rec.summary as string) ?? "",
+                    byline: (rec.byline as string) ?? null,
+                    bodySnippet: typeof rec.excerpt === "string" ? (rec.excerpt as string).slice(0, 300) : "",
+                    imageUrls: Array.isArray(rec.imageUrls) ? (rec.imageUrls as string[]) : [],
                 });
             }
         }
@@ -120,8 +132,60 @@ function accumulateArticleMeta(
         lookup.set(result.id as string, {
             headline: (result.headline as string) ?? (result.id as string),
             editionDate: (result.editionDate as string) ?? (result.id as string).slice(0, 10),
+            category: (result.category as string) ?? "",
+            summary: (result.summary as string) ?? "",
+            byline: (result.byline as string) ?? null,
+            bodySnippet: typeof result.bodyPlain === "string" ? (result.bodyPlain as string).slice(0, 300) : "",
+            imageUrls: Array.isArray(result.imageUrls) ? (result.imageUrls as string[]) : [],
         });
     }
+}
+
+// ─── Tool Result Truncation ─────────────────────────────────────
+
+function truncateToolResult(
+    toolName: string,
+    result: Record<string, unknown>,
+): Record<string, unknown> {
+    if (toolName === "read_article" && typeof result.bodyPlain === "string") {
+        return {
+            ...result,
+            bodyPlain: (result.bodyPlain as string).slice(0, MAX_BODY_CHARS_IN_CONTEXT),
+        };
+    }
+
+    if (toolName === "search_archive" && Array.isArray(result.results)) {
+        return {
+            ...result,
+            results: (result.results as Record<string, unknown>[]).map((r) => ({
+                ...r,
+                excerpt: typeof r.excerpt === "string"
+                    ? (r.excerpt as string).slice(0, MAX_EXCERPT_CHARS_IN_CONTEXT)
+                    : r.excerpt,
+            })),
+        };
+    }
+
+    return result;
+}
+
+// ─── Tool Result Summary (for SSE progress events) ─────────────
+
+function summarizeToolResult(
+    toolName: string,
+    result: Record<string, unknown>,
+): string {
+    if (result.error) return `Error: ${result.error}`;
+    if (toolName === "search_archive" && Array.isArray(result.results)) {
+        return `Found ${result.results.length} articles`;
+    }
+    if (toolName === "read_article" && typeof result.headline === "string") {
+        return `Read: ${result.headline}`;
+    }
+    if (toolName === "list_editions" && Array.isArray(result.editions)) {
+        return `${result.editions.length} editions`;
+    }
+    return "Done";
 }
 
 // ─── Structured Logging Helper ──────────────────────────────────
@@ -156,16 +220,14 @@ export async function runAgentLoop(
         signal?: AbortSignal;
         requestId?: string;
         conversationContext?: string;
+        onProgress?: (event: AgentProgressEvent) => void;
     } = {},
 ): Promise<AgentResult> {
-    const { signal, requestId, conversationContext } = opts;
+    const { signal, requestId, conversationContext, onProgress } = opts;
 
     const client = getGeminiClient();
     const articleLookup = new Map<string, ArticleMeta>();
 
-    // Build the initial user message, injecting prior conversation context
-    // as text prefix so the model has continuity without us managing a
-    // separate multi-turn history with Gemini.
     const userText = conversationContext
         ? `${conversationContext}\n\n${question}`
         : question;
@@ -187,6 +249,7 @@ export async function runAgentLoop(
                     confidence: "low",
                     toolCallCount,
                     rounds: round,
+                    articleMeta: articleLookup,
                 };
             }
 
@@ -206,31 +269,62 @@ export async function runAgentLoop(
             const functionCalls = response.functionCalls;
 
             if (functionCalls && functionCalls.length > 0) {
-                // Execute all tool calls in parallel
                 const results = await Promise.all(
                     functionCalls.map(async (call, idx) => {
+                        onProgress?.({
+                            type: "tool_call",
+                            tool: call.name!,
+                            round,
+                            args: call.args as Record<string, unknown> | undefined,
+                        });
+
                         const toolResult = await executeTool(
                             call.name!,
                             call.args ?? {},
                             { signal },
                         );
 
-                        // Accumulate article metadata for citation lookup
                         accumulateArticleMeta(call.name!, toolResult, articleLookup);
 
+                        if (toolResult.error) {
+                            logWarn(requestId, `tool ${call.name} returned error`, {
+                                tool: call.name,
+                                round,
+                                error: toolResult.error,
+                            });
+                        }
+
+                        const summary = summarizeToolResult(call.name!, toolResult);
+                        onProgress?.({
+                            type: "tool_result",
+                            tool: call.name!,
+                            round,
+                            summary,
+                        });
+
                         return {
-                            // Some SDK versions omit call.id; use a deterministic fallback
                             id: call.id ?? `${call.name}-${round}-${idx}`,
                             name: call.name!,
-                            response: toolResult,
+                            response: truncateToolResult(call.name!, toolResult),
                         };
                     }),
                 );
 
+                const allErrors = results.every((r) =>
+                    typeof (r.response as Record<string, unknown>).error === "string",
+                );
+                if (allErrors) {
+                    logError(requestId, "all tools in round returned errors", { round });
+                }
+
                 toolCallCount += functionCalls.length;
 
-                // Append the model's response (containing function call parts)
-                // and our function results to the conversation history.
+                // Capture any text the model produced alongside function calls
+                const responseText = response.text?.trim();
+                if (responseText) {
+                    answerText = responseText;
+                }
+
                 const modelParts = response.candidates?.[0]?.content?.parts;
                 if (modelParts) {
                     contents.push({ role: "model", parts: modelParts });
@@ -249,21 +343,18 @@ export async function runAgentLoop(
 
                 round++;
             } else {
-                // Model produced text -- we are done
                 answerText = response.text?.trim() ?? "";
                 break;
             }
         }
 
-        // If we exhausted MAX_ROUNDS without text, note that in the answer
         if (!answerText && round >= MAX_ROUNDS) {
             logWarn(requestId, "agent hit MAX_ROUNDS without producing text", { rounds: round, toolCallCount });
 
-            // Try to extract any partial text from the last response
             const lastModelContent = [...contents].reverse().find((c) => c.role === "model");
             const partialText = lastModelContent?.parts
-                ?.filter((p) => typeof p.text === "string")
-                .map((p) => p.text)
+                ?.filter((p: Part) => typeof p.text === "string")
+                .map((p: Part) => p.text)
                 .join("") ?? "";
 
             answerText = partialText
@@ -280,9 +371,9 @@ export async function runAgentLoop(
             confidence,
             toolCallCount,
             rounds: round,
+            articleMeta: articleLookup,
         };
     } catch (err) {
-        // AbortError from signal timeout
         if (err instanceof Error && err.name === "AbortError") {
             logWarn(requestId, "agent loop aborted by signal", { rounds: round, toolCallCount });
             return {
@@ -291,10 +382,10 @@ export async function runAgentLoop(
                 confidence: "low",
                 toolCallCount,
                 rounds: round,
+                articleMeta: articleLookup,
             };
         }
 
-        // Unexpected Gemini / network error
         logError(requestId, "agent loop failed", err);
         return {
             answer: "I encountered an error while researching your question. Please try again.",
@@ -302,6 +393,7 @@ export async function runAgentLoop(
             confidence: "low",
             toolCallCount,
             rounds: round,
+            articleMeta: articleLookup,
         };
     }
 }

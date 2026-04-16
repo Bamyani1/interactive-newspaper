@@ -949,7 +949,7 @@ describe("POST /api/ask", () => {
     // Streaming generation errors tag stage="generate", matching the
     // non-streaming path's wrapStage("generate", ...) behavior.
     expect(errorEvent?.stage).toBe("generate");
-    expect(errorEvent?.message).toMatch(/Gemini stream interrupted/);
+    expect(errorEvent?.message).toMatch(/error occurred during answer generation/);
     expect(typeof errorEvent?.requestId).toBe("string");
     expect((errorEvent?.requestId as string).length).toBeGreaterThan(0);
 
