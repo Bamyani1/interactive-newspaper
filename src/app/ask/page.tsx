@@ -8,7 +8,7 @@ import { AskInput, AnswerPanel, SourceList, TimelineGallery, ResearchFeed, Resea
 import { FeedbackButtons } from "@/features/ask-archive/components/FeedbackButtons";
 
 export default function AskPage() {
-  const { answer, isStreaming, isLoading, error, feedEntries, submit, reset } = useAskArchive();
+  const { answer, isStreaming, isLoading, error, feedEntries, submit, reset, newConversation } = useAskArchive();
   const answerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -25,9 +25,21 @@ export default function AskPage() {
       <TimeControls />
       <main className="w-full flex-1">
         <div className="max-w-3xl mx-auto px-6 py-10">
-          <p className="text-xs uppercase tracking-widest mb-3" style={{ color: "var(--color-text-secondary)" }}>
-            Ask
-          </p>
+          <div className="flex items-start justify-between mb-3">
+            <p className="text-xs uppercase tracking-widest" style={{ color: "var(--color-text-secondary)" }}>
+              Ask
+            </p>
+            {answer && !isStreaming && (
+              <button
+                type="button"
+                onClick={newConversation}
+                className="text-xs uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                New conversation
+              </button>
+            )}
+          </div>
           <h1 className="font-header text-3xl mb-6">Ask the Archive</h1>
 
           <div className="flex flex-col gap-4 mb-8">

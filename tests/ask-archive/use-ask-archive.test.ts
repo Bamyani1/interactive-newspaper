@@ -73,9 +73,14 @@ describe("useAskArchive", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: "What happened?" }),
       })
     );
+    // Body now also carries a localStorage-backed sessionId; assert
+    // the question field is present rather than pinning the exact shape.
+    const body = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string,
+    );
+    expect(body.question).toBe("What happened?");
   });
 
   it("sets isLoading to true during fetch", async () => {
@@ -182,12 +187,10 @@ describe("useAskArchive", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/ask?stream=1",
-      expect.objectContaining({
-        body: JSON.stringify({ question: "What happened?" }),
-      })
+    const body2 = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string,
     );
+    expect(body2.question).toBe("What happened?");
   });
 
   it("resets all state on reset()", async () => {

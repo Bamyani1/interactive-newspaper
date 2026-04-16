@@ -20,6 +20,33 @@ interface UseAskArchiveReturn {
   feedEntries: FeedEntry[];
   submit: (question: string) => void;
   reset: () => void;
+  /**
+   * Start a fresh conversation — mints a new sessionId so follow-up
+   * questions no longer carry prior context into the reformulator.
+   */
+  newConversation: () => void;
+}
+
+// localStorage key under which the current conversation's sessionId
+// is kept. Same tab → same session across page reloads.
+const SESSION_STORAGE_KEY = "owu-ask-session-id";
+
+function readOrCreateSessionId(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const existing = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (existing) return existing;
+    const fresh =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    window.localStorage.setItem(SESSION_STORAGE_KEY, fresh);
+    return fresh;
+  } catch {
+    // localStorage can throw (private mode, disabled storage). Fall
+    // back to an in-memory id — we just lose persistence across reloads.
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
 }
 
 // Discriminated union of SSE event shapes from /api/ask?stream=1
@@ -81,6 +108,9 @@ export function useAskArchive(): UseAskArchiveReturn {
   const abortRef = useRef<AbortController | null>(null);
   const feedIdRef = useRef(0);
   const feedRef = useRef<FeedEntry[]>([]);
+  // Session id is lazy-initialized on first submit, not at mount, so
+  // SSR/hydration doesn't clash with localStorage access.
+  const sessionIdRef = useRef<string | null>(null);
 
   const submit = useCallback((question: string) => {
     const trimmed = question.trim();
@@ -99,6 +129,13 @@ export function useAskArchive(): UseAskArchiveReturn {
     feedRef.current = [];
     setFeedEntries([]);
 
+    // Lazily ensure a session id exists for this tab; reuse across
+    // submits so the server's conversation-store links turns together.
+    if (!sessionIdRef.current) {
+      sessionIdRef.current = readOrCreateSessionId();
+    }
+    const sessionId = sessionIdRef.current;
+
     // Runs the streaming request in a closure so we can use async/await
     // without exposing submit() as async (React callback semantics).
     (async () => {
@@ -106,7 +143,7 @@ export function useAskArchive(): UseAskArchiveReturn {
         const res = await fetch("/api/ask?stream=1", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: trimmed }),
+          body: JSON.stringify({ question: trimmed, sessionId }),
           signal: controller.signal,
         });
 
@@ -261,5 +298,19 @@ export function useAskArchive(): UseAskArchiveReturn {
     setFeedEntries([]);
   }, []);
 
-  return { answer, isStreaming, stage, isLoading, error, feedEntries, submit, reset };
+  const newConversation = useCallback(() => {
+    // Drop the persisted id so the next submit gets a fresh session.
+    // Also clear the visible state so the UI reads as "starting over".
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      } catch {
+        // localStorage disabled; nothing to remove.
+      }
+    }
+    sessionIdRef.current = null;
+    reset();
+  }, [reset]);
+
+  return { answer, isStreaming, stage, isLoading, error, feedEntries, submit, reset, newConversation };
 }
