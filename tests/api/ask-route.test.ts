@@ -39,7 +39,16 @@ vi.mock("@/src/lib/query-reformulator", () => ({
 
 vi.mock("@/src/lib/reranker", () => ({
   rerankArticles: vi.fn(),
+  rerankPerEra: vi.fn(),
 }));
+
+vi.mock("@/src/lib/retrieve-multi-era", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/src/lib/retrieve-multi-era")>();
+  return {
+    ...actual,
+    retrieveMultiEra: vi.fn(),
+  };
+});
 
 vi.mock("@/src/lib/rate-limit", () => ({
   createRateLimiter: () => () => ({ allowed: true, resetAt: Date.now() + 60000 }),
@@ -58,7 +67,8 @@ import { embedQuery } from "@/src/lib/embeddings";
 import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
-import { rerankArticles } from "@/src/lib/reranker";
+import { rerankArticles, rerankPerEra } from "@/src/lib/reranker";
+import { retrieveMultiEra } from "@/src/lib/retrieve-multi-era";
 
 function makeRequest(
   body: Record<string, unknown>,
@@ -129,7 +139,15 @@ describe("POST /api/ask", () => {
     });
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (retrieveMultiEra as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      articles: [mockArticle],
+      method: "hybrid",
+      erasUsed: [],
+    });
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (rerankPerEra as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
     ]);
     (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -227,7 +245,7 @@ describe("POST /api/ask", () => {
   });
 
   it("tags reranker errors with stage='rerank'", async () => {
-    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(
+    (rerankPerEra as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error("reranker crashed"),
     );
 
@@ -286,24 +304,29 @@ describe("POST /api/ask", () => {
   });
 
   it("falls back to vector-only search when hybridSearch throws", async () => {
-    (hybridSearch as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("FTS index unavailable")
-    );
-    (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (retrieveMultiEra as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      articles: [mockArticle],
+      method: "vector",
+      erasUsed: [],
+    });
 
     const response = await POST(makeRequest({ question: "Tell me about sports" }));
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body.meta.method).toBe("vector");
-    expect(queryArticlesByEmbedding).toHaveBeenCalled();
+    expect(retrieveMultiEra).toHaveBeenCalled();
   });
 
   it("includes bodySnippet in sourceArticles (truncated with ellipsis if > 300 chars)", async () => {
     const longBody = "x".repeat(400);
     const articleWithLongBody = { ...mockArticle, bodyPlain: longBody, relevanceScore: 8 };
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([articleWithLongBody]);
-    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([articleWithLongBody]);
+    (retrieveMultiEra as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      articles: [articleWithLongBody],
+      method: "hybrid",
+      erasUsed: [],
+    });
+    (rerankPerEra as ReturnType<typeof vi.fn>).mockResolvedValue([articleWithLongBody]);
 
     const response = await POST(makeRequest({ question: "What happened?" }));
     const body = await response.json();
@@ -315,8 +338,12 @@ describe("POST /api/ask", () => {
 
     // Short body should not have ellipsis
     const shortArticle = { ...mockArticle, bodyPlain: "Short body", relevanceScore: 8 };
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
-    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
+    (retrieveMultiEra as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      articles: [shortArticle],
+      method: "hybrid",
+      erasUsed: [],
+    });
+    (rerankPerEra as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
 
     const response2 = await POST(makeRequest({ question: "What happened?" }));
     const body2 = await response2.json();
@@ -356,10 +383,11 @@ describe("POST /api/ask", () => {
       "expanded OWU query",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(hybridSearch).toHaveBeenCalledWith(
+    expect(retrieveMultiEra).toHaveBeenCalledWith(
       "OWU OR Ohio Wesleyan",
       expect.any(Array),
-      expect.objectContaining({ limit: 20, signal: expect.any(AbortSignal) }),
+      undefined,
+      expect.objectContaining({ retrievalLimit: 20, signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -379,17 +407,22 @@ describe("POST /api/ask", () => {
     );
   });
 
-  it("calls rerankArticles between retrieval and generation", async () => {
+  it("calls rerankPerEra between retrieval and generation", async () => {
     const retrieved = [mockArticle, { ...mockArticle, id: "1960-01-07-1" }];
     const reranked = [{ ...mockArticle, relevanceScore: 9 }];
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue(retrieved);
-    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue(reranked);
+    (retrieveMultiEra as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      articles: retrieved,
+      method: "hybrid",
+      erasUsed: [],
+    });
+    (rerankPerEra as ReturnType<typeof vi.fn>).mockResolvedValue(reranked);
 
     await POST(makeRequest({ question: "Test?" }));
 
-    expect(rerankArticles).toHaveBeenCalledWith(
+    expect(rerankPerEra).toHaveBeenCalledWith(
       "Test?",
       retrieved,
+      [],
       expect.objectContaining({
         maxArticles: 10,
         minScore: 4,
@@ -474,9 +507,9 @@ describe("POST /api/ask", () => {
     _setGlobalDeadlineForTests(2000);
     _setRetrievalTimeoutForTests(150);
     try {
-      // Both hybrid AND the vector-only fallback hang; the inner retrieval
-      // timeout should fire for hybrid, return 504 with stage=retrieve.
-      (hybridSearch as ReturnType<typeof vi.fn>).mockImplementation(
+      // retrieveMultiEra hangs; the inner retrieval timeout should fire,
+      // return 504 with stage=retrieve.
+      (retrieveMultiEra as unknown as ReturnType<typeof vi.fn>).mockImplementation(
         () => new Promise(() => {}),
       );
 
@@ -520,8 +553,8 @@ describe("POST /api/ask", () => {
     // Critical: each pipeline stage was called exactly ONCE total
     expect(reformulateQuery).toHaveBeenCalledTimes(1);
     expect(embedQuery).toHaveBeenCalledTimes(1);
-    expect(hybridSearch).toHaveBeenCalledTimes(1);
-    expect(rerankArticles).toHaveBeenCalledTimes(1);
+    expect(retrieveMultiEra).toHaveBeenCalledTimes(1);
+    expect(rerankPerEra).toHaveBeenCalledTimes(1);
     expect(generateAnswer).toHaveBeenCalledTimes(1);
   });
 
@@ -850,11 +883,12 @@ describe("POST /api/ask", () => {
     // array to generateAnswer, which returns the canned insufficient-info
     // response with confidence=low. Previously this path had no explicit
     // test — coverage reached via golden suite only.
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
-      mockArticle,
-      { ...mockArticle, id: "1960-01-07-1" },
-    ]);
-    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (retrieveMultiEra as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      articles: [mockArticle, { ...mockArticle, id: "1960-01-07-1" }],
+      method: "hybrid",
+      erasUsed: [],
+    });
+    (rerankPerEra as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer:
         "I don't have enough information in the archive to answer this question.",

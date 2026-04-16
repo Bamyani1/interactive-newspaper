@@ -14,7 +14,7 @@ import { retrieveMultiEra } from "@/src/lib/retrieve-multi-era";
 import type { MultiEraArticle } from "@/src/lib/retrieve-multi-era";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
-import { rerankArticles } from "@/src/lib/reranker";
+import { rerankArticles, rerankPerEra } from "@/src/lib/reranker";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { AskResponse, Citation } from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
@@ -898,7 +898,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         logRerankSignals(requestId, computeRerankSignals(articles), mode, "default");
 
         const rankedArticles: RankedArticle[] = await wrapStage("rerank", () =>
-            rerankArticles(question, articles, {
+            rerankPerEra(question, articles, erasUsed, {
                 maxArticles: keepTopK,
                 minScore: mode === "visual" ? 3 : 4,
                 signal: globalController.signal,

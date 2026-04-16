@@ -128,6 +128,44 @@ export async function rerankArticles(
     }
 }
 
+/**
+ * Per-era reranker: when ≥2 eras were used in retrieval, runs parallel
+ * `rerankArticles` calls per era to avoid cross-era score competition.
+ * When fewer than 2 eras, delegates to the existing `rerankArticles`.
+ */
+export async function rerankPerEra(
+    question: string,
+    articles: (RetrievedArticle & { matchedEra?: string })[],
+    erasUsed: { label: string }[],
+    options: RerankOptions = {},
+): Promise<RankedArticle[]> {
+    if (erasUsed.length < 2) {
+        return rerankArticles(question, articles, options);
+    }
+
+    const maxArticles = options.maxArticles ?? DEFAULT_MAX_ARTICLES;
+    const perEraMax = Math.ceil(maxArticles / erasUsed.length);
+
+    const grouped = new Map<string, RetrievedArticle[]>();
+    for (const a of articles) {
+        const key = a.matchedEra ?? "__untagged__";
+        const group = grouped.get(key) ?? [];
+        group.push(a);
+        grouped.set(key, group);
+    }
+
+    const perEraResults = await Promise.all(
+        Array.from(grouped.entries()).map(([, group]) =>
+            rerankArticles(question, group, {
+                ...options,
+                maxArticles: perEraMax,
+            }),
+        ),
+    );
+
+    return perEraResults.flat();
+}
+
 export function parseScores(
     text: string,
     expectedCount: number,
