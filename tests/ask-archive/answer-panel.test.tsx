@@ -54,16 +54,9 @@ describe("AnswerPanel", () => {
     expect(link2).toHaveAttribute("href", "#ask-source-2");
   });
 
-  it("shows the confidence badge", () => {
-    render(<AnswerPanel response={makeResponse({ confidence: "high" })} />);
+  it("hides answer text and cursor when not streaming with empty answer", () => {
+    render(<AnswerPanel response={makeResponse({ answer: "" })} />);
 
-    expect(screen.getByText("High confidence")).toBeInTheDocument();
-  });
-
-  it("shows meta information", () => {
-    render(<AnswerPanel response={makeResponse()} />);
-
-    expect(screen.getByText("8 articles searched")).toBeInTheDocument();
-    expect(screen.getByText(/0\.9/)).toBeInTheDocument();
+    expect(screen.queryByText(/▊/)).not.toBeInTheDocument();
   });
 });

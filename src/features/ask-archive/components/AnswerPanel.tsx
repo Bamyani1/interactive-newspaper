@@ -2,8 +2,6 @@
 
 import React from "react";
 import type { AskResponse } from "@/src/types";
-import { ConfidenceBadge } from "./ConfidenceBadge";
-import { FeedbackButtons } from "./FeedbackButtons";
 
 interface AnswerPanelProps {
   response: AskResponse;
@@ -175,16 +173,6 @@ export const AnswerPanel: React.FC<AnswerPanelProps> = ({ response, isStreaming 
         )}
       </div>
 
-      {!isStreaming && (
-        <>
-          <div className="ask-meta mt-4">
-            <ConfidenceBadge confidence={response.confidence} />
-            <span>{response.meta.articlesSearched} articles searched</span>
-            <span>{(response.meta.totalTimeMs / 1000).toFixed(1)}s</span>
-          </div>
-          <FeedbackButtons response={response} />
-        </>
-      )}
     </div>
   );
 };

@@ -353,7 +353,12 @@ async function handleStreamingAsk(params: {
                     });
                     return;
                 }
-                send({ type: "stage", name: "reformulate", elapsedMs: stageElapsed() });
+                send({
+                    type: "stage",
+                    name: "reformulate",
+                    elapsedMs: stageElapsed(),
+                    detail: embeddingQuery !== question ? embeddingQuery : undefined,
+                });
 
                 // ── Agent path for complex questions ──
                 if (complexity === "complex") {
