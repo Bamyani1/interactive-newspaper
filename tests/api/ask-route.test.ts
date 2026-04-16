@@ -64,7 +64,7 @@ import {
 } from "@/src/app/api/ask/route";
 import type { NextResponse } from "next/server";
 import { embedQuery } from "@/src/lib/embeddings";
-import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
+import { hybridSearch } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles, rerankPerEra } from "@/src/lib/reranker";
