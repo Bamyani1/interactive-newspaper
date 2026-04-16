@@ -15,7 +15,7 @@ import type { Citation } from "@/src/types";
 // ─── Constants ──────────────────────────────────────────────────
 
 const AGENT_MODEL = "gemini-3-flash-preview";
-const MAX_ROUNDS = 5;
+const MAX_ROUNDS = 8;
 const MAX_OUTPUT_TOKENS = 4096;
 const MAX_BODY_CHARS_IN_CONTEXT = 3000;
 const MAX_EXCERPT_CHARS_IN_CONTEXT = 300;
@@ -29,9 +29,10 @@ RULES:
 2. CITE every factual claim using [Article ID] format (e.g., [1965-03-15-4]).
 3. If you cannot find enough information, say so honestly.
 4. You may search multiple times with different queries to build a complete answer.
-5. For questions spanning multiple eras, search each era separately.
+5. For questions spanning multiple eras, issue MULTIPLE search_archive calls in a SINGLE response to search different decades simultaneously. This is critical for efficiency.
 6. Use past tense for historical events.
-7. Never fabricate quotes or statistics.`;
+7. Never fabricate quotes or statistics.
+8. Aim to gather all sources within 2-3 rounds, then write your answer. Do not spend more than 4 rounds searching.`;
 
 // ─── Types ──────────────────────────────────────────────────────
 
