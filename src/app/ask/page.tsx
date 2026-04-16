@@ -4,34 +4,21 @@ import React, { useRef, useEffect } from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
 import { SiteFooter } from "@/features/footer";
-import { AskInput, AnswerPanel, SourceList, AskEmptyState, TimelineGallery, useAskArchive } from "@/features/ask-archive";
-
-const STAGE_LABELS: Record<string, string> = {
-  reformulate: "Understanding the question…",
-  embed: "Encoding the query…",
-  retrieve: "Searching the archive…",
-  rerank: "Ranking articles by relevance…",
-  generate: "Writing the answer…",
-  agent: "Researching your question…",
-};
+import { AskInput, AnswerPanel, SourceList, AskEmptyState, TimelineGallery, ResearchFeed, ResearchSummary, useAskArchive } from "@/features/ask-archive";
+import { FeedbackButtons } from "@/features/ask-archive/components/FeedbackButtons";
 
 export default function AskPage() {
-  const { answer, isStreaming, stage, isLoading, error, submit, reset } = useAskArchive();
+  const { answer, isStreaming, isLoading, error, feedEntries, submit, reset } = useAskArchive();
   const answerRef = useRef<HTMLDivElement>(null);
 
-  // Focus the answer container when the first non-null answer appears so
-  // screen readers jump to the content.
   useEffect(() => {
     if (answer && !isStreaming) {
       answerRef.current?.focus();
     }
   }, [answer, isStreaming]);
 
-  // Pre-generation loading shows a stage label instead of a blank skeleton.
-  // Once metadata arrives, `answer` is populated (even though the `answer.answer`
-  // text is empty/growing) and we render the progressive AnswerPanel + SourceList.
-  const showPreGenLoading = isLoading && !answer && !error;
-  const stageLabel = stage ? STAGE_LABELS[stage] ?? "Searching the archive…" : null;
+  const feedActive = isLoading || isStreaming;
+  const hasAnswerText = answer ? answer.answer.trim().length > 0 : false;
 
   return (
     <PageShell variant="default" hasHeader>
@@ -46,24 +33,7 @@ export default function AskPage() {
           <AskInput onSubmit={submit} isLoading={isLoading} />
 
           <div aria-live="polite" aria-atomic="false">
-            {showPreGenLoading && (
-              <div className="ask-loading-skeleton mt-8" role="status">
-                <span className="sr-only">{stageLabel ?? "Searching the archive..."}</span>
-                {stageLabel && (
-                  <p
-                    className="text-sm mb-3"
-                    style={{ color: "var(--color-text-secondary)" }}
-                  >
-                    {stageLabel}
-                  </p>
-                )}
-                <div className="ask-loading-bar ask-loading-bar--long" />
-                <div className="ask-loading-bar ask-loading-bar--medium" />
-                <div className="ask-loading-bar ask-loading-bar--short" />
-                <div className="ask-loading-bar ask-loading-bar--long" />
-                <div className="ask-loading-bar ask-loading-bar--medium" />
-              </div>
-            )}
+            <ResearchFeed entries={feedEntries} isActive={feedActive} />
 
             {error && (
               <div className="mt-8 p-4 rounded-sm" style={{
@@ -92,7 +62,15 @@ export default function AskPage() {
                 {answer.mode === "visual" && !isStreaming && (
                   <TimelineGallery response={answer} />
                 )}
-                <AnswerPanel response={answer} isStreaming={isStreaming} />
+                {(hasAnswerText || !isStreaming) && (
+                  <AnswerPanel response={answer} isStreaming={isStreaming} />
+                )}
+                {!isStreaming && (
+                  <>
+                    <ResearchSummary response={answer} />
+                    <FeedbackButtons response={answer} />
+                  </>
+                )}
                 <SourceList sources={answer.sourceArticles} />
               </div>
             )}

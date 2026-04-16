@@ -512,3 +512,74 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ─── Research Feed ────────────────────────────────────────── */
+
+.ask-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ask-feed-entry {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 0;
+  animation: askFadeIn 300ms var(--ease-default, ease) both;
+}
+
+.ask-feed-entry--query {
+  font-style: italic;
+  color: var(--color-accent);
+}
+
+.ask-feed-entry--tool {
+  color: var(--color-text-secondary);
+}
+
+.ask-feed-entry--result {
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+  font-size: 0.75rem;
+}
+
+.ask-feed-entry--status {
+  color: var(--color-text-secondary);
+}
+
+.ask-feed-entry--last.ask-feed-entry--status {
+  animation: askFadeIn 300ms var(--ease-default, ease) both,
+             askPulse 1.5s ease-in-out infinite;
+}
+
+/* ─── Research Summary ─────────────────────────────────────── */
+
+.ask-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+
+.ask-summary-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.ask-summary-separator {
+  color: var(--color-text-secondary);
+  opacity: 0.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-feed-entry {
+    animation: none;
+  }
+}

@@ -5,28 +5,26 @@ import type { AskResponse } from "@/src/types";
 
 export type AskStage = "reformulate" | "embed" | "retrieve" | "rerank" | "generate" | "agent";
 
+export interface FeedEntry {
+  id: string;
+  text: string;
+  type: "query" | "tool" | "result" | "status";
+}
+
 interface UseAskArchiveReturn {
-  /**
-   * The progressive answer state. During streaming this is populated in
-   * stages: first with source articles + placeholder answer="" when the
-   * metadata event arrives, then with `answer` text growing as deltas
-   * arrive, and finally replaced with the fully-cleaned answer when the
-   * server's `done` event arrives.
-   */
   answer: AskResponse | null;
-  /** True while the server is still streaming the answer (generate stage). */
   isStreaming: boolean;
-  /** Current pipeline stage (null when idle or done). */
   stage: AskStage | null;
   isLoading: boolean;
   error: string | null;
+  feedEntries: FeedEntry[];
   submit: (question: string) => void;
   reset: () => void;
 }
 
 // Discriminated union of SSE event shapes from /api/ask?stream=1
 type StreamEvent =
-  | { type: "stage"; name: AskStage; elapsedMs: number }
+  | { type: "stage"; name: AskStage; elapsedMs: number; detail?: string }
   | {
       type: "metadata";
       question: string;
@@ -78,6 +76,7 @@ export function useAskArchive(): UseAskArchiveReturn {
   const [stage, setStage] = useState<AskStage | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   const submit = useCallback((question: string) => {
@@ -94,6 +93,7 @@ export function useAskArchive(): UseAskArchiveReturn {
     setAnswer(null);
     setIsStreaming(false);
     setStage(null);
+    setFeedEntries([]);
 
     // Runs the streaming request in a closure so we can use async/await
     // without exposing submit() as async (React callback semantics).
@@ -151,6 +151,11 @@ export function useAskArchive(): UseAskArchiveReturn {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buf = "";
+        let feedId = 0;
+        const addFeed = (text: string, type: FeedEntry["type"]) => {
+          feedId++;
+          setFeedEntries(prev => [...prev, { id: `fe-${feedId}`, text, type }]);
+        };
 
         while (true) {
           const { done, value } = await reader.read();
@@ -164,6 +169,17 @@ export function useAskArchive(): UseAskArchiveReturn {
             if (event && !controller.signal.aborted) {
               if (event.type === "stage") {
                 setStage(event.name);
+                if (event.name === "reformulate" && event.detail) {
+                  addFeed(`Searching for: \u201c${event.detail}\u201d`, "query");
+                } else if (event.name === "retrieve") {
+                  addFeed("Searching the archive\u2026", "status");
+                } else if (event.name === "rerank") {
+                  addFeed("Ranking by relevance\u2026", "status");
+                } else if (event.name === "generate") {
+                  addFeed("Writing answer\u2026", "status");
+                } else if (event.name === "agent") {
+                  addFeed("Researching your question\u2026", "status");
+                }
               } else if (event.type === "metadata") {
                 pending = {
                   ...pending,
@@ -176,23 +192,19 @@ export function useAskArchive(): UseAskArchiveReturn {
                 setStage("generate");
                 setIsStreaming(true);
               } else if (event.type === "tool_call") {
-                // Agent progress: show what tool is being called
-                const toolLabels: Record<string, string> = {
-                  search_archive: "Searching the archive…",
-                  read_article: "Reading an article…",
-                  list_editions: "Checking available editions…",
-                };
                 setStage("agent" as AskStage);
-                pending = {
-                  ...pending,
-                  answer: toolLabels[event.tool] ?? "Researching…",
-                };
-                setAnswer(pending);
+                if (event.tool === "search_archive" && event.args?.query) {
+                  addFeed(`Searching archive for \u2018${event.args.query}\u2019\u2026`, "tool");
+                } else if (event.tool === "read_article" && event.args?.articleId) {
+                  addFeed(`Reading article ${event.args.articleId}\u2026`, "tool");
+                } else if (event.tool === "list_editions") {
+                  addFeed("Checking available editions\u2026", "tool");
+                } else {
+                  addFeed("Researching\u2026", "tool");
+                }
               } else if (event.type === "tool_result") {
-                // Show what the tool found
                 if (event.summary) {
-                  pending = { ...pending, answer: event.summary };
-                  setAnswer(pending);
+                  addFeed(event.summary, "result");
                 }
               } else if (event.type === "delta") {
                 pending = { ...pending, answer: pending.answer + event.text };
@@ -239,7 +251,8 @@ export function useAskArchive(): UseAskArchiveReturn {
     setStage(null);
     setError(null);
     setIsLoading(false);
+    setFeedEntries([]);
   }, []);
 
-  return { answer, isStreaming, stage, isLoading, error, submit, reset };
+  return { answer, isStreaming, stage, isLoading, error, feedEntries, submit, reset };
 }
