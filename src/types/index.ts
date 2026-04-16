@@ -186,6 +186,7 @@ export interface AskResponse {
         distance: number | null;
         imageUrls: string[];
     }[];
+    followUpQuestions?: string[];
     meta: {
         retrievalTimeMs: number;
         generationTimeMs: number;
@@ -196,5 +197,6 @@ export interface AskResponse {
         complexity?: "simple" | "complex";
         agentSteps?: number;
         agentToolCalls?: number;
+        cacheHit?: boolean;
     };
 }

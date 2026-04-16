@@ -72,6 +72,7 @@ import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
 import { runAgentLoop } from "@/src/lib/agent-loop";
 import { addConversationTurn } from "@/src/lib/conversation-store";
+import { clearAnswerCache } from "@/src/lib/answer-cache";
 
 function makeRequest(
   body: Record<string, unknown>,
@@ -135,6 +136,7 @@ describe("POST /api/ask", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
+    clearAnswerCache();
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "What happened at OWU?",
       ftsQuery: "What happened at OWU?",
@@ -151,6 +153,7 @@ describe("POST /api/ask", () => {
         { articleId: "1960-01-07-0", headline: "Test Headline", editionDate: "1960-01-07" },
       ],
       confidence: "high",
+      followUps: [],
     });
     // Default streaming mock: yields 2 deltas then a done event
     (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
@@ -168,6 +171,7 @@ describe("POST /api/ask", () => {
             },
           ],
           confidence: "high",
+          followUps: [],
         };
       })(),
     );
@@ -326,7 +330,10 @@ describe("POST /api/ask", () => {
     expect(snippet.endsWith("\u2026")).toBe(true);
     expect(snippet.slice(0, 300)).toBe("x".repeat(300));
 
-    // Short body should not have ellipsis
+    // Short body should not have ellipsis — clear cache so second POST
+    // re-runs the pipeline (answer cache would otherwise replay first hit).
+    clearAnswerCache();
+
     const shortArticle = { ...mockArticle, bodyPlain: "Short body", relevanceScore: 8 };
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
@@ -802,6 +809,7 @@ describe("POST /api/ask", () => {
           answer: "First second third.",
           citations: [],
           confidence: "medium",
+          followUps: [],
         };
       })(),
     );
@@ -873,6 +881,7 @@ describe("POST /api/ask", () => {
         "I don't have enough information in the archive to answer this question.",
       citations: [],
       confidence: "low",
+      followUps: [],
     });
 
     const response = await POST(
@@ -977,6 +986,7 @@ describe("Complexity routing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
+    clearAnswerCache();
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -986,6 +996,7 @@ describe("Complexity routing", () => {
       answer: "Pipeline answer",
       citations: [],
       confidence: "medium",
+      followUps: [],
     });
   });
 
@@ -1111,6 +1122,7 @@ describe("CRAG retry", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
+    clearAnswerCache();
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "obscure topic",
       ftsQuery: "obscure topic",
@@ -1129,6 +1141,7 @@ describe("CRAG retry", () => {
       answer: "Found on retry.",
       citations: [],
       confidence: "medium",
+      followUps: [],
     });
 
     const response = await POST(makeRequest({ question: "obscure topic" }));
@@ -1148,6 +1161,7 @@ describe("CRAG retry", () => {
       answer: "Not enough information.",
       citations: [],
       confidence: "low",
+      followUps: [],
     });
 
     const response = await POST(makeRequest({ question: "obscure topic" }));
@@ -1162,6 +1176,7 @@ describe("Streaming + agent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
+    clearAnswerCache();
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -1170,7 +1185,7 @@ describe("Streaming + agent", () => {
     (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
       (async function* () {
         yield { type: "delta", text: "Answer." };
-        yield { type: "done", answer: "Answer.", citations: [], confidence: "medium" };
+        yield { type: "done", answer: "Answer.", citations: [], confidence: "medium", followUps: [] };
       })(),
     );
   });

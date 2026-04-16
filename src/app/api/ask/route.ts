@@ -23,6 +23,7 @@ import { runAgentLoop } from "@/src/lib/agent-loop";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { AskResponse, Citation } from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
+import { getCachedAnswer, setCachedAnswer } from "@/src/lib/answer-cache";
 
 const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
@@ -452,6 +453,49 @@ async function handleStreamingAsk(params: {
                     return;
                 }
 
+                // ── Cache check (pipeline path only) ──
+                const cached = getCachedAnswer(question, filters);
+                if (cached) {
+                    const cachedSourceArticles = cached.sourceArticles;
+                    const cachedMeta = cached.meta;
+                    send({
+                        type: "metadata",
+                        question,
+                        mode: cached.mode,
+                        requestId,
+                        sourceArticles: cachedSourceArticles,
+                        meta: {
+                            retrievalTimeMs: cachedMeta.retrievalTimeMs,
+                            articlesSearched: cachedMeta.articlesSearched,
+                            method: cachedMeta.method,
+                            reformulatedQuery: cachedMeta.reformulatedQuery,
+                        },
+                    });
+                    send({ type: "delta", text: cached.answer });
+                    addConversationTurn(
+                        sessionId,
+                        question,
+                        cached.answer,
+                        cached.citations.map((c) => c.articleId),
+                    );
+                    send({
+                        type: "done",
+                        answer: cached.answer,
+                        citations: cached.citations,
+                        confidence: cached.confidence,
+                        sessionId,
+                        sourceArticles: cachedSourceArticles,
+                        followUpQuestions: cached.followUpQuestions ?? [],
+                        meta: {
+                            ...cachedMeta,
+                            totalTimeMs: Date.now() - totalStart,
+                            cacheHit: true,
+                            complexity,
+                        },
+                    });
+                    return;
+                }
+
                 // ── Step 2: Embed (pipeline path) ──
                 let questionEmbedding: number[];
                 try {
@@ -657,6 +701,7 @@ async function handleStreamingAsk(params: {
                 let finalAnswer = "";
                 let finalCitations: Citation[] = [];
                 let finalConfidence: "low" | "medium" | "high" = "low";
+                let finalFollowUps: string[] = [];
 
                 try {
                     for await (const event of generateAnswerStream(question, rankedArticles, {
@@ -669,6 +714,7 @@ async function handleStreamingAsk(params: {
                             finalAnswer = event.answer;
                             finalCitations = event.citations;
                             finalConfidence = event.confidence;
+                            finalFollowUps = event.followUps;
                         }
                     }
                 } catch (err) {
@@ -701,12 +747,37 @@ async function handleStreamingAsk(params: {
                     finalCitations.map((c) => c.articleId),
                 );
 
+                const streamingResponse: AskResponse = {
+                    question,
+                    answer: finalAnswer,
+                    citations: finalCitations,
+                    confidence: finalConfidence,
+                    mode,
+                    requestId,
+                    sessionId,
+                    sourceArticles,
+                    followUpQuestions: finalFollowUps,
+                    meta: {
+                        retrievalTimeMs,
+                        generationTimeMs,
+                        totalTimeMs,
+                        articlesSearched: articles.length,
+                        method,
+                        reformulatedQuery:
+                            embeddingQuery !== question ? embeddingQuery : undefined,
+                        complexity,
+                    },
+                };
+
+                setCachedAnswer(question, filters, streamingResponse);
+
                 send({
                     type: "done",
                     answer: finalAnswer,
                     citations: finalCitations,
                     confidence: finalConfidence,
                     sessionId,
+                    followUpQuestions: finalFollowUps,
                     meta: {
                         retrievalTimeMs,
                         generationTimeMs,
@@ -943,6 +1014,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return NextResponse.json(response);
         }
 
+        // ── Cache check (pipeline path only) ──
+        const cachedResponse = getCachedAnswer(question, body.filters);
+        if (cachedResponse) {
+            const overridden: AskResponse = {
+                ...cachedResponse,
+                requestId,
+                sessionId,
+                meta: {
+                    ...cachedResponse.meta,
+                    totalTimeMs: Date.now() - totalStart,
+                    cacheHit: true,
+                    complexity,
+                },
+            };
+            addConversationTurn(
+                sessionId,
+                question,
+                cachedResponse.answer,
+                cachedResponse.citations.map((c) => c.articleId),
+            );
+            return NextResponse.json(overridden);
+        }
+
         // ── Step 2: Embed the reformulated query (pipeline path) ──
         let questionEmbedding: number[];
         try {
@@ -1155,7 +1249,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         // ── Step 5: Generate answer (using ORIGINAL question, not reformulated) ──
         const generationStart = Date.now();
-        const { answer, citations, confidence } = await wrapStage(
+        const { answer, citations, confidence, followUps } = await wrapStage(
             "generate",
             () =>
                 generateAnswer(question, rankedArticles, {
@@ -1193,6 +1287,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 distance: a.distance !== null ? parseFloat(a.distance.toFixed(4)) : null,
                 imageUrls: a.imageUrls,
             })),
+            followUpQuestions: followUps,
             meta: {
                 retrievalTimeMs,
                 generationTimeMs,
@@ -1203,6 +1298,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 complexity,
             },
         };
+
+        setCachedAnswer(question, filters, response);
 
         return NextResponse.json(response);
     })();
