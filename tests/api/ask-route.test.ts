@@ -1580,3 +1580,98 @@ describe("Answer cache (streaming)", () => {
     expect(generateAnswerStream).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("persistTurnBounded (conversation-turn race fix)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "race-q",
+      ftsQuery: "race-q",
+      mode: "text",
+      complexity: "simple",
+    });
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Array(768).fill(0),
+    );
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "A",
+      citations: [
+        {
+          articleId: "1960-01-07-0",
+          headline: "Test Headline",
+          editionDate: "1960-01-07",
+        },
+      ],
+      confidence: "high",
+      followUps: [],
+    });
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "A" };
+        yield {
+          type: "done",
+          answer: "A",
+          citations: [
+            {
+              articleId: "1960-01-07-0",
+              headline: "Test Headline",
+              editionDate: "1960-01-07",
+            },
+          ],
+          confidence: "high",
+          followUps: [],
+        };
+      })(),
+    );
+  });
+
+  it("awaits the conversation-turn write before emitting SSE done", async () => {
+    let writeResolved = false;
+    (addConversationTurn as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            writeResolved = true;
+            resolve();
+          }, 50);
+        }),
+    );
+
+    const response = await POST(
+      makeRequest(
+        { question: "race-q", sessionId: "race-sess-stream" },
+        { stream: true },
+      ),
+    );
+    const events = await readSseEvents(response);
+
+    expect(writeResolved).toBe(true);
+    expect(events.some((e) => e.type === "done")).toBe(true);
+  });
+
+  it("awaits the conversation-turn write before returning the non-streaming response", async () => {
+    let writeResolved = false;
+    (addConversationTurn as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            writeResolved = true;
+            resolve();
+          }, 50);
+        }),
+    );
+
+    const response = await POST(
+      makeRequest({ question: "race-q", sessionId: "race-sess-json" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(writeResolved).toBe(true);
+  });
+});
