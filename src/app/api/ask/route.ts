@@ -79,6 +79,30 @@ function newRequestId(): string {
     return Math.random().toString(36).slice(2, 10);
 }
 
+const PERSIST_TURN_TIMEOUT_MS = 1500;
+
+/**
+ * Await a conversation-turn write but cap total latency so a slow Neon
+ * never blocks the user's `done` event. If the timer wins, the write
+ * continues in the background — `addConversationTurn` swallows its own
+ * errors, so no unhandled rejection. Emitting `done` after this closes
+ * the race where a rapid follow-up could arrive before the prior turn
+ * landed in history.
+ */
+async function persistTurnBounded(
+    sessionId: string,
+    question: string,
+    answer: string,
+    citedArticleIds: string[],
+): Promise<void> {
+    await Promise.race([
+        addConversationTurn(sessionId, question, answer, citedArticleIds),
+        new Promise<void>((resolve) =>
+            setTimeout(resolve, PERSIST_TURN_TIMEOUT_MS),
+        ),
+    ]);
+}
+
 /**
  * Rerank articles and, if the reranker filtered all of them out, run ONE
  * corrective retry that reformulates the query for broader recall,
@@ -506,7 +530,7 @@ async function handleStreamingAsk(params: {
                             onProgress: (event) => send(event),
                         });
 
-                        void addConversationTurn(
+                        await persistTurnBounded(
                             sessionId,
                             question,
                             agentResult.answer,
@@ -595,7 +619,7 @@ async function handleStreamingAsk(params: {
                         },
                     });
                     send({ type: "delta", text: cached.answer });
-                    void addConversationTurn(
+                    await persistTurnBounded(
                         sessionId,
                         question,
                         cached.answer,
@@ -892,7 +916,7 @@ async function handleStreamingAsk(params: {
                 const generationTimeMs = Date.now() - generationStart;
                 const totalTimeMs = Date.now() - totalStart;
 
-                void addConversationTurn(
+                await persistTurnBounded(
                     sessionId,
                     question,
                     finalAnswer,
@@ -1157,7 +1181,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 }),
             );
 
-            void addConversationTurn(
+            await persistTurnBounded(
                 sessionId,
                 question,
                 agentResult.answer,
@@ -1221,7 +1245,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     complexity,
                 },
             };
-            void addConversationTurn(
+            await persistTurnBounded(
                 sessionId,
                 question,
                 cachedResponse.answer,
@@ -1415,7 +1439,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const generationTimeMs = Date.now() - generationStart;
 
         // ── Store conversation turn ──
-        void addConversationTurn(
+        await persistTurnBounded(
             sessionId,
             question,
             answer,
