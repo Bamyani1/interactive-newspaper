@@ -14,8 +14,6 @@ interface TranscriptProps {
     onRetry: (turnId: string) => void;
 }
 
-const STICKY_SCROLL_THRESHOLD = 120;
-
 export const Transcript: React.FC<TranscriptProps> = ({
     turns,
     isHydrating,
@@ -25,29 +23,25 @@ export const Transcript: React.FC<TranscriptProps> = ({
     onRetry,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const wasNearBottomRef = useRef(true);
+    const prevTurnCountRef = useRef(turns.length);
 
-    // Track whether the user is near the bottom BEFORE the transcript
-    // grows, so we only auto-scroll when they were already following
-    // along. If they've scrolled up to re-read a prior turn, we
-    // don't hijack the scroll position.
+    // When a new turn is added, anchor the viewport to the top of that
+    // turn so the reader starts at the beginning of the answer. During
+    // streaming (same turn, growing answer), leave the scroll alone so
+    // the reader isn't yanked down.
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
-        const handler = () => {
-            const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-            wasNearBottomRef.current = distance < STICKY_SCROLL_THRESHOLD;
-        };
-        el.addEventListener("scroll", handler, { passive: true });
-        return () => el.removeEventListener("scroll", handler);
-    }, []);
-
-    useEffect(() => {
-        const el = containerRef.current;
-        if (!el) return;
-        if (wasNearBottomRef.current) {
-            el.scrollTop = el.scrollHeight;
-        }
+        const isNewTurn = turns.length > prevTurnCountRef.current;
+        prevTurnCountRef.current = turns.length;
+        if (!isNewTurn) return;
+        const lastTurn = el.querySelector(
+            ".ask-turn:last-of-type",
+        ) as HTMLElement | null;
+        if (!lastTurn) return;
+        const turnTop = lastTurn.getBoundingClientRect().top;
+        const containerTop = el.getBoundingClientRect().top;
+        el.scrollTop += turnTop - containerTop;
     }, [turns]);
 
     const isEmpty = turns.length === 0;
@@ -62,18 +56,30 @@ export const Transcript: React.FC<TranscriptProps> = ({
         >
             {expiredBanner ? (
                 <div className="ask-expired-banner" role="status">
-                    Your last conversation expired. Starting fresh.
+                    <span className="ask-expired-banner-label">Notice</span>
+                    <span> — Your last conversation expired. Starting fresh.</span>
                 </div>
+            ) : null}
+
+            {isHydrating && isEmpty ? (
+                <p
+                    className="ask-hydrating-indicator"
+                    role="status"
+                    aria-live="polite"
+                >
+                    Restoring conversation…
+                </p>
             ) : null}
 
             {isEmpty && !isHydrating ? (
                 <AskEmptyState onPickExample={onExampleQuestion} />
             ) : null}
 
-            {turns.map((turn) => (
+            {turns.map((turn, i) => (
                 <Turn
                     key={turn.id}
                     turn={turn}
+                    isLatest={i === turns.length - 1}
                     onFollowUp={onFollowUp}
                     onRetry={onRetry}
                 />

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import {
-  Libre_Baskerville,
-  Crimson_Pro,
-  Work_Sans,
+  Playfair_Display,
+  Source_Serif_4,
+  JetBrains_Mono,
+  Inter,
 } from "next/font/google";
 import "./globals.css";
 import "../../font-color/styles/font-color-kit.css";
@@ -15,30 +16,36 @@ import { getEditionsList } from "@/src/lib/editions-server";
 import ColorCustomizer from "../../font-color/components/ColorCustomizer";
 import FontCustomizer from "../../font-color/components/FontCustomizer";
 
-const libreBaskerville = Libre_Baskerville({
-  variable: "--font-libre-baskerville",
+const playfairDisplay = Playfair_Display({
+  variable: "--font-playfair-display",
   subsets: ["latin"],
   display: "swap",
-  weight: ["400", "700"],
-  style: ["normal", "italic"],
-});
-
-const crimsonPro = Crimson_Pro({
-  variable: "--font-crimson-pro",
-  subsets: ["latin"],
-  display: "swap",
-  adjustFontFallback: true,
   weight: ["400", "500", "600", "700"],
   style: ["normal", "italic"],
 });
 
-const workSans = Work_Sans({
-  variable: "--font-work-sans",
+const sourceSerif = Source_Serif_4({
+  variable: "--font-source-serif",
   subsets: ["latin"],
   display: "swap",
   adjustFontFallback: true,
-  weight: ["400", "500", "600", "700"],
+  weight: ["300", "400", "500", "600"],
   style: ["normal", "italic"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains",
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500"],
+});
+
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  display: "swap",
+  adjustFontFallback: true,
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -58,7 +65,7 @@ export default async function RootLayout({
       <body
         data-theme="jazz"
         data-mode="dark"
-        className={`${libreBaskerville.variable} ${crimsonPro.variable} ${workSans.variable} antialiased`}
+        className={`${playfairDisplay.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} ${inter.variable} antialiased`}
       >
         <ThemeModeManager />
         <MotionProvider>

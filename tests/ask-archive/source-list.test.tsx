@@ -1,8 +1,12 @@
 import React from "react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SourceList } from "@/features/ask-archive";
 import type { AskResponse } from "@/src/types";
+
+vi.mock("next/navigation", () => ({
+    useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+}));
 
 type SourceArticle = AskResponse["sourceArticles"][number];
 
@@ -41,7 +45,7 @@ describe("SourceList", () => {
     render(<SourceList sources={sources} />);
 
     expect(
-      screen.getByRole("button", { name: /sources \(2 articles\)/i })
+      screen.getByRole("button", { name: /sources — 2 articles/i })
     ).toBeInTheDocument();
   });
 
@@ -49,7 +53,7 @@ describe("SourceList", () => {
     render(<SourceList sources={[makeSource()]} />);
 
     expect(
-      screen.getByRole("button", { name: /sources \(1 article\)/i })
+      screen.getByRole("button", { name: /sources — 1 article/i })
     ).toBeInTheDocument();
   });
 
@@ -88,7 +92,7 @@ describe("SourceList", () => {
     expect(screen.getByText("News")).toBeInTheDocument();
     expect(screen.getByText("1960-02-03")).toBeInTheDocument();
     expect(
-      screen.getByText("Students were fined for phone fraud...")
+      screen.getByText("Students were fined for phone fraud..."),
     ).toBeInTheDocument();
   });
 
@@ -99,15 +103,22 @@ describe("SourceList", () => {
     ];
     render(<SourceList sources={sources} />);
 
-    expect(screen.getByText("[1] First Story")).toBeInTheDocument();
-    expect(screen.getByText("[2] Second Story")).toBeInTheDocument();
+    expect(screen.getByText("[1]")).toBeInTheDocument();
+    expect(screen.getByText("[2]")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /First Story/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /Second Story/ }),
+    ).toBeInTheDocument();
   });
 
-  it("links each source card to its edition page", () => {
+  it("makes each source card an activatable button for the reader drawer", () => {
     const source = makeSource({ editionDate: "1960-02-03" });
     render(<SourceList sources={[source]} />);
 
-    const link = screen.getByRole("link");
-    expect(link).toHaveAttribute("href", "/edition/1960-02-03");
+    const card = screen.getByRole("button", { name: /Test Article/ });
+    expect(card).toHaveAttribute("id", "ask-source-1");
+    expect(card).toHaveAttribute("tabIndex", "0");
   });
 });

@@ -18,30 +18,51 @@ export const AskEmptyState: React.FC<AskEmptyStateProps> = ({
 }) => {
     return (
         <div className="ask-empty-state">
-            <p className="ask-empty-label">Ask the Research Desk</p>
-            <p className="ask-empty-description">
-                Ask questions about Ohio Wesleyan history spanning 1950 to
-                2006. Answers are grounded in articles from The Transcript
-                Archive, with sources you can verify.
+            <p className="ask-empty-lede">
+                <strong>A research desk for the student paper.</strong> Ask a
+                question about fifty-six years of campus history; every answer
+                comes with the sources you can verify.
             </p>
+
+            <dl className="ask-empty-stats">
+                <div className="ask-empty-stat">
+                    <dt>Coverage</dt>
+                    <dd>1950–2006</dd>
+                </div>
+                <div className="ask-empty-stat">
+                    <dt>Editions</dt>
+                    <dd>293</dd>
+                </div>
+                <div className="ask-empty-stat">
+                    <dt>Articles</dt>
+                    <dd>9,582</dd>
+                </div>
+            </dl>
+
             {onPickExample ? (
-                <ul className="ask-empty-examples">
-                    {EXAMPLE_QUESTIONS.map((q) => (
-                        <li key={q}>
-                            <button
-                                type="button"
-                                className="ask-empty-example"
-                                onClick={() => onPickExample(q)}
-                            >
-                                {q}
-                            </button>
-                        </li>
-                    ))}
-                </ul>
+                <div className="ask-empty-prompts">
+                    <p className="ask-empty-prompts-label">Try asking</p>
+                    <ul className="ask-empty-examples">
+                        {EXAMPLE_QUESTIONS.map((q) => (
+                            <li key={q}>
+                                <button
+                                    type="button"
+                                    className="ask-empty-example"
+                                    onClick={() => onPickExample(q)}
+                                >
+                                    <span
+                                        className="ask-empty-example-arrow"
+                                        aria-hidden="true"
+                                    >
+                                        →
+                                    </span>
+                                    <span>{q}</span>
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
             ) : null}
-            <p className="ask-empty-stats">
-                Powered by The Transcript Archive
-            </p>
         </div>
     );
 };
