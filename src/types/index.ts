@@ -200,3 +200,30 @@ export interface AskResponse {
         cacheHit?: boolean;
     };
 }
+
+/**
+ * Typed error envelope returned by the /api/ask* endpoints and by the
+ * rate-limit middleware. The `kind` discriminant lets the client pick a
+ * friendly UI message (countdown for rate_limit/budget, retry CTA for
+ * timeout/network, requestId for server) without sniffing status codes.
+ *
+ * `error` is kept alongside `message` for compatibility with pre-redesign
+ * consumers; prefer `message` going forward.
+ */
+export type AskErrorKind =
+    | "rate_limit"
+    | "budget"
+    | "timeout"
+    | "network"
+    | "server"
+    | "bad_request";
+
+export interface AskError {
+    kind: AskErrorKind;
+    message: string;
+    error: string; // legacy alias for `message`
+    retryAfterSec?: number;
+    requestId?: string;
+    stage?: string;
+    cause?: string;
+}

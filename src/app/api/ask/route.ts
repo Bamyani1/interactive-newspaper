@@ -21,7 +21,7 @@ import {
 } from "@/src/lib/conversation-store";
 import { runAgentLoop } from "@/src/lib/agent-loop";
 import type { RankedArticle } from "@/src/lib/reranker";
-import type { AskResponse, Citation } from "@/src/types";
+import type { AskResponse, AskErrorKind, Citation } from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 import { getCachedAnswer, setCachedAnswer } from "@/src/lib/answer-cache";
 import { checkDailyBudget, DailyBudgetExceededError } from "@/src/lib/cost-tracker";
@@ -101,6 +101,43 @@ async function persistTurnBounded(
             setTimeout(resolve, PERSIST_TURN_TIMEOUT_MS),
         ),
     ]);
+}
+
+/**
+ * Build a typed error response body. The `kind` discriminator lets the
+ * client render friendly per-kind UI copy (countdown for rate_limit /
+ * budget; retry CTA for timeout; requestId for server) without
+ * sniffing status codes. `error` is kept as a legacy alias for pre-
+ * redesign consumers.
+ */
+function askErrorJson(params: {
+    status: number;
+    kind: AskErrorKind;
+    message: string;
+    retryAfterSec?: number;
+    requestId?: string;
+    stage?: string;
+    cause?: string;
+    extraHeaders?: Record<string, string>;
+}): NextResponse {
+    const body: Record<string, unknown> = {
+        kind: params.kind,
+        message: params.message,
+        error: params.message,
+    };
+    if (params.retryAfterSec !== undefined) {
+        body.retryAfterSec = params.retryAfterSec;
+    }
+    if (params.requestId) body.requestId = params.requestId;
+    if (params.stage) body.stage = params.stage;
+    if (params.cause) body.cause = params.cause;
+
+    const headers: Record<string, string> = { ...(params.extraHeaders ?? {}) };
+    if (params.retryAfterSec !== undefined) {
+        headers["Retry-After"] = String(params.retryAfterSec);
+    }
+
+    return NextResponse.json(body, { status: params.status, headers });
 }
 
 /**
@@ -1029,15 +1066,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const ip = getClientIp(request);
     const rateResult = await askRateLimiter(ip);
     if (!rateResult.allowed) {
-        return NextResponse.json(
-            { error: "Too many questions. Please wait a moment and try again." },
-            {
-                status: 429,
-                headers: {
-                    "Retry-After": String(Math.ceil((rateResult.resetAt - Date.now()) / 1000)),
-                },
-            },
-        );
+        return askErrorJson({
+            status: 429,
+            kind: "rate_limit",
+            message: "Too many questions. Please wait a moment and try again.",
+            retryAfterSec: Math.ceil((rateResult.resetAt - Date.now()) / 1000),
+        });
     }
 
     // ── Parse + validate body ──
@@ -1045,30 +1079,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
         body = (await request.json()) as AskRequestBody;
     } catch {
-        return NextResponse.json(
-            { error: "Invalid JSON body" },
-            { status: 400 },
-        );
+        return askErrorJson({
+            status: 400,
+            kind: "bad_request",
+            message: "Invalid JSON body",
+        });
     }
 
     if (!body.question || typeof body.question !== "string") {
-        return NextResponse.json(
-            { error: "Missing required field: question" },
-            { status: 400 },
-        );
+        return askErrorJson({
+            status: 400,
+            kind: "bad_request",
+            message: "Missing required field: question",
+        });
     }
     const question = body.question.trim();
     if (question.length === 0) {
-        return NextResponse.json(
-            { error: "Question cannot be empty" },
-            { status: 400 },
-        );
+        return askErrorJson({
+            status: 400,
+            kind: "bad_request",
+            message: "Question cannot be empty",
+        });
     }
     if (question.length > MAX_QUESTION_LENGTH) {
-        return NextResponse.json(
-            { error: `Question too long (${question.length} chars). Maximum is ${MAX_QUESTION_LENGTH}.` },
-            { status: 400 },
-        );
+        return askErrorJson({
+            status: 400,
+            kind: "bad_request",
+            message: `Question too long (${question.length} chars). Maximum is ${MAX_QUESTION_LENGTH}.`,
+        });
     }
 
     // ── Daily budget kill switch ──
@@ -1090,18 +1128,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     budgetUsd: err.budgetUsd,
                 }),
             );
-            return NextResponse.json(
-                {
-                    error: "Daily AI budget reached. Please try again tomorrow.",
-                    cause: "daily_budget_reached",
-                    stage: "budget",
-                    requestId,
-                },
-                {
-                    status: 429,
-                    headers: { "Retry-After": "3600" },
-                },
-            );
+            return askErrorJson({
+                status: 429,
+                kind: "budget",
+                message: "Daily AI budget reached. Please try again tomorrow.",
+                retryAfterSec: 3600,
+                cause: "daily_budget_reached",
+                stage: "budget",
+                requestId,
+            });
         }
         throw err;
     }
@@ -1279,18 +1314,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                         err: err instanceof Error ? err.message : String(err),
                     }),
                 );
-                return NextResponse.json(
-                    {
-                        error: "Daily AI quota reached. Please try again tomorrow.",
-                        cause: "quota_exhausted",
-                        stage: "embed",
-                        requestId,
-                    },
-                    {
-                        status: 429,
-                        headers: { "Retry-After": "3600" },
-                    },
-                );
+                return askErrorJson({
+                    status: 429,
+                    kind: "budget",
+                    message: "Daily AI quota reached. Please try again tomorrow.",
+                    retryAfterSec: 3600,
+                    cause: "quota_exhausted",
+                    stage: "embed",
+                    requestId,
+                });
             }
             console.error(
                 JSON.stringify({
@@ -1302,14 +1334,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     err: err instanceof Error ? err.message : String(err),
                 }),
             );
-            return NextResponse.json(
-                {
-                    error: "Failed to process question. Please try again.",
-                    stage: "embed",
-                    requestId,
-                },
-                { status: 502 },
-            );
+            return askErrorJson({
+                status: 502,
+                kind: "server",
+                message: "Failed to process question. Please try again.",
+                stage: "embed",
+                requestId,
+            });
         }
 
         // ── Step 3: Retrieve relevant articles (with timeout) ──
@@ -1353,14 +1384,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             ]);
         } catch (err) {
             if (err instanceof Error && err.message === "Retrieval timeout") {
-                return NextResponse.json(
-                    {
-                        error: "Retrieval took too long. Please try again.",
-                        stage: "retrieve",
-                        requestId,
-                    },
-                    { status: 504 },
-                );
+                return askErrorJson({
+                    status: 504,
+                    kind: "timeout",
+                    message: "Retrieval took too long. Please try again.",
+                    stage: "retrieve",
+                    requestId,
+                });
             }
             console.warn(
                 JSON.stringify({
@@ -1505,14 +1535,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return await racePromise;
     } catch (err) {
         if (err instanceof DeadlineExceededError) {
-            return NextResponse.json(
-                {
-                    error: "Request took too long. Please try a simpler question.",
-                    stage: "deadline",
-                    requestId,
-                },
-                { status: 504 },
-            );
+            return askErrorJson({
+                status: 504,
+                kind: "timeout",
+                message: "Request took too long. Please try a simpler question.",
+                stage: "deadline",
+                requestId,
+            });
         }
         if (err instanceof StageError) {
             // Unwrap the cause so retry-stage typed errors (QuotaExhaustedError
@@ -1530,15 +1559,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                         err: err.cause.message,
                     }),
                 );
-                return NextResponse.json(
-                    {
-                        error: "Daily AI quota reached. Please try again tomorrow.",
-                        cause: "quota_exhausted",
-                        stage: err.stage,
-                        requestId,
-                    },
-                    { status: 429, headers: { "Retry-After": "3600" } },
-                );
+                return askErrorJson({
+                    status: 429,
+                    kind: "budget",
+                    message: "Daily AI quota reached. Please try again tomorrow.",
+                    retryAfterSec: 3600,
+                    cause: "quota_exhausted",
+                    stage: err.stage,
+                    requestId,
+                });
             }
             if (
                 err.cause instanceof Error &&
@@ -1553,14 +1582,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                         msg: "retrieval timeout",
                     }),
                 );
-                return NextResponse.json(
-                    {
-                        error: "Retrieval took too long. Please try again.",
-                        stage: err.stage,
-                        requestId,
-                    },
-                    { status: 504 },
-                );
+                return askErrorJson({
+                    status: 504,
+                    kind: "timeout",
+                    message: "Retrieval took too long. Please try again.",
+                    stage: err.stage,
+                    requestId,
+                });
             }
             console.error(
                 JSON.stringify({
@@ -1575,14 +1603,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                             : String(err.cause),
                 }),
             );
-            return NextResponse.json(
-                {
-                    error: "An unexpected error occurred. Please try again.",
-                    stage: err.stage,
-                    requestId,
-                },
-                { status: 500 },
-            );
+            return askErrorJson({
+                status: 500,
+                kind: "server",
+                message: "An unexpected error occurred. Please try again.",
+                stage: err.stage,
+                requestId,
+            });
         }
         console.error(
             JSON.stringify({
@@ -1595,13 +1622,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 stack: err instanceof Error ? err.stack : undefined,
             }),
         );
-        return NextResponse.json(
-            {
-                error: "An unexpected error occurred. Please try again.",
-                requestId,
-            },
-            { status: 500 },
-        );
+        return askErrorJson({
+            status: 500,
+            kind: "server",
+            message: "An unexpected error occurred. Please try again.",
+            requestId,
+        });
     } finally {
         if (globalTimer) clearTimeout(globalTimer);
         // Auto-evict after TTL so a long-completed entry doesn't pin

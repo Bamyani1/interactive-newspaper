@@ -1750,3 +1750,105 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
     );
   });
 });
+
+describe("typed AskError response body", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "q",
+      ftsQuery: "q",
+      mode: "text",
+    });
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Array(768).fill(0),
+    );
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "A",
+      citations: [
+        {
+          articleId: "1960-01-07-0",
+          headline: "Test",
+          editionDate: "1960-01-07",
+        },
+      ],
+      confidence: "high",
+      followUps: [],
+    });
+  });
+
+  it("400 bad_request for missing question", async () => {
+    const response = await POST(makeRequest({}));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.kind).toBe("bad_request");
+    expect(body.message).toBe("Missing required field: question");
+    expect(body.error).toBe(body.message);
+  });
+
+  it("400 bad_request for empty question", async () => {
+    const response = await POST(makeRequest({ question: "  " }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.kind).toBe("bad_request");
+  });
+
+  it("400 bad_request for too-long question", async () => {
+    const response = await POST(
+      makeRequest({ question: "a".repeat(1001) }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.kind).toBe("bad_request");
+  });
+
+  it("429 budget with retryAfterSec=3600 on quota_exhausted", async () => {
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new MockQuotaExhaustedError("embedQuery", { code: 429 }),
+    );
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body.kind).toBe("budget");
+    expect(body.retryAfterSec).toBe(3600);
+    expect(body.cause).toBe("quota_exhausted");
+    expect(response.headers.get("Retry-After")).toBe("3600");
+  });
+
+  it("502 server on embed failure", async () => {
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("network error"),
+    );
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.kind).toBe("server");
+    expect(body.stage).toBe("embed");
+    expect(body.requestId).toBeDefined();
+  });
+
+  it("500 server on unexpected reranker error", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("reranker crashed"),
+    );
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.kind).toBe("server");
+    expect(body.stage).toBe("rerank");
+  });
+});
