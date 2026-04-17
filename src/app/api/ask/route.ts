@@ -79,6 +79,114 @@ function newRequestId(): string {
     return Math.random().toString(36).slice(2, 10);
 }
 
+/**
+ * Rerank articles and, if the reranker filtered all of them out, run ONE
+ * corrective retry that reformulates the query for broader recall,
+ * re-embeds, re-retrieves, and re-ranks with a lower minScore.
+ *
+ * Both streaming and non-streaming pipelines call this. Each retry stage
+ * is wrapped in wrapStage so the top-level catch (non-streaming) and the
+ * streaming error-to-SSE mapping can attribute failures to a specific
+ * stage ("reformulate-retry", "embed-retry", "retrieve-retry",
+ * "rerank-retry") and preserve typed errors (QuotaExhaustedError,
+ * DeadlineExceededError) instead of collapsing them into generic 500s.
+ */
+async function rerankWithCragRetry(params: {
+    question: string;
+    articles: RetrievedArticle[];
+    mode: "text" | "visual";
+    keepTopK: number;
+    conversationHistory: import("@/src/lib/conversation-store").ConversationTurn[];
+    filters: { category?: string; startDate?: string; endDate?: string };
+    retrievalLimit: number;
+    vectorWeight: number;
+    onlyWithImages: boolean;
+    retrievalTimeoutMs: number;
+    signal: AbortSignal;
+    requestId: string;
+}): Promise<RankedArticle[]> {
+    const minScore = params.mode === "visual" ? 3 : 4;
+    let ranked = await wrapStage("rerank", () =>
+        rerankArticles(params.question, params.articles, {
+            maxArticles: params.keepTopK,
+            minScore,
+            signal: params.signal,
+            requestId: params.requestId,
+        }),
+    );
+
+    if (
+        ranked.length === 0 &&
+        params.articles.length > 0 &&
+        !params.signal.aborted
+    ) {
+        console.warn(
+            JSON.stringify({
+                level: "warn",
+                route: "/api/ask",
+                requestId: params.requestId,
+                stage: "crag-retry",
+                msg: "reranker filtered all articles, retrying with broader query",
+            }),
+        );
+        const retry = await wrapStage("reformulate-retry", () =>
+            reformulateQuery(`Try broader search terms for: ${params.question}`, {
+                signal: params.signal,
+                requestId: params.requestId,
+                conversationHistory: params.conversationHistory,
+            }),
+        );
+        // embed-retry: QuotaExhaustedError otherwise flows through wrapStage
+        // untouched and loses the retry-stage tag. Wrap it (and any other
+        // non-deadline error) in StageError so both streaming and
+        // non-streaming catches can attribute it to "embed-retry".
+        let retryEmbedding: number[];
+        try {
+            retryEmbedding = await embedQuery(retry.embeddingQuery, {
+                signal: params.signal,
+            });
+        } catch (err) {
+            if (err instanceof DeadlineExceededError) throw err;
+            throw new StageError("embed-retry", err);
+        }
+        // retrieve-retry: same pattern. The "Retrieval timeout" Error is
+        // a local marker, not a typed class; caller unwraps via StageError.cause.
+        let retryArticles: RetrievedArticle[];
+        try {
+            retryArticles = await Promise.race([
+                hybridSearch(retry.ftsQuery, retryEmbedding, {
+                    limit: params.retrievalLimit,
+                    category: params.filters.category ?? null,
+                    startDate: params.filters.startDate ?? null,
+                    endDate: params.filters.endDate ?? null,
+                    vectorWeight: params.vectorWeight,
+                    onlyWithImages: params.onlyWithImages,
+                    signal: params.signal,
+                }),
+                new Promise<never>((_, reject) =>
+                    setTimeout(
+                        () => reject(new Error("Retrieval timeout")),
+                        params.retrievalTimeoutMs,
+                    ),
+                ),
+            ]);
+        } catch (err) {
+            if (err instanceof DeadlineExceededError) throw err;
+            throw new StageError("retrieve-retry", err);
+        }
+        ranked = await wrapStage("rerank-retry", () =>
+            rerankArticles(params.question, retryArticles, {
+                maxArticles: params.keepTopK,
+                minScore: params.mode === "visual" ? 2 : 3,
+                signal: params.signal,
+                requestId: params.requestId,
+            }),
+        );
+    }
+
+    return ranked;
+}
+
 // ── Concurrent request dedup (Step 10) ──
 // Coalesces two identical (ip, question, filters) POSTs that overlap in
 // time so the second one piggybacks on the first instead of running the
@@ -105,12 +213,21 @@ interface DedupEntry {
 
 const inFlightAsk = new Map<string, DedupEntry>();
 
-function dedupKey(ip: string, question: string, filters: unknown): string {
+function dedupKey(
+    ip: string,
+    question: string,
+    filters: unknown,
+    sessionId: string,
+): string {
     // Simple non-cryptographic fingerprint; collisions don't matter because
     // they're scoped to the same IP and would only cause a missed dedup, not
-    // wrong data.
+    // wrong data. sessionId is part of the key because piggybackers skip the
+    // pipeline body, so two different sessions sharing a dedup entry would
+    // leave one of them without a conversation-store turn (follow-up history
+    // lost) and with the first requester's sessionId baked into the SSE
+    // done-event payload.
     let h = 0;
-    const s = `${question}|${JSON.stringify(filters ?? {})}`;
+    const s = `${question}|${JSON.stringify(filters ?? {})}|${sessionId}`;
     for (let i = 0; i < s.length; i++) {
         h = ((h << 5) - h + s.charCodeAt(i)) | 0;
     }
@@ -642,27 +759,56 @@ async function handleStreamingAsk(params: {
 
                 let rankedArticles: RankedArticle[];
                 try {
-                    rankedArticles = await rerankArticles(question, articles, {
-                        maxArticles: keepTopK,
-                        minScore: mode === "visual" ? 3 : 4,
+                    rankedArticles = await rerankWithCragRetry({
+                        question,
+                        articles,
+                        mode,
+                        keepTopK,
+                        conversationHistory,
+                        filters,
+                        retrievalLimit,
+                        vectorWeight,
+                        onlyWithImages,
+                        retrievalTimeoutMs,
                         signal: globalController.signal,
                         requestId,
                     });
                 } catch (err) {
+                    // Map typed errors back to SSE error events with the
+                    // specific stage tag so clients + logs can distinguish
+                    // a retry-stage quota-exhausted from a primary rerank
+                    // failure. The helper wraps retry-stage typed errors
+                    // in StageError with cause=underlying error.
+                    const stage =
+                        err instanceof StageError ? err.stage : "rerank";
+                    const cause =
+                        err instanceof StageError ? err.cause : err;
+                    const message =
+                        cause instanceof QuotaExhaustedError
+                            ? "Daily AI quota reached. Please try again later."
+                            : cause instanceof DeadlineExceededError
+                            ? "Request timed out. Please try again."
+                            : cause instanceof Error &&
+                              cause.message === "Retrieval timeout"
+                            ? "Retrieval took too long. Please try again."
+                            : "Reranking failed. Please try again.";
                     console.error(
                         JSON.stringify({
                             level: "error",
                             route: "/api/ask",
                             requestId,
-                            stage: "rerank",
-                            msg: "rerank failed (streaming)",
-                            err: err instanceof Error ? err.message : String(err),
+                            stage,
+                            msg: "rerank-with-retry failed (streaming)",
+                            err:
+                                cause instanceof Error
+                                    ? cause.message
+                                    : String(cause),
                         }),
                     );
                     send({
                         type: "error",
-                        stage: "rerank",
-                        message: "Reranking failed. Please try again.",
+                        stage,
+                        message,
                         requestId,
                     });
                     return;
@@ -960,7 +1106,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // If an identical (ip, question, filters) request is already in
     // flight, piggyback on it instead of running the full pipeline again.
     // Falls through (runs our own) if the in-flight one rejects.
-    const dedupId = dedupKey(ip, question, body.filters);
+    const dedupId = dedupKey(ip, question, body.filters, sessionId);
     const existingEntry = inFlightAsk.get(dedupId);
     if (existingEntry) {
         try {
@@ -1241,58 +1387,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const keepTopK = mode === "visual" ? 15 : 10;
         logRerankSignals(requestId, computeRerankSignals(articles), mode, "default");
 
-        let rankedArticles: RankedArticle[] = await wrapStage("rerank", () =>
-            rerankArticles(question, articles, {
-                maxArticles: keepTopK,
-                minScore: mode === "visual" ? 3 : 4,
-                signal: globalController.signal,
-                requestId,
-            }),
-        );
-
-        // ── Step 4b: CRAG retry — if reranker filtered everything, reformulate and retry once ──
-        if (rankedArticles.length === 0 && articles.length > 0 && !globalController.signal.aborted) {
-            console.warn(
-                JSON.stringify({
-                    level: "warn",
-                    route: "/api/ask",
-                    requestId,
-                    stage: "crag-retry",
-                    msg: "reranker filtered all articles, retrying with broader query",
-                }),
-            );
-            const retry = await wrapStage("reformulate-retry", () =>
-                reformulateQuery(`Try broader search terms for: ${question}`, {
-                    signal: globalController.signal,
-                    requestId,
-                }),
-            );
-            const retryEmbedding = await embedQuery(retry.embeddingQuery, {
-                signal: globalController.signal,
-            });
-            const retryArticles = await Promise.race([
-                hybridSearch(retry.ftsQuery, retryEmbedding, {
-                    limit: retrievalLimit,
-                    category: filters.category ?? null,
-                    startDate: filters.startDate ?? null,
-                    endDate: filters.endDate ?? null,
-                    vectorWeight,
-                    onlyWithImages,
-                    signal: globalController.signal,
-                }),
-                new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error("Retrieval timeout")), retrievalTimeoutMs),
-                ),
-            ]);
-            rankedArticles = await wrapStage("rerank-retry", () =>
-                rerankArticles(question, retryArticles, {
-                    maxArticles: keepTopK,
-                    minScore: mode === "visual" ? 2 : 3,
-                    signal: globalController.signal,
-                    requestId,
-                }),
-            );
-        }
+        const rankedArticles = await rerankWithCragRetry({
+            question,
+            articles,
+            mode,
+            keepTopK,
+            conversationHistory,
+            filters,
+            retrievalLimit,
+            vectorWeight,
+            onlyWithImages,
+            retrievalTimeoutMs,
+            signal: globalController.signal,
+            requestId,
+        });
 
         // ── Step 5: Generate answer (using ORIGINAL question, not reformulated) ──
         const generationStart = Date.now();
@@ -1375,6 +1483,53 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             );
         }
         if (err instanceof StageError) {
+            // Unwrap the cause so retry-stage typed errors (QuotaExhaustedError
+            // or the "Retrieval timeout" marker) map to 429/504 instead of
+            // the generic 500. This mirrors the inline handling at the
+            // primary embed/retrieve stages.
+            if (err.cause instanceof QuotaExhaustedError) {
+                console.warn(
+                    JSON.stringify({
+                        level: "warn",
+                        route: "/api/ask",
+                        requestId,
+                        stage: err.stage,
+                        msg: "quota exhausted",
+                        err: err.cause.message,
+                    }),
+                );
+                return NextResponse.json(
+                    {
+                        error: "Daily AI quota reached. Please try again tomorrow.",
+                        cause: "quota_exhausted",
+                        stage: err.stage,
+                        requestId,
+                    },
+                    { status: 429, headers: { "Retry-After": "3600" } },
+                );
+            }
+            if (
+                err.cause instanceof Error &&
+                err.cause.message === "Retrieval timeout"
+            ) {
+                console.warn(
+                    JSON.stringify({
+                        level: "warn",
+                        route: "/api/ask",
+                        requestId,
+                        stage: err.stage,
+                        msg: "retrieval timeout",
+                    }),
+                );
+                return NextResponse.json(
+                    {
+                        error: "Retrieval took too long. Please try again.",
+                        stage: err.stage,
+                        requestId,
+                    },
+                    { status: 504 },
+                );
+            }
             console.error(
                 JSON.stringify({
                     level: "error",

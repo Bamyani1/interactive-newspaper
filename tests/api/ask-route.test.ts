@@ -588,6 +588,26 @@ describe("POST /api/ask", () => {
     expect(reformulateQuery).toHaveBeenCalledTimes(2);
   });
 
+  it("does NOT dedup same question with different sessionIds (bug_018)", async () => {
+    // Two different users on the same NAT'd IP asking the same question:
+    // if dedup ignored sessionId, the piggybacker's addConversationTurn
+    // would never fire and their follow-up history would be lost.
+    await Promise.all([
+      POST(makeRequest({ question: "Shared question", sessionId: "sess-A" })),
+      POST(makeRequest({ question: "Shared question", sessionId: "sess-B" })),
+    ]);
+
+    // Both requests ran the pipeline — no dedup across sessions.
+    expect(reformulateQuery).toHaveBeenCalledTimes(2);
+    expect(generateAnswer).toHaveBeenCalledTimes(2);
+
+    // Each session got its own conversation-store write.
+    const addTurnCalls = (addConversationTurn as ReturnType<typeof vi.fn>).mock.calls;
+    const sessionsWritten = new Set(addTurnCalls.map((c) => c[0]));
+    expect(sessionsWritten.has("sess-A")).toBe(true);
+    expect(sessionsWritten.has("sess-B")).toBe(true);
+  });
+
   it("falls through if the in-flight pipeline rejects", async () => {
     // First call rejects, second call should run its own pipeline successfully
     let callCount = 0;
@@ -1169,6 +1189,83 @@ describe("CRAG retry", () => {
 
     expect(response.status).toBe(200);
     expect(body.confidence).toBe("low");
+  });
+});
+
+describe("CRAG retry (streaming)", () => {
+  // Regression coverage for merged_bug_003: the retry previously existed
+  // only in the non-streaming branch, so real users (who always stream)
+  // saw "I don't have enough information" instead of the broadened retry.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "obscure topic",
+      ftsQuery: "obscure topic",
+      mode: "text",
+      complexity: "simple",
+    });
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "Found via retry." };
+        yield {
+          type: "done",
+          answer: "Found via retry.",
+          citations: [],
+          confidence: "medium",
+          followUps: [],
+        };
+      })(),
+    );
+  });
+
+  it("retries with broader query when streaming rerank filters all articles", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ ...mockArticle, relevanceScore: 5 }]);
+
+    const response = await POST(
+      makeRequest({ question: "obscure topic" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    // Retry fires: both reformulate and rerank ran twice.
+    expect(reformulateQuery).toHaveBeenCalledTimes(2);
+    expect(rerankArticles).toHaveBeenCalledTimes(2);
+
+    // Final done event carries the retry's answer (not an error).
+    const done = events.find((e) => e.type === "done");
+    expect(done).toBeDefined();
+    expect(done?.answer).toBe("Found via retry.");
+
+    // No error event was emitted.
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeUndefined();
+  });
+
+  it("maps retry-stage quota exhaustion to SSE error with stage tag", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    // Primary embed succeeds; retry embed throws quota-exhausted. Order
+    // matters: the pipeline calls embedQuery twice — once before retrieve,
+    // once inside the retry. The first call must succeed so rerank runs
+    // and filters to zero, triggering the retry that then fails.
+    (embedQuery as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(new Array(768).fill(0))
+      .mockRejectedValueOnce(new MockQuotaExhaustedError("embedQuery"));
+
+    const response = await POST(
+      makeRequest({ question: "obscure topic" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent?.message).toMatch(/quota/i);
+    // Stage should reflect the retry-specific label, not a generic "rerank".
+    expect(errorEvent?.stage).toBe("embed-retry");
   });
 });
 
