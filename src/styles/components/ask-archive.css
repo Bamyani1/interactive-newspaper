@@ -729,65 +729,107 @@
 
 /* ── Transcript layout (2026-04 chat redesign) ───────────────── */
 
-.ask-page {
+/*
+ * Chat surface fills the viewport below the sticky site header. No
+ * page-level scrollbar: the transcript scrolls internally, the composer
+ * sits anchored at the bottom. The SiteFooter is deliberately omitted
+ * on /ask — footers on chat surfaces break the "composer is always
+ * reachable" invariant.
+ */
+.ask-main {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - var(--page-header-height, 0px));
-  padding: 2.5rem 1.5rem 0;
+  height: calc(100dvh - var(--header-height, 54px));
+  width: 100%;
 }
 
-.ask-page-inner {
+.ask-page {
   width: 100%;
   max-width: 48rem;
   margin: 0 auto;
+  padding: 1.25rem 1.5rem 0;
   display: flex;
   flex-direction: column;
   flex: 1;
-  gap: 1.5rem;
+  min-height: 0; /* critical so the transcript child can actually scroll */
+  gap: 0.75rem;
 }
 
 .ask-page-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.9rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-text-secondary) 18%, transparent);
+  flex-shrink: 0;
 }
 
 .ask-page-eyebrow {
-  font-size: 0.7rem;
-  letter-spacing: 0.2em;
+  font-size: 0.66rem;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
-  color: var(--color-text-secondary);
+  color: var(--color-accent);
+  margin: 0;
+  font-weight: 600;
 }
 
 .ask-page-title {
   font-family: var(--font-header);
-  font-size: 1.875rem;
+  font-size: 1.35rem;
   margin: 0;
   color: var(--color-text-primary);
+  font-weight: 500;
+  letter-spacing: -0.005em;
 }
 
 .ask-transcript {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding-bottom: 1rem;
+  padding: 0.5rem 0.25rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.5rem;
+  /* When there are no turns, the empty state centers in the
+     available space instead of hugging the top. */
+}
+
+.ask-transcript:has(.ask-empty-state) {
+  justify-content: center;
+}
+
+/* Subtle scrollbar that matches the dark theme */
+.ask-transcript::-webkit-scrollbar { width: 8px; }
+.ask-transcript::-webkit-scrollbar-track { background: transparent; }
+.ask-transcript::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-text-secondary) 20%, transparent);
+  border-radius: 4px;
+}
+.ask-transcript::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--color-text-secondary) 35%, transparent);
 }
 
 .ask-expired-banner {
-  padding: 0.75rem 1rem;
-  border: 1px dashed var(--color-border, var(--color-accent));
+  padding: 0.6rem 0.9rem;
+  border: 1px dashed color-mix(in oklab, var(--color-accent) 60%, transparent);
   border-radius: 0.5rem;
   color: var(--color-text-secondary);
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   text-align: center;
+  background: color-mix(in oklab, var(--color-accent) 5%, transparent);
 }
 
 .ask-turn {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.9rem;
+}
+
+.ask-turn + .ask-turn {
+  /* Quiet rule between turns — editorial newspaper nod */
+  padding-top: 1.25rem;
+  border-top: 1px solid color-mix(in oklab, var(--color-text-secondary) 10%, transparent);
 }
 
 .ask-turn-user {
@@ -797,13 +839,15 @@
 
 .ask-turn-user-bubble {
   margin: 0;
-  max-width: 85%;
-  padding: 0.75rem 1rem;
-  border-radius: 1rem 1rem 0.25rem 1rem;
-  background: var(--color-bg-secondary);
+  max-width: 80%;
+  padding: 0.65rem 0.95rem;
+  border-radius: 1.1rem 1.1rem 0.3rem 1.1rem;
+  background: color-mix(in oklab, var(--color-accent) 14%, var(--color-bg-secondary));
   color: var(--color-text-primary);
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   line-height: 1.5;
+  border: 1px solid color-mix(in oklab, var(--color-accent) 22%, transparent);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
 }
 
 .ask-turn-assistant {
@@ -879,31 +923,56 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 0.75rem;
+  padding: 0.4rem 0.8rem;
   border-radius: 999px;
-  background: var(--color-bg-secondary);
+  background: color-mix(in oklab, var(--color-text-secondary) 10%, var(--color-bg-secondary));
   color: var(--color-text-secondary);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
   width: fit-content;
 }
 
+.ask-thinking-pill > span:last-child {
+  background: linear-gradient(
+    90deg,
+    var(--color-text-secondary) 0%,
+    var(--color-text-primary) 45%,
+    var(--color-text-secondary) 90%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: ask-shimmer 2.2s linear infinite;
+}
+
+@keyframes ask-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
 .ask-thinking-dot {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 0.45rem;
+  height: 0.45rem;
   border-radius: 50%;
   background: var(--color-accent);
-  animation: ask-thinking-pulse 1.2s ease-in-out infinite;
+  animation: ask-thinking-pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
 }
 
 @keyframes ask-thinking-pulse {
-  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
   50% { opacity: 1; transform: scale(1); }
 }
 
 .ask-cursor {
   display: inline-block;
-  margin-left: 0.15rem;
-  color: var(--color-accent);
+  width: 2px;
+  height: 1.05em;
+  vertical-align: -0.15em;
+  margin-left: 0.1rem;
+  background: var(--color-accent);
   animation: ask-cursor-blink 1s steps(2) infinite;
 }
 
@@ -912,29 +981,46 @@
 }
 
 .ask-composer {
-  position: sticky;
-  bottom: 0;
-  background: var(--color-bg-primary);
-  padding: 0.75rem 0 1rem;
+  padding: 0.75rem 0 1.1rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  border-top: 1px solid var(--color-border, transparent);
+  flex-shrink: 0;
+  position: relative;
+}
+
+/* Soft fade above the composer so content scrolling underneath
+   doesn't collide visually with the input rail. */
+.ask-composer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1.5rem;
+  height: 1.5rem;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--color-bg-primary) 90%
+  );
+  pointer-events: none;
 }
 
 .ask-composer-row {
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border, transparent);
-  border-radius: 1rem;
-  padding: 0.5rem 0.75rem;
-  transition: border-color 0.15s ease;
+  background: color-mix(in oklab, var(--color-text-primary) 3%, var(--color-bg-secondary));
+  border: 1px solid color-mix(in oklab, var(--color-text-secondary) 22%, transparent);
+  border-radius: 1.1rem;
+  padding: 0.55rem 0.65rem 0.55rem 0.85rem;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.5);
 }
 
 .ask-composer-row:focus-within {
-  border-color: var(--color-accent);
+  border-color: color-mix(in oklab, var(--color-accent) 70%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 15%, transparent);
 }
 
 .ask-composer-textarea {
@@ -945,60 +1031,119 @@
   color: var(--color-text-primary);
   font: inherit;
   font-size: 0.95rem;
-  line-height: 1.5;
+  line-height: 1.55;
   resize: none;
   padding: 0.4rem 0;
-  max-height: calc(1.5rem * 8);
+  max-height: calc(1.55rem * 8);
 }
 
 .ask-composer-textarea::placeholder {
   color: var(--color-text-secondary);
-  opacity: 0.7;
+  opacity: 0.65;
+  font-style: italic;
 }
 
 .ask-composer-send {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 2.1rem;
+  height: 2.1rem;
   border-radius: 50%;
   background: var(--color-accent);
   color: var(--color-bg-primary);
   border: 0;
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.15s ease, transform 0.15s ease;
   flex-shrink: 0;
 }
 
+.ask-composer-send:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
 .ask-composer-send:disabled {
-  opacity: 0.35;
+  opacity: 0.3;
   cursor: not-allowed;
+}
+
+/* Empty state — the "landing card" when no turns yet. Centered
+   vertically in the transcript area via :has() above. */
+.ask-empty-state {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  text-align: left;
+}
+
+.ask-empty-label {
+  font-family: var(--font-header);
+  font-size: 1.4rem;
+  color: var(--color-text-primary);
+  margin: 0 0 0.6rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+.ask-empty-description {
+  color: var(--color-text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin: 0 0 1.2rem;
+  max-width: 30rem;
+}
+
+.ask-empty-stats {
+  margin: 1.2rem 0 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-text-secondary) 80%, transparent);
 }
 
 .ask-empty-examples {
   list-style: none;
   padding: 0;
-  margin: 1rem 0 0;
+  margin: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .ask-empty-example {
-  padding: 0.5rem 0.9rem;
-  border-radius: 999px;
-  background: var(--color-bg-secondary);
+  width: 100%;
+  text-align: left;
+  padding: 0.75rem 0.95rem;
+  border-radius: 0.7rem;
+  background: transparent;
   color: var(--color-text-primary);
-  border: 1px solid var(--color-border, transparent);
-  font-size: 0.85rem;
+  border: 1px solid color-mix(in oklab, var(--color-text-secondary) 18%, transparent);
+  font-size: 0.88rem;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  font-family: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease,
+              transform 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ask-empty-example::before {
+  content: "→";
+  color: var(--color-accent);
+  font-size: 0.9em;
+  opacity: 0.55;
+  transition: transform 0.15s ease, opacity 0.15s ease;
 }
 
 .ask-empty-example:hover {
-  background: var(--color-bg-primary);
-  border-color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 6%, transparent);
+  border-color: color-mix(in oklab, var(--color-accent) 50%, transparent);
+}
+
+.ask-empty-example:hover::before {
+  transform: translateX(2px);
+  opacity: 1;
 }
 
 .ask-error-inline {
@@ -1046,24 +1191,28 @@
 /* Responsive — narrow below 768px */
 @media (max-width: 768px) {
   .ask-page {
-    padding: 1.25rem 1rem 0;
+    padding: 1rem 1rem 0;
+    gap: 0.5rem;
   }
   .ask-page-title {
-    font-size: 1.5rem;
+    font-size: 1.15rem;
+  }
+  .ask-page-eyebrow {
+    display: none;
   }
   .ask-turn-user-bubble {
     max-width: 92%;
     font-size: 0.9rem;
   }
-  .ask-composer-row {
-    padding: 0.4rem 0.5rem;
+  .ask-empty-label {
+    font-size: 1.2rem;
   }
-  .ask-empty-examples {
-    gap: 0.4rem;
+  .ask-empty-description {
+    font-size: 0.88rem;
   }
   .ask-empty-example {
-    font-size: 0.8rem;
-    padding: 0.4rem 0.7rem;
+    font-size: 0.85rem;
+    padding: 0.65rem 0.8rem;
   }
 }
 
@@ -1072,6 +1221,12 @@
   .ask-cursor {
     animation: none;
   }
+  .ask-thinking-pill > span:last-child {
+    animation: none;
+    -webkit-text-fill-color: var(--color-text-secondary);
+    color: var(--color-text-secondary);
+    background: none;
+  }
 }
 
 /* Focus-visible outlines — keyboard-only accent, no mouse-click ring */
@@ -1079,11 +1234,6 @@
 .ask-empty-example:focus-visible,
 .ask-newconv-btn:focus-visible,
 .ask-error-inline-retry:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.ask-composer-row:focus-within {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
