@@ -320,9 +320,14 @@ export function useAskArchive(): UseAskArchiveReturn {
           setIsStreaming(false);
         }
       } finally {
-        // Always clear loading — if a newer request is already in flight,
-        // it will have set isLoading=true before this finally runs.
-        setIsLoading(false);
+        // Only clear loading if THIS request wasn't aborted. When a newer
+        // submit takes over, the old IIFE's finally runs in a microtask
+        // AFTER the new submit's synchronous setIsLoading(true) — an
+        // unconditional clear would race and leave the spinner off
+        // mid-request.
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     })();
   }, []);
