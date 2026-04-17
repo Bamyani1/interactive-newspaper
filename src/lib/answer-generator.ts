@@ -142,6 +142,7 @@ export function parseAnswerResponse(rawText: string): {
 function buildUserPrompt(
     question: string,
     articles: RetrievedArticle[],
+    conversationContext?: string,
 ): string {
     const sourcesBlock = articles
         .map(
@@ -157,7 +158,18 @@ ${(a.bodyPlain || "").slice(0, MAX_SOURCE_CHARS)}`,
         )
         .join("\n\n");
 
-    return `SOURCES:
+    // Prior turns let the generator resolve pronouns ("that", "he", "the
+    // one you mentioned") and maintain tone continuity. The reformulator
+    // already rewrites the raw question to be self-contained; this block
+    // is for continuity the rewrite can't capture.
+    const historyBlock = conversationContext
+        ? `CONVERSATION HISTORY:
+${conversationContext}
+
+`
+        : "";
+
+    return `${historyBlock}SOURCES:
 ${sourcesBlock}
 
 <user_question>${question}</user_question>`;
@@ -168,7 +180,11 @@ ${sourcesBlock}
 export async function generateAnswer(
     question: string,
     sourceArticles: RankedArticle[],
-    opts: { signal?: AbortSignal; requestId?: string } = {},
+    opts: {
+        signal?: AbortSignal;
+        requestId?: string;
+        conversationContext?: string;
+    } = {},
 ): Promise<GeneratedAnswer> {
     if (sourceArticles.length === 0) {
         return {
@@ -212,7 +228,11 @@ export async function generateAnswer(
 
     const client = getGeminiClient();
     const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(question, sourceArticles);
+    const userPrompt = buildUserPrompt(
+        question,
+        sourceArticles,
+        opts.conversationContext,
+    );
 
     // Generate with timeout
     const controller = new AbortController();
@@ -335,7 +355,11 @@ export async function generateAnswer(
 export async function* generateAnswerStream(
     question: string,
     sourceArticles: RankedArticle[],
-    opts: { signal?: AbortSignal; requestId?: string } = {},
+    opts: {
+        signal?: AbortSignal;
+        requestId?: string;
+        conversationContext?: string;
+    } = {},
 ): AsyncGenerator<AnswerStreamEvent, void, void> {
     if (sourceArticles.length === 0) {
         yield {
@@ -381,7 +405,11 @@ export async function* generateAnswerStream(
 
     const client = getGeminiClient();
     const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(question, sourceArticles);
+    const userPrompt = buildUserPrompt(
+        question,
+        sourceArticles,
+        opts.conversationContext,
+    );
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);

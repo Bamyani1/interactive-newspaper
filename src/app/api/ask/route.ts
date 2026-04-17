@@ -883,6 +883,10 @@ async function handleStreamingAsk(params: {
                     for await (const event of generateAnswerStream(question, rankedArticles, {
                         signal: globalController.signal,
                         requestId,
+                        conversationContext:
+                            conversationHistory.length > 0
+                                ? formatHistoryForPrompt(conversationHistory)
+                                : undefined,
                     })) {
                         if (event.type === "delta") {
                             send({ type: "delta", text: event.text });
@@ -1434,6 +1438,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 generateAnswer(question, rankedArticles, {
                     signal: globalController.signal,
                     requestId,
+                    conversationContext:
+                        conversationHistory.length > 0
+                            ? formatHistoryForPrompt(conversationHistory)
+                            : undefined,
                 }),
         );
         const generationTimeMs = Date.now() - generationStart;
