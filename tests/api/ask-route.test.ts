@@ -71,7 +71,11 @@ import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
 import { runAgentLoop } from "@/src/lib/agent-loop";
-import { addConversationTurn, getConversationHistory } from "@/src/lib/conversation-store";
+import {
+  addConversationTurn,
+  getConversationHistory,
+  formatHistoryForPrompt,
+} from "@/src/lib/conversation-store";
 import { clearAnswerCache } from "@/src/lib/answer-cache";
 
 function makeRequest(
@@ -1673,5 +1677,76 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
 
     expect(response.status).toBe(200);
     expect(writeResolved).toBe(true);
+  });
+
+  it("threads conversationContext into generateAnswer on simple-path follow-ups", async () => {
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        question: "Q1",
+        answer: "A1",
+        citedArticleIds: ["1960-01-07-0"],
+        timestamp: Date.now(),
+      },
+    ]);
+    (formatHistoryForPrompt as ReturnType<typeof vi.fn>).mockReturnValue(
+      "[Turn 1] Q: Q1\nA: A1",
+    );
+
+    await POST(
+      makeRequest({ question: "follow-up", sessionId: "hist-sess" }),
+    );
+
+    expect(generateAnswer).toHaveBeenCalledWith(
+      "follow-up",
+      expect.any(Array),
+      expect.objectContaining({
+        conversationContext: "[Turn 1] Q: Q1\nA: A1",
+      }),
+    );
+  });
+
+  it("threads conversationContext into generateAnswerStream on simple-path follow-ups", async () => {
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        question: "Q1",
+        answer: "A1",
+        citedArticleIds: ["1960-01-07-0"],
+        timestamp: Date.now(),
+      },
+    ]);
+    (formatHistoryForPrompt as ReturnType<typeof vi.fn>).mockReturnValue(
+      "[Turn 1] Q: Q1\nA: A1",
+    );
+
+    await readSseEvents(
+      await POST(
+        makeRequest(
+          { question: "follow-up", sessionId: "hist-sess-stream" },
+          { stream: true },
+        ),
+      ),
+    );
+
+    expect(generateAnswerStream).toHaveBeenCalledWith(
+      "follow-up",
+      expect.any(Array),
+      expect.objectContaining({
+        conversationContext: "[Turn 1] Q: Q1\nA: A1",
+      }),
+    );
+  });
+
+  it("omits conversationContext when there is no history", async () => {
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    await POST(makeRequest({ question: "fresh-q", sessionId: "fresh-sess" }));
+
+    expect(generateAnswer).toHaveBeenCalledWith(
+      "fresh-q",
+      expect.any(Array),
+      expect.objectContaining({
+        conversationContext: undefined,
+      }),
+    );
   });
 });
