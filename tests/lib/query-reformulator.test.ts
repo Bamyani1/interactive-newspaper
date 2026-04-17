@@ -29,6 +29,7 @@ describe("parseReformulationResponse", () => {
     embeddingQuery: "original question",
     ftsQuery: "original question",
     mode: "text" as const,
+    complexity: "simple" as const,
   };
 
   it("parses valid SEMANTIC + KEYWORDS response", () => {
@@ -70,7 +71,7 @@ describe("parseReformulationResponse", () => {
   it("parses MODE field from response", () => {
     const result = parseReformulationResponse(
       "SEMANTIC: campus buildings\nKEYWORDS: campus OR buildings\nMODE: visual",
-      { embeddingQuery: "fallback", ftsQuery: "fallback", mode: "text" },
+      { embeddingQuery: "fallback", ftsQuery: "fallback", mode: "text", complexity: "simple" as const },
     );
     expect(result.mode).toBe("visual");
   });
@@ -78,9 +79,33 @@ describe("parseReformulationResponse", () => {
   it("defaults mode to text when MODE line is missing", () => {
     const result = parseReformulationResponse(
       "SEMANTIC: campus news\nKEYWORDS: campus OR news",
-      { embeddingQuery: "fallback", ftsQuery: "fallback", mode: "text" },
+      { embeddingQuery: "fallback", ftsQuery: "fallback", mode: "text", complexity: "simple" },
     );
     expect(result.mode).toBe("text");
+  });
+
+  it("parses COMPLEXITY field as complex", () => {
+    const result = parseReformulationResponse(
+      "SEMANTIC: life changes\nKEYWORDS: life OR campus\nMODE: text\nCOMPLEXITY: complex",
+      { embeddingQuery: "fallback", ftsQuery: "fallback", mode: "text", complexity: "simple" },
+    );
+    expect(result.complexity).toBe("complex");
+  });
+
+  it("parses COMPLEXITY field as simple", () => {
+    const result = parseReformulationResponse(
+      "SEMANTIC: football 1965\nKEYWORDS: football OR gridiron\nMODE: text\nCOMPLEXITY: simple",
+      { embeddingQuery: "fallback", ftsQuery: "fallback", mode: "text", complexity: "simple" },
+    );
+    expect(result.complexity).toBe("simple");
+  });
+
+  it("defaults complexity to simple when COMPLEXITY line is missing", () => {
+    const result = parseReformulationResponse(
+      "SEMANTIC: campus news\nKEYWORDS: campus OR news\nMODE: text",
+      { embeddingQuery: "fallback", ftsQuery: "fallback", mode: "text", complexity: "simple" },
+    );
+    expect(result.complexity).toBe("simple");
   });
 });
 

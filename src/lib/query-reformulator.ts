@@ -9,15 +9,21 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import { recordUsage } from "@/src/lib/cost-tracker";
+import { formatHistoryForPrompt } from "@/src/lib/conversation-store";
+import type { ConversationTurn } from "@/src/lib/conversation-store";
 
 const REFORMULATION_MODEL = "gemini-3-flash-preview";
 const REFORMULATION_TIMEOUT_MS = 5_000;
-const REFORMULATION_MAX_TOKENS = 250;
+const REFORMULATION_MAX_TOKENS = 350;
+
+export type Complexity = "simple" | "complex";
 
 export interface ReformulatedQuery {
     embeddingQuery: string;
     ftsQuery: string;
     mode: "text" | "visual";
+    complexity: Complexity;
 }
 
 const REFORMULATION_PROMPT = `You help reformulate modern search queries for The Transcript Archive (Ohio Wesleyan University, 1950-2006).
@@ -42,19 +48,31 @@ Expand abbreviations (OWU → Ohio Wesleyan University). Add era-appropriate ter
 - the newspaper → "The Transcript" OR "student newspaper" OR editor OR editorial
 - academics → curriculum OR course OR major OR professor OR faculty OR seminar
 
-Respond in EXACTLY this format (three lines, no extra text):
+4. COMPLEXITY: Classify the question's retrieval difficulty:
+   - "simple" — single topic, single era, factual lookup, clear keywords (e.g., "What was the 1965 homecoming like?")
+   - "complex" — multiple eras/decades, comparative ("how did X change"), analytical ("why"), requires synthesis across many articles, entity-relationship questions ("who wrote the most about sports"), or multi-hop reasoning
+
+If CONVERSATION HISTORY is provided below the question, use it to resolve ambiguous references ("that", "more", "he/she", "next", "previous"). Rewrite the question to be fully self-contained — a reader with no context should understand exactly what is being asked.
+
+Respond in EXACTLY this format (four lines, no extra text):
 SEMANTIC: <your semantic query>
 KEYWORDS: <your keyword query>
-MODE: text|visual`;
+MODE: text|visual
+COMPLEXITY: simple|complex`;
 
 export async function reformulateQuery(
     originalQuestion: string,
-    opts: { signal?: AbortSignal; requestId?: string } = {},
+    opts: {
+        signal?: AbortSignal;
+        requestId?: string;
+        conversationHistory?: ConversationTurn[];
+    } = {},
 ): Promise<ReformulatedQuery> {
     const fallback: ReformulatedQuery = {
         embeddingQuery: originalQuestion,
         ftsQuery: originalQuestion,
         mode: "text",
+        complexity: "simple",
     };
 
     try {
@@ -77,7 +95,7 @@ export async function reformulateQuery(
             contents: [
                 {
                     role: "user",
-                    parts: [{ text: `<user_question>${originalQuestion}</user_question>` }],
+                    parts: [{ text: buildReformulatorInput(originalQuestion, opts.conversationHistory) }],
                 },
             ],
             config: {
@@ -90,6 +108,13 @@ export async function reformulateQuery(
         });
 
         clearTimeout(timeout);
+
+        // Fire-and-forget; recordUsage swallows its own errors so this
+        // can't reject. `void` marks the intentional no-await.
+        void recordUsage(REFORMULATION_MODEL, response.usageMetadata, {
+            requestId: opts.requestId,
+            op: "reformulate",
+        });
 
         const text = response.text?.trim() ?? "";
         return parseReformulationResponse(text, fallback);
@@ -109,6 +134,16 @@ export async function reformulateQuery(
         );
         return fallback;
     }
+}
+
+function buildReformulatorInput(
+    question: string,
+    history?: ConversationTurn[],
+): string {
+    const historyBlock = history && history.length > 0
+        ? `CONVERSATION HISTORY:\n${formatHistoryForPrompt(history)}\n\n`
+        : "";
+    return `${historyBlock}<user_question>${question}</user_question>`;
 }
 
 export function parseReformulationResponse(
@@ -133,5 +168,11 @@ export function parseReformulationResponse(
     const modeMatch = text.match(/^MODE:\s*(.+)$/m);
     const mode = modeMatch && modeMatch[1].trim().toLowerCase() === "visual" ? "visual" : "text";
 
-    return { embeddingQuery, ftsQuery, mode };
+    const complexityMatch = text.match(/^COMPLEXITY:\s*(.+)$/m);
+    const complexity: Complexity =
+        complexityMatch && complexityMatch[1].trim().toLowerCase() === "complex"
+            ? "complex"
+            : "simple";
+
+    return { embeddingQuery, ftsQuery, mode, complexity };
 }

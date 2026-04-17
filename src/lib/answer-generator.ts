@@ -7,6 +7,7 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import { recordUsage } from "@/src/lib/cost-tracker";
 import type { RetrievedArticle } from "@/src/lib/db";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { Citation } from "@/src/types";
@@ -22,17 +23,17 @@ export interface GeneratedAnswer {
     answer: string;
     citations: Citation[];
     confidence: "low" | "medium" | "high";
+    followUps: string[];
 }
 
 /**
- * Stream events yielded by `generateAnswerStream`. A stream produces zero
- * or more `delta` events (partial token text, already stripped of the
- * "Relevant sources:" preamble) followed by exactly one `done` event with
- * the final cleaned answer, citations, and confidence. Consumers should
- * accumulate deltas for immediate UI feedback and then replace the full
- * answer with `done.answer` when it arrives (server strips out-of-range
- * citations and normalizes whitespace that may have been visible in the
- * streamed deltas).
+ * Stream events yielded by `generateAnswerStream`. Current shape: the
+ * generator buffers the full JSON response from the LLM, then emits a
+ * single `delta` event with the cleaned answer text immediately before
+ * the `done` event. This is a deliberate change from token-by-token
+ * streaming because the model now produces JSON, and emitting partial
+ * JSON tokens would show the user raw JSON syntax. Progressive feedback
+ * during loading is handled by the ResearchFeed component instead.
  */
 export type AnswerStreamEvent =
     | { type: "delta"; text: string }
@@ -41,6 +42,7 @@ export type AnswerStreamEvent =
           answer: string;
           citations: Citation[];
           confidence: "low" | "medium" | "high";
+          followUps: string[];
       };
 
 // ─── System Prompt ───────────────────────────────────────────────
@@ -60,30 +62,87 @@ RULES — follow these exactly:
 9. Never make up quotes, statistics, or events not explicitly stated in the sources.
 
 RESPONSE FORMAT:
-Begin with a line: "Relevant sources: [Source N, Source M, ...]" listing only sources you will actually cite.
-Then write a blank line, followed by your answer with inline [Source N] citations.
-Use ## section headers to organize the answer by topic when covering multiple subjects. Use paragraph breaks between distinct points. Do not use bullet points or numbered lists.
+Respond with a JSON object with exactly two keys:
+{
+  "answer": "<your full answer>",
+  "follow_ups": ["<question 1>", "<question 2>", "<question 3>"]
+}
+
+The "answer" string should begin with "Relevant sources: [Source N, Source M, ...]" on its own line listing only sources you actually cite, followed by a blank line, followed by your answer with inline [Source N] citations. Use ## section headers to organize multi-topic answers and paragraph breaks between distinct points. Do not use bullet points or numbered lists.
+
+Markdown rules — the client renderer only understands a strict subset:
+- Use ONLY ## for headings — never ### or deeper levels.
+- Use **bold** for emphasis; never single-asterisk *italic* (it conflicts with the bullet markers the renderer strips).
+- Do not begin any line with "* " or "- ". No bullets, no lists.
+
+The "follow_ups" array must contain 2-3 follow-up questions (max 3) that:
+- Are ≤ 100 characters each
+- Reference specific facts, names, dates, or topics from the sources
+- Can be answered from the 1950-2006 OWU archive (not about current events)
+- Are concrete, not generic ("Tell me more" / "What else?" are forbidden)
+
+Output ONLY the JSON object. No markdown fences. No text before or after.
 
 EXAMPLES:
 
 Question: "What sports teams did Ohio Wesleyan have in 1965?"
 Sources: [Source 1] about the Battling Bishops football season, [Source 2] about basketball tryouts, [Source 3] about campus dining changes
-Good answer:
-Relevant sources: [Source 1, Source 2]
-
-Ohio Wesleyan's Battling Bishops competed in football during the fall 1965 season, finishing with a 5-3 record [Source 1]. The university also fielded a basketball team, with tryouts for the 1965-66 season drawing over 30 hopefuls to Branch Rickey Arena [Source 2].
+Good response:
+{"answer": "Relevant sources: [Source 1, Source 2]\\n\\nOhio Wesleyan's Battling Bishops competed in football during the fall 1965 season, finishing with a 5-3 record [Source 1]. The university also fielded a basketball team, with tryouts for the 1965-66 season drawing over 30 hopefuls to Branch Rickey Arena [Source 2].", "follow_ups": ["Who coached the 1965 Battling Bishops football team?", "What was the basketball team's record in 1965-66?", "How did Branch Rickey Arena get its name?"]}
 
 Question: "Did OWU have a computer science department?"
 Sources: [Source 1] about English department hiring, [Source 2] about library renovations
-Good answer:
-Relevant sources: []
+Good response:
+{"answer": "Relevant sources: []\\n\\nI don't have enough information in the archive to answer this question. The sources I found cover English department hiring and library renovations, but none mention a computer science department.", "follow_ups": []}`;
+}
 
-I don't have enough information in the archive to answer this question. The sources I found cover English department hiring and library renovations, but none mention a computer science department.`;
+/**
+ * Parses the LLM's JSON response into `{ answer, followUps }`. Handles:
+ *   - Bare JSON: `{"answer": "...", "follow_ups": [...]}`
+ *   - Fenced JSON: \`\`\`json\\n{...}\\n\`\`\`
+ *   - Malformed/empty output: returns raw text as answer, empty followUps
+ */
+export function parseAnswerResponse(rawText: string): {
+    answer: string;
+    followUps: string[];
+} {
+    const stripped = rawText
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/```\s*$/, "")
+        .trim();
+
+    try {
+        const parsed = JSON.parse(stripped) as unknown;
+        if (typeof parsed !== "object" || parsed === null) {
+            throw new Error("not an object");
+        }
+        const obj = parsed as Record<string, unknown>;
+        const answer = typeof obj.answer === "string" ? obj.answer : "";
+        const rawFollowUps = Array.isArray(obj.follow_ups) ? obj.follow_ups : [];
+        const followUps = rawFollowUps
+            .filter((f): f is string => typeof f === "string" && f.trim().length > 0)
+            .slice(0, 3);
+        if (!answer) throw new Error("missing answer field");
+        return { answer, followUps };
+    } catch (err) {
+        console.warn(
+            JSON.stringify({
+                level: "warn",
+                route: "/api/ask",
+                stage: "generate",
+                msg: "failed to parse JSON answer, using raw text",
+                err: err instanceof Error ? err.message : String(err),
+            }),
+        );
+        return { answer: rawText, followUps: [] };
+    }
 }
 
 function buildUserPrompt(
     question: string,
     articles: RetrievedArticle[],
+    conversationContext?: string,
 ): string {
     const sourcesBlock = articles
         .map(
@@ -99,7 +158,18 @@ ${(a.bodyPlain || "").slice(0, MAX_SOURCE_CHARS)}`,
         )
         .join("\n\n");
 
-    return `SOURCES:
+    // Prior turns let the generator resolve pronouns ("that", "he", "the
+    // one you mentioned") and maintain tone continuity. The reformulator
+    // already rewrites the raw question to be self-contained; this block
+    // is for continuity the rewrite can't capture.
+    const historyBlock = conversationContext
+        ? `CONVERSATION HISTORY:
+${conversationContext}
+
+`
+        : "";
+
+    return `${historyBlock}SOURCES:
 ${sourcesBlock}
 
 <user_question>${question}</user_question>`;
@@ -110,7 +180,11 @@ ${sourcesBlock}
 export async function generateAnswer(
     question: string,
     sourceArticles: RankedArticle[],
-    opts: { signal?: AbortSignal; requestId?: string } = {},
+    opts: {
+        signal?: AbortSignal;
+        requestId?: string;
+        conversationContext?: string;
+    } = {},
 ): Promise<GeneratedAnswer> {
     if (sourceArticles.length === 0) {
         return {
@@ -118,6 +192,7 @@ export async function generateAnswer(
                 "I don't have enough information in the archive to answer this question.",
             citations: [],
             confidence: "low",
+            followUps: [],
         };
     }
 
@@ -147,12 +222,17 @@ export async function generateAnswer(
                 "I don't have enough information in the archive to answer this question. The articles I found don't seem to be closely related to what you're asking about.",
             citations: [],
             confidence: "low",
+            followUps: [],
         };
     }
 
     const client = getGeminiClient();
     const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(question, sourceArticles);
+    const userPrompt = buildUserPrompt(
+        question,
+        sourceArticles,
+        opts.conversationContext,
+    );
 
     // Generate with timeout
     const controller = new AbortController();
@@ -180,11 +260,17 @@ export async function generateAnswer(
 
         clearTimeout(timeout);
 
+        void recordUsage(GENERATION_MODEL, response.usageMetadata, {
+            requestId: opts.requestId,
+            op: "generate",
+        });
+
         const rawText = response.text?.trim() ?? "";
+        const { answer: parsedAnswer, followUps } = parseAnswerResponse(rawText);
 
         // Strip the CoT preamble ("Relevant sources: ...") before user-facing answer
         // Use \n* (zero or more) so missing newline doesn't leave preamble in answer
-        const preambleStripped = rawText.replace(/^Relevant sources:[^\n]*\n*/, "").trim();
+        const preambleStripped = parsedAnswer.replace(/^Relevant sources:[^\n]*\n*/, "").trim();
 
         // Strip out-of-bounds citation markers like [Source 6] when only 5 sources exist
         const maxSource = sourceArticles.length;
@@ -199,11 +285,12 @@ export async function generateAnswer(
                     "I wasn't able to generate an answer from the available sources. Please try rephrasing your question.",
                 citations: [],
                 confidence: "low",
+                followUps: [],
             };
         }
 
-        // Parse citations from the full text (including preamble) so all referenced sources are captured
-        const citations = parseCitations(rawText, sourceArticles);
+        // Parse citations from the parsed answer (including preamble) so all referenced sources are captured
+        const citations = parseCitations(parsedAnswer, sourceArticles);
 
         // Validate: if the LLM tried to reference sources but none were valid (e.g., cited
         // [Source 6] when only 5 exist), flag the answer as potentially unreliable.
@@ -216,6 +303,7 @@ export async function generateAnswer(
             answer: rawAnswer,
             citations,
             confidence: validatedConfidence,
+            followUps,
         };
     } catch (err) {
         clearTimeout(timeout);
@@ -226,6 +314,7 @@ export async function generateAnswer(
                     "The answer took too long to generate. Please try a simpler question.",
                 citations: [],
                 confidence: "low",
+                followUps: [],
             };
         }
 
@@ -244,6 +333,7 @@ export async function generateAnswer(
                 "I encountered an error while generating an answer. Please try again.",
             citations: [],
             confidence: "low",
+            followUps: [],
         };
     }
 }
@@ -265,7 +355,11 @@ export async function generateAnswer(
 export async function* generateAnswerStream(
     question: string,
     sourceArticles: RankedArticle[],
-    opts: { signal?: AbortSignal; requestId?: string } = {},
+    opts: {
+        signal?: AbortSignal;
+        requestId?: string;
+        conversationContext?: string;
+    } = {},
 ): AsyncGenerator<AnswerStreamEvent, void, void> {
     if (sourceArticles.length === 0) {
         yield {
@@ -274,6 +368,7 @@ export async function* generateAnswerStream(
                 "I don't have enough information in the archive to answer this question.",
             citations: [],
             confidence: "low",
+            followUps: [],
         };
         return;
     }
@@ -303,13 +398,18 @@ export async function* generateAnswerStream(
                 "I don't have enough information in the archive to answer this question. The articles I found don't seem to be closely related to what you're asking about.",
             citations: [],
             confidence: "low",
+            followUps: [],
         };
         return;
     }
 
     const client = getGeminiClient();
     const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(question, sourceArticles);
+    const userPrompt = buildUserPrompt(
+        question,
+        sourceArticles,
+        opts.conversationContext,
+    );
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
@@ -318,15 +418,13 @@ export async function* generateAnswerStream(
         ? AbortSignal.any([opts.signal, controller.signal])
         : controller.signal;
 
+    // Buffer the full stream before emitting — the model now returns JSON
+    // and showing partial JSON tokens to the user would be noise. Perceived
+    // progress during loading is handled by the ResearchFeed component.
     let fullText = "";
-    // Character offset in fullText past which content has been emitted as
-    // deltas. Stays 0 until the preamble decision is resolved, then tracks
-    // the end of the preamble + any emitted output.
-    let emittedLen = 0;
-    // Null = undecided. Number = offset in fullText where the stream
-    // content starts (after the preamble, if any).
-    let preambleOffset: number | null = null;
-    const PREAMBLE_SIGNATURE_MAX = 256;
+    // usageMetadata typically lands in the final streamed chunk; record
+    // the last non-empty one so our counters reflect the whole call.
+    let finalUsageMetadata: import("@google/genai").GenerateContentResponseUsageMetadata | undefined;
 
     try {
         const stream = await client.models.generateContentStream({
@@ -342,50 +440,23 @@ export async function* generateAnswerStream(
         });
 
         for await (const chunk of stream) {
+            if (chunk.usageMetadata) finalUsageMetadata = chunk.usageMetadata;
             const chunkText =
                 typeof chunk.text === "string" ? chunk.text : "";
             if (!chunkText) continue;
             fullText += chunkText;
-
-            // Resolve the preamble offset as soon as we can. The three
-            // resolution cases:
-            //   1. fullText matches "Relevant sources: ...\n" → offset = end
-            //      of that match. Emit nothing further in this chunk unless
-            //      there's content past the match.
-            //   2. fullText doesn't start with "Relevant" (case-insensitive)
-            //      → there's no preamble. offset = 0.
-            //   3. fullText is > PREAMBLE_SIGNATURE_MAX chars but still no
-            //      match AND it does start with "Relevant" — the model
-            //      produced something weird. Treat as offset=0 and emit.
-            if (preambleOffset === null) {
-                const match = fullText.match(/^Relevant sources:[^\n]*\n+/i);
-                if (match) {
-                    preambleOffset = match[0].length;
-                } else if (!/^Relevant/i.test(fullText)) {
-                    preambleOffset = 0;
-                } else if (fullText.length > PREAMBLE_SIGNATURE_MAX) {
-                    preambleOffset = 0;
-                } else {
-                    // Still buffering possible preamble — wait for more tokens
-                    continue;
-                }
-            }
-
-            const visibleLen = fullText.length - preambleOffset;
-            if (visibleLen > emittedLen) {
-                const delta = fullText.slice(
-                    preambleOffset + emittedLen,
-                    preambleOffset + visibleLen,
-                );
-                yield { type: "delta", text: delta };
-                emittedLen = visibleLen;
-            }
         }
 
         clearTimeout(timeout);
 
-        // Final cleanup pass — identical to generateAnswer's post-processing.
-        const preambleStripped = fullText
+        void recordUsage(GENERATION_MODEL, finalUsageMetadata, {
+            requestId: opts.requestId,
+            op: "generate.stream",
+        });
+
+        const { answer: parsedAnswer, followUps } = parseAnswerResponse(fullText);
+
+        const preambleStripped = parsedAnswer
             .replace(/^Relevant sources:[^\n]*\n*/, "")
             .trim();
         const maxSource = sourceArticles.length;
@@ -403,20 +474,26 @@ export async function* generateAnswerStream(
                     "I wasn't able to generate an answer from the available sources. Please try rephrasing your question.",
                 citations: [],
                 confidence: "low",
+                followUps: [],
             };
             return;
         }
 
-        const citations = parseCitations(fullText, sourceArticles);
+        const citations = parseCitations(parsedAnswer, sourceArticles);
         const hadAnySourceRefs = /\[Source \d+\]/i.test(preambleStripped);
         const validatedConfidence =
             hadAnySourceRefs && citations.length === 0 ? "low" : confidence;
+
+        // Emit the cleaned answer as a single delta immediately before done
+        // so consumers get the final text through the same event channel.
+        yield { type: "delta", text: rawAnswer };
 
         yield {
             type: "done",
             answer: rawAnswer,
             citations,
             confidence: validatedConfidence,
+            followUps,
         };
     } catch (err) {
         clearTimeout(timeout);
@@ -428,6 +505,7 @@ export async function* generateAnswerStream(
                     "The answer took too long to generate. Please try a simpler question.",
                 citations: [],
                 confidence: "low",
+                followUps: [],
             };
             return;
         }
@@ -448,6 +526,7 @@ export async function* generateAnswerStream(
                 "I encountered an error while generating an answer. Please try again.",
             citations: [],
             confidence: "low",
+            followUps: [],
         };
     }
 }

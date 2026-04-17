@@ -23,6 +23,7 @@ import {
   embedQuery,
   EmbedTimeoutError,
   QuotaExhaustedError,
+  _setQuotaRetryDelaysForTests,
 } from "@/src/lib/embeddings";
 
 describe("buildEmbeddingText", () => {
@@ -107,6 +108,8 @@ function makeFakeVector(seed = 0): number[] {
 describe("embedDocuments", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default for most tests: no retries. Individual retry tests opt in.
+    _setQuotaRetryDelaysForTests([]);
   });
 
   it("batches text-only inputs and returns vectors in input order", async () => {
@@ -324,6 +327,66 @@ describe("embedDocuments", () => {
         expect(err.name).toBe("QuotaExhaustedError");
       }
     }
+  });
+
+  // Exponential backoff on transient quota (issue 0028 follow-up).
+  // A per-minute RPM trip often recovers within 1–2 seconds; a daily
+  // quota will just fall through all retries and surface normally.
+
+  it("retries embedDocuments on transient quota error with exponential backoff", async () => {
+    _setQuotaRetryDelaysForTests([1_000, 2_000, 4_000]);
+    vi.useFakeTimers();
+    try {
+      const quotaErr = Object.assign(new Error("rate limit"), { code: 429 });
+      mockEmbedContent
+        .mockRejectedValueOnce(quotaErr)
+        .mockRejectedValueOnce(quotaErr)
+        .mockResolvedValueOnce({
+          embeddings: [{ values: new Array(768).fill(0.1) }],
+        });
+
+      const promise = embedDocuments([{ text: "recovers" }]);
+      // Silence unhandled-rejection noise in case the chain still throws.
+      promise.catch(() => {});
+      // 1s backoff after attempt 1, 2s after attempt 2 → 3s total.
+      await vi.advanceTimersByTimeAsync(3_000);
+      const result = await promise;
+
+      expect(result).toHaveLength(1);
+      expect(mockEmbedContent).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up after 3 retries and throws QuotaExhaustedError", async () => {
+    _setQuotaRetryDelaysForTests([1_000, 2_000, 4_000]);
+    vi.useFakeTimers();
+    try {
+      const quotaErr = Object.assign(new Error("rate limit"), { code: 429 });
+      mockEmbedContent.mockRejectedValue(quotaErr);
+
+      const promise = embedDocuments([{ text: "never recovers" }]);
+      promise.catch(() => {});
+      // 1 + 2 + 4 = 7s across the three retry gaps.
+      await vi.advanceTimersByTimeAsync(7_000);
+
+      await expect(promise).rejects.toBeInstanceOf(QuotaExhaustedError);
+      // 1 initial + 3 retries
+      expect(mockEmbedContent).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retry non-quota errors", async () => {
+    const serverErr = Object.assign(new Error("server exploded"), { code: 500 });
+    mockEmbedContent.mockRejectedValue(serverErr);
+
+    await expect(embedDocuments([{ text: "hard-fail" }])).rejects.toThrow(
+      /server exploded/,
+    );
+    expect(mockEmbedContent).toHaveBeenCalledTimes(1);
   });
 
   it("succeeds when text and image branches both complete (mixed batch)", async () => {

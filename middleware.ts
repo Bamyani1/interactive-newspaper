@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 
-// Three tiers based on endpoint cost
-const askLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 }); // /api/ask — expensive Gemini calls
-const searchLimiter = createRateLimiter({ limit: 60, windowMs: 60_000 }); // /api/search — DB query
-const generalLimiter = createRateLimiter({ limit: 120, windowMs: 60_000 }); // all other API routes
+// Three tiers based on endpoint cost. The bucket name keeps their Neon
+// rows separate — same IP can hit each tier independently.
+const askLimiter = createRateLimiter({ bucket: "mw-ask", limit: 10, windowMs: 60_000 }); // /api/ask — expensive Gemini calls
+const searchLimiter = createRateLimiter({ bucket: "mw-search", limit: 60, windowMs: 60_000 }); // /api/search — DB query
+const generalLimiter = createRateLimiter({ bucket: "mw-general", limit: 120, windowMs: 60_000 }); // all other API routes
 
 function getLimiter(pathname: string) {
   if (pathname === "/api/ask") return askLimiter;
@@ -12,15 +13,20 @@ function getLimiter(pathname: string) {
   return generalLimiter;
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const ip = getClientIp(request);
   const limiter = getLimiter(request.nextUrl.pathname);
-  const result = limiter(ip);
+  const result = await limiter(ip);
 
   if (!result.allowed) {
     const retryAfter = Math.ceil((result.resetAt - Date.now()) / 1000);
     return NextResponse.json(
-      { error: "Too many requests" },
+      {
+        kind: "rate_limit",
+        message: "Too many requests",
+        error: "Too many requests",
+        retryAfterSec: retryAfter,
+      },
       {
         status: 429,
         headers: {

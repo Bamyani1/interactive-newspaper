@@ -1,255 +1,214 @@
+/**
+ * Smoke tests for the rewritten useAskArchive hook (reducer + turns[]).
+ *
+ * The reducer itself is covered exhaustively in ask-reducer.test.ts. These
+ * tests focus on hook-level behavior: mount-time hydration, submit
+ * dispatches an APPEND_USER + TURN_DONE on the non-streaming fallback
+ * path, and error responses produce a TURN_ERROR turn.
+ *
+ * The streaming SSE path is exercised via the real route in
+ * tests/api/ask-route.test.ts; reproducing a full SSE mock here would
+ * duplicate that coverage without adding signal.
+ */
+
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useAskArchive } from "@/features/ask-archive";
+import { useAskArchive } from "@/features/ask-archive/hooks/useAskArchive";
 import type { AskResponse } from "@/src/types";
 
 const mockResponse: AskResponse = {
-  question: "What happened?",
-  answer: "Things happened [Source 1].",
-  citations: [{ articleId: "1960-01-07-0", headline: "Test", editionDate: "1960-01-07" }],
-  confidence: "high",
-  sourceArticles: [
-    {
-      id: "1960-01-07-0",
-      headline: "Test",
-      editionDate: "1960-01-07",
-      category: "News",
-      summary: "Summary",
-      byline: null,
-      bodySnippet: "Body...",
-      distance: 0.25,
+    question: "What happened?",
+    answer: "Things happened [Source 1].",
+    citations: [
+        {
+            articleId: "1960-01-07-0",
+            headline: "Test",
+            editionDate: "1960-01-07",
+        },
+    ],
+    confidence: "high",
+    mode: "text",
+    requestId: "req-1",
+    sourceArticles: [
+        {
+            id: "1960-01-07-0",
+            headline: "Test",
+            editionDate: "1960-01-07",
+            category: "News",
+            summary: "Summary",
+            byline: null,
+            bodySnippet: "Body...",
+            distance: 0.25,
+            imageUrls: [],
+        },
+    ],
+    meta: {
+        retrievalTimeMs: 100,
+        generationTimeMs: 500,
+        totalTimeMs: 600,
+        articlesSearched: 8,
+        method: "hybrid",
     },
-  ],
-  meta: {
-    retrievalTimeMs: 100,
-    generationTimeMs: 500,
-    totalTimeMs: 600,
-    articlesSearched: 8,
-    method: "hybrid",
-  },
 };
 
-// Helper: build a fake Response-like object that the hook's streaming
-// code path can consume. The hook checks res.headers.get("content-type")
-// and either takes the SSE branch or falls back to res.json(). Returning
-// a JSON content-type forces the fallback path, which is what these
-// legacy unit tests exercise — the SSE path is tested in the ask-route
-// integration suite.
-function makeJsonResponse(body: unknown, overrides: Partial<{ ok: boolean; status: number }> = {}) {
-  return {
-    ok: overrides.ok ?? true,
-    status: overrides.status ?? 200,
-    headers: {
-      get: (key: string) =>
-        key.toLowerCase() === "content-type" ? "application/json" : null,
-    },
-    body: null,
-    json: () => Promise.resolve(body),
-  };
+function makeJsonResponse(
+    body: unknown,
+    overrides: Partial<{ ok: boolean; status: number }> = {},
+) {
+    return {
+        ok: overrides.ok ?? true,
+        status: overrides.status ?? 200,
+        headers: {
+            get: (key: string) =>
+                key.toLowerCase() === "content-type"
+                    ? "application/json"
+                    : null,
+        },
+        body: null,
+        json: () => Promise.resolve(body),
+    };
+}
+
+// Route /api/ask/session during mount-hydrate to a benign empty reply so
+// the initial HYDRATE doesn't throw on missing mocks.
+function fetchRouter(askResponse: unknown) {
+    return vi.fn((input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/ask/session")) {
+            return Promise.resolve(
+                makeJsonResponse({ turns: [], expired: false }),
+            );
+        }
+        return Promise.resolve(askResponse);
+    });
 }
 
 describe("useAskArchive", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeJsonResponse(mockResponse)));
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("calls /api/ask?stream=1 with the question on submit", async () => {
-    const { result } = renderHook(() => useAskArchive());
-
-    act(() => {
-      result.current.submit("What happened?");
+    beforeEach(() => {
+        window.localStorage.clear();
+        vi.stubGlobal(
+            "fetch",
+            fetchRouter(makeJsonResponse(mockResponse)),
+        );
     });
 
-    await waitFor(() => {
-      expect(result.current.isLoading).toBe(false);
+    afterEach(() => {
+        vi.restoreAllMocks();
     });
 
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/ask?stream=1",
-      expect.objectContaining({
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: "What happened?" }),
-      })
-    );
-  });
-
-  it("sets isLoading to true during fetch", async () => {
-    // Use a never-resolving fetch to keep loading state
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockReturnValue(new Promise(() => {}))
-    );
-
-    const { result } = renderHook(() => useAskArchive());
-
-    act(() => {
-      result.current.submit("What happened?");
+    it("hydrates with empty turns on mount", async () => {
+        const { result } = renderHook(() => useAskArchive());
+        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+        expect(result.current.turns).toEqual([]);
+        expect(result.current.expiredBanner).toBe(false);
     });
 
-    expect(result.current.isLoading).toBe(true);
-    expect(result.current.answer).toBeNull();
-  });
+    it("submit appends a user turn immediately and completes it via the non-streaming fallback", async () => {
+        const { result } = renderHook(() => useAskArchive());
+        await waitFor(() => expect(result.current.isHydrating).toBe(false));
 
-  it("sets answer on successful response", async () => {
-    const { result } = renderHook(() => useAskArchive());
+        act(() => {
+            result.current.submit("What happened?");
+        });
 
-    act(() => {
-      result.current.submit("What happened?");
+        // Optimistic user turn appears synchronously.
+        expect(result.current.turns).toHaveLength(1);
+        expect(result.current.turns[0].question).toBe("What happened?");
+        expect(result.current.turns[0].status).toBe("streaming");
+
+        await waitFor(() => {
+            expect(result.current.turns[0].status).toBe("done");
+        });
+        expect(result.current.turns[0].answer).toBe(
+            "Things happened [Source 1].",
+        );
+        expect(result.current.turns[0].sourceArticles).toHaveLength(1);
     });
 
-    await waitFor(() => {
-      expect(result.current.answer).not.toBeNull();
+    it("submit produces a TURN_ERROR with typed kind when the server returns a typed error", async () => {
+        vi.stubGlobal(
+            "fetch",
+            fetchRouter(
+                makeJsonResponse(
+                    {
+                        kind: "rate_limit",
+                        message: "Too many questions",
+                        error: "Too many questions",
+                        retryAfterSec: 42,
+                    },
+                    { ok: false, status: 429 },
+                ),
+            ),
+        );
+
+        const { result } = renderHook(() => useAskArchive());
+        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+        act(() => {
+            result.current.submit("q");
+        });
+
+        await waitFor(() => {
+            expect(result.current.turns[0].status).toBe("error");
+        });
+        expect(result.current.turns[0].errorKind).toBe("rate_limit");
+        expect(result.current.turns[0].errorMessage).toBe("Too many questions");
+        expect(result.current.turns[0].retryAfterSec).toBe(42);
     });
 
-    expect(result.current.answer!.question).toBe("What happened?");
-    expect(result.current.answer!.answer).toBe("Things happened [Source 1].");
-    expect(result.current.isLoading).toBe(false);
-    expect(result.current.error).toBeNull();
-  });
+    it("newConversation clears turns and bumps sessionGen", async () => {
+        const { result } = renderHook(() => useAskArchive());
+        await waitFor(() => expect(result.current.isHydrating).toBe(false));
 
-  it("sets error on failed response", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        makeJsonResponse({ error: "Server error" }, { ok: false, status: 500 }),
-      ),
-    );
+        act(() => {
+            result.current.submit("q1");
+        });
+        await waitFor(() => {
+            expect(result.current.turns[0].status).toBe("done");
+        });
 
-    const { result } = renderHook(() => useAskArchive());
-
-    act(() => {
-      result.current.submit("What happened?");
+        const genBefore = result.current.sessionGen;
+        act(() => {
+            result.current.newConversation();
+        });
+        expect(result.current.turns).toEqual([]);
+        expect(result.current.sessionGen).toBe(genBefore + 1);
     });
 
-    await waitFor(() => {
-      expect(result.current.error).not.toBeNull();
+    it("retry re-submits an errored turn's question as a new turn", async () => {
+        // First submit errors out.
+        vi.stubGlobal(
+            "fetch",
+            fetchRouter(
+                makeJsonResponse(
+                    { kind: "server", message: "Boom" },
+                    { ok: false, status: 500 },
+                ),
+            ),
+        );
+        const { result } = renderHook(() => useAskArchive());
+        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+        act(() => {
+            result.current.submit("ask once");
+        });
+        await waitFor(() => {
+            expect(result.current.turns[0].status).toBe("error");
+        });
+
+        // Swap fetch to succeed the retry.
+        vi.stubGlobal("fetch", fetchRouter(makeJsonResponse(mockResponse)));
+
+        act(() => {
+            result.current.retry(result.current.turns[0].id);
+        });
+
+        await waitFor(() => {
+            expect(result.current.turns).toHaveLength(2);
+        });
+        await waitFor(() => {
+            expect(result.current.turns[1].status).toBe("done");
+        });
+        expect(result.current.turns[1].question).toBe("ask once");
     });
-
-    expect(result.current.error).toBe("Server error");
-    expect(result.current.answer).toBeNull();
-    expect(result.current.isLoading).toBe(false);
-  });
-
-  it("falls back to status-based error when json parsing fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 502,
-        headers: { get: () => null },
-        body: null,
-        json: () => Promise.reject(new Error("parse error")),
-      })
-    );
-
-    const { result } = renderHook(() => useAskArchive());
-
-    act(() => {
-      result.current.submit("What happened?");
-    });
-
-    await waitFor(() => {
-      expect(result.current.error).not.toBeNull();
-    });
-
-    expect(result.current.error).toBe("Request failed: 502");
-  });
-
-  it("does not submit empty or whitespace-only input", () => {
-    const { result } = renderHook(() => useAskArchive());
-
-    act(() => {
-      result.current.submit("   ");
-    });
-
-    expect(fetch).not.toHaveBeenCalled();
-    expect(result.current.isLoading).toBe(false);
-  });
-
-  it("trims the question before sending", async () => {
-    const { result } = renderHook(() => useAskArchive());
-
-    act(() => {
-      result.current.submit("  What happened?  ");
-    });
-
-    await waitFor(() => {
-      expect(result.current.isLoading).toBe(false);
-    });
-
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/ask?stream=1",
-      expect.objectContaining({
-        body: JSON.stringify({ question: "What happened?" }),
-      })
-    );
-  });
-
-  it("resets all state on reset()", async () => {
-    const { result } = renderHook(() => useAskArchive());
-
-    act(() => {
-      result.current.submit("What happened?");
-    });
-
-    await waitFor(() => {
-      expect(result.current.answer).not.toBeNull();
-    });
-
-    act(() => {
-      result.current.reset();
-    });
-
-    expect(result.current.answer).toBeNull();
-    expect(result.current.error).toBeNull();
-    expect(result.current.isLoading).toBe(false);
-  });
-
-  it("aborts previous request when submitting a new one", async () => {
-    let resolveFirst: (value: unknown) => void;
-    const firstFetch = new Promise((resolve) => {
-      resolveFirst = resolve;
-    });
-
-    const fetchFn = vi
-      .fn()
-      .mockReturnValueOnce(firstFetch)
-      .mockResolvedValueOnce(
-        makeJsonResponse({ ...mockResponse, question: "Second?" }),
-      );
-
-    vi.stubGlobal("fetch", fetchFn);
-
-    const { result } = renderHook(() => useAskArchive());
-
-    // Submit first question
-    act(() => {
-      result.current.submit("First?");
-    });
-
-    expect(result.current.isLoading).toBe(true);
-
-    // Submit second question (should abort the first)
-    act(() => {
-      result.current.submit("Second?");
-    });
-
-    // The first fetch's signal should be aborted
-    const firstCallSignal = fetchFn.mock.calls[0][1].signal as AbortSignal;
-    expect(firstCallSignal.aborted).toBe(true);
-
-    // Resolve first (should be ignored due to abort)
-    resolveFirst!(makeJsonResponse(mockResponse));
-
-    await waitFor(() => {
-      expect(result.current.answer).not.toBeNull();
-    });
-
-    expect(result.current.answer!.question).toBe("Second?");
-  });
 });

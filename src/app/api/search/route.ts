@@ -5,7 +5,7 @@ import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 const MAX_QUERY_LENGTH = 200;
 const SEARCH_TIMEOUT_MS = 8_000;
 
-const searchRateLimiter = createRateLimiter({ limit: 20, windowMs: 60_000 });
+const searchRateLimiter = createRateLimiter({ bucket: "search", limit: 20, windowMs: 60_000 });
 
 function newRequestId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -13,7 +13,7 @@ function newRequestId(): string {
 
 export async function GET(request: NextRequest) {
   const ip = getClientIp(request);
-  const rate = searchRateLimiter(ip);
+  const rate = await searchRateLimiter(ip);
   if (!rate.allowed) {
     return NextResponse.json(
       { error: "Too many search requests. Please wait a moment and try again." },

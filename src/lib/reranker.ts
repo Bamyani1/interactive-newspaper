@@ -9,12 +9,13 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import { recordUsage } from "@/src/lib/cost-tracker";
 import type { RetrievedArticle } from "@/src/lib/db";
 
 const RERANKER_MODEL = "gemini-3-flash-preview";
 const RERANKER_TIMEOUT_MS = 8_000;
 const RERANKER_MAX_TOKENS = 150;
-const RERANKER_BODY_CHARS = 1000; // body excerpt sent to reranker per article
+const RERANKER_BODY_CHARS = 2000; // body excerpt sent to reranker per article
 const DEFAULT_MIN_SCORE = 5;
 const DEFAULT_MAX_ARTICLES = 5;
 
@@ -88,6 +89,11 @@ export async function rerankArticles(
 
         clearTimeout(timeout);
 
+        void recordUsage(RERANKER_MODEL, response.usageMetadata, {
+            requestId: options.requestId,
+            op: "rerank",
+        });
+
         const text = response.text?.trim() ?? "";
         const scores = parseScores(text, articles.length);
 
@@ -101,7 +107,9 @@ export async function rerankArticles(
                     msg: "failed to parse reranker scores, returning original articles",
                 }),
             );
-            return articles.map((a) => ({ ...a, relevanceScore: 5 }));
+            return articles
+                .slice(0, maxArticles)
+                .map((a) => ({ ...a, relevanceScore: 5 }));
         }
 
         // Attach scores, filter, sort, and cap
@@ -124,7 +132,9 @@ export async function rerankArticles(
                 err: err instanceof Error ? err.message : String(err),
             }),
         );
-        return articles.map((a) => ({ ...a, relevanceScore: 5 }));
+        return articles
+            .slice(0, maxArticles)
+            .map((a) => ({ ...a, relevanceScore: 5 }));
     }
 }
 
