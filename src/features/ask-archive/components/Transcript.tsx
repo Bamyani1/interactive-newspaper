@@ -53,7 +53,13 @@ export const Transcript: React.FC<TranscriptProps> = ({
     const isEmpty = turns.length === 0;
 
     return (
-        <div ref={containerRef} className="ask-transcript">
+        <div
+            ref={containerRef}
+            className="ask-transcript"
+            role="log"
+            aria-label="Conversation transcript"
+            aria-busy={isHydrating}
+        >
             {expiredBanner ? (
                 <div className="ask-expired-banner" role="status">
                     Your last conversation expired. Starting fresh.
