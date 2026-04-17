@@ -32,6 +32,10 @@ function makeArticle(overrides: Partial<RankedArticle> = {}): RankedArticle {
   };
 }
 
+function jsonMock(answer: string, followUps: string[] = []): { text: string } {
+  return { text: JSON.stringify({ answer, follow_ups: followUps }) };
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -45,6 +49,66 @@ async function importGenerateAnswer() {
   return mod.generateAnswer;
 }
 
+async function importParseAnswerResponse() {
+  const mod = await import("@/src/lib/answer-generator");
+  return mod.parseAnswerResponse;
+}
+
+describe("parseAnswerResponse", () => {
+  it("parses valid JSON response", async () => {
+    const parse = await importParseAnswerResponse();
+    const result = parse(JSON.stringify({
+      answer: "The campus held elections [Source 1].",
+      follow_ups: ["Q1", "Q2"],
+    }));
+    expect(result.answer).toBe("The campus held elections [Source 1].");
+    expect(result.followUps).toEqual(["Q1", "Q2"]);
+  });
+
+  it("falls back to raw text when JSON is malformed", async () => {
+    const parse = await importParseAnswerResponse();
+    const result = parse("not json at all");
+    expect(result.answer).toBe("not json at all");
+    expect(result.followUps).toEqual([]);
+  });
+
+  it("returns empty followUps when field is missing", async () => {
+    const parse = await importParseAnswerResponse();
+    const result = parse(JSON.stringify({ answer: "Just the answer [Source 1]." }));
+    expect(result.answer).toBe("Just the answer [Source 1].");
+    expect(result.followUps).toEqual([]);
+  });
+
+  it("filters non-string items from follow_ups", async () => {
+    const parse = await importParseAnswerResponse();
+    const result = parse(JSON.stringify({
+      answer: "X [Source 1].",
+      follow_ups: ["valid Q", 42, null, "", "another Q"],
+    }));
+    expect(result.followUps).toEqual(["valid Q", "another Q"]);
+  });
+
+  it("strips markdown code fences before parsing", async () => {
+    const parse = await importParseAnswerResponse();
+    const raw = "```json\n" + JSON.stringify({
+      answer: "Hello [Source 1].",
+      follow_ups: [],
+    }) + "\n```";
+    const result = parse(raw);
+    expect(result.answer).toBe("Hello [Source 1].");
+  });
+
+  it("caps follow_ups at 3", async () => {
+    const parse = await importParseAnswerResponse();
+    const result = parse(JSON.stringify({
+      answer: "X [Source 1].",
+      follow_ups: ["Q1", "Q2", "Q3", "Q4", "Q5"],
+    }));
+    expect(result.followUps).toHaveLength(3);
+    expect(result.followUps).toEqual(["Q1", "Q2", "Q3"]);
+  });
+});
+
 describe("generateAnswer", () => {
   describe("empty articles", () => {
     it("returns low confidence when no articles provided", async () => {
@@ -57,15 +121,16 @@ describe("generateAnswer", () => {
       );
       expect(result.citations).toEqual([]);
       expect(result.confidence).toBe("low");
+      expect(result.followUps).toEqual([]);
     });
   });
 
   describe("citation parsing", () => {
     it("extracts a single citation from the answer", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "The campus held elections in January [Source 1].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("The campus held elections in January [Source 1].")
+      );
 
       const articles = [
         makeArticle({ id: "1960-01-07-0", headline: "Election Results" }),
@@ -84,9 +149,9 @@ describe("generateAnswer", () => {
 
     it("extracts multiple citations from the answer", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "Elections were held [Source 1] and sports continued [Source 3].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Elections were held [Source 1] and sports continued [Source 3].")
+      );
 
       const articles = [
         makeArticle({ id: "art-0", headline: "Elections" }),
@@ -111,9 +176,9 @@ describe("generateAnswer", () => {
 
     it("deduplicates repeated citations to the same source", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "The event was significant [Source 1] and had lasting impact [Source 1].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("The event was significant [Source 1] and had lasting impact [Source 1].")
+      );
 
       const articles = [makeArticle({ id: "art-0", headline: "Big Event" })];
 
@@ -125,9 +190,9 @@ describe("generateAnswer", () => {
 
     it("returns empty citations for out-of-range source references", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "Something happened [Source 99].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Something happened [Source 99].")
+      );
 
       const articles = [makeArticle()];
 
@@ -138,9 +203,9 @@ describe("generateAnswer", () => {
 
     it("strips preamble even with single newline separator", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "Relevant sources: [Source 1]\nThe campus held elections [Source 1].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Relevant sources: [Source 1]\nThe campus held elections [Source 1].")
+      );
 
       const articles = [
         makeArticle({ id: "1960-01-07-0", headline: "Election Results" }),
@@ -157,9 +222,9 @@ describe("generateAnswer", () => {
   describe("confidence scoring", () => {
     it("returns high confidence for close vector matches", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "The answer is clear [Source 1] [Source 2] [Source 3].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("The answer is clear [Source 1] [Source 2] [Source 3].")
+      );
 
       const articles = [
         makeArticle({ id: "a", distance: 0.2, source: "vector" }),
@@ -174,9 +239,9 @@ describe("generateAnswer", () => {
 
     it("returns medium confidence for moderate vector distances", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "Some relevant info [Source 1].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Some relevant info [Source 1].")
+      );
 
       const articles = [
         makeArticle({ id: "a", distance: 0.27, source: "vector", relevanceScore: 6 }),
@@ -206,9 +271,9 @@ describe("generateAnswer", () => {
 
     it("FTS-only with mid reranker score (6) gives medium confidence", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "Found via text search [Source 1].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Found via text search [Source 1].")
+      );
 
       const articles = [
         makeArticle({ id: "a", distance: null, source: "fts", relevanceScore: 6 }),
@@ -221,13 +286,10 @@ describe("generateAnswer", () => {
     });
 
     it("FTS-only with strong reranker score (>=8) gives HIGH confidence (issue 0029-related)", async () => {
-      // Before Step 9, FTS-only paths were capped at medium because a fake
-      // 0.27 default distance failed the < 0.26 high gate. After fix: high
-      // reranker score lifts FTS-only to high.
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "Strong match found [Source 1] [Source 2].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Strong match found [Source 1] [Source 2].")
+      );
 
       const articles = [
         makeArticle({ id: "a", distance: null, source: "fts", relevanceScore: 9 }),
@@ -241,9 +303,9 @@ describe("generateAnswer", () => {
 
     it("FTS-only with weak reranker score (<5) gives low confidence", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "Weak match [Source 1].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Weak match [Source 1].")
+      );
 
       const articles = [
         makeArticle({ id: "a", distance: null, source: "fts", relevanceScore: 3 }),
@@ -256,13 +318,10 @@ describe("generateAnswer", () => {
     });
 
     it("FTS-only does NOT trigger the 'don't seem to be closely related' skip", async () => {
-      // The skip-Gemini check used to fire on the fake 0.27 default; after
-      // Step 9 it only fires when actual vector distance > 0.30. FTS-only
-      // questions should always reach the LLM.
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "FTS path reached the LLM [Source 1].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("FTS path reached the LLM [Source 1].")
+      );
 
       const articles = [
         makeArticle({ id: "a", distance: null, source: "fts", relevanceScore: 4 }),
@@ -277,9 +336,9 @@ describe("generateAnswer", () => {
 
     it("uses only vector distances when mixed with FTS results", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "Good info [Source 1] [Source 2].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Good info [Source 1] [Source 2].")
+      );
 
       const articles = [
         makeArticle({ id: "a", distance: 0.22, source: "vector" }),
@@ -290,18 +349,15 @@ describe("generateAnswer", () => {
 
       const result = await generateAnswer("question", articles);
 
-      // avgDistance = 0.22 from vector-only, articleCount = 4 >= 2 -> high
       expect(result.confidence).toBe("high");
     });
 
     it("downgrades confidence when reranker scores are mediocre even with close distance", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "Some info [Source 1].",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Some info [Source 1].")
+      );
 
-      // Close vector distance but reranker says only "somewhat relevant"
-      // → should be medium, not high
       const articles = [
         makeArticle({ id: "a", distance: 0.20, source: "vector", relevanceScore: 5 }),
         makeArticle({ id: "b", distance: 0.20, source: "vector", relevanceScore: 5 }),
@@ -365,18 +421,51 @@ describe("generateAnswer", () => {
   describe("confidence validation", () => {
     it("downgrades to low confidence when answer has source refs but no valid citations", async () => {
       const generateAnswer = await importGenerateAnswer();
-      mockGenerateContent.mockResolvedValue({
-        text: "The answer references [Source 2] which does not exist.",
-      });
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("The answer references [Source 2] which does not exist.")
+      );
 
-      // Only 1 article, but the answer references [Source 2] (out of range)
       const articles = [makeArticle({ distance: 0.2, source: "vector" })];
 
       const result = await generateAnswer("question", articles);
 
-      // hasSourceRefs is true, but citations.length is 0 -> downgrade to low
       expect(result.citations).toEqual([]);
       expect(result.confidence).toBe("low");
+    });
+  });
+
+  describe("follow-up questions", () => {
+    it("returns followUps from valid JSON response", async () => {
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Answer with source [Source 1].", [
+          "Who coached that year?",
+          "What was the record?",
+        ])
+      );
+
+      const articles = [makeArticle()];
+      const result = await generateAnswer("question", articles);
+
+      expect(result.followUps).toEqual([
+        "Who coached that year?",
+        "What was the record?",
+      ]);
+    });
+
+    it("returns empty followUps when Gemini returns malformed JSON", async () => {
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue({
+        text: "not valid json [Source 1]",
+      });
+
+      const articles = [makeArticle()];
+      const result = await generateAnswer("question", articles);
+
+      // Malformed JSON → fall back to raw text as answer, empty followUps
+      expect(result.followUps).toEqual([]);
+      // But the answer should still be the raw text
+      expect(result.answer).toContain("not valid json");
     });
   });
 });

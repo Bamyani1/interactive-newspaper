@@ -46,6 +46,17 @@ vi.mock("@/src/lib/rate-limit", () => ({
   getClientIp: () => "127.0.0.1",
 }));
 
+vi.mock("@/src/lib/agent-loop", () => ({
+  runAgentLoop: vi.fn(),
+}));
+
+vi.mock("@/src/lib/conversation-store", () => ({
+  getConversationHistory: vi.fn(() => []),
+  addConversationTurn: vi.fn(),
+  newSessionId: vi.fn(() => "test-session-id"),
+  formatHistoryForPrompt: vi.fn(() => ""),
+}));
+
 import {
   POST,
   _setGlobalDeadlineForTests,
@@ -59,6 +70,13 @@ import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
+import { runAgentLoop } from "@/src/lib/agent-loop";
+import {
+  addConversationTurn,
+  getConversationHistory,
+  formatHistoryForPrompt,
+} from "@/src/lib/conversation-store";
+import { clearAnswerCache } from "@/src/lib/answer-cache";
 
 function makeRequest(
   body: Record<string, unknown>,
@@ -122,6 +140,7 @@ describe("POST /api/ask", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
+    clearAnswerCache();
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "What happened at OWU?",
       ftsQuery: "What happened at OWU?",
@@ -138,6 +157,7 @@ describe("POST /api/ask", () => {
         { articleId: "1960-01-07-0", headline: "Test Headline", editionDate: "1960-01-07" },
       ],
       confidence: "high",
+      followUps: [],
     });
     // Default streaming mock: yields 2 deltas then a done event
     (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
@@ -155,6 +175,7 @@ describe("POST /api/ask", () => {
             },
           ],
           confidence: "high",
+          followUps: [],
         };
       })(),
     );
@@ -313,7 +334,10 @@ describe("POST /api/ask", () => {
     expect(snippet.endsWith("\u2026")).toBe(true);
     expect(snippet.slice(0, 300)).toBe("x".repeat(300));
 
-    // Short body should not have ellipsis
+    // Short body should not have ellipsis — clear cache so second POST
+    // re-runs the pipeline (answer cache would otherwise replay first hit).
+    clearAnswerCache();
+
     const shortArticle = { ...mockArticle, bodyPlain: "Short body", relevanceScore: 8 };
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
@@ -568,6 +592,26 @@ describe("POST /api/ask", () => {
     expect(reformulateQuery).toHaveBeenCalledTimes(2);
   });
 
+  it("does NOT dedup same question with different sessionIds (bug_018)", async () => {
+    // Two different users on the same NAT'd IP asking the same question:
+    // if dedup ignored sessionId, the piggybacker's addConversationTurn
+    // would never fire and their follow-up history would be lost.
+    await Promise.all([
+      POST(makeRequest({ question: "Shared question", sessionId: "sess-A" })),
+      POST(makeRequest({ question: "Shared question", sessionId: "sess-B" })),
+    ]);
+
+    // Both requests ran the pipeline — no dedup across sessions.
+    expect(reformulateQuery).toHaveBeenCalledTimes(2);
+    expect(generateAnswer).toHaveBeenCalledTimes(2);
+
+    // Each session got its own conversation-store write.
+    const addTurnCalls = (addConversationTurn as ReturnType<typeof vi.fn>).mock.calls;
+    const sessionsWritten = new Set(addTurnCalls.map((c) => c[0]));
+    expect(sessionsWritten.has("sess-A")).toBe(true);
+    expect(sessionsWritten.has("sess-B")).toBe(true);
+  });
+
   it("falls through if the in-flight pipeline rejects", async () => {
     // First call rejects, second call should run its own pipeline successfully
     let callCount = 0;
@@ -789,6 +833,7 @@ describe("POST /api/ask", () => {
           answer: "First second third.",
           citations: [],
           confidence: "medium",
+          followUps: [],
         };
       })(),
     );
@@ -860,6 +905,7 @@ describe("POST /api/ask", () => {
         "I don't have enough information in the archive to answer this question.",
       citations: [],
       confidence: "low",
+      followUps: [],
     });
 
     const response = await POST(
@@ -949,7 +995,7 @@ describe("POST /api/ask", () => {
     // Streaming generation errors tag stage="generate", matching the
     // non-streaming path's wrapStage("generate", ...) behavior.
     expect(errorEvent?.stage).toBe("generate");
-    expect(errorEvent?.message).toMatch(/Gemini stream interrupted/);
+    expect(errorEvent?.message).toMatch(/error occurred during answer generation/);
     expect(typeof errorEvent?.requestId).toBe("string");
     expect((errorEvent?.requestId as string).length).toBeGreaterThan(0);
 
@@ -957,5 +1003,852 @@ describe("POST /api/ask", () => {
     // client differentiates by receiving 'error' instead.
     const doneEvent = events.find((e) => e.type === "done");
     expect(doneEvent).toBeUndefined();
+  });
+});
+
+describe("Complexity routing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Pipeline answer",
+      citations: [],
+      confidence: "medium",
+      followUps: [],
+    });
+  });
+
+  it("routes to agent when complexity=complex (JSON path)", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "evolution of Greek life",
+      ftsQuery: "Greek life fraternity sorority",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Greek life changed significantly [1965-03-15-4].",
+      citations: [
+        { articleId: "1965-03-15-4", headline: "Greek Life Review", editionDate: "1965-03-15" },
+      ],
+      confidence: "high",
+      toolCallCount: 3,
+      rounds: 2,
+      articleMeta: new Map([
+        ["1965-03-15-4", {
+          headline: "Greek Life Review",
+          editionDate: "1965-03-15",
+          category: "Campus News",
+          summary: "A review of Greek life",
+          byline: "Staff",
+          bodySnippet: "Fraternities and sororities...",
+          imageUrls: [],
+        }],
+      ]),
+    });
+
+    const response = await POST(makeRequest({ question: "How did Greek life evolve from 1960 to 2000?" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(runAgentLoop).toHaveBeenCalledTimes(1);
+    expect(embedQuery).not.toHaveBeenCalled();
+    expect(body.answer).toContain("Greek life changed");
+    expect(body.meta.complexity).toBe("complex");
+    expect(body.meta.agentSteps).toBe(2);
+    expect(body.meta.agentToolCalls).toBe(3);
+  });
+
+  it("populates sourceArticles from agent metadata", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Answer [1965-03-15-4].",
+      citations: [
+        { articleId: "1965-03-15-4", headline: "Test", editionDate: "1965-03-15" },
+      ],
+      confidence: "high",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map([
+        ["1965-03-15-4", {
+          headline: "Test",
+          editionDate: "1965-03-15",
+          category: "News",
+          summary: "Summary",
+          byline: "Author",
+          bodySnippet: "Snippet",
+          imageUrls: ["img.jpg"],
+        }],
+      ]),
+    });
+
+    const response = await POST(makeRequest({ question: "complex question" }));
+    const body = await response.json();
+
+    expect(body.sourceArticles).toHaveLength(1);
+    expect(body.sourceArticles[0].id).toBe("1965-03-15-4");
+    expect(body.sourceArticles[0].category).toBe("News");
+    expect(body.sourceArticles[0].bodySnippet).toBe("Snippet");
+    expect(body.sourceArticles[0].imageUrls).toEqual(["img.jpg"]);
+  });
+
+  it("uses pipeline when complexity=simple", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "homecoming 1965",
+      ftsQuery: "homecoming 1965",
+      mode: "text",
+      complexity: "simple",
+    });
+
+    const response = await POST(makeRequest({ question: "What was the 1965 homecoming like?" }));
+    expect(response.status).toBe(200);
+    expect(runAgentLoop).not.toHaveBeenCalled();
+    expect(embedQuery).toHaveBeenCalled();
+  });
+
+  it("stores conversation turn for agent path", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Agent answer.",
+      citations: [{ articleId: "a1", headline: "H", editionDate: "1960-01-01" }],
+      confidence: "high",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map(),
+    });
+
+    await POST(makeRequest({ question: "complex q" }));
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "complex q",
+      "Agent answer.",
+      ["a1"],
+    );
+  });
+});
+
+describe("CRAG retry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "obscure topic",
+      ftsQuery: "obscure topic",
+      mode: "text",
+      complexity: "simple",
+    });
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+  });
+
+  it("retries with broader query when reranker filters all articles", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ ...mockArticle, relevanceScore: 5 }]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Found on retry.",
+      citations: [],
+      confidence: "medium",
+      followUps: [],
+    });
+
+    const response = await POST(makeRequest({ question: "obscure topic" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(reformulateQuery).toHaveBeenCalledTimes(2);
+    expect(rerankArticles).toHaveBeenCalledTimes(2);
+    expect(body.answer).toBe("Found on retry.");
+  });
+
+  it("returns low confidence when retry also yields no articles", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Not enough information.",
+      citations: [],
+      confidence: "low",
+      followUps: [],
+    });
+
+    const response = await POST(makeRequest({ question: "obscure topic" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.confidence).toBe("low");
+  });
+});
+
+describe("CRAG retry (streaming)", () => {
+  // Regression coverage for merged_bug_003: the retry previously existed
+  // only in the non-streaming branch, so real users (who always stream)
+  // saw "I don't have enough information" instead of the broadened retry.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "obscure topic",
+      ftsQuery: "obscure topic",
+      mode: "text",
+      complexity: "simple",
+    });
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "Found via retry." };
+        yield {
+          type: "done",
+          answer: "Found via retry.",
+          citations: [],
+          confidence: "medium",
+          followUps: [],
+        };
+      })(),
+    );
+  });
+
+  it("retries with broader query when streaming rerank filters all articles", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ ...mockArticle, relevanceScore: 5 }]);
+
+    const response = await POST(
+      makeRequest({ question: "obscure topic" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    // Retry fires: both reformulate and rerank ran twice.
+    expect(reformulateQuery).toHaveBeenCalledTimes(2);
+    expect(rerankArticles).toHaveBeenCalledTimes(2);
+
+    // Final done event carries the retry's answer (not an error).
+    const done = events.find((e) => e.type === "done");
+    expect(done).toBeDefined();
+    expect(done?.answer).toBe("Found via retry.");
+
+    // No error event was emitted.
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeUndefined();
+  });
+
+  it("maps retry-stage quota exhaustion to SSE error with stage tag", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    // Primary embed succeeds; retry embed throws quota-exhausted. Order
+    // matters: the pipeline calls embedQuery twice — once before retrieve,
+    // once inside the retry. The first call must succeed so rerank runs
+    // and filters to zero, triggering the retry that then fails.
+    (embedQuery as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(new Array(768).fill(0))
+      .mockRejectedValueOnce(new MockQuotaExhaustedError("embedQuery"));
+
+    const response = await POST(
+      makeRequest({ question: "obscure topic" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent?.message).toMatch(/quota/i);
+    // Stage should reflect the retry-specific label, not a generic "rerank".
+    expect(errorEvent?.stage).toBe("embed-retry");
+  });
+});
+
+describe("Streaming + agent", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "Answer." };
+        yield { type: "done", answer: "Answer.", citations: [], confidence: "medium", followUps: [] };
+      })(),
+    );
+  });
+
+  it("routes streaming complex questions to agent with SSE events", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "Greek life evolution",
+      ftsQuery: "Greek life",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Agent streaming answer.",
+      citations: [{ articleId: "1965-03-15-4", headline: "GL", editionDate: "1965-03-15" }],
+      confidence: "high",
+      toolCallCount: 2,
+      rounds: 1,
+      articleMeta: new Map(),
+    });
+
+    const response = await POST(makeRequest({ question: "How did Greek life evolve?" }, { stream: true }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("text/event-stream");
+
+    const events = await readSseEvents(response);
+    const stageEvents = events.filter((e) => e.type === "stage");
+    expect(stageEvents.some((e) => e.name === "agent")).toBe(true);
+
+    const doneEvent = events.find((e) => e.type === "done");
+    expect(doneEvent).toBeDefined();
+    expect(doneEvent?.answer).toBe("Agent streaming answer.");
+    expect((doneEvent?.meta as Record<string, unknown>)?.complexity).toBe("complex");
+    expect((doneEvent?.meta as Record<string, unknown>)?.agentSteps).toBe(1);
+  });
+
+  it("stores conversation turn in streaming agent path", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Streaming agent answer.",
+      citations: [],
+      confidence: "medium",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map(),
+    });
+
+    const response = await POST(makeRequest({ question: "streaming complex q" }, { stream: true }));
+    await readSseEvents(response);
+
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "streaming complex q",
+      "Streaming agent answer.",
+      [],
+    );
+  });
+
+  it("includes complexity in streaming pipeline done event", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "simple question",
+      ftsQuery: "simple question",
+      mode: "text",
+      complexity: "simple",
+    });
+
+    const response = await POST(makeRequest({ question: "simple question" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    const doneEvent = events.find((e) => e.type === "done");
+    expect(doneEvent).toBeDefined();
+    expect((doneEvent?.meta as Record<string, unknown>)?.complexity).toBe("simple");
+  });
+
+  it("emits generic error for streaming agent failure", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("Gemini API key invalid"),
+    );
+
+    const response = await POST(makeRequest({ question: "fail question" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent?.stage).toBe("agent");
+    expect(errorEvent?.message).not.toContain("Gemini API key");
+    expect(errorEvent?.message).toContain("error occurred");
+  });
+
+  it("stores conversation turn in streaming pipeline path", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "simple pipeline",
+      ftsQuery: "simple pipeline",
+      mode: "text",
+      complexity: "simple",
+    });
+
+    const response = await POST(makeRequest({ question: "pipeline streaming q" }, { stream: true }));
+    await readSseEvents(response);
+
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "pipeline streaming q",
+      "Answer.",
+      [],
+    );
+  });
+});
+
+describe("Answer cache (streaming)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "cache test",
+      ftsQuery: "cache test",
+      mode: "text",
+      complexity: "simple",
+    });
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "Cached answer." };
+        yield {
+          type: "done",
+          answer: "Cached answer.",
+          citations: [
+            {
+              articleId: "1960-01-07-0",
+              headline: "Test Headline",
+              editionDate: "1960-01-07",
+            },
+          ],
+          confidence: "high",
+          followUps: ["Tell me more?", "Any sources?"],
+        };
+      })(),
+    );
+  });
+
+  it("replays the cached response with meta.cacheHit:true on the second streaming POST", async () => {
+    // First request populates the cache
+    const first = await POST(
+      makeRequest({ question: "cache test" }, { stream: true }),
+    );
+    const firstEvents = await readSseEvents(first);
+    const firstDone = firstEvents.find((e) => e.type === "done");
+    expect(firstDone).toBeDefined();
+    expect((firstDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
+    expect(generateAnswerStream).toHaveBeenCalledTimes(1);
+    expect(embedQuery).toHaveBeenCalledTimes(1);
+
+    // Second request hits the cache — skips embed/retrieve/rerank/generate
+    const second = await POST(
+      makeRequest({ question: "cache test" }, { stream: true }),
+    );
+    const secondEvents = await readSseEvents(second);
+    const secondDone = secondEvents.find((e) => e.type === "done");
+    expect(secondDone).toBeDefined();
+    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBe(true);
+    expect(secondDone?.answer).toBe("Cached answer.");
+    expect(secondDone?.followUpQuestions).toEqual(["Tell me more?", "Any sources?"]);
+    // Cache hit must not re-invoke the downstream pipeline
+    expect(generateAnswerStream).toHaveBeenCalledTimes(1);
+    expect(embedQuery).toHaveBeenCalledTimes(1);
+    expect(rerankArticles).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits a delta with the full cached answer before the done event on cache hit", async () => {
+    await readSseEvents(
+      await POST(makeRequest({ question: "cache test" }, { stream: true })),
+    );
+    const cached = await POST(
+      makeRequest({ question: "cache test" }, { stream: true }),
+    );
+    const events = await readSseEvents(cached);
+    const deltas = events.filter((e) => e.type === "delta");
+    expect(deltas.length).toBeGreaterThan(0);
+    const concatenated = deltas.map((d) => d.text).join("");
+    expect(concatenated).toBe("Cached answer.");
+  });
+
+  it("does not cache agent-path (complexity=complex) answers", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "complex q",
+      ftsQuery: "complex q",
+      mode: "text",
+      complexity: "complex",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Agent answer.",
+      citations: [],
+      confidence: "high",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map(),
+    });
+
+    // Two identical agent-path requests
+    await readSseEvents(
+      await POST(makeRequest({ question: "complex q" }, { stream: true })),
+    );
+    await readSseEvents(
+      await POST(makeRequest({ question: "complex q" }, { stream: true })),
+    );
+    // Agent path ran twice; cache didn't short-circuit
+    expect(runAgentLoop).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips cache read when conversation history is present (follow-up)", async () => {
+    // Session with one prior turn — simulates a follow-up question where
+    // the generator would bake history into its answer. We must not serve
+    // any cached bare-question answer nor write one that could leak later.
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        question: "Who played basketball?",
+        answer: "The 1961 Bishops.",
+        citedArticleIds: ["1961-03-01-0"],
+        timestamp: Date.now(),
+      },
+    ]);
+
+    // First POST with sessionId: pipeline runs.
+    await readSseEvents(
+      await POST(
+        makeRequest(
+          { question: "cache test", sessionId: "sess-A" },
+          { stream: true },
+        ),
+      ),
+    );
+    expect(generateAnswerStream).toHaveBeenCalledTimes(1);
+
+    // Second POST, same sessionId + question: should re-run pipeline
+    // rather than reading from cache.
+    const second = await POST(
+      makeRequest(
+        { question: "cache test", sessionId: "sess-A" },
+        { stream: true },
+      ),
+    );
+    const secondEvents = await readSseEvents(second);
+    const secondDone = secondEvents.find((e) => e.type === "done");
+    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
+    expect(generateAnswerStream).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips cache write when conversation history is present", async () => {
+    // First POST — with history — should run the pipeline but NOT cache.
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        question: "Who played basketball?",
+        answer: "The 1961 Bishops.",
+        citedArticleIds: ["1961-03-01-0"],
+        timestamp: Date.now(),
+      },
+    ]);
+    await readSseEvents(
+      await POST(
+        makeRequest(
+          { question: "cache test", sessionId: "sess-A" },
+          { stream: true },
+        ),
+      ),
+    );
+    expect(generateAnswerStream).toHaveBeenCalledTimes(1);
+
+    // Second POST — fresh session, no history. Because the first call
+    // was not cached, this one must still run the pipeline.
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    const second = await POST(
+      makeRequest(
+        { question: "cache test", sessionId: "sess-B" },
+        { stream: true },
+      ),
+    );
+    const secondEvents = await readSseEvents(second);
+    const secondDone = secondEvents.find((e) => e.type === "done");
+    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
+    expect(generateAnswerStream).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("persistTurnBounded (conversation-turn race fix)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "race-q",
+      ftsQuery: "race-q",
+      mode: "text",
+      complexity: "simple",
+    });
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Array(768).fill(0),
+    );
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "A",
+      citations: [
+        {
+          articleId: "1960-01-07-0",
+          headline: "Test Headline",
+          editionDate: "1960-01-07",
+        },
+      ],
+      confidence: "high",
+      followUps: [],
+    });
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "A" };
+        yield {
+          type: "done",
+          answer: "A",
+          citations: [
+            {
+              articleId: "1960-01-07-0",
+              headline: "Test Headline",
+              editionDate: "1960-01-07",
+            },
+          ],
+          confidence: "high",
+          followUps: [],
+        };
+      })(),
+    );
+  });
+
+  it("awaits the conversation-turn write before emitting SSE done", async () => {
+    let writeResolved = false;
+    (addConversationTurn as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            writeResolved = true;
+            resolve();
+          }, 50);
+        }),
+    );
+
+    const response = await POST(
+      makeRequest(
+        { question: "race-q", sessionId: "race-sess-stream" },
+        { stream: true },
+      ),
+    );
+    const events = await readSseEvents(response);
+
+    expect(writeResolved).toBe(true);
+    expect(events.some((e) => e.type === "done")).toBe(true);
+  });
+
+  it("awaits the conversation-turn write before returning the non-streaming response", async () => {
+    let writeResolved = false;
+    (addConversationTurn as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            writeResolved = true;
+            resolve();
+          }, 50);
+        }),
+    );
+
+    const response = await POST(
+      makeRequest({ question: "race-q", sessionId: "race-sess-json" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(writeResolved).toBe(true);
+  });
+
+  it("threads conversationContext into generateAnswer on simple-path follow-ups", async () => {
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        question: "Q1",
+        answer: "A1",
+        citedArticleIds: ["1960-01-07-0"],
+        timestamp: Date.now(),
+      },
+    ]);
+    (formatHistoryForPrompt as ReturnType<typeof vi.fn>).mockReturnValue(
+      "[Turn 1] Q: Q1\nA: A1",
+    );
+
+    await POST(
+      makeRequest({ question: "follow-up", sessionId: "hist-sess" }),
+    );
+
+    expect(generateAnswer).toHaveBeenCalledWith(
+      "follow-up",
+      expect.any(Array),
+      expect.objectContaining({
+        conversationContext: "[Turn 1] Q: Q1\nA: A1",
+      }),
+    );
+  });
+
+  it("threads conversationContext into generateAnswerStream on simple-path follow-ups", async () => {
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        question: "Q1",
+        answer: "A1",
+        citedArticleIds: ["1960-01-07-0"],
+        timestamp: Date.now(),
+      },
+    ]);
+    (formatHistoryForPrompt as ReturnType<typeof vi.fn>).mockReturnValue(
+      "[Turn 1] Q: Q1\nA: A1",
+    );
+
+    await readSseEvents(
+      await POST(
+        makeRequest(
+          { question: "follow-up", sessionId: "hist-sess-stream" },
+          { stream: true },
+        ),
+      ),
+    );
+
+    expect(generateAnswerStream).toHaveBeenCalledWith(
+      "follow-up",
+      expect.any(Array),
+      expect.objectContaining({
+        conversationContext: "[Turn 1] Q: Q1\nA: A1",
+      }),
+    );
+  });
+
+  it("omits conversationContext when there is no history", async () => {
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    await POST(makeRequest({ question: "fresh-q", sessionId: "fresh-sess" }));
+
+    expect(generateAnswer).toHaveBeenCalledWith(
+      "fresh-q",
+      expect.any(Array),
+      expect.objectContaining({
+        conversationContext: undefined,
+      }),
+    );
+  });
+});
+
+describe("typed AskError response body", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "q",
+      ftsQuery: "q",
+      mode: "text",
+    });
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Array(768).fill(0),
+    );
+    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 8 },
+    ]);
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "A",
+      citations: [
+        {
+          articleId: "1960-01-07-0",
+          headline: "Test",
+          editionDate: "1960-01-07",
+        },
+      ],
+      confidence: "high",
+      followUps: [],
+    });
+  });
+
+  it("400 bad_request for missing question", async () => {
+    const response = await POST(makeRequest({}));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.kind).toBe("bad_request");
+    expect(body.message).toBe("Missing required field: question");
+    expect(body.error).toBe(body.message);
+  });
+
+  it("400 bad_request for empty question", async () => {
+    const response = await POST(makeRequest({ question: "  " }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.kind).toBe("bad_request");
+  });
+
+  it("400 bad_request for too-long question", async () => {
+    const response = await POST(
+      makeRequest({ question: "a".repeat(1001) }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.kind).toBe("bad_request");
+  });
+
+  it("429 budget with retryAfterSec=3600 on quota_exhausted", async () => {
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new MockQuotaExhaustedError("embedQuery", { code: 429 }),
+    );
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body.kind).toBe("budget");
+    expect(body.retryAfterSec).toBe(3600);
+    expect(body.cause).toBe("quota_exhausted");
+    expect(response.headers.get("Retry-After")).toBe("3600");
+  });
+
+  it("502 server on embed failure", async () => {
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("network error"),
+    );
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.kind).toBe("server");
+    expect(body.stage).toBe("embed");
+    expect(body.requestId).toBeDefined();
+  });
+
+  it("500 server on unexpected reranker error", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("reranker crashed"),
+    );
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.kind).toBe("server");
+    expect(body.stage).toBe("rerank");
   });
 });

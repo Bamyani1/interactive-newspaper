@@ -174,6 +174,7 @@ export interface AskResponse {
      * answer via POST /api/ask/feedback.
      */
     requestId: string;
+    sessionId?: string;
     sourceArticles: {
         id: string;
         headline: string;
@@ -185,6 +186,7 @@ export interface AskResponse {
         distance: number | null;
         imageUrls: string[];
     }[];
+    followUpQuestions?: string[];
     meta: {
         retrievalTimeMs: number;
         generationTimeMs: number;
@@ -192,5 +194,36 @@ export interface AskResponse {
         articlesSearched: number;
         method: "hybrid" | "vector";
         reformulatedQuery?: string;
+        complexity?: "simple" | "complex";
+        agentSteps?: number;
+        agentToolCalls?: number;
+        cacheHit?: boolean;
     };
+}
+
+/**
+ * Typed error envelope returned by the /api/ask* endpoints and by the
+ * rate-limit middleware. The `kind` discriminant lets the client pick a
+ * friendly UI message (countdown for rate_limit/budget, retry CTA for
+ * timeout/network, requestId for server) without sniffing status codes.
+ *
+ * `error` is kept alongside `message` for compatibility with pre-redesign
+ * consumers; prefer `message` going forward.
+ */
+export type AskErrorKind =
+    | "rate_limit"
+    | "budget"
+    | "timeout"
+    | "network"
+    | "server"
+    | "bad_request";
+
+export interface AskError {
+    kind: AskErrorKind;
+    message: string;
+    error: string; // legacy alias for `message`
+    retryAfterSec?: number;
+    requestId?: string;
+    stage?: string;
+    cause?: string;
 }

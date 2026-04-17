@@ -109,6 +109,50 @@ async function embedWithTimeout<T>(
     }
 }
 
+// ─── Quota Retry Helper ───────────────────────────────────────
+// Some Gemini quota errors are per-minute RPM, not daily — e.g. a
+// parallel batch run tripping the RPM bucket in the first few seconds.
+// A short exponential backoff often succeeds on those without burning
+// extra calls; a daily-quota error will just fall through the retries
+// and surface as normal. Scoped to embedDocuments (batch path) because
+// the live query path must stay snappy. Closes docs/issues/0028.
+
+let QUOTA_RETRY_DELAYS_MS: number[] = [1_000, 2_000, 4_000];
+
+// Test hook: lets unit tests run the non-retry paths without sitting
+// through 7 real seconds of backoff. Pass [] to disable retries; pass
+// a shorter list to shrink delays.
+export function _setQuotaRetryDelaysForTests(delays: number[]): void {
+    QUOTA_RETRY_DELAYS_MS = delays;
+}
+
+async function retryOnQuota<T>(op: string, fn: () => Promise<T>): Promise<T> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= QUOTA_RETRY_DELAYS_MS.length; attempt++) {
+        try {
+            return await fn();
+        } catch (err) {
+            lastErr = err;
+            if (!(err instanceof QuotaExhaustedError) || attempt === QUOTA_RETRY_DELAYS_MS.length) {
+                throw err;
+            }
+            const delayMs = QUOTA_RETRY_DELAYS_MS[attempt];
+            console.warn(
+                JSON.stringify({
+                    level: "warn",
+                    module: "embeddings",
+                    op,
+                    msg: "quota exhausted, backing off",
+                    attempt: attempt + 1,
+                    delayMs,
+                }),
+            );
+            await sleep(delayMs);
+        }
+    }
+    throw lastErr;
+}
+
 // ─── Query Embedding Cache ─────────────────────────────────────
 // Simple TTL cache to avoid redundant API calls for repeated queries.
 
@@ -175,18 +219,20 @@ export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> 
   for (let i = 0; i < textOnly.length; i += MAX_BATCH_SIZE) {
     const batch = textOnly.slice(i, i + MAX_BATCH_SIZE);
 
-    const response = await embedWithTimeout(
-      "embedDocuments.textBatch",
-      (signal) =>
-        client.models.embedContent({
-          model: EMBEDDING_MODEL,
-          contents: batch.map((inp) => ({ parts: [{ text: inp.text }] })),
-          config: {
-            outputDimensionality: EMBEDDING_DIMS,
-            abortSignal: signal,
-          },
-        }),
-      EMBED_DOCUMENTS_TIMEOUT_MS,
+    const response = await retryOnQuota("embedDocuments.textBatch", () =>
+      embedWithTimeout(
+        "embedDocuments.textBatch",
+        (signal) =>
+          client.models.embedContent({
+            model: EMBEDDING_MODEL,
+            contents: batch.map((inp) => ({ parts: [{ text: inp.text }] })),
+            config: {
+              outputDimensionality: EMBEDDING_DIMS,
+              abortSignal: signal,
+            },
+          }),
+        EMBED_DOCUMENTS_TIMEOUT_MS,
+      ),
     );
 
     if (!response.embeddings || response.embeddings.length !== batch.length) {
@@ -218,23 +264,25 @@ export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> 
     const inp = withImages[idx];
     let response;
     try {
-      response = await embedWithTimeout(
-        "embedDocuments.multimodal",
-        (signal) =>
-          client.models.embedContent({
-            model: EMBEDDING_MODEL,
-            contents: [{
-              parts: [
-                { text: inp.text },
-                { inlineData: { mimeType: inp.imageMimeType || "image/jpeg", data: inp.imageBase64! } },
-              ],
-            }],
-            config: {
-              outputDimensionality: EMBEDDING_DIMS,
-              abortSignal: signal,
-            },
-          }),
-        EMBED_DOCUMENTS_TIMEOUT_MS,
+      response = await retryOnQuota("embedDocuments.multimodal", () =>
+        embedWithTimeout(
+          "embedDocuments.multimodal",
+          (signal) =>
+            client.models.embedContent({
+              model: EMBEDDING_MODEL,
+              contents: [{
+                parts: [
+                  { text: inp.text },
+                  { inlineData: { mimeType: inp.imageMimeType || "image/jpeg", data: inp.imageBase64! } },
+                ],
+              }],
+              config: {
+                outputDimensionality: EMBEDDING_DIMS,
+                abortSignal: signal,
+              },
+            }),
+          EMBED_DOCUMENTS_TIMEOUT_MS,
+        ),
       );
     } catch (err) {
       // Re-throw with context so operators know WHERE the partial failure

@@ -1,8 +1,13 @@
 export { useAskArchive } from "./hooks/useAskArchive";
-export { AskInput } from "./components/AskInput";
-export { AnswerPanel } from "./components/AnswerPanel";
+export type { UseAskArchiveReturn, AskStage } from "./hooks/useAskArchive";
+export type { Turn } from "./hooks/askReducer";
+export { Transcript } from "./components/Transcript";
+export { Turn as TurnComponent } from "./components/Turn";
+export { Composer } from "./components/Composer";
+export { ErrorInline } from "./components/ErrorInline";
+export { Markdown } from "./components/Markdown";
+export { AskEmptyState } from "./components/AskEmptyState";
 export { SourceCard } from "./components/SourceCard";
 export { SourceList } from "./components/SourceList";
-export { ConfidenceBadge } from "./components/ConfidenceBadge";
-export { AskEmptyState } from "./components/AskEmptyState";
-export { TimelineGallery } from "./components/TimelineGallery";
+export { LowConfidenceCaveat } from "./components/LowConfidenceCaveat";
+export { FollowUpQuestions } from "./components/FollowUpQuestions";

@@ -8,11 +8,11 @@ import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 // a misleading "Dynamic server usage" error) during the build.
 export const dynamic = "force-dynamic";
 
-const editionsRateLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
+const editionsRateLimiter = createRateLimiter({ bucket: "editions", limit: 30, windowMs: 60_000 });
 
 export async function GET(request: NextRequest) {
   const ip = getClientIp(request);
-  const rate = editionsRateLimiter(ip);
+  const rate = await editionsRateLimiter(ip);
   if (!rate.allowed) {
     return NextResponse.json(
       { error: "Too many requests. Please wait a moment and try again." },

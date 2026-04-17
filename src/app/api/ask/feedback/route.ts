@@ -27,7 +27,7 @@ const MAX_QUESTION_LENGTH = 1000;
 const MAX_ANSWER_LENGTH = 20_000;
 const MAX_COMMENT_LENGTH = 1000;
 
-const feedbackRateLimiter = createRateLimiter({ limit: 20, windowMs: 60_000 });
+const feedbackRateLimiter = createRateLimiter({ bucket: "feedback", limit: 20, windowMs: 60_000 });
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -68,7 +68,7 @@ function isCitation(value: unknown): value is Citation {
 export async function POST(request: NextRequest): Promise<NextResponse> {
     // ── Rate limit ──
     const ip = getClientIp(request);
-    const rate = feedbackRateLimiter(ip);
+    const rate = await feedbackRateLimiter(ip);
     if (!rate.allowed) {
         return NextResponse.json(
             { error: "Too many feedback submissions. Try again shortly." },
