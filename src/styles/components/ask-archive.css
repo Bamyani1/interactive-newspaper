@@ -2004,9 +2004,13 @@
 .ask-composer-send:focus-visible,
 .ask-empty-example:focus-visible,
 .ask-newconv-btn:focus-visible,
+.ask-sidebar-newbtn:focus-visible,
 .ask-error-inline-retry:focus-visible,
 .ask-example-chip:focus-visible,
-.ask-source-toggle:focus-visible {
+.ask-source-toggle:focus-visible,
+.ask-source-card:focus-visible,
+.ask-reader-close:focus-visible,
+.ask-reader-edition-link:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
