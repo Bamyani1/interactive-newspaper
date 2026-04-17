@@ -59,6 +59,35 @@ type StreamEvent =
           requestId?: string;
       };
 
+// When the backend answer arrives as one payload (agent path + cache path
+// both emit a single `done` event instead of per-token deltas), replay it
+// as a stream of small chunks so the reader still sees words appearing.
+// Purely presentation-layer — no pipeline or network change.
+async function replayAnswerAsDeltas(
+    id: string,
+    answer: string,
+    dispatch: (action: {
+        type: "TURN_DELTA";
+        id: string;
+        text: string;
+    }) => void,
+    signal: AbortSignal,
+): Promise<void> {
+    const tokens = answer.split(/(\s+)/);
+    const chunkSize = 2;
+    const chunkDelay = 16;
+    for (let i = 0; i < tokens.length; i += chunkSize) {
+        if (signal.aborted) return;
+        const text = tokens.slice(i, i + chunkSize).join("");
+        if (text.length > 0) {
+            dispatch({ type: "TURN_DELTA", id, text });
+        }
+        if (i + chunkSize < tokens.length) {
+            await new Promise((resolve) => setTimeout(resolve, chunkDelay));
+        }
+    }
+}
+
 function parseEventFrame(frame: string): StreamEvent | null {
     const trimmed = frame.trim();
     if (!trimmed) return null;
@@ -149,7 +178,7 @@ export function useAskArchive(): UseAskArchiveReturn {
         if (!sessionId) return;
 
         let cancelled = false;
-        (async () => {
+        const run = async () => {
             dispatch({ type: "HYDRATING" });
             try {
                 const res = await fetch(
@@ -201,7 +230,8 @@ export function useAskArchive(): UseAskArchiveReturn {
                     });
                 }
             }
-        })();
+        };
+        void run();
         return () => {
             cancelled = true;
         };
@@ -276,6 +306,11 @@ export function useAskArchive(): UseAskArchiveReturn {
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 let buf = "";
+                // Track whether we've seen any delta events. If `done`
+                // fires without any preceding deltas (agent / cache path),
+                // replay the final answer as chunks so the reader sees it
+                // type on instead of dump-paste.
+                let receivedDelta = false;
                 while (true) {
                     const { done, value } = await reader.read();
                     if (value) buf += decoder.decode(value, { stream: true });
@@ -313,12 +348,21 @@ export function useAskArchive(): UseAskArchiveReturn {
                                 stage: "Researching…",
                             });
                         } else if (event.type === "delta") {
+                            receivedDelta = true;
                             dispatch({
                                 type: "TURN_DELTA",
                                 id: turnId,
                                 text: event.text,
                             });
                         } else if (event.type === "done") {
+                            if (!receivedDelta && event.answer) {
+                                await replayAnswerAsDeltas(
+                                    turnId,
+                                    event.answer,
+                                    dispatch,
+                                    controller.signal,
+                                );
+                            }
                             dispatch({
                                 type: "TURN_DONE",
                                 id: turnId,

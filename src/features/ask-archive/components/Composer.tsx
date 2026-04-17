@@ -1,19 +1,16 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, RotateCcw } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 interface ComposerProps {
     disabled?: boolean;
     onSubmit: (question: string) => void;
-    onNewConversation: () => void;
     /**
      * Bump to request a focus+clear of the composer (used after a turn
      * completes so the user can type the next question immediately).
      */
     focusSignal?: number;
-    /** Hide the "New conversation" button when there's nothing to clear. */
-    canStartNewConversation?: boolean;
 }
 
 const MAX_ROWS = 8;
@@ -21,14 +18,11 @@ const MAX_ROWS = 8;
 export const Composer: React.FC<ComposerProps> = ({
     disabled,
     onSubmit,
-    onNewConversation,
     focusSignal,
-    canStartNewConversation = false,
 }) => {
     const [value, setValue] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    // Auto-resize the textarea up to MAX_ROWS lines.
     const resize = useCallback(() => {
         const el = textareaRef.current;
         if (!el) return;
@@ -67,18 +61,6 @@ export const Composer: React.FC<ComposerProps> = ({
 
     return (
         <div className="ask-composer">
-            {canStartNewConversation ? (
-                <button
-                    type="button"
-                    onClick={onNewConversation}
-                    className="ask-newconv-btn"
-                    aria-label="Start a new conversation"
-                    title="Clears the current conversation"
-                >
-                    <RotateCcw size={12} aria-hidden="true" />
-                    <span>New conversation</span>
-                </button>
-            ) : null}
             <form
                 className="ask-composer-row"
                 onSubmit={(e) => {
@@ -103,9 +85,18 @@ export const Composer: React.FC<ComposerProps> = ({
                     disabled={disabled || !value.trim()}
                     aria-label="Send question"
                 >
-                    <ArrowRight size={16} aria-hidden="true" />
+                    <span className="ask-composer-send-label">Send</span>
+                    <ArrowRight size={13} aria-hidden="true" />
                 </button>
             </form>
+            <p className="ask-composer-hint" aria-hidden="true">
+                <span className="ask-composer-hint-left">
+                    Answers cite primary sources. Always verify.
+                </span>
+                <span className="ask-composer-hint-right">
+                    <kbd>↵</kbd> to send · <kbd>⇧↵</kbd> for newline
+                </span>
+            </p>
         </div>
     );
 };

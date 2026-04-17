@@ -13,11 +13,11 @@ export interface FontPreset {
 }
 
 export const DEFAULT_FONTS = {
-    "--font-header": '"Libre Baskerville", serif',
-    "--font-body": '"Crimson Pro", serif',
-    "--font-masthead": '"Libre Baskerville", serif',
-    "--font-mono": '"Work Sans", sans-serif',
-    "--font-accent": '"Libre Baskerville", serif',
+    "--font-header": '"Playfair Display", serif',
+    "--font-body": '"Source Serif 4", serif',
+    "--font-masthead": '"Playfair Display", serif',
+    "--font-mono": '"JetBrains Mono", ui-monospace, monospace',
+    "--font-accent": '"Playfair Display", serif',
 } as const;
 
 export const FONT_PRESETS: FontPreset[] = [
@@ -26,11 +26,11 @@ export const FONT_PRESETS: FontPreset[] = [
         name: "OWU Default",
         nameEn: "OWU Default",
         fonts: {
-            "--font-header": '"Libre Baskerville", serif',
-            "--font-body": '"Crimson Pro", serif',
-            "--font-masthead": '"Libre Baskerville", serif',
-            "--font-mono": '"Work Sans", sans-serif',
-            "--font-accent": '"Libre Baskerville", serif',
+            "--font-header": '"Playfair Display", serif',
+            "--font-body": '"Source Serif 4", serif',
+            "--font-masthead": '"Playfair Display", serif',
+            "--font-mono": '"JetBrains Mono", ui-monospace, monospace',
+            "--font-accent": '"Playfair Display", serif',
         },
         googleFontsToLoad: [],
     },

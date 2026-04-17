@@ -6,6 +6,7 @@ import { TimeControls } from "@/features/time-controls";
 import { useAskArchive } from "@/features/ask-archive/hooks/useAskArchive";
 import { Transcript } from "@/features/ask-archive/components/Transcript";
 import { Composer } from "@/features/ask-archive/components/Composer";
+import { AskSidebar } from "@/features/ask-archive/components/AskSidebar";
 
 export default function AskPage() {
     const {
@@ -48,27 +49,28 @@ export default function AskPage() {
             <TimeControls />
             <main className="ask-main">
                 <div className="ask-page">
-                    <header className="ask-page-header">
-                        <p className="ask-page-eyebrow">Research Desk</p>
-                        <h1 className="ask-page-title">Ask the Archive</h1>
-                    </header>
-
-                    <Transcript
+                    <AskSidebar
                         turns={turns}
-                        isHydrating={isHydrating}
-                        expiredBanner={expiredBanner}
-                        onFollowUp={handleFollowUp}
-                        onExampleQuestion={handleExample}
-                        onRetry={retry}
-                    />
-
-                    <Composer
-                        disabled={isStreaming}
-                        onSubmit={submit}
                         onNewConversation={newConversation}
-                        focusSignal={focusSignal}
                         canStartNewConversation={turns.length > 0}
                     />
+
+                    <div className="ask-column">
+                        <Transcript
+                            turns={turns}
+                            isHydrating={isHydrating}
+                            expiredBanner={expiredBanner}
+                            onFollowUp={handleFollowUp}
+                            onExampleQuestion={handleExample}
+                            onRetry={retry}
+                        />
+
+                        <Composer
+                            disabled={isStreaming}
+                            onSubmit={submit}
+                            focusSignal={focusSignal}
+                        />
+                    </div>
                 </div>
             </main>
         </PageShell>

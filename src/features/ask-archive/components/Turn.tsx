@@ -10,6 +10,7 @@ import { ErrorInline } from "./ErrorInline";
 
 interface TurnProps {
     turn: TurnData;
+    isLatest?: boolean;
     onFollowUp: (question: string) => void;
     onRetry: (turnId: string) => void;
 }
@@ -22,7 +23,12 @@ function buildArticleIdIndex(
     return map;
 }
 
-export const Turn: React.FC<TurnProps> = ({ turn, onFollowUp, onRetry }) => {
+export const Turn: React.FC<TurnProps> = ({
+    turn,
+    isLatest = true,
+    onFollowUp,
+    onRetry,
+}) => {
     const articleIdIndex = useMemo(
         () => buildArticleIdIndex(turn.sourceArticles),
         [turn.sourceArticles],
@@ -33,11 +39,9 @@ export const Turn: React.FC<TurnProps> = ({ turn, onFollowUp, onRetry }) => {
     const showStagePill = isStreaming && !hasText;
 
     return (
-        <article className="ask-turn">
-            <div
-                className="ask-turn-user"
-                aria-label="Your question"
-            >
+        <article className={`ask-turn${isLatest ? "" : " ask-turn--previous"}`}>
+            <div className="ask-turn-user" aria-label="Your question">
+                <p className="ask-turn-user-label">You asked</p>
                 <p className="ask-turn-user-bubble">{turn.question}</p>
             </div>
 
@@ -56,26 +60,44 @@ export const Turn: React.FC<TurnProps> = ({ turn, onFollowUp, onRetry }) => {
                 ) : (
                     <>
                         {showStagePill ? (
-                            <div className="ask-thinking-pill">
-                                <span className="ask-thinking-dot" />
-                                <span>{turn.stage ?? "Thinking…"}</span>
+                            <div
+                                className="ask-thinking-rule"
+                                aria-label="Thinking"
+                            >
+                                <span>
+                                    {turn.stage ?? "Searching the archive"}
+                                </span>
+                                <span
+                                    className="ask-thinking-dot"
+                                    aria-hidden="true"
+                                />
+                                <span
+                                    className="ask-thinking-dot"
+                                    aria-hidden="true"
+                                />
+                                <span
+                                    className="ask-thinking-dot"
+                                    aria-hidden="true"
+                                />
                             </div>
                         ) : null}
 
                         {hasText ? (
-                            <div className="ask-turn-answer">
-                                <Markdown articleIdIndex={articleIdIndex}>
-                                    {turn.answer}
-                                </Markdown>
-                                {isStreaming ? (
-                                    <span
-                                        className="ask-cursor"
-                                        aria-hidden="true"
-                                    >
-                                        ▊
-                                    </span>
-                                ) : null}
-                            </div>
+                            <>
+                                <p className="ask-turn-assistant-label">
+                                    The desk replies
+                                </p>
+                                <div
+                                    className="ask-turn-answer"
+                                    data-streaming={
+                                        isStreaming ? "true" : undefined
+                                    }
+                                >
+                                    <Markdown articleIdIndex={articleIdIndex}>
+                                        {turn.answer}
+                                    </Markdown>
+                                </div>
+                            </>
                         ) : null}
 
                         {!isStreaming && turn.status === "done" ? (
@@ -83,7 +105,10 @@ export const Turn: React.FC<TurnProps> = ({ turn, onFollowUp, onRetry }) => {
                                 <LowConfidenceCaveat
                                     confidence={turn.confidence}
                                 />
-                                <SourceList sources={turn.sourceArticles} />
+                                <SourceList
+                                    sources={turn.sourceArticles}
+                                    defaultExpanded={false}
+                                />
                                 {turn.followUpQuestions &&
                                 turn.followUpQuestions.length > 0 ? (
                                     <FollowUpQuestions

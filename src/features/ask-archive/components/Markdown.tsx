@@ -17,12 +17,13 @@ interface MarkdownProps {
 
 // Match both citation shapes:
 //   - pipeline:  [Source N]
-//   - agent:     [YYYY-MM-DD-N]
+//   - agent:     [YYYY-MM-DD-N] or [YYYY-MM-DD-N, YYYY-MM-DD-N, …]
 // Pre-process them into markdown anchor links so react-markdown's default
 // <a> renderer handles them; the custom link renderer below adds smooth-
 // scroll behavior + the ask-citation-link class.
 const PIPELINE_CITATION_RE = /\[Source (\d+)\]/g;
-const AGENT_CITATION_RE = /\[(\d{4}-\d{2}-\d{2}-\d+)\]/g;
+const AGENT_CITATION_RE =
+    /\[(\d{4}-\d{2}-\d{2}-\d+(?:\s*,\s*\d{4}-\d{2}-\d{2}-\d+)*)\]/g;
 
 function replaceCitations(
     text: string,
@@ -32,10 +33,19 @@ function replaceCitations(
         PIPELINE_CITATION_RE,
         (_match, n: string) => `[[${n}]](#ask-source-${n})`,
     );
-    out = out.replace(AGENT_CITATION_RE, (match, id: string) => {
-        const num = articleIdIndex?.get(id);
-        if (num === undefined) return match; // leave unlinked
-        return `[[${num}]](#ask-source-${num})`;
+    out = out.replace(AGENT_CITATION_RE, (_match, inner: string) => {
+        const ids = inner.split(/\s*,\s*/);
+        const linked = ids
+            .map((id) => {
+                const num = articleIdIndex?.get(id);
+                return num === undefined
+                    ? null
+                    : `[[${num}]](#ask-source-${num})`;
+            })
+            .filter((x): x is string => x !== null);
+        // If none of the IDs resolved, drop the bracket entirely — it's
+        // noise. If at least one resolved, join with a thin space.
+        return linked.length === 0 ? "" : linked.join(" ");
     });
     return out;
 }
@@ -58,12 +68,35 @@ const renderAnchor: React.FC<AnchorProps> = ({ href, children, ...rest }) => {
                 href={href}
                 onClick={(e) => {
                     e.preventDefault();
-                    document
-                        .getElementById(`ask-source-${num}`)
-                        ?.scrollIntoView({
+                    const flashTarget = (): boolean => {
+                        const target = document.getElementById(
+                            `ask-source-${num}`,
+                        );
+                        if (!target) return false;
+                        target.scrollIntoView({
                             behavior: "smooth",
                             block: "center",
                         });
+                        target.setAttribute("data-highlighted", "true");
+                        window.setTimeout(() => {
+                            target.removeAttribute("data-highlighted");
+                        }, 1200);
+                        return true;
+                    };
+                    if (flashTarget()) return;
+                    // Target not in DOM — sources are collapsed. Expand
+                    // every closed source list, then retry once React
+                    // has flushed the new children.
+                    document
+                        .querySelectorAll<HTMLButtonElement>(
+                            '.ask-source-toggle[aria-expanded="false"]',
+                        )
+                        .forEach((btn) => btn.click());
+                    window.requestAnimationFrame(() => {
+                        window.requestAnimationFrame(() => {
+                            flashTarget();
+                        });
+                    });
                 }}
             >
                 {children}
@@ -97,6 +130,22 @@ export const Markdown: React.FC<MarkdownProps> = ({
         () => replaceCitations(children, articleIdIndex),
         [children, articleIdIndex],
     );
+
+    // Render without an extra wrapper when no className is needed, so the
+    // paragraphs/headings become direct children of the parent (e.g.
+    // .ask-turn-answer). That lets `::after` selectors like the streaming
+    // cursor attach to the last paragraph's inline flow instead of
+    // dropping onto a wrapper div's new line.
+    if (!className) {
+        return (
+            <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{ a: renderAnchor }}
+            >
+                {preprocessed}
+            </ReactMarkdown>
+        );
+    }
 
     return (
         <div className={className}>
