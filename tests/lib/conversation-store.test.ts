@@ -61,19 +61,37 @@ describe("conversation-store", () => {
         expect(history[1].citedArticleIds).toEqual(["art-2"]);
     });
 
-    it("issues INSERT with truncated answer on addConversationTurn", async () => {
+    it("stores short answers verbatim on addConversationTurn", async () => {
         sqlMock.mockResolvedValueOnce(undefined);
-        const longAnswer = "x".repeat(1000);
-        await addConversationTurn("sid", "What?", longAnswer, ["a", "b"]);
+        const shortAnswer = "x".repeat(1000);
+        await addConversationTurn("sid", "What?", shortAnswer, ["a", "b"]);
 
         expect(sqlMock).toHaveBeenCalledTimes(1);
         const substitutions = sqlMock.mock.calls[0].slice(1);
-        // Answer substitution should be capped at 500 chars
-        const stringArgs = substitutions.filter((v: unknown) => typeof v === "string");
-        const truncatedMatch = stringArgs.find(
-            (s: unknown) => typeof s === "string" && (s as string).startsWith("x") && (s as string).length === 500,
+        const stringArgs = substitutions.filter(
+            (v: unknown) => typeof v === "string",
         );
-        expect(truncatedMatch).toBeDefined();
+        const stored = stringArgs.find(
+            (s): s is string => typeof s === "string" && s.startsWith("x"),
+        );
+        expect(stored).toBe(shortAnswer);
+    });
+
+    it("caps over-long answers at 8000 chars with a truncation marker", async () => {
+        sqlMock.mockResolvedValueOnce(undefined);
+        const longAnswer = "x".repeat(10_000);
+        await addConversationTurn("sid", "What?", longAnswer, []);
+
+        const substitutions = sqlMock.mock.calls[0].slice(1);
+        const stringArgs = substitutions.filter(
+            (v: unknown) => typeof v === "string",
+        );
+        const stored = stringArgs.find(
+            (s): s is string => typeof s === "string" && s.startsWith("x"),
+        );
+        expect(stored).toBeDefined();
+        expect(stored!.length).toBe(8000);
+        expect(stored!.endsWith("[…truncated]")).toBe(true);
     });
 
     it("does not throw when the DB read fails", async () => {

@@ -17,7 +17,11 @@ import { neon } from "@neondatabase/serverless";
 
 const MAX_TURNS = 5;
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
-const ANSWER_TRUNCATE_CHARS = 500;
+// Store the full answer so follow-ups see real context. Cap at 8000 chars
+// with a marker so a runaway answer can't bloat history past the prompt
+// budget; typical answers are well under this.
+const ANSWER_TRUNCATE_CHARS = 8000;
+const TRUNCATION_MARKER = "\n[…truncated]";
 
 export interface ConversationTurn {
     question: string;
@@ -94,13 +98,19 @@ export async function addConversationTurn(
 ): Promise<void> {
     const sql = getSql();
     if (!sql) return;
-    const truncated = answer.slice(0, ANSWER_TRUNCATE_CHARS);
+    const stored =
+        answer.length > ANSWER_TRUNCATE_CHARS
+            ? answer.slice(
+                  0,
+                  ANSWER_TRUNCATE_CHARS - TRUNCATION_MARKER.length,
+              ) + TRUNCATION_MARKER
+            : answer;
     try {
         await sql`
             INSERT INTO ask_session_turns
               (session_id, question, answer, cited_article_ids)
             VALUES
-              (${sessionId}, ${question}, ${truncated}, ${citedArticleIds})
+              (${sessionId}, ${question}, ${stored}, ${citedArticleIds})
         `;
     } catch (err) {
         console.warn(
