@@ -535,3 +535,57 @@ async function searchArticlesForRag(
     imageUrls: r.image_urls ?? [],
   }));
 }
+
+export interface SessionArticleMeta {
+  id: string;
+  headline: string;
+  editionDate: string;
+  category: string;
+  summary: string;
+  byline: string | null;
+  bodySnippet: string;
+  imageUrls: string[];
+}
+
+/**
+ * Batch-fetch article metadata by id for the /api/ask/session hydration
+ * path. Returns a Map keyed by article id so callers can reassemble
+ * per-turn sourceArticles without duplicating rows. Missing ids are
+ * silently dropped (the article may have been deleted since the turn
+ * was recorded).
+ */
+export async function fetchArticlesByIds(
+  ids: string[],
+): Promise<Map<string, SessionArticleMeta>> {
+  if (ids.length === 0) return new Map();
+  const rows = (await sql`
+    SELECT id, edition_date, category, headline, summary, byline, body_plain, image_urls
+    FROM articles
+    WHERE id = ANY(${ids})
+  `) as Array<{
+    id: string;
+    edition_date: string;
+    category: string;
+    headline: string;
+    summary: string;
+    byline: string | null;
+    body_plain: string | null;
+    image_urls: string[] | null;
+  }>;
+  const map = new Map<string, SessionArticleMeta>();
+  for (const r of rows) {
+    const body = r.body_plain ?? "";
+    map.set(r.id, {
+      id: r.id,
+      headline: r.headline,
+      editionDate: r.edition_date,
+      category: r.category,
+      summary: r.summary,
+      byline: r.byline ?? null,
+      bodySnippet:
+        body.slice(0, 300) + (body.length > 300 ? "\u2026" : ""),
+      imageUrls: r.image_urls ?? [],
+    });
+  }
+  return map;
+}

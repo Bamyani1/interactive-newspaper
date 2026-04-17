@@ -125,6 +125,37 @@ export async function addConversationTurn(
     }
 }
 
+/**
+ * Returns true if any row exists for this session regardless of TTL.
+ * Used by the hydration endpoint to distinguish "never existed" from
+ * "aged out" so the UI can show a gentle 'your last conversation
+ * expired' banner instead of a silent empty state.
+ */
+export async function sessionHasAnyTurns(sessionId: string): Promise<boolean> {
+    const sql = getSql();
+    if (!sql) return false;
+    try {
+        const rows = (await sql`
+            SELECT 1
+            FROM ask_session_turns
+            WHERE session_id = ${sessionId}
+            LIMIT 1
+        `) as Array<Record<string, unknown>>;
+        return rows.length > 0;
+    } catch (err) {
+        console.warn(
+            JSON.stringify({
+                level: "warn",
+                module: "conversation-store",
+                op: "sessionHasAnyTurns",
+                msg: "db probe failed; assuming no turns",
+                err: err instanceof Error ? err.message : String(err),
+            }),
+        );
+        return false;
+    }
+}
+
 export function formatHistoryForPrompt(turns: ConversationTurn[]): string {
     if (turns.length === 0) return "";
     return turns
