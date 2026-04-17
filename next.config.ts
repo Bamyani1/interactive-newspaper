@@ -27,10 +27,10 @@ const nextConfig: NextConfig = {
               // Gemini + any external HTTPS the front-end might call
               "connect-src 'self' https:",
               // Block frame embedding (equivalent to X-Frame-Options: DENY)
-              "frame-ancestors 'none'",
+              "frame-ancestors 'self'",
               "form-action 'self'",
               "base-uri 'self'",
-              "object-src 'none'",
+              "object-src 'self'",
             ].join("; "),
           },
         ],
