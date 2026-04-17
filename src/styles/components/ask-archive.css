@@ -1073,3 +1073,17 @@
     animation: none;
   }
 }
+
+/* Focus-visible outlines — keyboard-only accent, no mouse-click ring */
+.ask-composer-send:focus-visible,
+.ask-empty-example:focus-visible,
+.ask-newconv-btn:focus-visible,
+.ask-error-inline-retry:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.ask-composer-row:focus-within {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
