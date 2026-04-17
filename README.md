@@ -136,7 +136,7 @@ flowchart LR
 - Tailwind CSS v4 with a token-based design system (`src/styles/tokens/`)
 - Framer Motion for period-accurate reading animations
 - Three.js / React Three Fiber for the landing-page cathedral background
-- Libre Baskerville, Crimson Pro, and Work Sans via `next/font/google`
+- Playfair Display, Source Serif 4, JetBrains Mono, and Inter via `next/font/google`
 
 **Backend**
 
