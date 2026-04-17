@@ -21,7 +21,12 @@ export async function middleware(request: NextRequest) {
   if (!result.allowed) {
     const retryAfter = Math.ceil((result.resetAt - Date.now()) / 1000);
     return NextResponse.json(
-      { error: "Too many requests" },
+      {
+        kind: "rate_limit",
+        message: "Too many requests",
+        error: "Too many requests",
+        retryAfterSec: retryAfter,
+      },
       {
         status: 429,
         headers: {
