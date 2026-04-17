@@ -157,6 +157,26 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
         return () => window.removeEventListener("popstate", onPopState);
     }, [source, onClose]);
 
+    // Unmount cleanup. The [source, onClose] effect above rewinds the
+    // sentinel when source transitions to null, but if the component
+    // itself unmounts while the drawer is still open (e.g. user clicks
+    // "New conversation" and the whole turn tree is torn down), the
+    // sentinel would orphan in the back stack. This empty-deps cleanup
+    // only fires on unmount, so it won't double-rewind on normal close.
+    useEffect(() => {
+        return () => {
+            if (typeof window === "undefined") return;
+            if (
+                historyPushedRef.current &&
+                (window.history.state as { askReader?: boolean } | null)
+                    ?.askReader
+            ) {
+                historyPushedRef.current = false;
+                window.history.back();
+            }
+        };
+    }, []);
+
     if (!mounted) return null;
 
     const paragraphs = paragraphsFrom(article?.fullText);
