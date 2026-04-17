@@ -255,4 +255,54 @@ describe("useAskArchive", () => {
 
     expect(result.current.answer!.question).toBe("Second?");
   });
+
+  it("keeps isLoading=true after rapid resubmit aborts the prior request", async () => {
+    // Regression test for bug_019: a prior wave removed the
+    // `!controller.signal.aborted` guard in the finally block. When a
+    // user double-submits, the aborted IIFE's finally would then run AFTER
+    // the new submit's setIsLoading(true) and race-clear the spinner while
+    // the new request was still in flight.
+    let rejectFirst: (err: unknown) => void;
+    const firstFetch = new Promise((_, reject) => {
+      rejectFirst = reject;
+    });
+    // Second fetch stays pending for the duration of the assertion, so
+    // isLoading should remain true.
+    const secondFetch = new Promise(() => {});
+
+    const fetchFn = vi
+      .fn()
+      .mockReturnValueOnce(firstFetch)
+      .mockReturnValueOnce(secondFetch);
+
+    vi.stubGlobal("fetch", fetchFn);
+
+    const { result } = renderHook(() => useAskArchive());
+
+    act(() => {
+      result.current.submit("First?");
+    });
+    expect(result.current.isLoading).toBe(true);
+
+    act(() => {
+      result.current.submit("Second?");
+    });
+    expect(result.current.isLoading).toBe(true);
+
+    // Reject the first fetch as an AbortError — this mirrors what the
+    // browser does when AbortController.abort() fires on an in-flight fetch.
+    // The IIFE's finally will run and (with the fix) skip clearing
+    // isLoading because its own controller.signal.aborted is true.
+    await act(async () => {
+      const abortError = new DOMException("The user aborted a request.", "AbortError");
+      rejectFirst!(abortError);
+      // Let the microtask queue drain so the finally runs.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The spinner must still be visible — Q2 is still pending.
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
 });
