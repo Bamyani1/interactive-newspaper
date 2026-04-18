@@ -1,12 +1,13 @@
 "use client";
 
 import React from "react";
-import { Eraser } from "lucide-react";
+import { Eraser, Download } from "lucide-react";
 import type { Turn } from "../hooks/askReducer";
 
 interface AskSidebarProps {
     turns: Turn[];
     onClearConversation: () => void;
+    onExportConversation: () => void;
     canClearConversation: boolean;
 }
 
@@ -16,6 +17,7 @@ const THREAD_META_ACTIVE = "Active thread";
 export const AskSidebar: React.FC<AskSidebarProps> = ({
     turns,
     onClearConversation,
+    onExportConversation,
     canClearConversation,
 }) => {
     const firstQuestion = turns[0]?.question ?? null;
@@ -31,24 +33,44 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
             </div>
 
             {hasTurns ? (
-                <button
-                    type="button"
-                    className="ask-sidebar-newbtn"
-                    onClick={onClearConversation}
-                    disabled={!canClearConversation}
-                    aria-label="Clear the current conversation"
-                >
-                    <span className="ask-sidebar-newbtn-label">
-                        <Eraser size={12} aria-hidden="true" />
-                        <span>Clear conversation</span>
-                    </span>
-                    <span
-                        className="ask-sidebar-newbtn-plus"
-                        aria-hidden="true"
+                <div className="ask-sidebar-actions">
+                    <button
+                        type="button"
+                        className="ask-sidebar-newbtn"
+                        onClick={onClearConversation}
+                        disabled={!canClearConversation}
+                        aria-label="Clear the current conversation"
                     >
-                        ×
-                    </span>
-                </button>
+                        <span className="ask-sidebar-newbtn-label">
+                            <Eraser size={12} aria-hidden="true" />
+                            <span>Clear conversation</span>
+                        </span>
+                        <span
+                            className="ask-sidebar-newbtn-plus"
+                            aria-hidden="true"
+                        >
+                            ×
+                        </span>
+                    </button>
+                    <button
+                        type="button"
+                        className="ask-sidebar-newbtn ask-sidebar-exportbtn"
+                        onClick={onExportConversation}
+                        disabled={!canClearConversation}
+                        aria-label="Export the conversation as a PDF"
+                    >
+                        <span className="ask-sidebar-newbtn-label">
+                            <Download size={12} aria-hidden="true" />
+                            <span>Export as PDF</span>
+                        </span>
+                        <span
+                            className="ask-sidebar-newbtn-plus"
+                            aria-hidden="true"
+                        >
+                            ↓
+                        </span>
+                    </button>
+                </div>
             ) : null}
 
             <section className="ask-sidebar-section">
