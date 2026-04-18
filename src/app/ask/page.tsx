@@ -15,7 +15,7 @@ export default function AskPage() {
         expiredBanner,
         submit,
         retry,
-        newConversation,
+        clearConversation,
     } = useAskArchive();
 
     const [focusSignal, setFocusSignal] = useState(0);
@@ -51,8 +51,8 @@ export default function AskPage() {
                 <div className="ask-page">
                     <AskSidebar
                         turns={turns}
-                        onNewConversation={newConversation}
-                        canStartNewConversation={turns.length > 0}
+                        onClearConversation={clearConversation}
+                        canClearConversation={turns.length > 0}
                     />
 
                     <div className="ask-column">

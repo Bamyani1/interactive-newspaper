@@ -162,7 +162,7 @@ export interface UseAskArchiveReturn {
     sessionGen: number;
     submit: (question: string) => void;
     retry: (turnId: string) => void;
-    newConversation: () => void;
+    clearConversation: () => void;
 }
 
 export function useAskArchive(): UseAskArchiveReturn {
@@ -432,8 +432,22 @@ export function useAskArchive(): UseAskArchiveReturn {
         [state.turns, submit],
     );
 
-    const newConversation = useCallback(() => {
+    const clearConversation = useCallback(() => {
         abortRef.current?.abort();
+        const prevSessionId = sessionIdRef.current;
+        // Fire-and-forget server cleanup so the stored turns are
+        // wiped immediately instead of lingering until the 30-min
+        // TTL. `keepalive` keeps the request alive if the user
+        // happens to navigate right after clicking; failures are
+        // swallowed because the TTL is the ultimate safety net.
+        if (prevSessionId && typeof window !== "undefined") {
+            void fetch(
+                `/api/ask/session?sessionId=${encodeURIComponent(prevSessionId)}`,
+                { method: "DELETE", keepalive: true },
+            ).catch(() => {
+                // best-effort — nothing to do if it fails
+            });
+        }
         if (typeof window !== "undefined") {
             try {
                 window.localStorage.removeItem(SESSION_STORAGE_KEY);
@@ -444,7 +458,7 @@ export function useAskArchive(): UseAskArchiveReturn {
         sessionIdRef.current = null;
         // Mint a fresh id eagerly so the next hydrate/submit uses it.
         sessionIdRef.current = readOrCreateSessionId();
-        dispatch({ type: "NEW_CONVERSATION" });
+        dispatch({ type: "CLEAR_CONVERSATION" });
     }, [dispatch]);
 
     return {
@@ -454,6 +468,6 @@ export function useAskArchive(): UseAskArchiveReturn {
         sessionGen: state.sessionGen,
         submit,
         retry,
-        newConversation,
+        clearConversation,
     };
 }

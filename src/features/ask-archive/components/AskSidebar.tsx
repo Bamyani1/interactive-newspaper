@@ -1,13 +1,13 @@
 "use client";
 
 import React from "react";
-import { RotateCcw } from "lucide-react";
+import { Eraser } from "lucide-react";
 import type { Turn } from "../hooks/askReducer";
 
 interface AskSidebarProps {
     turns: Turn[];
-    onNewConversation: () => void;
-    canStartNewConversation: boolean;
+    onClearConversation: () => void;
+    canClearConversation: boolean;
 }
 
 const THREAD_META_NEW = "Just now · new";
@@ -15,10 +15,11 @@ const THREAD_META_ACTIVE = "Active thread";
 
 export const AskSidebar: React.FC<AskSidebarProps> = ({
     turns,
-    onNewConversation,
-    canStartNewConversation,
+    onClearConversation,
+    canClearConversation,
 }) => {
     const firstQuestion = turns[0]?.question ?? null;
+    const hasTurns = turns.length > 0;
 
     return (
         <aside className="ask-sidebar">
@@ -29,23 +30,23 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
                 </p>
             </div>
 
-            {turns.length > 0 ? (
+            {hasTurns ? (
                 <button
                     type="button"
                     className="ask-sidebar-newbtn"
-                    onClick={onNewConversation}
-                    disabled={!canStartNewConversation}
-                    aria-label="Start a new conversation"
+                    onClick={onClearConversation}
+                    disabled={!canClearConversation}
+                    aria-label="Clear the current conversation"
                 >
                     <span className="ask-sidebar-newbtn-label">
-                        <RotateCcw size={12} aria-hidden="true" />
-                        <span>New conversation</span>
+                        <Eraser size={12} aria-hidden="true" />
+                        <span>Clear conversation</span>
                     </span>
                     <span
                         className="ask-sidebar-newbtn-plus"
                         aria-hidden="true"
                     >
-                        ↺
+                        ×
                     </span>
                 </button>
             ) : null}
@@ -53,7 +54,7 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
             <section className="ask-sidebar-section">
                 <header className="ask-sidebar-section-label">
                     <span>Thread</span>
-                    <span>{turns.length > 0 ? "1" : "0"}</span>
+                    <span>{hasTurns ? "1" : "0"}</span>
                 </header>
                 <div className="ask-sidebar-threads">
                     {firstQuestion ? (
