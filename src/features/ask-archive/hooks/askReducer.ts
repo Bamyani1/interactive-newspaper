@@ -75,7 +75,7 @@ export type AskAction =
           message: string;
           retryAfterSec?: number;
       }
-    | { type: "NEW_CONVERSATION" };
+    | { type: "CLEAR_CONVERSATION" };
 
 export const INITIAL_STATE: AskState = {
     turns: [],
@@ -191,7 +191,7 @@ export function askReducer(state: AskState, action: AskAction): AskState {
                 retryAfterSec: action.retryAfterSec,
                 stage: undefined,
             }));
-        case "NEW_CONVERSATION":
+        case "CLEAR_CONVERSATION":
             return {
                 ...state,
                 turns: [],

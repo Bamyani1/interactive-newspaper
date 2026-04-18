@@ -15,6 +15,7 @@ import { NextRequest } from "next/server";
 vi.mock("@/src/lib/conversation-store", () => ({
     getConversationHistory: vi.fn(async () => []),
     sessionHasAnyTurns: vi.fn(async () => false),
+    deleteConversationTurns: vi.fn(async () => undefined),
 }));
 
 vi.mock("@/src/lib/db", () => ({
@@ -29,19 +30,23 @@ vi.mock("@/src/lib/rate-limit", () => ({
     getClientIp: () => "127.0.0.1",
 }));
 
-import { GET } from "@/src/app/api/ask/session/route";
+import { DELETE, GET } from "@/src/app/api/ask/session/route";
 import {
+    deleteConversationTurns,
     getConversationHistory,
     sessionHasAnyTurns,
 } from "@/src/lib/conversation-store";
 import { fetchArticlesByIds } from "@/src/lib/db";
 
-function makeRequest(sessionId?: string): NextRequest {
+function makeRequest(
+    sessionId?: string,
+    method: "GET" | "DELETE" = "GET",
+): NextRequest {
     const url =
         sessionId !== undefined
             ? `http://localhost/api/ask/session?sessionId=${encodeURIComponent(sessionId)}`
             : "http://localhost/api/ask/session";
-    return new NextRequest(url, { method: "GET" });
+    return new NextRequest(url, { method });
 }
 
 describe("GET /api/ask/session", () => {
@@ -203,5 +208,34 @@ describe("GET /api/ask/session", () => {
         expect(body.turns).toEqual([]);
         expect(body.expired).toBe(false);
         expect(getConversationHistory).not.toHaveBeenCalled();
+    });
+});
+
+describe("DELETE /api/ask/session", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it("wipes the session's turns and returns 204", async () => {
+        const response = await DELETE(makeRequest("sid-to-clear", "DELETE"));
+
+        expect(response.status).toBe(204);
+        expect(deleteConversationTurns).toHaveBeenCalledTimes(1);
+        expect(deleteConversationTurns).toHaveBeenCalledWith("sid-to-clear");
+    });
+
+    it("is a no-op 204 when sessionId is missing (no DB call)", async () => {
+        const response = await DELETE(makeRequest(undefined, "DELETE"));
+
+        expect(response.status).toBe(204);
+        expect(deleteConversationTurns).not.toHaveBeenCalled();
+    });
+
+    it("rejects an absurdly long sessionId without touching the DB", async () => {
+        const longId = "x".repeat(200);
+        const response = await DELETE(makeRequest(longId, "DELETE"));
+
+        expect(response.status).toBe(204);
+        expect(deleteConversationTurns).not.toHaveBeenCalled();
     });
 });

@@ -205,13 +205,13 @@ describe("askReducer", () => {
         expect(next.turns[0].retryAfterSec).toBe(42);
     });
 
-    it("NEW_CONVERSATION empties turns and bumps sessionGen", () => {
+    it("CLEAR_CONVERSATION empties turns and bumps sessionGen", () => {
         const state: AskState = {
             ...INITIAL_STATE,
             turns: [makeTurn()],
             expiredBanner: true,
         };
-        const next = askReducer(state, { type: "NEW_CONVERSATION" });
+        const next = askReducer(state, { type: "CLEAR_CONVERSATION" });
         expect(next.turns).toEqual([]);
         expect(next.expiredBanner).toBe(false);
         expect(next.sessionGen).toBe(INITIAL_STATE.sessionGen + 1);
