@@ -6,7 +6,7 @@ export { Turn as TurnComponent } from "./components/Turn";
 export { Composer } from "./components/Composer";
 export { ErrorInline } from "./components/ErrorInline";
 export { Markdown } from "./components/Markdown";
-export { AskEmptyState } from "./components/AskEmptyState";
+export { AskLanding } from "./components/AskLanding";
 export { SourceCard } from "./components/SourceCard";
 export { SourceList } from "./components/SourceList";
 export { LowConfidenceCaveat } from "./components/LowConfidenceCaveat";

@@ -3,14 +3,12 @@
 import React, { useEffect, useRef } from "react";
 import type { Turn as TurnData } from "../hooks/askReducer";
 import { Turn } from "./Turn";
-import { AskEmptyState } from "./AskEmptyState";
 
 interface TranscriptProps {
     turns: TurnData[];
     isHydrating: boolean;
     expiredBanner: boolean;
     onFollowUp: (question: string) => void;
-    onExampleQuestion: (question: string) => void;
     onRetry: (turnId: string) => void;
 }
 
@@ -19,7 +17,6 @@ export const Transcript: React.FC<TranscriptProps> = ({
     isHydrating,
     expiredBanner,
     onFollowUp,
-    onExampleQuestion,
     onRetry,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -69,10 +66,6 @@ export const Transcript: React.FC<TranscriptProps> = ({
                 >
                     Restoring conversation…
                 </p>
-            ) : null}
-
-            {isEmpty && !isHydrating ? (
-                <AskEmptyState onPickExample={onExampleQuestion} />
             ) : null}
 
             {turns.map((turn, i) => (
