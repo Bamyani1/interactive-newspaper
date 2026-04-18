@@ -935,7 +935,6 @@
      available space instead of hugging the top. */
 }
 
-.ask-transcript:has(.ask-empty-state),
 .ask-transcript:has(.ask-hydrating-indicator) {
   justify-content: center;
 }
@@ -1370,114 +1369,245 @@
   line-height: 1;
 }
 
-/* Empty state — the "landing column" when no turns yet. Vertical
-   centering comes from .ask-transcript:has(.ask-empty-state). */
-.ask-empty-state {
-  max-width: 40rem;
-  padding: 2.5rem 0 3rem;
-  text-align: left;
+/* =========================================
+   LANDING — centered editorial welcome
+   Rendered inside the main column when no
+   turns exist. Composer stays pinned below
+   so the first submit has no layout jolt.
+   ========================================= */
+.ask-landing {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 3.25rem 1.5rem 2rem;
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1.85rem;
+  text-align: left;
 }
 
-.ask-empty-lede {
+.ask-landing-banner {
+  align-self: flex-start;
+  padding: 0.55rem 0.85rem;
+  border: 1px dashed var(--color-accent);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.ask-landing-banner-label { font-weight: 600; }
+
+.ask-landing-dateline {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-text-secondary) 80%, transparent);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.ask-landing-dateline::before {
+  content: "";
+  width: 2rem;
+  height: 1px;
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.ask-landing-title {
+  margin: 0;
+  font-family: var(--font-header);
+  font-size: clamp(2.1rem, 5vw, 3.4rem);
+  font-weight: 500;
+  line-height: 1.06;
+  letter-spacing: -0.018em;
+  color: var(--color-text-primary);
+}
+.ask-landing-title em {
+  font-style: italic;
+  color: var(--color-accent);
+}
+
+.ask-landing-lede {
   margin: 0;
   font-family: var(--font-body);
-  font-size: 1.125rem;
   font-style: italic;
-  line-height: 1.6;
+  font-size: 1.06rem;
+  line-height: 1.65;
   color: var(--color-text-secondary);
-  max-width: 34rem;
+  max-width: 38rem;
 }
-
-.ask-empty-lede strong {
+.ask-landing-lede strong {
   color: var(--color-text-primary);
   font-style: normal;
   font-weight: 500;
 }
 
-.ask-empty-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  padding: 1rem 0;
-  margin: 0;
-  border-top: 1px solid var(--stroke-accent-soft);
-  border-bottom: 1px solid var(--stroke-accent-soft);
-}
-
-.ask-empty-stat {
+/* Demo answer — subdued card showing what a real answer looks like,
+   with an 'Example answer' label so the reader doesn't confuse it
+   for their own data. Left accent rule echoes the citation style. */
+.ask-landing-demo {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.75rem;
+  padding: 1.1rem 1.2rem 1.25rem;
+  border: 1px solid color-mix(in oklab, var(--color-text-secondary) 18%, transparent);
+  border-left: 2px solid var(--color-accent);
+  background: color-mix(in oklab, var(--color-text-primary) 2%, transparent);
+  border-radius: 2px;
 }
 
-.ask-empty-stat dt {
+.ask-landing-demo-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   font-family: var(--font-mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.12em;
+  font-size: 0.64rem;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: color-mix(in oklab, var(--color-text-secondary) 80%, transparent);
+  color: color-mix(in oklab, var(--color-text-secondary) 70%, transparent);
 }
 
-.ask-empty-stat dd {
+.ask-landing-demo-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0;
+  background: transparent;
+  border: 0;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: gap 0.15s ease;
+}
+.ask-landing-demo-cta:hover { gap: 0.6rem; }
+
+.ask-landing-demo-question {
   margin: 0;
   font-family: var(--font-header);
-  font-size: 1.3rem;
-  font-weight: 400;
+  font-style: italic;
+  font-size: 1.12rem;
+  line-height: 1.3;
   color: var(--color-text-primary);
-  letter-spacing: -0.005em;
+  padding: 0;
+  border: 0;
+  quotes: none;
 }
 
-.ask-empty-prompts {
+.ask-landing-demo-answer {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.98rem;
+  line-height: 1.65;
+  color: color-mix(in oklab, var(--color-text-primary) 88%, transparent);
+}
+
+.ask-landing-demo-cite {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--color-accent);
+  padding-left: 0.15em;
+  vertical-align: super;
+  line-height: 0;
+}
+
+.ask-landing-demo-sources {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0.75rem 0 0;
+  border-top: 1px dashed color-mix(in oklab, var(--color-text-secondary) 18%, transparent);
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.55rem;
 }
 
-.ask-empty-prompts-label {
-  margin: 0;
+.ask-landing-demo-source {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.8rem;
+  align-items: baseline;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+}
+
+.ask-landing-demo-source-num {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  color: var(--color-accent);
+  font-size: 0.68rem;
   font-weight: 500;
-  letter-spacing: 0.14em;
+}
+
+.ask-landing-demo-source-head {
+  color: var(--color-text-primary);
+  font-style: italic;
+}
+
+.ask-landing-demo-source-meta {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-text-secondary) 55%, transparent);
+  white-space: nowrap;
+}
+
+/* Suggestions — hairline-ruled list with arrow indent on hover. */
+.ask-landing-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding-top: 0.25rem;
+}
+
+.ask-landing-suggestions-label {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--color-accent);
 }
 
-.ask-empty-examples {
+.ask-landing-suggestions ul {
   list-style: none;
-  padding: 0;
   margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
 }
 
-.ask-empty-examples li:first-child .ask-empty-example {
+.ask-landing-suggestions li:first-child .ask-landing-suggestion {
   border-top: 1px solid var(--stroke-accent-soft);
 }
 
-.ask-empty-example {
+.ask-landing-suggestion {
   width: 100%;
   text-align: left;
-  padding: 0.95rem 0.25rem;
+  padding: 0.85rem 0.25rem;
   background: transparent;
   color: var(--color-text-primary);
   border: 0;
   border-bottom: 1px solid var(--stroke-accent-soft);
   border-radius: 0;
   font-family: var(--font-body);
-  font-size: 1.0625rem;
+  font-size: 1.02rem;
   font-style: italic;
   line-height: 1.35;
   cursor: pointer;
-  transition: padding-left 0.18s ease, color 0.18s ease;
   display: flex;
   align-items: center;
   gap: 1rem;
+  transition: padding-left 0.18s ease, color 0.18s ease;
 }
-
-.ask-empty-example-arrow {
+.ask-landing-suggestion-arrow {
   font-family: var(--font-mono);
   font-weight: 500;
   font-style: normal;
@@ -1485,14 +1615,48 @@
   transition: transform 0.18s ease;
   flex-shrink: 0;
 }
-
-.ask-empty-example:hover {
-  padding-left: 0.85rem;
+.ask-landing-suggestion:hover {
+  padding-left: 0.75rem;
   color: var(--color-accent);
 }
+.ask-landing-suggestion:hover .ask-landing-suggestion-arrow {
+  transform: translateX(3px);
+}
 
-.ask-empty-example:hover .ask-empty-example-arrow {
-  transform: translateX(4px);
+/* One-time entrance animation — gated via data-animate so returning
+   visitors get instant paint; first-time visitors see a staggered
+   rise. Scoped to children so it doesn't bleed into other pages. */
+@keyframes ask-landing-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ask-landing[data-animate="true"] > * {
+  animation: ask-landing-rise 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.ask-landing[data-animate="true"] > *:nth-child(1) { animation-delay: 0ms; }
+.ask-landing[data-animate="true"] > *:nth-child(2) { animation-delay: 70ms; }
+.ask-landing[data-animate="true"] > *:nth-child(3) { animation-delay: 140ms; }
+.ask-landing[data-animate="true"] > *:nth-child(4) { animation-delay: 210ms; }
+.ask-landing[data-animate="true"] > *:nth-child(5) { animation-delay: 280ms; }
+.ask-landing[data-animate="true"] > *:nth-child(6) { animation-delay: 350ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-landing[data-animate="true"] > * { animation: none; }
+}
+
+@media (max-width: 640px) {
+  .ask-landing {
+    padding: 2rem 1rem 1.5rem;
+    gap: 1.5rem;
+  }
+  .ask-landing-demo { padding: 1rem; }
+  .ask-landing-demo-source {
+    grid-template-columns: auto 1fr;
+  }
+  .ask-landing-demo-source-meta {
+    grid-column: 2;
+    white-space: normal;
+  }
 }
 
 .ask-error-inline {
@@ -1807,7 +1971,8 @@
 
 /* Focus-visible outlines — keyboard-only accent, no mouse-click ring */
 .ask-composer-send:focus-visible,
-.ask-empty-example:focus-visible,
+.ask-landing-suggestion:focus-visible,
+.ask-landing-demo-cta:focus-visible,
 .ask-sidebar-newbtn:focus-visible,
 .ask-error-inline-retry:focus-visible,
 .ask-example-chip:focus-visible,
@@ -1834,9 +1999,12 @@
     color: #111 !important;
   }
 
-  /* Hide app chrome that has no place in a printed transcript. */
+  /* Hide app chrome that has no place in a printed transcript.
+     .ask-landing only renders in the empty state — nothing to
+     print there, so hide it as well. */
   .ask-sidebar,
   .ask-composer,
+  .ask-landing,
   .time-controls-header,
   .ask-reader-overlay,
   .ask-source-toggle,

@@ -7,6 +7,7 @@ import { useAskArchive } from "@/features/ask-archive/hooks/useAskArchive";
 import { Transcript } from "@/features/ask-archive/components/Transcript";
 import { Composer } from "@/features/ask-archive/components/Composer";
 import { AskSidebar } from "@/features/ask-archive/components/AskSidebar";
+import { AskLanding } from "@/features/ask-archive/components/AskLanding";
 
 export default function AskPage() {
     const {
@@ -31,13 +32,6 @@ export default function AskPage() {
     }, [lastTurn?.status, lastTurn]);
 
     const handleFollowUp = useCallback(
-        (question: string) => {
-            submit(question);
-        },
-        [submit],
-    );
-
-    const handleExample = useCallback(
         (question: string) => {
             submit(question);
         },
@@ -93,14 +87,20 @@ export default function AskPage() {
                     />
 
                     <div className="ask-column">
-                        <Transcript
-                            turns={turns}
-                            isHydrating={isHydrating}
-                            expiredBanner={expiredBanner}
-                            onFollowUp={handleFollowUp}
-                            onExampleQuestion={handleExample}
-                            onRetry={retry}
-                        />
+                        {turns.length === 0 && !isHydrating ? (
+                            <AskLanding
+                                onPickQuestion={submit}
+                                expiredBanner={expiredBanner}
+                            />
+                        ) : (
+                            <Transcript
+                                turns={turns}
+                                isHydrating={isHydrating}
+                                expiredBanner={expiredBanner}
+                                onFollowUp={handleFollowUp}
+                                onRetry={retry}
+                            />
+                        )}
 
                         <Composer
                             disabled={isStreaming}
