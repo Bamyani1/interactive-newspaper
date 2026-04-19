@@ -157,12 +157,20 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
         return () => window.removeEventListener("popstate", onPopState);
     }, [source, onClose]);
 
-    // Unmount cleanup. The [source, onClose] effect above rewinds the
-    // sentinel when source transitions to null, but if the component
-    // itself unmounts while the drawer is still open (e.g. user clicks
-    // "New conversation" and the whole turn tree is torn down), the
-    // sentinel would orphan in the back stack. This empty-deps cleanup
-    // only fires on unmount, so it won't double-rewind on normal close.
+    // Unmount cleanup. If the host tree is torn down while the drawer
+    // is still open (e.g. user clicks "Clear conversation" with a
+    // citation open), the sentinel would otherwise orphan in the back
+    // stack. Previously this called history.back() to rewind it, but
+    // back() during an unmount cascade races with React removing the
+    // popstate listener and with Next.js's own popstate handling —
+    // observed symptom was that Clear felt like an unexpected back-
+    // navigation. replaceState is synchronous, never fires popstate,
+    // and can't navigate, so it's the safe choice here: the sentinel
+    // entry stays in the stack but its `askReader` marker is cleared,
+    // so nothing stale interacts with a future drawer mount. The
+    // normal close path (button / Esc / overlay / browser-back) still
+    // uses history.back() via the [source, onClose] effect above —
+    // that path isn't racing an unmount.
     useEffect(() => {
         return () => {
             if (typeof window === "undefined") return;
@@ -172,7 +180,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
                     ?.askReader
             ) {
                 historyPushedRef.current = false;
-                window.history.back();
+                window.history.replaceState(null, "");
             }
         };
     }, []);
