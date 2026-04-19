@@ -3,11 +3,10 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Transcript } from "@/features/ask-archive/components/Transcript";
 
-// `SourceReader` (a descendant of `Turn → SourceList → SourceReader`) touches
-// next/navigation's useRouter. We're rendering Transcript with turns=[] in
-// these tests so nothing should actually reach into the router, but the
-// import graph still evaluates the hook call paths — mock it to keep the
-// test environment honest.
+// `SourceReader` (a descendant via Turn → SourceList → SourceReader)
+// touches next/navigation's useRouter. We're mounting Transcript with
+// turns=[] so nothing should reach the router, but the import graph
+// still evaluates the hook call paths — mock to keep tests honest.
 vi.mock("next/navigation", () => ({
     useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
@@ -21,6 +20,7 @@ describe("Transcript — empty-state indicators", () => {
                 turns={[]}
                 isHydrating={true}
                 expiredBanner={false}
+                emptyReason={null}
                 onFollowUp={noop}
                 onRetry={noop}
             />,
@@ -28,18 +28,18 @@ describe("Transcript — empty-state indicators", () => {
         expect(
             screen.getByText(/restoring conversation/i),
         ).toBeInTheDocument();
-        // Cleared indicator must not double-up with the hydrating one.
         expect(
             screen.queryByText(/conversation cleared/i),
         ).not.toBeInTheDocument();
     });
 
-    it("shows the 'Conversation cleared' indicator when empty and not hydrating", () => {
+    it("shows the 'Conversation cleared' pill when emptyReason='cleared'", () => {
         render(
             <Transcript
                 turns={[]}
                 isHydrating={false}
                 expiredBanner={false}
+                emptyReason="cleared"
                 onFollowUp={noop}
                 onRetry={noop}
             />,
@@ -47,8 +47,33 @@ describe("Transcript — empty-state indicators", () => {
         expect(
             screen.getByText(/conversation cleared/i),
         ).toBeInTheDocument();
+        // AskLanding content must NOT render in the cleared state.
         expect(
-            screen.queryByText(/restoring conversation/i),
+            screen.queryByRole("heading", { level: 1, name: /ask the archive/i }),
+        ).not.toBeInTheDocument();
+    });
+
+    it("renders the AskLanding suggestions/lede/stats inline when emptyReason='new'", () => {
+        render(
+            <Transcript
+                turns={[]}
+                isHydrating={false}
+                expiredBanner={false}
+                emptyReason="new"
+                onFollowUp={noop}
+                onRetry={noop}
+            />,
+        );
+        // The inline landing content is present — H1, lede, stats.
+        expect(
+            screen.getByRole("heading", { level: 1, name: /ask the archive/i }),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByLabelText(/suggested questions, refreshed daily/i),
+        ).toBeInTheDocument();
+        // Cleared pill must NOT double up.
+        expect(
+            screen.queryByText(/conversation cleared/i),
         ).not.toBeInTheDocument();
     });
 
@@ -58,12 +83,11 @@ describe("Transcript — empty-state indicators", () => {
                 turns={[]}
                 isHydrating={false}
                 expiredBanner={true}
+                emptyReason="cleared"
                 onFollowUp={noop}
                 onRetry={noop}
             />,
         );
-        // Expired banner is the primary status when the session expired —
-        // the cleared indicator shouldn't compete for attention.
         expect(
             screen.queryByText(/conversation cleared/i),
         ).not.toBeInTheDocument();
@@ -72,18 +96,25 @@ describe("Transcript — empty-state indicators", () => {
         ).toBeInTheDocument();
     });
 
-    it("hides the cleared indicator while hydrating even if no turns yet", () => {
+    it("hides inline landing and cleared indicators while hydrating", () => {
         render(
             <Transcript
                 turns={[]}
                 isHydrating={true}
                 expiredBanner={false}
+                emptyReason="new"
                 onFollowUp={noop}
                 onRetry={noop}
             />,
         );
         expect(
             screen.queryByText(/conversation cleared/i),
+        ).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole("heading", {
+                level: 1,
+                name: /ask the archive/i,
+            }),
         ).not.toBeInTheDocument();
     });
 });

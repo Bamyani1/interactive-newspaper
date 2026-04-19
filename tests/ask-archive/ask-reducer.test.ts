@@ -205,7 +205,7 @@ describe("askReducer", () => {
         expect(next.turns[0].retryAfterSec).toBe(42);
     });
 
-    it("CLEAR_CONVERSATION empties turns and bumps sessionGen", () => {
+    it("CLEAR_CONVERSATION empties turns, bumps sessionGen, marks emptyReason='cleared'", () => {
         const state: AskState = {
             ...INITIAL_STATE,
             turns: [makeTurn()],
@@ -215,9 +215,10 @@ describe("askReducer", () => {
         expect(next.turns).toEqual([]);
         expect(next.expiredBanner).toBe(false);
         expect(next.sessionGen).toBe(INITIAL_STATE.sessionGen + 1);
+        expect(next.emptyReason).toBe("cleared");
     });
 
-    it("NEW_CONVERSATION empties turns and resets sessionGen to 0", () => {
+    it("NEW_CONVERSATION empties turns, bumps sessionGen, marks emptyReason='new'", () => {
         const state: AskState = {
             ...INITIAL_STATE,
             turns: [makeTurn()],
@@ -227,8 +228,27 @@ describe("askReducer", () => {
         const next = askReducer(state, { type: "NEW_CONVERSATION" });
         expect(next.turns).toEqual([]);
         expect(next.expiredBanner).toBe(false);
-        // sessionGen resets so AskPage re-renders the editorial landing.
-        expect(next.sessionGen).toBe(0);
+        // sessionGen keeps incrementing so the sidebar stays mounted —
+        // we do NOT reset to 0 (which would trigger the page-level
+        // editorial landing takeover).
+        expect(next.sessionGen).toBe(4);
+        expect(next.emptyReason).toBe("new");
+    });
+
+    it("APPEND_USER clears a prior emptyReason so the Transcript renders turns, not the empty state", () => {
+        const state: AskState = {
+            ...INITIAL_STATE,
+            emptyReason: "new",
+            sessionGen: 2,
+        };
+        const next = askReducer(state, {
+            type: "APPEND_USER",
+            id: "t-1",
+            question: "hello?",
+            createdAt: 0,
+        });
+        expect(next.turns).toHaveLength(1);
+        expect(next.emptyReason).toBeNull();
     });
 
     it("unknown turn ids are no-ops (state unchanged)", () => {

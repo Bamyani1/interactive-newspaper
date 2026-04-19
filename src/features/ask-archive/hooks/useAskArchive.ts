@@ -2,7 +2,12 @@
 
 import { useReducer, useRef, useCallback, useEffect } from "react";
 import type { AskResponse, AskErrorKind } from "@/src/types";
-import { askReducer, INITIAL_STATE, type Turn } from "./askReducer";
+import {
+    askReducer,
+    INITIAL_STATE,
+    type Turn,
+    type EmptyReason,
+} from "./askReducer";
 
 // Session id persists in localStorage so a reload rehydrates the same
 // conversation from /api/ask/session.
@@ -160,6 +165,7 @@ export interface UseAskArchiveReturn {
     isHydrating: boolean;
     expiredBanner: boolean;
     sessionGen: number;
+    emptyReason: EmptyReason;
     submit: (question: string) => void;
     retry: (turnId: string) => void;
     clearConversation: () => void;
@@ -481,6 +487,7 @@ export function useAskArchive(): UseAskArchiveReturn {
         isHydrating: state.isHydrating,
         expiredBanner: state.expiredBanner,
         sessionGen: state.sessionGen,
+        emptyReason: state.emptyReason,
         submit,
         retry,
         clearConversation,

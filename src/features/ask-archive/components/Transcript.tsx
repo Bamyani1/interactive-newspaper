@@ -1,13 +1,20 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import type { Turn as TurnData } from "../hooks/askReducer";
+import type { Turn as TurnData, EmptyReason } from "../hooks/askReducer";
 import { Turn } from "./Turn";
+import { AskLanding } from "./AskLanding";
 
 interface TranscriptProps {
     turns: TurnData[];
     isHydrating: boolean;
     expiredBanner: boolean;
+    /**
+     * When the transcript is empty and not hydrating, this tells us
+     * what to render: "cleared" shows a muted pill, "new" shows the
+     * AskLanding suggestions/lede/stats inline.
+     */
+    emptyReason: EmptyReason;
     onFollowUp: (question: string) => void;
     onRetry: (turnId: string) => void;
 }
@@ -16,6 +23,7 @@ export const Transcript: React.FC<TranscriptProps> = ({
     turns,
     isHydrating,
     expiredBanner,
+    emptyReason,
     onFollowUp,
     onRetry,
 }) => {
@@ -68,7 +76,16 @@ export const Transcript: React.FC<TranscriptProps> = ({
                 </p>
             ) : null}
 
-            {isEmpty && !isHydrating && !expiredBanner ? (
+            {/* New-conversation empty state: render the landing
+                suggestions + lede + stats inline so the user stays
+                inside the chat chrome (sidebar + composer) instead of
+                the whole page flipping back to the editorial hero. */}
+            {isEmpty && !isHydrating && !expiredBanner && emptyReason === "new" ? (
+                <AskLanding onPickQuestion={onFollowUp} />
+            ) : null}
+
+            {/* Cleared empty state: a quiet one-liner pill. */}
+            {isEmpty && !isHydrating && !expiredBanner && emptyReason !== "new" ? (
                 <p
                     className="ask-cleared-indicator"
                     role="status"
