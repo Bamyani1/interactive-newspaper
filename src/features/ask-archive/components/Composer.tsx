@@ -89,14 +89,6 @@ export const Composer: React.FC<ComposerProps> = ({
                     <ArrowRight size={13} aria-hidden="true" />
                 </button>
             </form>
-            <p className="ask-composer-hint" aria-hidden="true">
-                <span className="ask-composer-hint-left">
-                    Answers cite primary sources. Always verify.
-                </span>
-                <span className="ask-composer-hint-right">
-                    <kbd>↵</kbd> to send · <kbd>⇧↵</kbd> for newline
-                </span>
-            </p>
         </div>
     );
 };

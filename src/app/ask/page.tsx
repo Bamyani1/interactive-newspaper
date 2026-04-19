@@ -90,10 +90,7 @@ export default function AskPage() {
 
                     <div className="ask-column">
                         {turns.length === 0 && !isHydrating ? (
-                            <AskLanding
-                                onPickQuestion={submit}
-                                expiredBanner={expiredBanner}
-                            />
+                            <AskLanding onPickQuestion={submit} />
                         ) : (
                             <Transcript
                                 turns={turns}

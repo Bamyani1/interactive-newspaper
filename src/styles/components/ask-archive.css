@@ -1285,44 +1285,6 @@
   display: inline-block;
 }
 
-.ask-composer-hint {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin: 0.25rem 0 0;
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: color-mix(in oklab, var(--color-text-secondary) 80%, transparent);
-}
-
-.ask-composer-hint-left {
-  opacity: 0.9;
-}
-
-.ask-composer-hint-right {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.ask-composer-hint kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.25rem;
-  padding: 0.1rem 0.35rem;
-  border: 1px solid color-mix(in oklab, var(--color-text-secondary) 30%, transparent);
-  border-radius: 3px;
-  color: color-mix(in oklab, var(--color-text-secondary) 90%, var(--color-text-primary));
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 500;
-  line-height: 1;
-}
-
 /* =========================================
    LANDING — centered editorial welcome
    Rendered inside the main column when no
@@ -1336,28 +1298,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.4rem;
-  text-align: left;
-}
-
-/* Expired-session notice — quiet inline whisper, not a banner. Sits
-   between H1 and lede. One accent dot is the only signal. */
-.ask-landing-notice {
-  margin: 0;
-  font-family: var(--font-body);
-  font-style: italic;
-  font-size: 0.94rem;
-  line-height: 1.45;
-  color: color-mix(in oklab, var(--color-text-secondary) 75%, transparent);
-  display: flex;
-  align-items: baseline;
-  gap: 0.55rem;
-}
-.ask-landing-notice::before {
-  content: "•";
-  color: var(--color-accent);
-  font-style: normal;
-  font-weight: 600;
-  flex-shrink: 0;
+  text-align: center;
 }
 
 .ask-landing-title {
@@ -1375,12 +1316,12 @@
 }
 
 .ask-landing-lede {
-  margin: 0;
+  margin: 0 auto;
   font-family: var(--font-body);
   font-size: 1.04rem;
   line-height: 1.55;
   color: var(--color-text-secondary);
-  max-width: 34rem;
+  max-width: 32rem;
 }
 .ask-landing-lede em {
   font-style: italic;
@@ -1451,16 +1392,19 @@
   transform: translateX(3px);
 }
 
-/* Archive-scope footer — tiny mono strip. Single source of truth for
-   the coverage stats; the lede no longer carries them. */
+/* Footer strip — merges the "verify before quoting" disclaimer with
+   archive-scope coverage. Single source of truth for both; no more
+   duplicated stats anywhere else on the page. */
 .ask-landing-stats {
-  margin: 0;
+  margin: 0 auto;
+  max-width: 34rem;
   padding-top: 0.85rem;
   border-top: 1px solid color-mix(in oklab, var(--color-text-secondary) 14%, transparent);
   font-family: var(--font-mono);
   font-size: 0.66rem;
   font-weight: 500;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
+  line-height: 1.7;
   text-transform: uppercase;
   color: color-mix(in oklab, var(--color-text-secondary) 58%, transparent);
 }
@@ -1772,9 +1716,6 @@
   .ask-composer-send {
     padding: 0 0.85rem;
     min-width: 52px;
-  }
-  .ask-composer-hint-right {
-    display: none;
   }
   .ask-reader {
     padding: 2.5rem 1.5rem;
