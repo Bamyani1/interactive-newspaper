@@ -28,7 +28,7 @@ describe("AskMobileActions", () => {
         ).toBeInTheDocument();
         expect(
             screen.getByRole("button", {
-                name: /clear the current conversation/i,
+                name: /clear the current thread/i,
             }),
         ).toBeInTheDocument();
         expect(
@@ -52,7 +52,7 @@ describe("AskMobileActions", () => {
         ).toBeDisabled();
         expect(
             screen.getByRole("button", {
-                name: /clear the current conversation/i,
+                name: /clear the current thread/i,
             }),
         ).toBeDisabled();
         expect(
@@ -79,7 +79,7 @@ describe("AskMobileActions", () => {
         );
         fireEvent.click(
             screen.getByRole("button", {
-                name: /clear the current conversation/i,
+                name: /clear the current thread/i,
             }),
         );
         fireEvent.click(

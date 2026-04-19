@@ -155,7 +155,7 @@ describe("AskPage — render decisions", () => {
         render(<AskPage />);
         screen
             .getAllByRole("button", {
-                name: /clear the current conversation/i,
+                name: /clear the current thread/i,
             })
             .forEach((btn) => expect(btn).toBeDisabled());
         screen
@@ -180,7 +180,7 @@ describe("AskPage — render decisions", () => {
         render(<AskPage />);
         screen
             .getAllByRole("button", {
-                name: /clear the current conversation/i,
+                name: /clear the current thread/i,
             })
             .forEach((btn) => expect(btn).not.toBeDisabled());
         screen
