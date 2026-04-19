@@ -93,11 +93,12 @@ export const Transcript: React.FC<TranscriptProps> = ({
             ) : null}
 
             {/* Inline landing surface for every other empty state:
-                post-New, and initial loads where the user has prior
-                archived threads but no current turns. Lets users stay
-                inside the chat chrome instead of flipping back to the
-                full editorial hero. */}
-            {isEmpty && !isHydrating && !expiredBanner && emptyReason !== "cleared" ? (
+                post-New, expired-session returns, and initial loads
+                where the user has prior archived threads but no
+                current turns. The expired banner above stays visible;
+                the landing renders below it so the user has
+                suggestions to click instead of a void. */}
+            {isEmpty && !isHydrating && emptyReason !== "cleared" ? (
                 <AskLanding onPickQuestion={onFollowUp} />
             ) : null}
 

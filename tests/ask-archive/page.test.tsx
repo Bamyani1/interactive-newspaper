@@ -110,10 +110,12 @@ describe("AskPage — render decisions", () => {
         ).toBeInTheDocument();
     });
 
-    it("expired banner on fresh return renders Transcript with the notice, NOT the editorial hero", () => {
-        // F3: on return with an expired session, hydrate dispatches
-        // { turns: [], expired: true }. sessionGen is still 0 —
-        // pre-fix, `isFirstVisit` was true and swallowed the notice.
+    it("expired banner on fresh return renders the notice AND the inline landing so the user has suggestions to click", () => {
+        // On return with an expired session, hydrate dispatches
+        // { turns: [], expired: true } and sessionGen is still 0.
+        // The Transcript renders the notice at the top AND the inline
+        // landing below it — earlier we suppressed the landing here,
+        // which left the page as just a banner above a giant void.
         mockHook.mockReturnValue({
             ...defaultState(),
             expiredBanner: true,
@@ -123,8 +125,8 @@ describe("AskPage — render decisions", () => {
             screen.getByText(/your last conversation expired/i),
         ).toBeInTheDocument();
         expect(
-            screen.queryByLabelText(/suggested questions, refreshed daily/i),
-        ).not.toBeInTheDocument();
+            screen.getByLabelText(/suggested questions, refreshed daily/i),
+        ).toBeInTheDocument();
     });
 
     it("returning visitor with prior turns renders Transcript, not the editorial hero", () => {
