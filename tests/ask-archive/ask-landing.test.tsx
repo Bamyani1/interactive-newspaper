@@ -21,49 +21,39 @@ describe("AskLanding", () => {
         vi.restoreAllMocks();
     });
 
-    it("renders the dateline, title, and lede stats", () => {
+    it("renders the hero, lede, and stats footer", () => {
         render(<AskLanding onPickQuestion={vi.fn()} expiredBanner={false} />);
 
+        // H1 with accent on "archive"
+        const heading = screen.getByRole("heading", { level: 1 });
+        expect(heading).toHaveTextContent(/Ask the archive/);
+
+        // Lede mentions The Transcript and the verification claim.
         expect(
-            screen.getByText(/Research Desk · Vol\. LVI · 1950–2006/),
+            screen.getByText(/research desk for/i),
         ).toBeInTheDocument();
         expect(
-            screen.getByRole("heading", { level: 1 }),
-        ).toHaveTextContent(/A research desk for the/);
+            screen.getByText(/cites the stories it comes from/i),
+        ).toBeInTheDocument();
+
+        // Single source of truth for scope — the mono stats strip.
         expect(
-            screen.getByText(/56 years, 293 editions, and 9,582 articles/),
+            screen.getByText(/1950\s*[–-]\s*2006\s*·\s*293 editions\s*·\s*9,582 articles/),
         ).toBeInTheDocument();
     });
 
-    it("renders the demo answer card with both citations visible", () => {
+    it("does NOT render the demo answer card or the old dateline", () => {
         render(<AskLanding onPickQuestion={vi.fn()} expiredBanner={false} />);
 
-        expect(screen.getByLabelText(/example of how an answer looks/i))
-            .toBeInTheDocument();
-        expect(screen.getByText(/Example answer/)).toBeInTheDocument();
-        expect(screen.getByText(/Tell me about Homecoming in the 1970s/))
-            .toBeInTheDocument();
-        // Both demo citations render as superscript markers AND as list items
-        // — assert the list-item headline copy is present so we know the
-        // source rail rendered end-to-end.
+        // Regression guard — v1 shipped a demo card + a meta dateline;
+        // v2 removed both to reduce scope-duplication and visual noise.
         expect(
-            screen.getByText(/Homecoming pep rally draws 2,000/),
-        ).toBeInTheDocument();
+            screen.queryByLabelText(/example of how an answer looks/i),
+        ).not.toBeInTheDocument();
+        expect(screen.queryByText(/Example answer/)).not.toBeInTheDocument();
         expect(
-            screen.getByText(/Bishops fall 24–17 at homecoming game/),
-        ).toBeInTheDocument();
-    });
-
-    it("fires onPickQuestion with the demo question when 'Ask this' is clicked", () => {
-        const onPick = vi.fn();
-        render(<AskLanding onPickQuestion={onPick} expiredBanner={false} />);
-
-        fireEvent.click(screen.getByRole("button", { name: /ask this/i }));
-
-        expect(onPick).toHaveBeenCalledTimes(1);
-        expect(onPick).toHaveBeenCalledWith(
-            "Tell me about Homecoming in the 1970s.",
-        );
+            screen.queryByText(/Research Desk · Vol\. LVI/),
+        ).not.toBeInTheDocument();
     });
 
     it("renders three daily suggestions and fires onPickQuestion on click", () => {
@@ -78,8 +68,8 @@ describe("AskLanding", () => {
         );
         expect(buttons).toHaveLength(3);
 
-        // None of the suggestions should duplicate the demo question —
-        // keeps the landing varied.
+        // None of the suggestions should duplicate the excluded question —
+        // keeps the landing varied across days.
         buttons.forEach((btn) => {
             expect(btn.textContent).not.toMatch(
                 /Tell me about Homecoming in the 1970s/,
@@ -93,7 +83,7 @@ describe("AskLanding", () => {
         );
     });
 
-    it("shows the expired-conversation banner only when expiredBanner=true", () => {
+    it("shows the expired-conversation notice only when expiredBanner=true", () => {
         const { rerender } = render(
             <AskLanding onPickQuestion={vi.fn()} expiredBanner={false} />,
         );
