@@ -8,6 +8,7 @@ import { useDeepLinkSubmit } from "@/features/ask-archive/hooks/useDeepLinkSubmi
 import { Transcript } from "@/features/ask-archive/components/Transcript";
 import { Composer } from "@/features/ask-archive/components/Composer";
 import { AskSidebar } from "@/features/ask-archive/components/AskSidebar";
+import { AskMobileActions } from "@/features/ask-archive/components/AskMobileActions";
 import { AskLanding } from "@/features/ask-archive/components/AskLanding";
 
 export default function AskPage() {
@@ -158,6 +159,22 @@ export default function AskPage() {
                     ) : null}
 
                     <div className="ask-column">
+                        {showSidebar ? (
+                            <AskMobileActions
+                                onNewConversation={newConversation}
+                                onClearConversation={clearConversation}
+                                onExportConversation={handleExport}
+                                canNewConversation={
+                                    turns.length > 0 || sessionGen > 0
+                                }
+                                canClearConversation={
+                                    turns.length > 0 && !isStreaming
+                                }
+                                canExportConversation={
+                                    turns.length > 0 && !isStreaming
+                                }
+                            />
+                        ) : null}
                         {isBooting ? (
                             <div
                                 className="ask-loading-skeleton"

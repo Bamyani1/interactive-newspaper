@@ -133,47 +133,53 @@ describe("AskPage — render decisions", () => {
         ).not.toBeInTheDocument();
     });
 
-    it("streaming turn disables Clear and Export sidebar buttons (Commit C / F5)", () => {
+    it("streaming turn disables Clear and Export everywhere they appear (Commit C / F5)", () => {
         // Users shouldn't be able to wipe or export a conversation
         // while the assistant is mid-answer: Clear aborts silently,
-        // Export produces a partial PDF. Both are footguns.
+        // Export produces a partial PDF. Both are footguns. We use
+        // getAllByRole because the sidebar AND the mobile action strip
+        // both surface the same three buttons (the mobile strip is in
+        // the DOM at all times, hidden by CSS on desktop).
         mockHook.mockReturnValue({
             ...defaultState(),
             turns: [makeStreamingTurn("t-streaming", "hello?")],
         });
         render(<AskPage />);
-        const clearBtn = screen.getByRole("button", {
-            name: /clear the current conversation/i,
-        });
-        const exportBtn = screen.getByRole("button", {
-            name: /export the conversation as a pdf/i,
-        });
-        const newBtn = screen.getByRole("button", {
-            name: /start a new conversation/i,
-        });
-        expect(clearBtn).toBeDisabled();
-        expect(exportBtn).toBeDisabled();
+        screen
+            .getAllByRole("button", {
+                name: /clear the current conversation/i,
+            })
+            .forEach((btn) => expect(btn).toBeDisabled());
+        screen
+            .getAllByRole("button", {
+                name: /export the conversation as a pdf/i,
+            })
+            .forEach((btn) => expect(btn).toBeDisabled());
         // New-conversation stays enabled: starting over is a valid
         // escape from a stuck stream.
-        expect(newBtn).not.toBeDisabled();
+        screen
+            .getAllByRole("button", {
+                name: /start a new conversation/i,
+            })
+            .forEach((btn) => expect(btn).not.toBeDisabled());
     });
 
-    it("done turn enables Clear and Export (happy-path control)", () => {
+    it("done turn enables Clear and Export everywhere (happy-path control)", () => {
         mockHook.mockReturnValue({
             ...defaultState(),
             turns: [makeDoneTurn("t-1", "hi?", "hello.")],
         });
         render(<AskPage />);
-        expect(
-            screen.getByRole("button", {
+        screen
+            .getAllByRole("button", {
                 name: /clear the current conversation/i,
-            }),
-        ).not.toBeDisabled();
-        expect(
-            screen.getByRole("button", {
+            })
+            .forEach((btn) => expect(btn).not.toBeDisabled());
+        screen
+            .getAllByRole("button", {
                 name: /export the conversation as a pdf/i,
-            }),
-        ).not.toBeDisabled();
+            })
+            .forEach((btn) => expect(btn).not.toBeDisabled());
     });
 
     it("hydrating-with-no-turns stays in the boot skeleton (no intermediate hydrating pill, no hero)", () => {
