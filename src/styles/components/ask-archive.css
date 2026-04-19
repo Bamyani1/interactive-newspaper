@@ -889,11 +889,13 @@
      available space instead of hugging the top. */
 }
 
-.ask-transcript:has(.ask-hydrating-indicator) {
+.ask-transcript:has(.ask-hydrating-indicator),
+.ask-transcript:has(.ask-cleared-indicator) {
   justify-content: center;
 }
 
-.ask-hydrating-indicator {
+.ask-hydrating-indicator,
+.ask-cleared-indicator {
   margin: 0;
   text-align: center;
   font-family: var(--font-mono);
@@ -1785,6 +1787,7 @@
   .ask-error-inline-retry,
   .ask-expired-banner,
   .ask-hydrating-indicator,
+  .ask-cleared-indicator,
   .ask-followups,
   .color-customizer-toggle,
   .color-customizer-panel,
