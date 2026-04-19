@@ -15,6 +15,7 @@ export default function AskPage() {
         turns,
         isHydrating,
         expiredBanner,
+        sessionGen,
         submit,
         retry,
         clearConversation,
@@ -38,6 +39,25 @@ export default function AskPage() {
             setFocusSignal((n) => n + 1);
         }
     }, [lastTurn?.status, lastTurn]);
+
+    // Auto-focus the composer after Clear Conversation so the user can
+    // type the next question without a stray click. sessionGen starts
+    // at 0 and increments each time the reducer handles CLEAR_CONVERSATION.
+    useEffect(() => {
+        if (sessionGen === 0) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- monotonic signal bridge: bump focusSignal once per clear so the Composer's focus-on-bump effect fires. Not an external-system sync.
+        setFocusSignal((n) => n + 1);
+    }, [sessionGen]);
+
+    // Editorial AskLanding is a first-visit treatment only. Once the
+    // user has either asked something (turns>0) or cleared a
+    // conversation (sessionGen>0), we stay inside the chat chrome —
+    // Clear should feel like "wipe the transcript, stay here," not
+    // "kick me back to the landing."
+    const isFirstVisit =
+        turns.length === 0 && !isHydrating && sessionGen === 0;
+    const showSidebar =
+        turns.length > 0 || isHydrating || sessionGen > 0;
 
     const handleFollowUp = useCallback(
         (question: string) => {
@@ -87,7 +107,7 @@ export default function AskPage() {
             <TimeControls />
             <main className="ask-main">
                 <div className="ask-page">
-                    {turns.length > 0 || isHydrating ? (
+                    {showSidebar ? (
                         <AskSidebar
                             turns={turns}
                             onClearConversation={clearConversation}
@@ -97,7 +117,7 @@ export default function AskPage() {
                     ) : null}
 
                     <div className="ask-column">
-                        {turns.length === 0 && !isHydrating ? (
+                        {isFirstVisit ? (
                             <AskLanding onPickQuestion={submit} />
                         ) : (
                             <Transcript

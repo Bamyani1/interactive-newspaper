@@ -68,6 +68,16 @@ export const Transcript: React.FC<TranscriptProps> = ({
                 </p>
             ) : null}
 
+            {isEmpty && !isHydrating && !expiredBanner ? (
+                <p
+                    className="ask-cleared-indicator"
+                    role="status"
+                    aria-live="polite"
+                >
+                    Conversation cleared — ask a new question below.
+                </p>
+            ) : null}
+
             {turns.map((turn, i) => (
                 <Turn
                     key={turn.id}
