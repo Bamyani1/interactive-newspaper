@@ -1765,10 +1765,61 @@
   }
 }
 
+/* =========================================
+   MOBILE ACTIONS
+   3-icon strip surfacing New / Clear / Export on narrow viewports
+   where the desktop sidebar is hidden. The component is always in
+   the React tree; this stylesheet hides it on desktop via breakpoint.
+   ========================================= */
+.ask-mobile-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 0.25rem;
+  border-bottom: 1px dashed var(--stroke-accent-soft);
+  margin-bottom: 0.5rem;
+}
+
+.ask-mobile-action {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.5rem;
+  background: transparent;
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.ask-mobile-action:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.ask-mobile-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (min-width: 1024px) {
+  .ask-mobile-actions {
+    display: none;
+  }
+}
+
 /* Focus-visible outlines — keyboard-only accent, no mouse-click ring */
 .ask-composer-send:focus-visible,
 .ask-landing-suggestion:focus-visible,
 .ask-sidebar-newbtn:focus-visible,
+.ask-mobile-action:focus-visible,
 .ask-error-inline-retry:focus-visible,
 .ask-example-chip:focus-visible,
 .ask-source-toggle:focus-visible,
@@ -1798,6 +1849,7 @@
      .ask-landing only renders in the empty state — nothing to
      print there, so hide it as well. */
   .ask-sidebar,
+  .ask-mobile-actions,
   .ask-composer,
   .ask-landing,
   .time-controls-header,
