@@ -572,7 +572,10 @@
     align-items: baseline;
     gap: 0.65rem;
     text-decoration: none;
-    color: var(--owu-medium-gray);
+    /* --color-text-secondary matches the masthead subtitle — legible on
+       the warm cinema-paper background. --owu-medium-gray reads cool /
+       bluish against the beige texture and washes out. */
+    color: var(--color-text-secondary);
     transition: color var(--duration-normal) ease;
 }
 
@@ -592,6 +595,10 @@
 .cinema-ask-teaser-text {
     font-family: var(--font-header);
     font-style: italic;
+    /* Weight 500 keeps the italic readable at 0.95rem on the textured
+       cinema-paper — Playfair italic at 400 goes thin against the
+       background noise. */
+    font-weight: 500;
     font-size: 0.95rem;
     line-height: 1.3;
 }
