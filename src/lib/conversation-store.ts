@@ -126,6 +126,35 @@ export async function addConversationTurn(
 }
 
 /**
+ * Wipes every stored turn for a session. Used by the "Clear
+ * conversation" button so the server doesn't keep the transcript
+ * around until its 30-minute TTL. Best-effort: a DB failure only
+ * means the old rows linger and age out naturally.
+ */
+export async function deleteConversationTurns(
+    sessionId: string,
+): Promise<void> {
+    const sql = getSql();
+    if (!sql) return;
+    try {
+        await sql`
+            DELETE FROM ask_session_turns
+            WHERE session_id = ${sessionId}
+        `;
+    } catch (err) {
+        console.warn(
+            JSON.stringify({
+                level: "warn",
+                module: "conversation-store",
+                op: "deleteConversationTurns",
+                msg: "db delete failed; session will age out via TTL",
+                err: err instanceof Error ? err.message : String(err),
+            }),
+        );
+    }
+}
+
+/**
  * Returns true if any row exists for this session regardless of TTL.
  * Used by the hydration endpoint to distinguish "never existed" from
  * "aged out" so the UI can show a gentle 'your last conversation
