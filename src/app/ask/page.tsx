@@ -148,8 +148,12 @@ export default function AskPage() {
                             canNewConversation={
                                 turns.length > 0 || sessionGen > 0
                             }
-                            canClearConversation={turns.length > 0}
-                            canExportConversation={turns.length > 0}
+                            canClearConversation={
+                                turns.length > 0 && !isStreaming
+                            }
+                            canExportConversation={
+                                turns.length > 0 && !isStreaming
+                            }
                         />
                     ) : null}
 
