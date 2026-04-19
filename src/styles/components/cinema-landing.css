@@ -539,3 +539,138 @@
         font-size: 0.65rem;
     }
 }
+
+/* =========================================
+   ASK CTA BLOCK (homepage integration)
+   Below the two-column hero grid: an editorial
+   teaser line + dual CTAs (filled Read + ghost
+   Ask). Gated in JSX on !isPickerOpen so it
+   vanishes cleanly when the EditionPicker opens.
+   ========================================= */
+
+.cinema-cta-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    margin-top: 20px;
+}
+
+/* The slot reserves the vertical space the teaser will occupy so
+   the CTA row doesn't jump up when the day-of-year pick lands
+   post-hydration. */
+.cinema-ask-teaser-slot {
+    min-height: 1.4rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cinema-ask-teaser {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.65rem;
+    text-decoration: none;
+    /* --color-text-secondary matches the masthead subtitle — legible on
+       the warm cinema-paper background. --owu-medium-gray reads cool /
+       bluish against the beige texture and washes out. */
+    color: var(--color-text-secondary);
+    transition: color var(--duration-normal) ease;
+}
+
+.cinema-ask-teaser:hover {
+    color: var(--color-accent);
+}
+
+.cinema-ask-teaser-label {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+}
+
+.cinema-ask-teaser-text {
+    font-family: var(--font-header);
+    font-style: italic;
+    /* Weight 500 keeps the italic readable at 0.95rem on the textured
+       cinema-paper — Playfair italic at 400 goes thin against the
+       background noise. */
+    font-weight: 500;
+    font-size: 0.95rem;
+    line-height: 1.3;
+}
+
+.cinema-ask-teaser-arrow {
+    font-family: var(--font-mono);
+    color: var(--color-accent);
+    transition: transform var(--duration-normal) ease;
+}
+
+.cinema-ask-teaser:hover .cinema-ask-teaser-arrow {
+    transform: translateX(4px);
+}
+
+/* Row of the two CTAs — filled Read on the left, ghost Ask on the
+   right. Flex lets the pair center-align as a group; wraps / stacks
+   on narrow screens via the mobile override below. */
+.cinema-cta-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    width: 100%;
+}
+
+/* Buttons inside the row don't get the default .cinema-btn auto-
+   centering margins (those make sense for a single-button layout).
+   Flex sizes them to content instead of the 100%/360px single-CTA
+   sizing. */
+.cinema-cta-buttons .cinema-btn {
+    margin: 0;
+    width: auto;
+    min-width: 200px;
+    max-width: none;
+}
+
+/* Ghost variant — outlined accent, no sliding fill. Same shape /
+   padding / typography as the filled Read button so the pair reads
+   as equal doors, but Read's fill carries visual primacy. */
+.cinema-btn--ghost {
+    background: transparent;
+    border: 1px solid var(--color-accent);
+    color: var(--color-accent);
+    text-decoration: none;
+}
+
+/* Disable the sliding-fill pseudo that .cinema-btn uses — the ghost
+   variant has a simple color-mix wash on hover instead. */
+.cinema-btn--ghost::before {
+    display: none;
+}
+
+.cinema-btn--ghost:hover {
+    background: color-mix(in oklab, var(--color-accent) 10%, transparent);
+}
+
+.cinema-btn--ghost span,
+.cinema-btn--ghost svg {
+    color: var(--color-accent);
+}
+
+@media (max-width: 640px) {
+    .cinema-cta-buttons {
+        flex-direction: column;
+    }
+    .cinema-cta-buttons .cinema-btn {
+        width: 100%;
+        max-width: 360px;
+    }
+    .cinema-ask-teaser {
+        flex-wrap: wrap;
+        justify-content: center;
+        text-align: center;
+    }
+}

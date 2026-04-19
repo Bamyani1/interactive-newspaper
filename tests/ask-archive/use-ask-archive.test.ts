@@ -156,7 +156,23 @@ describe("useAskArchive", () => {
         expect(result.current.turns[0].retryAfterSec).toBe(42);
     });
 
-    it("newConversation clears turns and bumps sessionGen", async () => {
+    it("clearConversation clears turns, bumps sessionGen, and DELETEs the server session", async () => {
+        const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === "string" ? input : input.toString();
+            if (url.includes("/api/ask/session")) {
+                if (init?.method === "DELETE") {
+                    return Promise.resolve(
+                        makeJsonResponse(null, { ok: true, status: 204 }),
+                    );
+                }
+                return Promise.resolve(
+                    makeJsonResponse({ turns: [], expired: false }),
+                );
+            }
+            return Promise.resolve(makeJsonResponse(mockResponse));
+        });
+        vi.stubGlobal("fetch", fetchSpy);
+
         const { result } = renderHook(() => useAskArchive());
         await waitFor(() => expect(result.current.isHydrating).toBe(false));
 
@@ -168,11 +184,18 @@ describe("useAskArchive", () => {
         });
 
         const genBefore = result.current.sessionGen;
+        fetchSpy.mockClear();
         act(() => {
-            result.current.newConversation();
+            result.current.clearConversation();
         });
         expect(result.current.turns).toEqual([]);
         expect(result.current.sessionGen).toBe(genBefore + 1);
+        // Best-effort DELETE fires against the session route.
+        const deleteCall = fetchSpy.mock.calls.find(
+            ([, init]) => (init as RequestInit | undefined)?.method === "DELETE",
+        );
+        expect(deleteCall).toBeDefined();
+        expect(String(deleteCall?.[0])).toContain("/api/ask/session?sessionId=");
     });
 
     it("retry re-submits an errored turn's question as a new turn", async () => {

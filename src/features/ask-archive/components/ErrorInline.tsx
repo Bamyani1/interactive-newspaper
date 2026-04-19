@@ -30,6 +30,24 @@ function defaultMessageFor(kind: AskErrorKind, explicit?: string): string {
     }
 }
 
+function labelFor(kind: AskErrorKind): string {
+    switch (kind) {
+        case "rate_limit":
+            return "Too fast";
+        case "budget":
+            return "Daily budget";
+        case "timeout":
+            return "Timed out";
+        case "network":
+            return "Offline";
+        case "bad_request":
+            return "Couldn't parse";
+        case "server":
+        default:
+            return "Notice";
+    }
+}
+
 function formatCountdown(sec: number): string {
     if (sec <= 60) return `${sec}s`;
     if (sec < 3600) return `${Math.ceil(sec / 60)}m`;
@@ -63,6 +81,7 @@ export const ErrorInline: React.FC<ErrorInlineProps> = ({
 
     return (
         <div className="ask-error-inline" role="alert">
+            <p className="ask-error-inline-label">{labelFor(kind)}</p>
             <p className="ask-error-inline-message">{displayMessage}</p>
             {remaining !== null && remaining > 0 ? (
                 <p className="ask-error-inline-countdown">

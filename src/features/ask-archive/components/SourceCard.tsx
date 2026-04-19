@@ -7,59 +7,63 @@ type SourceArticle = AskResponse["sourceArticles"][number];
 interface SourceCardProps {
   source: SourceArticle;
   index: number;
+  onOpen?: () => void;
 }
 
-export const SourceCard: React.FC<SourceCardProps> = ({ source, index }) => {
+export const SourceCard: React.FC<SourceCardProps> = ({
+  source,
+  index,
+  onOpen,
+}) => {
   const hasImage = source.imageUrls.length > 0;
 
   return (
-    <article className="ask-source-card" id={`ask-source-${index + 1}`}>
+    <article
+      className="ask-source-card"
+      id={`ask-source-${index + 1}`}
+      role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (!onOpen) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
       <div className="ask-source-card-inner">
         <div className="ask-source-card-text">
-          <div className="flex items-baseline gap-3 mb-1">
-            <span
-              className="text-xs uppercase tracking-widest"
-              style={{ color: "var(--color-accent)" }}
-            >
+          <div className="ask-source-card-meta">
+            <span className="ask-source-card-category">
               {source.category}
             </span>
-            <span
-              className="text-xs opacity-50"
-              style={{ color: "var(--color-text-primary)" }}
-            >
+            <span className="ask-source-card-date">
               {source.editionDate}
             </span>
           </div>
 
-          <a href={`/edition/${source.editionDate}`} className="block group">
-            <h4
-              className="text-base font-semibold transition-colors group-hover:underline"
-              style={{ color: "var(--color-text-primary)" }}
-            >
-              [{index + 1}] {source.headline || "Untitled"}
-            </h4>
-          </a>
+          <h4 className="ask-source-card-headline">
+            <span className="ask-source-card-num">[{index + 1}]</span>{" "}
+            {source.headline || "Untitled"}
+          </h4>
 
-          {source.byline && (
-            <p
-              className="text-sm italic opacity-70 mt-0.5"
-              style={{ color: "var(--color-text-primary)" }}
-            >
-              {source.byline}
-            </p>
-          )}
+          {source.byline ? (
+            <p className="ask-source-card-byline">{source.byline}</p>
+          ) : null}
 
-          {source.bodySnippet && (
-            <p
-              className="text-sm mt-2 leading-relaxed opacity-80"
-              style={{ color: "var(--color-text-primary)" }}
-            >
-              {source.bodySnippet}
-            </p>
-          )}
+          {source.bodySnippet ? (
+            <p className="ask-source-card-snippet">{source.bodySnippet}</p>
+          ) : null}
+
+          {onOpen ? (
+            <span className="ask-source-card-hint" aria-hidden="true">
+              Read →
+            </span>
+          ) : null}
         </div>
 
-        {hasImage && (
+        {hasImage ? (
           <div className="ask-source-card-thumb">
             <div className="ask-source-thumb-wrapper">
               <Image
@@ -72,7 +76,7 @@ export const SourceCard: React.FC<SourceCardProps> = ({ source, index }) => {
               />
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </article>
   );

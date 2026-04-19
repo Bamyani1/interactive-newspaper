@@ -24,6 +24,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import {
+    deleteConversationTurns,
     getConversationHistory,
     sessionHasAnyTurns,
 } from "@/src/lib/conversation-store";
@@ -107,4 +108,40 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         })),
         expired,
     });
+}
+
+/**
+ * DELETE /api/ask/session?sessionId=...
+ *
+ * Wipes every stored turn for the session. Called by the "Clear
+ * conversation" button so the user's transcript is gone from the
+ * server immediately instead of lingering until the 30-min TTL.
+ * Always returns 204 on successful dispatch — the underlying delete
+ * is best-effort and a DB failure would have logged but not thrown.
+ */
+export async function DELETE(request: NextRequest): Promise<NextResponse> {
+    const ip = getClientIp(request);
+    const rate = await sessionRateLimiter(ip);
+    if (!rate.allowed) {
+        return NextResponse.json(
+            { error: "Too many session requests. Please wait a moment." },
+            {
+                status: 429,
+                headers: {
+                    "Retry-After": String(
+                        Math.ceil((rate.resetAt - Date.now()) / 1000),
+                    ),
+                },
+            },
+        );
+    }
+
+    const url = new URL(request.url);
+    const sessionId = url.searchParams.get("sessionId") ?? "";
+    if (!sessionId || sessionId.length > MAX_SESSION_ID_LEN) {
+        return new NextResponse(null, { status: 204 });
+    }
+
+    await deleteConversationTurns(sessionId);
+    return new NextResponse(null, { status: 204 });
 }

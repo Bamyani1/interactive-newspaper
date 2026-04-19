@@ -36,17 +36,63 @@ export interface Turn {
     retryAfterSec?: number;
 }
 
+/**
+ * Reason the transcript is currently empty — drives the in-chat empty-
+ * state UI when the user is past the first visit. `null` means either
+ * pristine first visit (handled at page level) or the user just
+ * submitted and turns haven't arrived yet.
+ */
+export type EmptyReason = "cleared" | "new" | null;
+
+/**
+ * A pointer-level summary of an archived thread, used to render the
+ * sidebar thread list without hauling every turn's body into the
+ * reducer. The full turn history lives in localStorage keyed by
+ * `id` — the hook round-trips to the archive on switch.
+ */
+export interface ThreadSummary {
+    /** Matches the thread's sessionId (the two are the same identifier). */
+    id: string;
+    /** First user question — used as the thread title in the sidebar. */
+    firstQuestion: string;
+    /** Number of Q/A pairs in the thread. */
+    turnCount: number;
+    /** Last time any turn in the thread was mutated (ms since epoch). */
+    lastUpdatedAt: number;
+}
+
 export interface AskState {
     turns: Turn[];
     isHydrating: boolean;
     /** True iff the last /api/ask/session response reported `expired:true`. */
     expiredBanner: boolean;
     sessionGen: number;
+    emptyReason: EmptyReason;
+    /** All archived threads — includes the active one if it has turns. */
+    threads: ThreadSummary[];
+    /** The thread currently in `turns`. null before the first BOOT tick. */
+    activeThreadId: string | null;
 }
 
 export type AskAction =
     | { type: "HYDRATING" }
-    | { type: "HYDRATE"; turns: Turn[]; expired: boolean }
+    | {
+          type: "HYDRATE";
+          turns: Turn[];
+          expired: boolean;
+          threads?: ThreadSummary[];
+          activeThreadId?: string | null;
+      }
+    | {
+          type: "SET_THREADS";
+          threads: ThreadSummary[];
+          activeThreadId: string | null;
+      }
+    | {
+          type: "SWITCH_THREAD";
+          activeThreadId: string;
+          turns: Turn[];
+      }
     | { type: "APPEND_USER"; id: string; question: string; createdAt?: number }
     | {
           type: "TURN_META";
@@ -75,6 +121,7 @@ export type AskAction =
           message: string;
           retryAfterSec?: number;
       }
+    | { type: "CLEAR_CONVERSATION" }
     | { type: "NEW_CONVERSATION" };
 
 export const INITIAL_STATE: AskState = {
@@ -82,6 +129,9 @@ export const INITIAL_STATE: AskState = {
     isHydrating: false,
     expiredBanner: false,
     sessionGen: 0,
+    emptyReason: null,
+    threads: [],
+    activeThreadId: null,
 };
 
 function emptyTurn(id: string, question: string, createdAt: number): Turn {
@@ -124,6 +174,37 @@ export function askReducer(state: AskState, action: AskAction): AskState {
                 turns: action.turns,
                 isHydrating: false,
                 expiredBanner: action.expired,
+                // Any hydration supersedes a prior cleared/new empty
+                // reason — turns either exist or don't on their own.
+                emptyReason: null,
+                threads:
+                    action.threads !== undefined
+                        ? action.threads
+                        : state.threads,
+                activeThreadId:
+                    action.activeThreadId !== undefined
+                        ? action.activeThreadId
+                        : state.activeThreadId,
+            };
+        case "SET_THREADS":
+            return {
+                ...state,
+                threads: action.threads,
+                activeThreadId: action.activeThreadId,
+            };
+        case "SWITCH_THREAD":
+            // Replace the working transcript with the target thread's
+            // turns. Bump sessionGen so the composer refocuses (same
+            // mechanic as Clear/New). emptyReason stays null because
+            // the thread already has turns.
+            return {
+                ...state,
+                turns: action.turns,
+                activeThreadId: action.activeThreadId,
+                isHydrating: false,
+                expiredBanner: false,
+                emptyReason: null,
+                sessionGen: state.sessionGen + 1,
             };
         case "APPEND_USER": {
             // If the most recent turn is still "streaming" when a new
@@ -139,6 +220,9 @@ export function askReducer(state: AskState, action: AskAction): AskState {
                 // Any new question clears an expired banner — the user
                 // has started a fresh conversation in intent.
                 expiredBanner: false,
+                // And clears any "cleared" / "new" empty-state marker —
+                // we're populating turns again.
+                emptyReason: null,
                 turns: [
                     ...frozen,
                     emptyTurn(
@@ -191,12 +275,28 @@ export function askReducer(state: AskState, action: AskAction): AskState {
                 retryAfterSec: action.retryAfterSec,
                 stage: undefined,
             }));
-        case "NEW_CONVERSATION":
+        case "CLEAR_CONVERSATION":
+            // Stay inside the chat chrome; the Transcript renders the
+            // "CONVERSATION CLEARED — ASK A NEW QUESTION BELOW." pill.
             return {
                 ...state,
                 turns: [],
                 expiredBanner: false,
                 sessionGen: state.sessionGen + 1,
+                emptyReason: "cleared",
+            };
+        case "NEW_CONVERSATION":
+            // Also stays inside the chat chrome — but the Transcript
+            // renders the landing suggestions + lede + stats inline,
+            // so "New conversation" feels like a fresh prompt surface
+            // without the page flipping back to the full editorial
+            // landing hero.
+            return {
+                ...state,
+                turns: [],
+                expiredBanner: false,
+                sessionGen: state.sessionGen + 1,
+                emptyReason: "new",
             };
         default:
             return state;

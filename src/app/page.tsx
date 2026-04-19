@@ -2,12 +2,14 @@
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { PageShell, CathedralBackground, Ticker, useTickerAnimation, EditionPicker } from "@/shared";
 import { headlines } from "@/shared/landing/data/headlines";
 import { landingCardVariants, TRANSITIONS } from "@/shared/motion/motionTokens";
+import { LandingAskTeaser } from "@/features/ask-archive/components/LandingAskTeaser";
 
 // The stained-glass SVG has its own inline reveal script: panels appear
 // progressively with data-delay values up to ~2955ms plus an 800ms reveal
@@ -103,17 +105,29 @@ export default function Home() {
 
                     </div>
 
-                    {/* Read button — hidden when picker is open */}
+                    {/* Teaser + dual CTAs — hidden when picker is open. */}
                     {!isPickerOpen && (
-                        <button
-                            type="button"
-                            className="cinema-btn"
-                            onClick={handleEnter}
-                            disabled={!selectedEdition}
-                        >
-                            <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
-                            <ArrowRight size={20} />
-                        </button>
+                        <div className="cinema-cta-block">
+                            <LandingAskTeaser />
+                            <div className="cinema-cta-buttons">
+                                <Link
+                                    href="/ask"
+                                    className="cinema-btn cinema-btn--ghost"
+                                >
+                                    <span>Ask the archive</span>
+                                    <ArrowRight size={20} />
+                                </Link>
+                                <button
+                                    type="button"
+                                    className="cinema-btn"
+                                    onClick={handleEnter}
+                                    disabled={!selectedEdition}
+                                >
+                                    <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
+                                    <ArrowRight size={20} />
+                                </button>
+                            </div>
+                        </div>
                     )}
                 </motion.div>
             </main>
