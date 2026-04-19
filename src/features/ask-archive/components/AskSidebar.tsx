@@ -65,24 +65,6 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
                 </button>
                 <button
                     type="button"
-                    className="ask-sidebar-newbtn"
-                    onClick={onClearConversation}
-                    disabled={!canClearConversation}
-                    aria-label="Clear the current conversation"
-                >
-                    <span className="ask-sidebar-newbtn-label">
-                        <Eraser size={12} aria-hidden="true" />
-                        <span>Clear conversation</span>
-                    </span>
-                    <span
-                        className="ask-sidebar-newbtn-plus"
-                        aria-hidden="true"
-                    >
-                        ×
-                    </span>
-                </button>
-                <button
-                    type="button"
                     className="ask-sidebar-newbtn ask-sidebar-exportbtn"
                     onClick={onExportConversation}
                     disabled={!canExportConversation}
@@ -143,6 +125,27 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
                     )}
                 </div>
             </section>
+
+            <div className="ask-sidebar-footer">
+                <button
+                    type="button"
+                    className="ask-sidebar-newbtn"
+                    onClick={onClearConversation}
+                    disabled={!canClearConversation}
+                    aria-label="Clear the current thread"
+                >
+                    <span className="ask-sidebar-newbtn-label">
+                        <Eraser size={12} aria-hidden="true" />
+                        <span>Clear thread</span>
+                    </span>
+                    <span
+                        className="ask-sidebar-newbtn-plus"
+                        aria-hidden="true"
+                    >
+                        ×
+                    </span>
+                </button>
+            </div>
 
         </aside>
     );

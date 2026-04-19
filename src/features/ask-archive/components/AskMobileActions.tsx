@@ -53,7 +53,7 @@ export const AskMobileActions: React.FC<AskMobileActionsProps> = ({
                 className="ask-mobile-action"
                 onClick={onClearConversation}
                 disabled={!canClearConversation}
-                aria-label="Clear the current conversation"
+                aria-label="Clear the current thread"
             >
                 <Eraser size={14} aria-hidden="true" />
                 <span>Clear</span>
