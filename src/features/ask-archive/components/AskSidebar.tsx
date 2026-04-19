@@ -27,9 +27,6 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
         <aside className="ask-sidebar">
             <div className="ask-sidebar-title">
                 <h1 className="ask-sidebar-heading">Ask the Archive</h1>
-                <p className="ask-sidebar-sub">
-                    Research desk · verify before quoting
-                </p>
             </div>
 
             {hasTurns ? (
@@ -98,30 +95,6 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
                 </div>
             </section>
 
-            <section className="ask-sidebar-section">
-                <header className="ask-sidebar-section-label">
-                    <span>Archive scope</span>
-                </header>
-                <div className="ask-sidebar-scope">
-                    <dl className="ask-sidebar-scope-stats">
-                        <div className="ask-sidebar-scope-stat">
-                            <dt>Coverage</dt>
-                            <dd>1950 – 2006</dd>
-                        </div>
-                        <div className="ask-sidebar-scope-stat">
-                            <dt>Editions</dt>
-                            <dd>293</dd>
-                        </div>
-                        <div className="ask-sidebar-scope-stat">
-                            <dt>Articles</dt>
-                            <dd>9,582</dd>
-                        </div>
-                    </dl>
-                    <p className="ask-sidebar-scope-range">
-                        1950 — 2006
-                    </p>
-                </div>
-            </section>
         </aside>
     );
 };

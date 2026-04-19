@@ -79,12 +79,14 @@ export default function AskPage() {
             <TimeControls />
             <main className="ask-main">
                 <div className="ask-page">
-                    <AskSidebar
-                        turns={turns}
-                        onClearConversation={clearConversation}
-                        onExportConversation={handleExport}
-                        canClearConversation={turns.length > 0}
-                    />
+                    {turns.length > 0 || isHydrating ? (
+                        <AskSidebar
+                            turns={turns}
+                            onClearConversation={clearConversation}
+                            onExportConversation={handleExport}
+                            canClearConversation={turns.length > 0}
+                        />
+                    ) : null}
 
                     <div className="ask-column">
                         {turns.length === 0 && !isHydrating ? (
