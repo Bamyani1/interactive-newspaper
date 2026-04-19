@@ -120,7 +120,7 @@ describe("SourceReader — history sentinel", () => {
         expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it("rewinds the sentinel when the component unmounts while the drawer is open", () => {
+    it("neutralizes the sentinel via replaceState on unmount (not back) so Clear Conversation doesn't feel like a back-navigation", () => {
         const onClose = vi.fn();
         const { unmount } = render(
             <SourceReader source={makeSource()} onClose={onClose} />,
@@ -129,11 +129,16 @@ describe("SourceReader — history sentinel", () => {
         // Simulate the real browser putting the sentinel on the current
         // entry after pushState.
         window.history.replaceState({ askReader: true }, "");
+        replaceSpy.mockClear();
         expect(backSpy).not.toHaveBeenCalled();
 
         unmount();
 
-        expect(backSpy).toHaveBeenCalledTimes(1);
+        // Unmount-time cleanup must NOT call history.back() — that was
+        // the root cause of the Clear-Conversation-feels-like-back bug.
+        expect(backSpy).not.toHaveBeenCalled();
+        // Instead it clears the sentinel marker in place.
+        expect(replaceSpy).toHaveBeenCalledWith(null, "");
     });
 
     it("strips askReader via replaceState and calls router.push on 'Open full edition'", async () => {
