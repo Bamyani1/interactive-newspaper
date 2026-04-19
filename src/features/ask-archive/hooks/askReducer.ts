@@ -36,12 +36,21 @@ export interface Turn {
     retryAfterSec?: number;
 }
 
+/**
+ * Reason the transcript is currently empty — drives the in-chat empty-
+ * state UI when the user is past the first visit. `null` means either
+ * pristine first visit (handled at page level) or the user just
+ * submitted and turns haven't arrived yet.
+ */
+export type EmptyReason = "cleared" | "new" | null;
+
 export interface AskState {
     turns: Turn[];
     isHydrating: boolean;
     /** True iff the last /api/ask/session response reported `expired:true`. */
     expiredBanner: boolean;
     sessionGen: number;
+    emptyReason: EmptyReason;
 }
 
 export type AskAction =
@@ -83,6 +92,7 @@ export const INITIAL_STATE: AskState = {
     isHydrating: false,
     expiredBanner: false,
     sessionGen: 0,
+    emptyReason: null,
 };
 
 function emptyTurn(id: string, question: string, createdAt: number): Turn {
@@ -125,6 +135,9 @@ export function askReducer(state: AskState, action: AskAction): AskState {
                 turns: action.turns,
                 isHydrating: false,
                 expiredBanner: action.expired,
+                // Any hydration supersedes a prior cleared/new empty
+                // reason — turns either exist or don't on their own.
+                emptyReason: null,
             };
         case "APPEND_USER": {
             // If the most recent turn is still "streaming" when a new
@@ -140,6 +153,9 @@ export function askReducer(state: AskState, action: AskAction): AskState {
                 // Any new question clears an expired banner — the user
                 // has started a fresh conversation in intent.
                 expiredBanner: false,
+                // And clears any "cleared" / "new" empty-state marker —
+                // we're populating turns again.
+                emptyReason: null,
                 turns: [
                     ...frozen,
                     emptyTurn(
@@ -193,26 +209,27 @@ export function askReducer(state: AskState, action: AskAction): AskState {
                 stage: undefined,
             }));
         case "CLEAR_CONVERSATION":
-            // Stay inside the chat chrome — sessionGen increments so
-            // AskPage keeps the Transcript (with the "conversation
-            // cleared" indicator) instead of swapping back to the
-            // editorial landing hero.
+            // Stay inside the chat chrome; the Transcript renders the
+            // "CONVERSATION CLEARED — ASK A NEW QUESTION BELOW." pill.
             return {
                 ...state,
                 turns: [],
                 expiredBanner: false,
                 sessionGen: state.sessionGen + 1,
+                emptyReason: "cleared",
             };
         case "NEW_CONVERSATION":
-            // Full reset to pristine first-visit semantics: sessionGen
-            // returns to 0 so AskPage re-renders the editorial
-            // AskLanding hero (suggestions, stats, etc.) as if the
-            // user had just landed on /ask.
+            // Also stays inside the chat chrome — but the Transcript
+            // renders the landing suggestions + lede + stats inline,
+            // so "New conversation" feels like a fresh prompt surface
+            // without the page flipping back to the full editorial
+            // landing hero.
             return {
                 ...state,
                 turns: [],
                 expiredBanner: false,
-                sessionGen: 0,
+                sessionGen: state.sessionGen + 1,
+                emptyReason: "new",
             };
         default:
             return state;

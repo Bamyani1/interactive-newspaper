@@ -890,8 +890,17 @@
 }
 
 .ask-transcript:has(.ask-hydrating-indicator),
-.ask-transcript:has(.ask-cleared-indicator) {
+.ask-transcript:has(.ask-cleared-indicator),
+.ask-transcript:has(> .ask-landing) {
   justify-content: center;
+}
+
+/* When AskLanding renders inline inside the transcript ("New
+   conversation" empty state), drop its first-visit padding so it
+   doesn't push off-screen inside the scrollable container. */
+.ask-transcript > .ask-landing {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
 }
 
 .ask-hydrating-indicator,

@@ -16,6 +16,7 @@ export default function AskPage() {
         isHydrating,
         expiredBanner,
         sessionGen,
+        emptyReason,
         submit,
         retry,
         clearConversation,
@@ -130,6 +131,7 @@ export default function AskPage() {
                                 turns={turns}
                                 isHydrating={isHydrating}
                                 expiredBanner={expiredBanner}
+                                emptyReason={emptyReason}
                                 onFollowUp={handleFollowUp}
                                 onRetry={retry}
                             />
