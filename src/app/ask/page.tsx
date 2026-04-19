@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useState } from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
 import { useAskArchive } from "@/features/ask-archive/hooks/useAskArchive";
@@ -10,6 +10,23 @@ import { Composer } from "@/features/ask-archive/components/Composer";
 import { AskSidebar } from "@/features/ask-archive/components/AskSidebar";
 import { AskMobileActions } from "@/features/ask-archive/components/AskMobileActions";
 import { AskLanding } from "@/features/ask-archive/components/AskLanding";
+
+// useDeepLinkSubmit reads `useSearchParams()`, which forces the calling
+// subtree to bail out of static prerendering. Wrapping it here in its own
+// Suspense boundary keeps the rest of /ask prerenderable and stops Next.js
+// from failing the build with "missing suspense with CSR bailout".
+function DeepLinkBridge({
+    isHydrating,
+    turnCount,
+    submit,
+}: {
+    isHydrating: boolean;
+    turnCount: number;
+    submit: (question: string) => void;
+}) {
+    useDeepLinkSubmit({ isHydrating, turnCount, submit });
+    return null;
+}
 
 export default function AskPage() {
     const {
@@ -26,13 +43,6 @@ export default function AskPage() {
         newConversation,
         switchThread,
     } = useAskArchive();
-
-    // `/ask?q=<question>` — auto-submit once when the deep-link lands.
-    useDeepLinkSubmit({
-        isHydrating,
-        turnCount: turns.length,
-        submit,
-    });
 
     const [focusSignal, setFocusSignal] = useState(0);
 
@@ -136,6 +146,13 @@ export default function AskPage() {
 
     return (
         <PageShell variant="default" hasHeader>
+            <Suspense fallback={null}>
+                <DeepLinkBridge
+                    isHydrating={isHydrating}
+                    turnCount={turns.length}
+                    submit={submit}
+                />
+            </Suspense>
             <TimeControls />
             <main className="ask-main">
                 <div className="ask-page">
