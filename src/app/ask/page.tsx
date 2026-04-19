@@ -51,15 +51,45 @@ export default function AskPage() {
         setFocusSignal((n) => n + 1);
     }, [sessionGen]);
 
+    // First client paint happens before `useAskArchive` has had a
+    // chance to dispatch HYDRATING. Without this `mounted` gate, the
+    // editorial hero renders for one frame (isHydrating=false,
+    // turns=0, sessionGen=0 → isFirstVisit=true), then the hook's
+    // mount effect dispatches HYDRATING and the page swaps to the
+    // Transcript — a visible flash on every navigation to /ask.
+    // Gating on `mounted` means SSR + first client render both show
+    // the boot skeleton (same DOM, no hydration mismatch); the real
+    // render decision happens on the next tick with correct state.
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical hydration gate: flip once on mount so SSR and first client render output the same DOM (the boot skeleton), then swap to the real branch on the next tick. Not an external-system sync.
+        setMounted(true);
+    }, []);
+
     // Editorial AskLanding is a first-visit treatment only. Once the
     // user has either asked something (turns>0) or cleared a
     // conversation (sessionGen>0), we stay inside the chat chrome —
     // Clear should feel like "wipe the transcript, stay here," not
-    // "kick me back to the landing."
+    // "kick me back to the landing." `expiredBanner` short-circuits
+    // the hero too: on return with an expired session, Transcript
+    // owns the notice UI, and flipping to the editorial hero would
+    // swallow that notice.
+    // Boot window: everything before the first HYDRATE lands. Covers
+    // (a) the pre-mount frame (SSR + first client render, same DOM,
+    // no hydration mismatch) and (b) the initial hydration fetch for
+    // returning users. Showing the skeleton through both gaps means
+    // the user never sees a Transcript-with-pill flash on a cold
+    // navigation — they go from skeleton straight to the final UI.
+    const isBooting = !mounted || (isHydrating && turns.length === 0);
+
     const isFirstVisit =
-        turns.length === 0 && !isHydrating && sessionGen === 0;
+        !isBooting &&
+        turns.length === 0 &&
+        !isHydrating &&
+        sessionGen === 0 &&
+        !expiredBanner;
     const showSidebar =
-        turns.length > 0 || isHydrating || sessionGen > 0;
+        !isBooting && (turns.length > 0 || sessionGen > 0);
 
     const handleFollowUp = useCallback(
         (question: string) => {
@@ -124,7 +154,16 @@ export default function AskPage() {
                     ) : null}
 
                     <div className="ask-column">
-                        {isFirstVisit ? (
+                        {isBooting ? (
+                            <div
+                                className="ask-loading-skeleton"
+                                aria-hidden="true"
+                            >
+                                <div className="ask-loading-bar ask-loading-bar--long" />
+                                <div className="ask-loading-bar ask-loading-bar--medium" />
+                                <div className="ask-loading-bar ask-loading-bar--short" />
+                            </div>
+                        ) : isFirstVisit ? (
                             <AskLanding onPickQuestion={submit} />
                         ) : (
                             <Transcript
