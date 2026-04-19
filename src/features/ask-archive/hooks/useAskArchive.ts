@@ -7,11 +7,97 @@ import {
     INITIAL_STATE,
     type Turn,
     type EmptyReason,
+    type ThreadSummary,
 } from "./askReducer";
 
 // Session id persists in localStorage so a reload rehydrates the same
 // conversation from /api/ask/session.
 const SESSION_STORAGE_KEY = "owu-ask-session-id";
+
+// Multi-thread archive. Each entry is a full serialized thread keyed
+// by its sessionId; the user browses threads from the sidebar, and
+// `switchThread` round-trips through this archive. localStorage is
+// intentional — we want threads to outlive the 30-min server TTL.
+const THREADS_STORAGE_KEY = "owu-ask-threads";
+
+interface StoredThread {
+    sessionId: string;
+    firstQuestion: string;
+    turns: Turn[];
+    createdAt: number;
+    lastUpdatedAt: number;
+}
+
+function readArchive(): StoredThread[] {
+    if (typeof window === "undefined") return [];
+    try {
+        const raw = window.localStorage.getItem(THREADS_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as StoredThread[];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeArchive(threads: StoredThread[]): void {
+    if (typeof window === "undefined") return;
+    try {
+        window.localStorage.setItem(
+            THREADS_STORAGE_KEY,
+            JSON.stringify(threads),
+        );
+    } catch {
+        // Quota exceeded or storage disabled — silently skip. The
+        // active thread's turns still live in the reducer, so the
+        // user doesn't lose their live conversation.
+    }
+}
+
+function upsertArchive(sessionId: string, turns: Turn[]): StoredThread[] {
+    // Empty threads don't earn a sidebar slot — keeps the list from
+    // filling up with abandoned starts.
+    if (turns.length === 0) return readArchive();
+    const archive = readArchive();
+    const now = Date.now();
+    const firstQuestion = turns[0].question;
+    const idx = archive.findIndex((t) => t.sessionId === sessionId);
+    const entry: StoredThread = {
+        sessionId,
+        firstQuestion,
+        turns,
+        createdAt: idx >= 0 ? archive[idx].createdAt : now,
+        lastUpdatedAt: now,
+    };
+    const next = [...archive];
+    if (idx >= 0) next[idx] = entry;
+    else next.push(entry);
+    writeArchive(next);
+    return next;
+}
+
+function removeFromArchive(sessionId: string): StoredThread[] {
+    const archive = readArchive();
+    const next = archive.filter((t) => t.sessionId !== sessionId);
+    writeArchive(next);
+    return next;
+}
+
+function toSummary(entry: StoredThread): ThreadSummary {
+    return {
+        id: entry.sessionId,
+        firstQuestion: entry.firstQuestion,
+        turnCount: entry.turns.length,
+        lastUpdatedAt: entry.lastUpdatedAt,
+    };
+}
+
+function summariesFrom(archive: StoredThread[]): ThreadSummary[] {
+    return archive
+        .map(toSummary)
+        // Most-recent first so the sidebar reads like a chat history.
+        .sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt);
+}
 
 // ── Shape of SSE events the /api/ask?stream=1 endpoint emits. ──
 export type AskStage =
@@ -166,10 +252,13 @@ export interface UseAskArchiveReturn {
     expiredBanner: boolean;
     sessionGen: number;
     emptyReason: EmptyReason;
+    threads: ThreadSummary[];
+    activeThreadId: string | null;
     submit: (question: string) => void;
     retry: (turnId: string) => void;
     clearConversation: () => void;
     newConversation: () => void;
+    switchThread: (threadId: string) => void;
 }
 
 export function useAskArchive(): UseAskArchiveReturn {
@@ -184,6 +273,14 @@ export function useAskArchive(): UseAskArchiveReturn {
         sessionIdRef.current = sessionId;
         if (!sessionId) return;
 
+        // Read archived threads from localStorage — survives server
+        // TTL and gives the sidebar something to show immediately.
+        const archive = readArchive();
+        const archivedActive = archive.find(
+            (t) => t.sessionId === sessionId,
+        );
+        const summaries = summariesFrom(archive);
+
         let cancelled = false;
         const run = async () => {
             dispatch({ type: "HYDRATING" });
@@ -192,10 +289,15 @@ export function useAskArchive(): UseAskArchiveReturn {
                     `/api/ask/session?sessionId=${encodeURIComponent(sessionId)}`,
                 );
                 if (!res.ok) {
+                    // Fall back to local archive — the server may have
+                    // dropped the session but we still have turns in
+                    // localStorage.
                     dispatch({
                         type: "HYDRATE",
-                        turns: [],
+                        turns: archivedActive?.turns ?? [],
                         expired: false,
+                        threads: summaries,
+                        activeThreadId: sessionId,
                     });
                     return;
                 }
@@ -210,7 +312,7 @@ export function useAskArchive(): UseAskArchiveReturn {
                     expired?: boolean;
                 };
                 if (cancelled) return;
-                const turns: Turn[] = (json.turns ?? []).map((t, i) => ({
+                const serverTurns: Turn[] = (json.turns ?? []).map((t, i) => ({
                     id: `hydrated-${t.timestamp}-${i}`,
                     question: t.question,
                     answer: t.answer,
@@ -223,17 +325,28 @@ export function useAskArchive(): UseAskArchiveReturn {
                     mode: "text" as const,
                     createdAt: t.timestamp,
                 }));
+                // Prefer server turns when present (most recent); fall
+                // through to the local archive if server reports empty
+                // but we have a stored thread for this sessionId.
+                const turns =
+                    serverTurns.length > 0
+                        ? serverTurns
+                        : archivedActive?.turns ?? [];
                 dispatch({
                     type: "HYDRATE",
                     turns,
                     expired: Boolean(json.expired),
+                    threads: summaries,
+                    activeThreadId: sessionId,
                 });
             } catch {
                 if (!cancelled) {
                     dispatch({
                         type: "HYDRATE",
-                        turns: [],
+                        turns: archivedActive?.turns ?? [],
                         expired: false,
+                        threads: summaries,
+                        activeThreadId: sessionId,
                     });
                 }
             }
@@ -439,48 +552,136 @@ export function useAskArchive(): UseAskArchiveReturn {
         [state.turns, submit],
     );
 
-    // Shared side-effects for both Clear and New: abort any in-flight
-    // stream, DELETE the server session, wipe the localStorage id,
-    // and mint a fresh one. The only difference between the two
-    // actions is which reducer action they dispatch (Clear keeps the
-    // user in the chat chrome; New resets to the landing hero).
-    const resetSessionSideEffects = useCallback(() => {
-        abortRef.current?.abort();
-        const prevSessionId = sessionIdRef.current;
-        // Fire-and-forget server cleanup so the stored turns are
-        // wiped immediately instead of lingering until the 30-min
-        // TTL. `keepalive` keeps the request alive if the user
-        // happens to navigate right after clicking; failures are
-        // swallowed because the TTL is the ultimate safety net.
-        if (prevSessionId && typeof window !== "undefined") {
-            void fetch(
-                `/api/ask/session?sessionId=${encodeURIComponent(prevSessionId)}`,
-                { method: "DELETE", keepalive: true },
-            ).catch(() => {
-                // best-effort — nothing to do if it fails
-            });
-        }
+    // Mint a fresh sessionId for the next thread. Updates the ref
+    // and the localStorage active-session key; never touches the
+    // server. Shared by New/Clear/switchThread.
+    const mintFreshSession = useCallback((): string => {
         if (typeof window !== "undefined") {
             try {
                 window.localStorage.removeItem(SESSION_STORAGE_KEY);
             } catch {
-                // localStorage disabled; nothing to remove.
+                // localStorage disabled — proceed; the next call to
+                // readOrCreateSessionId falls back to an in-memory id.
             }
         }
         sessionIdRef.current = null;
-        // Mint a fresh id eagerly so the next hydrate/submit uses it.
-        sessionIdRef.current = readOrCreateSessionId();
+        const fresh = readOrCreateSessionId();
+        sessionIdRef.current = fresh;
+        return fresh;
+    }, []);
+
+    // DELETE the server-side session. Only called from Clear — New
+    // and switchThread leave the server alone so the archived thread
+    // can still reference server-side conversation context on the
+    // off chance the user switches back before the 30-min TTL.
+    const deleteServerSession = useCallback((sessionId: string) => {
+        if (!sessionId || typeof window === "undefined") return;
+        void fetch(
+            `/api/ask/session?sessionId=${encodeURIComponent(sessionId)}`,
+            { method: "DELETE", keepalive: true },
+        ).catch(() => {
+            // Best-effort; the TTL is the safety net.
+        });
     }, []);
 
     const clearConversation = useCallback(() => {
-        resetSessionSideEffects();
+        abortRef.current?.abort();
+        const prevSessionId = sessionIdRef.current;
+        // Clear is destructive: wipe the server session AND remove
+        // the thread from the sidebar archive. The user is asking to
+        // throw this conversation away, not park it.
+        if (prevSessionId) {
+            deleteServerSession(prevSessionId);
+            removeFromArchive(prevSessionId);
+        }
+        const fresh = mintFreshSession();
         dispatch({ type: "CLEAR_CONVERSATION" });
-    }, [dispatch, resetSessionSideEffects]);
+        dispatch({
+            type: "SET_THREADS",
+            threads: summariesFrom(readArchive()),
+            activeThreadId: fresh,
+        });
+    }, [dispatch, mintFreshSession, deleteServerSession]);
 
     const newConversation = useCallback(() => {
-        resetSessionSideEffects();
+        abortRef.current?.abort();
+        const prevSessionId = sessionIdRef.current;
+        // New archives the current thread to the sidebar (so the user
+        // can come back to it) and mints a fresh session for the next
+        // conversation. No server DELETE — the archived thread keeps
+        // its server-side context for the remainder of the TTL.
+        if (prevSessionId) {
+            upsertArchive(prevSessionId, state.turns);
+        }
+        const fresh = mintFreshSession();
         dispatch({ type: "NEW_CONVERSATION" });
-    }, [dispatch, resetSessionSideEffects]);
+        dispatch({
+            type: "SET_THREADS",
+            threads: summariesFrom(readArchive()),
+            activeThreadId: fresh,
+        });
+    }, [dispatch, mintFreshSession, state.turns]);
+
+    const switchThread = useCallback(
+        (threadId: string) => {
+            if (threadId === sessionIdRef.current) return; // no-op
+            abortRef.current?.abort();
+            // Snapshot the current thread before leaving so we don't
+            // lose any turns that weren't archived yet.
+            const prevSessionId = sessionIdRef.current;
+            if (prevSessionId) {
+                upsertArchive(prevSessionId, state.turns);
+            }
+            const archive = readArchive();
+            const target = archive.find((t) => t.sessionId === threadId);
+            if (!target) return; // gone — stale sidebar click
+            sessionIdRef.current = threadId;
+            if (typeof window !== "undefined") {
+                try {
+                    window.localStorage.setItem(
+                        SESSION_STORAGE_KEY,
+                        threadId,
+                    );
+                } catch {
+                    // localStorage disabled — the ref still updated.
+                }
+            }
+            dispatch({
+                type: "SWITCH_THREAD",
+                activeThreadId: threadId,
+                turns: target.turns,
+            });
+            dispatch({
+                type: "SET_THREADS",
+                threads: summariesFrom(archive),
+                activeThreadId: threadId,
+            });
+        },
+        [dispatch, state.turns],
+    );
+
+    // Persist the active thread to localStorage at each stable
+    // milestone — a new turn appended or the latest turn settled to
+    // done/error. We skip while streaming so per-token deltas don't
+    // thrash the archive. Mirrors the just-written archive back into
+    // state so the sidebar reflects "N turns" live.
+    const lastTurnStatus =
+        state.turns[state.turns.length - 1]?.status;
+    const turnCount = state.turns.length;
+    useEffect(() => {
+        const activeId = sessionIdRef.current;
+        if (!activeId) return;
+        if (turnCount === 0) return;
+        if (lastTurnStatus === "streaming") return;
+        const archive = upsertArchive(activeId, state.turns);
+        // Mirror the just-written archive back into the reducer so the
+        // sidebar summary stays live with the latest turn count.
+        dispatch({
+            type: "SET_THREADS",
+            threads: summariesFrom(archive),
+            activeThreadId: activeId,
+        });
+    }, [turnCount, lastTurnStatus, state.turns]);
 
     return {
         turns: state.turns,
@@ -488,9 +689,12 @@ export function useAskArchive(): UseAskArchiveReturn {
         expiredBanner: state.expiredBanner,
         sessionGen: state.sessionGen,
         emptyReason: state.emptyReason,
+        threads: state.threads,
+        activeThreadId: state.activeThreadId,
         submit,
         retry,
         clearConversation,
         newConversation,
+        switchThread,
     };
 }

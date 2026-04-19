@@ -18,10 +18,13 @@ export default function AskPage() {
         expiredBanner,
         sessionGen,
         emptyReason,
+        threads,
+        activeThreadId,
         submit,
         retry,
         clearConversation,
         newConversation,
+        switchThread,
     } = useAskArchive();
 
     // `/ask?q=<question>` — auto-submit once when the deep-link lands.
@@ -73,14 +76,20 @@ export default function AskPage() {
     }, []);
 
     const isBooting = !mounted || (isHydrating && turns.length === 0);
+    // True first visit: user has no archived threads, no active turns,
+    // and hasn't cleared/new'd in this session. Everything else keeps
+    // them inside the chat chrome (sidebar + Transcript), even if the
+    // current thread is empty.
     const isFirstVisit =
         !isBooting &&
         turns.length === 0 &&
         !isHydrating &&
         sessionGen === 0 &&
-        !expiredBanner;
+        !expiredBanner &&
+        threads.length === 0;
     const showSidebar =
-        !isBooting && (turns.length > 0 || sessionGen > 0);
+        !isBooting &&
+        (turns.length > 0 || sessionGen > 0 || threads.length > 0);
 
     const handleFollowUp = useCallback(
         (question: string) => {
@@ -132,10 +141,12 @@ export default function AskPage() {
                 <div className="ask-page">
                     {showSidebar ? (
                         <AskSidebar
-                            turns={turns}
+                            threads={threads}
+                            activeThreadId={activeThreadId}
                             onNewConversation={newConversation}
                             onClearConversation={clearConversation}
                             onExportConversation={handleExport}
+                            onSwitchThread={switchThread}
                             canNewConversation={
                                 turns.length > 0 || sessionGen > 0
                             }

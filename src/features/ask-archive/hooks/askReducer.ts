@@ -44,6 +44,23 @@ export interface Turn {
  */
 export type EmptyReason = "cleared" | "new" | null;
 
+/**
+ * A pointer-level summary of an archived thread, used to render the
+ * sidebar thread list without hauling every turn's body into the
+ * reducer. The full turn history lives in localStorage keyed by
+ * `id` — the hook round-trips to the archive on switch.
+ */
+export interface ThreadSummary {
+    /** Matches the thread's sessionId (the two are the same identifier). */
+    id: string;
+    /** First user question — used as the thread title in the sidebar. */
+    firstQuestion: string;
+    /** Number of Q/A pairs in the thread. */
+    turnCount: number;
+    /** Last time any turn in the thread was mutated (ms since epoch). */
+    lastUpdatedAt: number;
+}
+
 export interface AskState {
     turns: Turn[];
     isHydrating: boolean;
@@ -51,11 +68,31 @@ export interface AskState {
     expiredBanner: boolean;
     sessionGen: number;
     emptyReason: EmptyReason;
+    /** All archived threads — includes the active one if it has turns. */
+    threads: ThreadSummary[];
+    /** The thread currently in `turns`. null before the first BOOT tick. */
+    activeThreadId: string | null;
 }
 
 export type AskAction =
     | { type: "HYDRATING" }
-    | { type: "HYDRATE"; turns: Turn[]; expired: boolean }
+    | {
+          type: "HYDRATE";
+          turns: Turn[];
+          expired: boolean;
+          threads?: ThreadSummary[];
+          activeThreadId?: string | null;
+      }
+    | {
+          type: "SET_THREADS";
+          threads: ThreadSummary[];
+          activeThreadId: string | null;
+      }
+    | {
+          type: "SWITCH_THREAD";
+          activeThreadId: string;
+          turns: Turn[];
+      }
     | { type: "APPEND_USER"; id: string; question: string; createdAt?: number }
     | {
           type: "TURN_META";
@@ -93,6 +130,8 @@ export const INITIAL_STATE: AskState = {
     expiredBanner: false,
     sessionGen: 0,
     emptyReason: null,
+    threads: [],
+    activeThreadId: null,
 };
 
 function emptyTurn(id: string, question: string, createdAt: number): Turn {
@@ -138,6 +177,34 @@ export function askReducer(state: AskState, action: AskAction): AskState {
                 // Any hydration supersedes a prior cleared/new empty
                 // reason — turns either exist or don't on their own.
                 emptyReason: null,
+                threads:
+                    action.threads !== undefined
+                        ? action.threads
+                        : state.threads,
+                activeThreadId:
+                    action.activeThreadId !== undefined
+                        ? action.activeThreadId
+                        : state.activeThreadId,
+            };
+        case "SET_THREADS":
+            return {
+                ...state,
+                threads: action.threads,
+                activeThreadId: action.activeThreadId,
+            };
+        case "SWITCH_THREAD":
+            // Replace the working transcript with the target thread's
+            // turns. Bump sessionGen so the composer refocuses (same
+            // mechanic as Clear/New). emptyReason stays null because
+            // the thread already has turns.
+            return {
+                ...state,
+                turns: action.turns,
+                activeThreadId: action.activeThreadId,
+                isHydrating: false,
+                expiredBanner: false,
+                emptyReason: null,
+                sessionGen: state.sessionGen + 1,
             };
         case "APPEND_USER": {
             // If the most recent turn is still "streaming" when a new

@@ -76,16 +76,13 @@ export const Transcript: React.FC<TranscriptProps> = ({
                 </p>
             ) : null}
 
-            {/* New-conversation empty state: render the landing
-                suggestions + lede + stats inline so the user stays
-                inside the chat chrome (sidebar + composer) instead of
-                the whole page flipping back to the editorial hero. */}
-            {isEmpty && !isHydrating && !expiredBanner && emptyReason === "new" ? (
-                <AskLanding onPickQuestion={onFollowUp} />
-            ) : null}
-
-            {/* Cleared empty state: a quiet one-liner pill. */}
-            {isEmpty && !isHydrating && !expiredBanner && emptyReason !== "new" ? (
+            {/* Cleared empty state: a quiet one-liner pill. Only
+                renders for the explicit "cleared" flag — `null` and
+                "new" fall through to the inline landing so returning
+                users (with archived threads but a fresh current
+                thread) don't see a misleading "Conversation cleared"
+                pill. */}
+            {isEmpty && !isHydrating && !expiredBanner && emptyReason === "cleared" ? (
                 <p
                     className="ask-cleared-indicator"
                     role="status"
@@ -93,6 +90,15 @@ export const Transcript: React.FC<TranscriptProps> = ({
                 >
                     Conversation cleared — ask a new question below.
                 </p>
+            ) : null}
+
+            {/* Inline landing surface for every other empty state:
+                post-New, and initial loads where the user has prior
+                archived threads but no current turns. Lets users stay
+                inside the chat chrome instead of flipping back to the
+                full editorial hero. */}
+            {isEmpty && !isHydrating && !expiredBanner && emptyReason !== "cleared" ? (
+                <AskLanding onPickQuestion={onFollowUp} />
             ) : null}
 
             {turns.map((turn, i) => (

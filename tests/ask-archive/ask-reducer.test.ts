@@ -251,6 +251,89 @@ describe("askReducer", () => {
         expect(next.emptyReason).toBeNull();
     });
 
+    it("SET_THREADS replaces threads summary + activeThreadId", () => {
+        const next = askReducer(INITIAL_STATE, {
+            type: "SET_THREADS",
+            threads: [
+                {
+                    id: "t-a",
+                    firstQuestion: "old q",
+                    turnCount: 3,
+                    lastUpdatedAt: 1,
+                },
+            ],
+            activeThreadId: "t-a",
+        });
+        expect(next.threads).toHaveLength(1);
+        expect(next.threads[0].id).toBe("t-a");
+        expect(next.activeThreadId).toBe("t-a");
+    });
+
+    it("SWITCH_THREAD replaces turns + activeThreadId and bumps sessionGen", () => {
+        const archived = [makeTurn({ id: "arch-1", question: "old one" })];
+        const next = askReducer(
+            {
+                ...INITIAL_STATE,
+                turns: [makeTurn({ id: "cur-1" })],
+                sessionGen: 2,
+                emptyReason: null,
+            },
+            {
+                type: "SWITCH_THREAD",
+                activeThreadId: "arch-session",
+                turns: archived,
+            },
+        );
+        expect(next.turns).toEqual(archived);
+        expect(next.activeThreadId).toBe("arch-session");
+        expect(next.sessionGen).toBe(3); // bumped
+        expect(next.isHydrating).toBe(false);
+        expect(next.expiredBanner).toBe(false);
+        expect(next.emptyReason).toBeNull();
+    });
+
+    it("HYDRATE merges threads + activeThreadId when provided", () => {
+        const next = askReducer(INITIAL_STATE, {
+            type: "HYDRATE",
+            turns: [],
+            expired: false,
+            threads: [
+                {
+                    id: "t-arch",
+                    firstQuestion: "archived q",
+                    turnCount: 2,
+                    lastUpdatedAt: 10,
+                },
+            ],
+            activeThreadId: "t-arch",
+        });
+        expect(next.threads).toHaveLength(1);
+        expect(next.threads[0].id).toBe("t-arch");
+        expect(next.activeThreadId).toBe("t-arch");
+    });
+
+    it("HYDRATE without threads/activeThreadId preserves prior values", () => {
+        const prior: AskState = {
+            ...INITIAL_STATE,
+            threads: [
+                {
+                    id: "keep",
+                    firstQuestion: "keep me",
+                    turnCount: 1,
+                    lastUpdatedAt: 0,
+                },
+            ],
+            activeThreadId: "keep",
+        };
+        const next = askReducer(prior, {
+            type: "HYDRATE",
+            turns: [],
+            expired: false,
+        });
+        expect(next.threads).toEqual(prior.threads);
+        expect(next.activeThreadId).toBe("keep");
+    });
+
     it("unknown turn ids are no-ops (state unchanged)", () => {
         const state: AskState = {
             ...INITIAL_STATE,
