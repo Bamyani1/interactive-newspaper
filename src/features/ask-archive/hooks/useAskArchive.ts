@@ -163,6 +163,7 @@ export interface UseAskArchiveReturn {
     submit: (question: string) => void;
     retry: (turnId: string) => void;
     clearConversation: () => void;
+    newConversation: () => void;
 }
 
 export function useAskArchive(): UseAskArchiveReturn {
@@ -432,7 +433,12 @@ export function useAskArchive(): UseAskArchiveReturn {
         [state.turns, submit],
     );
 
-    const clearConversation = useCallback(() => {
+    // Shared side-effects for both Clear and New: abort any in-flight
+    // stream, DELETE the server session, wipe the localStorage id,
+    // and mint a fresh one. The only difference between the two
+    // actions is which reducer action they dispatch (Clear keeps the
+    // user in the chat chrome; New resets to the landing hero).
+    const resetSessionSideEffects = useCallback(() => {
         abortRef.current?.abort();
         const prevSessionId = sessionIdRef.current;
         // Fire-and-forget server cleanup so the stored turns are
@@ -458,8 +464,17 @@ export function useAskArchive(): UseAskArchiveReturn {
         sessionIdRef.current = null;
         // Mint a fresh id eagerly so the next hydrate/submit uses it.
         sessionIdRef.current = readOrCreateSessionId();
+    }, []);
+
+    const clearConversation = useCallback(() => {
+        resetSessionSideEffects();
         dispatch({ type: "CLEAR_CONVERSATION" });
-    }, [dispatch]);
+    }, [dispatch, resetSessionSideEffects]);
+
+    const newConversation = useCallback(() => {
+        resetSessionSideEffects();
+        dispatch({ type: "NEW_CONVERSATION" });
+    }, [dispatch, resetSessionSideEffects]);
 
     return {
         turns: state.turns,
@@ -469,5 +484,6 @@ export function useAskArchive(): UseAskArchiveReturn {
         submit,
         retry,
         clearConversation,
+        newConversation,
     };
 }
