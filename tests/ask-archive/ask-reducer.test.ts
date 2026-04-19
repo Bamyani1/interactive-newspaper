@@ -217,6 +217,20 @@ describe("askReducer", () => {
         expect(next.sessionGen).toBe(INITIAL_STATE.sessionGen + 1);
     });
 
+    it("NEW_CONVERSATION empties turns and resets sessionGen to 0", () => {
+        const state: AskState = {
+            ...INITIAL_STATE,
+            turns: [makeTurn()],
+            expiredBanner: true,
+            sessionGen: 3,
+        };
+        const next = askReducer(state, { type: "NEW_CONVERSATION" });
+        expect(next.turns).toEqual([]);
+        expect(next.expiredBanner).toBe(false);
+        // sessionGen resets so AskPage re-renders the editorial landing.
+        expect(next.sessionGen).toBe(0);
+    });
+
     it("unknown turn ids are no-ops (state unchanged)", () => {
         const state: AskState = {
             ...INITIAL_STATE,

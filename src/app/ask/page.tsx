@@ -19,6 +19,7 @@ export default function AskPage() {
         submit,
         retry,
         clearConversation,
+        newConversation,
     } = useAskArchive();
 
     // `/ask?q=<question>` — auto-submit once when the deep-link lands.
@@ -110,9 +111,14 @@ export default function AskPage() {
                     {showSidebar ? (
                         <AskSidebar
                             turns={turns}
+                            onNewConversation={newConversation}
                             onClearConversation={clearConversation}
                             onExportConversation={handleExport}
+                            canNewConversation={
+                                turns.length > 0 || sessionGen > 0
+                            }
                             canClearConversation={turns.length > 0}
+                            canExportConversation={turns.length > 0}
                         />
                     ) : null}
 

@@ -75,7 +75,8 @@ export type AskAction =
           message: string;
           retryAfterSec?: number;
       }
-    | { type: "CLEAR_CONVERSATION" };
+    | { type: "CLEAR_CONVERSATION" }
+    | { type: "NEW_CONVERSATION" };
 
 export const INITIAL_STATE: AskState = {
     turns: [],
@@ -192,11 +193,26 @@ export function askReducer(state: AskState, action: AskAction): AskState {
                 stage: undefined,
             }));
         case "CLEAR_CONVERSATION":
+            // Stay inside the chat chrome — sessionGen increments so
+            // AskPage keeps the Transcript (with the "conversation
+            // cleared" indicator) instead of swapping back to the
+            // editorial landing hero.
             return {
                 ...state,
                 turns: [],
                 expiredBanner: false,
                 sessionGen: state.sessionGen + 1,
+            };
+        case "NEW_CONVERSATION":
+            // Full reset to pristine first-visit semantics: sessionGen
+            // returns to 0 so AskPage re-renders the editorial
+            // AskLanding hero (suggestions, stats, etc.) as if the
+            // user had just landed on /ask.
+            return {
+                ...state,
+                turns: [],
+                expiredBanner: false,
+                sessionGen: 0,
             };
         default:
             return state;
