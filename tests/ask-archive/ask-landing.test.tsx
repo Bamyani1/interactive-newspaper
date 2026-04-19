@@ -21,8 +21,8 @@ describe("AskLanding", () => {
         vi.restoreAllMocks();
     });
 
-    it("renders the hero, lede, and stats footer", () => {
-        render(<AskLanding onPickQuestion={vi.fn()} expiredBanner={false} />);
+    it("renders the hero, lede, and combined footer strip", () => {
+        render(<AskLanding onPickQuestion={vi.fn()} />);
 
         // H1 with accent on "archive"
         const heading = screen.getByRole("heading", { level: 1 });
@@ -36,17 +36,20 @@ describe("AskLanding", () => {
             screen.getByText(/cites the stories it comes from/i),
         ).toBeInTheDocument();
 
-        // Single source of truth for scope — the mono stats strip.
+        // Single combined footer: verification disclaimer + archive scope.
         expect(
-            screen.getByText(/1950\s*[–-]\s*2006\s*·\s*293 editions\s*·\s*9,582 articles/),
+            screen.getByText(
+                /Answers cite primary sources\. Always verify\. · 1950\s*[–-]\s*2006 · 293 editions · 9,582 articles/,
+            ),
         ).toBeInTheDocument();
     });
 
-    it("does NOT render the demo answer card or the old dateline", () => {
-        render(<AskLanding onPickQuestion={vi.fn()} expiredBanner={false} />);
+    it("does NOT render the demo card, dateline, or expired notice", () => {
+        render(<AskLanding onPickQuestion={vi.fn()} />);
 
-        // Regression guard — v1 shipped a demo card + a meta dateline;
-        // v2 removed both to reduce scope-duplication and visual noise.
+        // Regression guards — earlier iterations shipped these; v2.1 removed
+        // the demo card + dateline + expired notice because they duplicated
+        // scope, shouted over the H1, or cluttered the hero.
         expect(
             screen.queryByLabelText(/example of how an answer looks/i),
         ).not.toBeInTheDocument();
@@ -54,11 +57,14 @@ describe("AskLanding", () => {
         expect(
             screen.queryByText(/Research Desk · Vol\. LVI/),
         ).not.toBeInTheDocument();
+        expect(
+            screen.queryByText(/your last conversation expired/i),
+        ).not.toBeInTheDocument();
     });
 
     it("renders three daily suggestions and fires onPickQuestion on click", () => {
         const onPick = vi.fn();
-        render(<AskLanding onPickQuestion={onPick} expiredBanner={false} />);
+        render(<AskLanding onPickQuestion={onPick} />);
 
         const list = screen.getByLabelText(
             /suggested questions, refreshed daily/i,
@@ -83,26 +89,10 @@ describe("AskLanding", () => {
         );
     });
 
-    it("shows the expired-conversation notice only when expiredBanner=true", () => {
-        const { rerender } = render(
-            <AskLanding onPickQuestion={vi.fn()} expiredBanner={false} />,
-        );
-        expect(
-            screen.queryByText(/your last conversation expired/i),
-        ).not.toBeInTheDocument();
-
-        rerender(
-            <AskLanding onPickQuestion={vi.fn()} expiredBanner={true} />,
-        );
-        expect(
-            screen.getByText(/your last conversation expired/i),
-        ).toBeInTheDocument();
-    });
-
     it("plays the entrance animation on the first visit and skips it on subsequent visits", () => {
         // First visit — localStorage is clear in beforeEach.
         const { unmount } = render(
-            <AskLanding onPickQuestion={vi.fn()} expiredBanner={false} />,
+            <AskLanding onPickQuestion={vi.fn()} />,
         );
         const landing1 = document.querySelector(".ask-landing");
         expect(landing1).toHaveAttribute("data-animate", "true");
@@ -110,7 +100,7 @@ describe("AskLanding", () => {
         unmount();
 
         // Second visit — the key is now set; animation should NOT fire.
-        render(<AskLanding onPickQuestion={vi.fn()} expiredBanner={false} />);
+        render(<AskLanding onPickQuestion={vi.fn()} />);
         const landing2 = document.querySelector(".ask-landing");
         expect(landing2).not.toHaveAttribute("data-animate");
     });

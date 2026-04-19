@@ -5,12 +5,6 @@ import React, { useEffect, useMemo, useState } from "react";
 interface AskLandingProps {
     /** Fire the given question against the live /api/ask flow. */
     onPickQuestion: (question: string) => void;
-    /**
-     * True when the hook reports `/api/ask/session` returned `expired:true`.
-     * Rendered as a quiet inline notice between the H1 and the lede — not
-     * a loud banner.
-     */
-    expiredBanner: boolean;
 }
 
 // Rotated by day-of-year so the landing feels maintained rather than
@@ -31,8 +25,8 @@ const QUESTION_POOL: readonly string[] = [
     "What was the student dress code in the 1950s?",
 ];
 
-// Excluded from the daily suggestions so we don't repeat it if we ever
-// bring the demo back — and to keep the pool varied.
+// Excluded from the daily suggestions so the pool doesn't collide with
+// any pinned example copy.
 const EXCLUDED_FROM_ROTATION = "Tell me about Homecoming in the 1970s.";
 
 const VISITED_KEY = "owu-has-visited-ask";
@@ -47,10 +41,7 @@ function pickSuggestions(date: Date, exclude: string): string[] {
     return [0, 1, 2].map((i) => pool[(dayIndex + i) % pool.length]);
 }
 
-export const AskLanding: React.FC<AskLandingProps> = ({
-    onPickQuestion,
-    expiredBanner,
-}) => {
+export const AskLanding: React.FC<AskLandingProps> = ({ onPickQuestion }) => {
     // Entrance animation runs once per browser. Returning visitors get
     // instant paint. Reading localStorage in a state initializer would
     // cause SSR/CSR hydration mismatches, so the flag flips post-mount.
@@ -82,12 +73,6 @@ export const AskLanding: React.FC<AskLandingProps> = ({
             <h1 className="ask-landing-title">
                 Ask the <em>archive</em>.
             </h1>
-
-            {expiredBanner ? (
-                <p className="ask-landing-notice" role="status">
-                    Your last conversation expired. Starting fresh.
-                </p>
-            ) : null}
 
             <p className="ask-landing-lede">
                 A research desk for <em>The Transcript</em>, Ohio Wesleyan&rsquo;s
@@ -124,7 +109,8 @@ export const AskLanding: React.FC<AskLandingProps> = ({
             </section>
 
             <p className="ask-landing-stats">
-                1950 – 2006 · 293 editions · 9,582 articles
+                Answers cite primary sources. Always verify. · 1950 – 2006 ·
+                293 editions · 9,582 articles
             </p>
         </div>
     );
