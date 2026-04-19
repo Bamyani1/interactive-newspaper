@@ -864,7 +864,9 @@
   font-size: 0.58rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: color-mix(in oklab, var(--color-text-secondary) 70%, transparent);
+  /* Use the secondary token directly — the 70% color-mix dropped
+     contrast under 3:1 (this is small text at 0.58rem). */
+  color: var(--color-text-secondary);
 }
 
 .ask-sidebar-threads-empty {
@@ -1194,7 +1196,9 @@
 }
 
 .ask-composer {
-  padding: 1rem 0 1.25rem;
+  /* padding-bottom respects iOS safe-area so the Send button isn't
+     eaten by the home-indicator strip or the virtual keyboard. */
+  padding: 1rem 0 max(1.25rem, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
@@ -1254,8 +1258,12 @@
 }
 
 .ask-composer-textarea::placeholder {
-  color: var(--color-text-secondary);
-  opacity: 0.6;
+  /* Use a color-mix off primary text so the placeholder clears the
+     WCAG AA 4.5:1 contrast floor on the dark composer background —
+     opacity-stacking on --color-text-secondary bottomed out around
+     2.8:1 and was flagged by the a11y inspector. */
+  color: color-mix(in oklab, var(--color-text-primary) 62%, transparent);
+  opacity: 1;
   font-style: italic;
 }
 
@@ -1417,7 +1425,9 @@
   letter-spacing: 0.14em;
   line-height: 1.7;
   text-transform: uppercase;
-  color: color-mix(in oklab, var(--color-text-secondary) 58%, transparent);
+  /* Direct secondary — the 58% color-mix failed WCAG AA by a wide
+     margin. */
+  color: var(--color-text-secondary);
 }
 
 /* One-time entrance animation — gated via data-animate so returning

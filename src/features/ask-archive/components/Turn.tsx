@@ -47,7 +47,12 @@ export const Turn: React.FC<TurnProps> = ({
 
             <div
                 className="ask-turn-assistant"
-                aria-live={isStreaming ? "polite" : undefined}
+                // Keep aria-live="polite" on the region at all times so
+                // a transition from streaming → error announces to
+                // screen readers. Previously the attribute was only
+                // set while streaming, which left silent TURN_ERROR
+                // transitions for AT users.
+                aria-live="polite"
                 aria-atomic="false"
             >
                 {turn.status === "error" ? (
