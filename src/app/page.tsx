@@ -110,6 +110,13 @@ export default function Home() {
                         <div className="cinema-cta-block">
                             <LandingAskTeaser />
                             <div className="cinema-cta-buttons">
+                                <Link
+                                    href="/ask"
+                                    className="cinema-btn cinema-btn--ghost"
+                                >
+                                    <span>Ask the archive</span>
+                                    <ArrowRight size={20} />
+                                </Link>
                                 <button
                                     type="button"
                                     className="cinema-btn"
@@ -119,13 +126,6 @@ export default function Home() {
                                     <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
                                     <ArrowRight size={20} />
                                 </button>
-                                <Link
-                                    href="/ask"
-                                    className="cinema-btn cinema-btn--ghost"
-                                >
-                                    <span>Ask the archive</span>
-                                    <ArrowRight size={20} />
-                                </Link>
                             </div>
                         </div>
                     )}
