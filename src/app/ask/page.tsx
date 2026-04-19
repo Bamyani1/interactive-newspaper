@@ -52,37 +52,27 @@ export default function AskPage() {
         setFocusSignal((n) => n + 1);
     }, [sessionGen]);
 
-    // First client paint happens before `useAskArchive` has had a
-    // chance to dispatch HYDRATING. Without this `mounted` gate, the
-    // editorial hero renders for one frame (isHydrating=false,
-    // turns=0, sessionGen=0 → isFirstVisit=true), then the hook's
-    // mount effect dispatches HYDRATING and the page swaps to the
-    // Transcript — a visible flash on every navigation to /ask.
-    // Gating on `mounted` means SSR + first client render both show
-    // the boot skeleton (same DOM, no hydration mismatch); the real
-    // render decision happens on the next tick with correct state.
+    // Render decision for /ask rests on three states:
+    //
+    // - Boot window: SSR + first client render (pre-mount) AND the
+    //   initial hydration fetch for returning users. Both render the
+    //   boot skeleton so the DOM is identical across SSR/CSR (no
+    //   hydration mismatch) and the user never sees a Transcript-with-
+    //   pill flash during the mount → hydrate handoff.
+    // - First visit: the editorial AskLanding hero, shown only when
+    //   we've never had a turn, never cleared, and the session isn't
+    //   expired. `expiredBanner` short-circuits the hero because
+    //   Transcript owns the notice UI; flipping to the hero would
+    //   swallow it.
+    // - Everything else: the Transcript, which handles populated turns,
+    //   cleared/new empty states, and the expired banner internally.
     const [mounted, setMounted] = useState(false);
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical hydration gate: flip once on mount so SSR and first client render output the same DOM (the boot skeleton), then swap to the real branch on the next tick. Not an external-system sync.
         setMounted(true);
     }, []);
 
-    // Editorial AskLanding is a first-visit treatment only. Once the
-    // user has either asked something (turns>0) or cleared a
-    // conversation (sessionGen>0), we stay inside the chat chrome —
-    // Clear should feel like "wipe the transcript, stay here," not
-    // "kick me back to the landing." `expiredBanner` short-circuits
-    // the hero too: on return with an expired session, Transcript
-    // owns the notice UI, and flipping to the editorial hero would
-    // swallow that notice.
-    // Boot window: everything before the first HYDRATE lands. Covers
-    // (a) the pre-mount frame (SSR + first client render, same DOM,
-    // no hydration mismatch) and (b) the initial hydration fetch for
-    // returning users. Showing the skeleton through both gaps means
-    // the user never sees a Transcript-with-pill flash on a cold
-    // navigation — they go from skeleton straight to the final UI.
     const isBooting = !mounted || (isHydrating && turns.length === 0);
-
     const isFirstVisit =
         !isBooting &&
         turns.length === 0 &&
