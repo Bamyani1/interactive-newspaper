@@ -47,10 +47,18 @@ function defaultState() {
         expiredBanner: false,
         sessionGen: 0,
         emptyReason: null,
+        threads: [] as Array<{
+            id: string;
+            firstQuestion: string;
+            turnCount: number;
+            lastUpdatedAt: number;
+        }>,
+        activeThreadId: null as string | null,
         submit: vi.fn(),
         retry: vi.fn(),
         clearConversation: vi.fn(),
         newConversation: vi.fn(),
+        switchThread: vi.fn(),
     };
 }
 

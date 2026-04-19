@@ -2,33 +2,42 @@
 
 import React from "react";
 import { Plus, Eraser, Download } from "lucide-react";
-import type { Turn } from "../hooks/askReducer";
+import type { ThreadSummary } from "../hooks/askReducer";
 
 interface AskSidebarProps {
-    turns: Turn[];
+    threads: ThreadSummary[];
+    activeThreadId: string | null;
     onNewConversation: () => void;
     onClearConversation: () => void;
     onExportConversation: () => void;
+    onSwitchThread: (threadId: string) => void;
     canNewConversation: boolean;
     canClearConversation: boolean;
     canExportConversation: boolean;
 }
 
-const THREAD_META_NEW = "Just now · new";
-const THREAD_META_ACTIVE = "Active thread";
+function formatRelativeTime(ts: number): string {
+    const delta = Date.now() - ts;
+    const mins = Math.round(delta / 60_000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.round(hours / 24);
+    return `${days}d ago`;
+}
 
 export const AskSidebar: React.FC<AskSidebarProps> = ({
-    turns,
+    threads,
+    activeThreadId,
     onNewConversation,
     onClearConversation,
     onExportConversation,
+    onSwitchThread,
     canNewConversation,
     canClearConversation,
     canExportConversation,
 }) => {
-    const firstQuestion = turns[0]?.question ?? null;
-    const hasTurns = turns.length > 0;
-
     return (
         <aside className="ask-sidebar">
             <div className="ask-sidebar-title">
@@ -94,25 +103,43 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
 
             <section className="ask-sidebar-section">
                 <header className="ask-sidebar-section-label">
-                    <span>Thread</span>
-                    <span>{hasTurns ? "1" : "0"}</span>
+                    <span>Threads</span>
+                    <span>{threads.length}</span>
                 </header>
                 <div className="ask-sidebar-threads">
-                    {firstQuestion ? (
-                        <div className="ask-sidebar-thread" data-active="true">
-                            <p className="ask-sidebar-thread-title">
-                                {firstQuestion}
-                            </p>
-                            <p className="ask-sidebar-thread-meta">
-                                {turns.length === 1
-                                    ? THREAD_META_NEW
-                                    : `${turns.length} turns · ${THREAD_META_ACTIVE}`}
-                            </p>
-                        </div>
-                    ) : (
+                    {threads.length === 0 ? (
                         <p className="ask-sidebar-threads-empty">
                             No conversation yet. Ask a question to begin.
                         </p>
+                    ) : (
+                        threads.map((thread) => {
+                            const isActive = thread.id === activeThreadId;
+                            return (
+                                <button
+                                    key={thread.id}
+                                    type="button"
+                                    className="ask-sidebar-thread"
+                                    data-active={isActive ? "true" : undefined}
+                                    onClick={() => onSwitchThread(thread.id)}
+                                    aria-current={isActive ? "true" : undefined}
+                                    aria-label={`Open thread: ${thread.firstQuestion}`}
+                                >
+                                    <span className="ask-sidebar-thread-title">
+                                        {thread.firstQuestion}
+                                    </span>
+                                    <span className="ask-sidebar-thread-meta">
+                                        {thread.turnCount === 1
+                                            ? "1 turn"
+                                            : `${thread.turnCount} turns`}
+                                        {" · "}
+                                        {formatRelativeTime(
+                                            thread.lastUpdatedAt,
+                                        )}
+                                        {isActive ? " · active" : null}
+                                    </span>
+                                </button>
+                            );
+                        })
                     )}
                 </div>
             </section>
