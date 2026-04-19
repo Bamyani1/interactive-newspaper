@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
 import { useAskArchive } from "@/features/ask-archive/hooks/useAskArchive";
+import { useDeepLinkSubmit } from "@/features/ask-archive/hooks/useDeepLinkSubmit";
 import { Transcript } from "@/features/ask-archive/components/Transcript";
 import { Composer } from "@/features/ask-archive/components/Composer";
 import { AskSidebar } from "@/features/ask-archive/components/AskSidebar";
@@ -18,6 +19,13 @@ export default function AskPage() {
         retry,
         clearConversation,
     } = useAskArchive();
+
+    // `/ask?q=<question>` — auto-submit once when the deep-link lands.
+    useDeepLinkSubmit({
+        isHydrating,
+        turnCount: turns.length,
+        submit,
+    });
 
     const [focusSignal, setFocusSignal] = useState(0);
 

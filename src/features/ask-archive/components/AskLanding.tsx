@@ -1,45 +1,18 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { pickSuggestions } from "../data/question-pool";
 
 interface AskLandingProps {
     /** Fire the given question against the live /api/ask flow. */
     onPickQuestion: (question: string) => void;
 }
 
-// Rotated by day-of-year so the landing feels maintained rather than
-// cached. A twelve-entry pool is enough to vary without pretending to
-// be a recommender system.
-const QUESTION_POOL: readonly string[] = [
-    "What was campus life like during Prohibition?",
-    "How did OWU respond to the Vietnam War?",
-    "Tell me about Homecoming in the 1970s.",
-    "What did Bishop Kennedy say when he visited in 1960?",
-    "How did the civil rights movement appear in the Transcript?",
-    "When did women's varsity sports first show up?",
-    "How did the paper cover the Kennedy assassination?",
-    "What were the popular majors in 1955?",
-    "Tell me about campus protests in 1968.",
-    "What did the paper say about Earth Day 1970?",
-    "What coverage did the 1969 moon landing get?",
-    "What was the student dress code in the 1950s?",
-];
-
 // Excluded from the daily suggestions so the pool doesn't collide with
-// any pinned example copy.
+// any pinned example copy elsewhere on this surface.
 const EXCLUDED_FROM_ROTATION = "Tell me about Homecoming in the 1970s.";
 
 const VISITED_KEY = "owu-has-visited-ask";
-
-function pickSuggestions(date: Date, exclude: string): string[] {
-    // Day-of-year rotation: same three every day, different every day.
-    const start = Date.UTC(date.getUTCFullYear(), 0, 0);
-    const dayIndex =
-        date.getUTCFullYear() * 366 +
-        Math.floor((date.getTime() - start) / 86_400_000);
-    const pool = QUESTION_POOL.filter((q) => q !== exclude);
-    return [0, 1, 2].map((i) => pool[(dayIndex + i) % pool.length]);
-}
 
 export const AskLanding: React.FC<AskLandingProps> = ({ onPickQuestion }) => {
     // Entrance animation runs once per browser. Returning visitors get
