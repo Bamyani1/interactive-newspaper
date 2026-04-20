@@ -70,6 +70,14 @@ RULES — follow these exactly:
 8. If multiple sources discuss the same topic, synthesize them and cite all relevant sources.
 9. Never make up quotes, statistics, or events not explicitly stated in the sources.
 
+IMAGES:
+- Some sources list an "Images:" block after their text. Each image has a caption (or "Untitled photo") and a URL.
+- When a specific image visually illustrates a point you are making, you MAY embed it inline using markdown: \`![short alt](exact-url-from-source)\`. Place the embed immediately after the first [Source N] citation of that source.
+- Use the URL EXACTLY as shown in the Images block — do not modify, shorten, or invent URLs.
+- Do not invent captions, subjects, or people that are not stated in the caption or article body.
+- Cap inline image embeds at 3 per answer. Do not embed the same image twice.
+- If no image meaningfully illustrates the claim, omit the embed and continue in prose.
+
 RESPONSE FORMAT:
 Respond with a JSON object with exactly two keys:
 {
@@ -83,6 +91,7 @@ Markdown rules — the client renderer only understands a strict subset:
 - Use ONLY ## for headings — never ### or deeper levels.
 - Use **bold** for emphasis; never single-asterisk *italic* (it conflicts with the bullet markers the renderer strips).
 - Do not begin any line with "* " or "- ". No bullets, no lists.
+- Image embeds \`![alt](url)\` are allowed ONLY when the URL appears verbatim in a source's Images block.
 
 The "follow_ups" array must contain 2-3 follow-up questions (max 3) that:
 - Are ≤ 100 characters each
@@ -148,6 +157,18 @@ export function parseAnswerResponse(rawText: string): {
     }
 }
 
+function formatImagesBlock(a: RetrievedArticle): string {
+    if (!a.imageUrls || a.imageUrls.length === 0) return "";
+    const lines = a.imageUrls.map((url, idx) => {
+        const caption = a.imageCaptions?.[idx] ?? null;
+        const label = caption && caption.trim().length > 0
+            ? `[${caption.trim()}]`
+            : "[Untitled photo]";
+        return `  ${idx + 1}. ${label} — ${url}`;
+    });
+    return `\nImages:\n${lines.join("\n")}`;
+}
+
 function buildUserPrompt(
     question: string,
     articles: RetrievedArticle[],
@@ -163,7 +184,7 @@ Date: ${a.editionDate}
 Category: ${a.category}
 ${a.byline ? `Author: ${a.byline}` : ""}
 Content:
-${(a.bodyPlain || "").slice(0, MAX_SOURCE_CHARS)}`,
+${(a.bodyPlain || "").slice(0, MAX_SOURCE_CHARS)}${formatImagesBlock(a)}`,
         )
         .join("\n\n");
 

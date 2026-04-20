@@ -317,6 +317,7 @@ export interface RetrievedArticle {
   distance: number | null;
   source: "vector" | "fts" | "both";
   imageUrls: string[];
+  imageCaptions: (string | null)[];
 }
 
 interface VectorSearchOptions {
@@ -359,7 +360,7 @@ export async function queryArticlesByEmbedding(
       sql`
         SELECT
           a.id, a.edition_date, a.category, a.headline, a.summary,
-          a.byline, a.body_plain, a.image_urls,
+          a.byline, a.body_plain, a.image_urls, a.image_captions,
           (a.embedding <=> ${vecStr}::vector) as distance
         FROM articles a
         WHERE a.embedding IS NOT NULL
@@ -391,6 +392,7 @@ export async function queryArticlesByEmbedding(
       distance: Number.isFinite(distValue) ? distValue : null,
       source: "vector" as const,
       imageUrls: r.image_urls ?? [],
+      imageCaptions: r.image_captions ?? [],
     };
   });
 }
@@ -510,7 +512,7 @@ async function searchArticlesForRag(
 
   const rows = await sql`
     SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-           a.byline, a.body_plain, a.image_urls,
+           a.byline, a.body_plain, a.image_urls, a.image_captions,
            ts_rank(a.search_vector, q) as rank
     FROM articles a, websearch_to_tsquery('english', ${query}) q
     WHERE a.search_vector @@ q
@@ -533,6 +535,7 @@ async function searchArticlesForRag(
     distance: null, // FTS doesn't produce cosine distance
     source: "fts" as const,
     imageUrls: r.image_urls ?? [],
+    imageCaptions: r.image_captions ?? [],
   }));
 }
 
@@ -545,6 +548,7 @@ export interface SessionArticleMeta {
   byline: string | null;
   bodySnippet: string;
   imageUrls: string[];
+  imageCaptions: (string | null)[];
 }
 
 /**
@@ -559,7 +563,7 @@ export async function fetchArticlesByIds(
 ): Promise<Map<string, SessionArticleMeta>> {
   if (ids.length === 0) return new Map();
   const rows = (await sql`
-    SELECT id, edition_date, category, headline, summary, byline, body_plain, image_urls
+    SELECT id, edition_date, category, headline, summary, byline, body_plain, image_urls, image_captions
     FROM articles
     WHERE id = ANY(${ids})
   `) as Array<{
@@ -571,6 +575,7 @@ export async function fetchArticlesByIds(
     byline: string | null;
     body_plain: string | null;
     image_urls: string[] | null;
+    image_captions: (string | null)[] | null;
   }>;
   const map = new Map<string, SessionArticleMeta>();
   for (const r of rows) {
@@ -585,6 +590,7 @@ export async function fetchArticlesByIds(
       bodySnippet:
         body.slice(0, 300) + (body.length > 300 ? "\u2026" : ""),
       imageUrls: r.image_urls ?? [],
+      imageCaptions: r.image_captions ?? [],
     });
   }
   return map;
