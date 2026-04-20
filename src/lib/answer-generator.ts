@@ -157,6 +157,14 @@ export function parseAnswerResponse(rawText: string): {
     }
 }
 
+// R2 keys can contain spaces (e.g. "0003_Page 3_img1.webp"), which browsers
+// accept in <img src> but CommonMark rejects inside `![](...)`. Idempotent
+// space→%20 escape keeps the URL parseable without double-encoding existing
+// %-escapes.
+function mdSafeUrl(url: string): string {
+    return url.replace(/ /g, "%20");
+}
+
 function formatImagesBlock(a: RetrievedArticle): string {
     if (!a.imageUrls || a.imageUrls.length === 0) return "";
     const lines = a.imageUrls.map((url, idx) => {
@@ -164,7 +172,7 @@ function formatImagesBlock(a: RetrievedArticle): string {
         const label = caption && caption.trim().length > 0
             ? `[${caption.trim()}]`
             : "[Untitled photo]";
-        return `  ${idx + 1}. ${label} — ${url}`;
+        return `  ${idx + 1}. ${label} — ${mdSafeUrl(url)}`;
     });
     return `\nImages:\n${lines.join("\n")}`;
 }
