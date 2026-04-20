@@ -501,7 +501,7 @@ Create `.env.local` from `.env.example`:
 │   ├── server/                   # Server-only: ocr-adapter (edition.json → DB rows)
 │   └── components/               # Cross-cutting components (landing hero, etc.)
 │
-├── src/lib/                      # RAG services (flat TS modules)
+├── src/lib/                      # Shared services (flat TS modules)
 │   ├── agent-loop.ts             # Gemini function-calling agent
 │   ├── agent-tools.ts            # search_archive, read_article, list_editions
 │   ├── answer-cache.ts           # 1-hour in-memory answer LRU
@@ -510,13 +510,19 @@ Create `.env.local` from `.env.example`:
 │   ├── conversation-store.ts     # Neon-backed session turns
 │   ├── cost-tracker.ts           # Daily budget kill switch
 │   ├── db.ts                     # Hybrid search, vector search, FTS
+│   ├── editions-server.ts        # Cached edition list + prod DB-outage guard
 │   ├── embeddings.ts             # gemini-embedding-2-preview + LRU
 │   ├── gemini-client.ts          # Shared client factory
 │   ├── gold-edition.ts           # Gold fallback loader
+│   ├── image-url.ts              # R2 CDN ↔ dev API proxy URL resolver
+│   ├── ocr-adapter.ts            # Re-export shim for src/server/ocr-adapter
+│   ├── parse-publication-info.ts # "Vol. 93 · No. 13" masthead parser
 │   ├── query-reformulator.ts     # Era-aware query expansion
 │   ├── rate-limit.ts             # Neon + in-memory sliding window
 │   ├── reranker.ts               # LLM reranker + graceful fallback
-│   └── rerank-signals.ts         # Retrieval-shape telemetry
+│   ├── rerank-signals.ts         # Retrieval-shape telemetry
+│   ├── weather-local-archive.ts  # Local JSON weather archive (1950–2000)
+│   └── weather.ts                # NOAA/ACIS/Open-Meteo weather lookup
 │
 ├── ocr/                          # Python OCR pipeline
 │   ├── src/transcript_ocr/       # Domain-driven package (see docs/architecture/ocr-pipeline.md)
