@@ -150,7 +150,7 @@ export interface OcrEdition {
     articles: OcrArticle[];
     ads: OcrAd[];
     enriched_ads?: OcrEnrichedAd[];
-    categories?: string[];   // parallel to articles[], added by enrich_articles.py
+    categories?: string[];   // parallel to articles[]; optional classification override
     other_content: { title: string; body: string }[];
 }
 

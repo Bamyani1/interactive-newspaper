@@ -49,8 +49,6 @@ class DeduplicationInfo:
 @dataclass
 class PostprocessingInfo:
     ad_reclassifications: list[dict] = field(default_factory=list)
-    proper_noun_warnings: list[dict] = field(default_factory=list)
-    proper_noun_corrections: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -83,7 +81,6 @@ class PageDiagnostics:
     original_dimensions: tuple[int, int] = (0, 0)
     preprocessed_dimensions: tuple[int, int] = (0, 0)
     skew_angle: float = 0.0
-    docai_status: str = ""          # "success", "failed: <reason>", or "" (not used)
     docai_mean_confidence: float = 0.0
     cv_info: CVRegionInfo = field(default_factory=CVRegionInfo)
     gemini_tokens: TokenUsage = field(default_factory=TokenUsage)
