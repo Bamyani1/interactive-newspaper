@@ -21,40 +21,18 @@ COLLECTION = "p15963coll9"
 
 # ── Year-level quotas ──────────────────────────────────────
 # Format: {year: count_to_select}
+# 1980s gap fill — 100 editions, targeting thin years.
+# 1986-1988 skipped (already ~25 editions each in DB).
 
-QUOTAS = {}
-
-# 1950s: 10 total — ~1 per gap year (1951-1959), skip 1958
-for y in [1951, 1952, 1953, 1954, 1955, 1956, 1957, 1958, 1959]:
-    QUOTAS[y] = 1
-QUOTAS[1955] = 2  # bump one year to reach 10
-
-# 1960s: 8 total — fill the thinnest years
-for y in [1961, 1963, 1965, 1967, 1969]:
-    QUOTAS[y] = 1  # years with only 1 edition
-QUOTAS[1964] = 1
-QUOTAS[1966] = 1
-QUOTAS[1968] = 1
-
-# 1970s: 7 total — fill single-edition years
-for y in [1971, 1974, 1976, 1978, 1979]:
-    QUOTAS[y] = 1
-QUOTAS[1973] = 1
-QUOTAS[1975] = 1
-
-# 1980s: 15 total — 3 per gap year (1981-1985)
-for y in range(1981, 1986):
-    QUOTAS[y] = 3
-
-# 1990s: 30 total — 4 per gap year (1993-1999) + 2 extra
-for y in range(1993, 2000):
-    QUOTAS[y] = 4
-QUOTAS[1993] = 5  # extra 1 to reach 30
-QUOTAS[1999] = 5  # extra 1 to reach 30
-
-# 2000s: 30 total — 5 per gap year (2001-2006)
-for y in range(2001, 2007):
-    QUOTAS[y] = 5
+QUOTAS = {
+    1980: 10,   # have 11
+    1981: 20,   # have 3
+    1982: 20,   # have 3
+    1983: 15,   # have 3
+    1984: 10,   # have 3
+    1985: 10,   # have 3
+    1989: 15,   # have 4
+}
 
 TOTAL_TARGET = sum(QUOTAS.values())
 
