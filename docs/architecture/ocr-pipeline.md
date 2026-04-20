@@ -72,7 +72,7 @@ Phases 1a/1b/1c all execute per-page in the same `ThreadPoolExecutor` pass befor
 
 ## Layer architecture
 
-The pipeline is organized into nine domain layers plus three infrastructure layers. The dependency rule is strict and **CI-enforced**:
+The pipeline is organized into ten domain layers plus three infrastructure layers. The dependency rule is strict and **CI-enforced**:
 
 ```
 application  →  { recognition | preprocessing | detection | merging |

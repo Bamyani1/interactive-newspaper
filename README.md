@@ -171,7 +171,7 @@ The three docs cross-reference each other and share a glossary. Read them in ord
 **Python OCR Pipeline**
 
 - Python 3.12, `ocr/src/transcript_ocr/` package
-- Domain-driven layout with nine domain layers (`application/`, `recognition/`, `preprocessing/`, `detection/`, `merging/`, `postprocessing/`, `image_linking/`, `export/`, `diagnostics/`, `ingestion/`) plus infrastructure (`contracts/`, `shared/`, `config/`)
+- Domain-driven layout with ten domain layers (`application/`, `recognition/`, `preprocessing/`, `detection/`, `merging/`, `postprocessing/`, `image_linking/`, `export/`, `diagnostics/`, `ingestion/`) plus infrastructure (`contracts/`, `shared/`, `config/`)
 - Import-boundary and architecture tests enforced in CI (`.github/workflows/ocr-architecture.yml`)
 
 ---
