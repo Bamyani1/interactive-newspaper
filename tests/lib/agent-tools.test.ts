@@ -146,6 +146,22 @@ describe("agent-tools", () => {
             expect(article.imageCaptions).toEqual(["Homecoming 1978", null]);
         });
 
+        it("URL-encodes spaces so LLM can embed URLs inside markdown `![](...)`", async () => {
+            (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+                {
+                    ...mockArticle,
+                    imageUrls: ["https://cdn/1986-02-21/images/0003_Page 3_img3.webp"],
+                    imageCaptions: ["photo"],
+                },
+            ]);
+
+            const result = await executeTool("search_archive", { query: "test" });
+            const article = (result.results as Array<Record<string, unknown>>)[0];
+            expect(article.imageUrls).toEqual([
+                "https://cdn/1986-02-21/images/0003_Page%203_img3.webp",
+            ]);
+        });
+
         it("truncates excerpt to 500 chars", async () => {
             const longBody = "x".repeat(1000);
             (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -203,6 +219,27 @@ describe("agent-tools", () => {
                 imageUrls: ["img.jpg"],
                 imageCaptions: ["A photo"],
             });
+        });
+
+        it("URL-encodes spaces in read_article imageUrls", async () => {
+            mockSqlResult.mockResolvedValueOnce([
+                {
+                    id: "1986-02-21-19",
+                    edition_date: "1986-02-21",
+                    category: "News",
+                    headline: "Test",
+                    summary: "Summary",
+                    byline: null,
+                    body_plain: "Full text",
+                    image_urls: ["https://cdn/1986-02-21/images/0003_Page 3_img3.webp"],
+                    image_captions: ["photo"],
+                },
+            ]);
+
+            const result = await executeTool("read_article", { articleId: "1986-02-21-19" });
+            expect((result as Record<string, unknown>).imageUrls).toEqual([
+                "https://cdn/1986-02-21/images/0003_Page%203_img3.webp",
+            ]);
         });
 
         it("defaults imageCaptions to [] when column is null", async () => {
