@@ -15,7 +15,7 @@ export const AGENT_TOOL_DECLARATIONS: any[] = [
   {
     name: "search_archive",
     description:
-      "Search the Ohio Wesleyan Transcript newspaper archive (1950-2006, 9582 articles). " +
+      "Search the Ohio Wesleyan Transcript newspaper archive (1950-2006, 11705 articles). " +
       "Uses hybrid vector + full-text search. Returns matching articles ranked by relevance.",
     parameters: {
       type: Type.OBJECT,

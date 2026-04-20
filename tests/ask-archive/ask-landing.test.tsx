@@ -39,7 +39,7 @@ describe("AskLanding", () => {
         // Single combined footer: verification disclaimer + archive scope.
         expect(
             screen.getByText(
-                /Answers cite primary sources\. Always verify\. · 1950\s*[–-]\s*2006 · 293 editions · 9,582 articles/,
+                /Answers cite primary sources\. Always verify\. · 1950\s*[–-]\s*2006 · 351 editions · 11,705 articles/,
             ),
         ).toBeInTheDocument();
     });
