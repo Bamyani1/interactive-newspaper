@@ -1,28 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
 import { queryEditionByDate } from "@/src/lib/db";
-import { transformArticles, transformAds, computePageCount } from "@/src/server/ocr-adapter";
-import type { OcrEdition } from "@/src/types";
+import { GOLD_DATE, GOLD_EDITION_INFO, loadGoldEdition } from "@/src/lib/gold-edition";
 
 // Revalidate individual edition data every 60 seconds (ISR)
 export const revalidate = 60;
 
-const GOLD_DATE = "1960-01-13";
-
-function loadGoldEdition() {
-  const filePath = path.join(process.cwd(), "gold", GOLD_DATE, "gold-edition.json");
-  const raw = fs.readFileSync(filePath, "utf-8");
-  const edition: OcrEdition = JSON.parse(raw);
+function buildGoldResponse() {
+  const data = loadGoldEdition();
+  if (!data) return null;
   return {
     edition: {
-      id: `gold-${GOLD_DATE}`,
-      date: GOLD_DATE,
-      pageCount: computePageCount(edition),
-      publicationInfo: edition.publication_info,
+      id: GOLD_EDITION_INFO.id,
+      date: GOLD_EDITION_INFO.date,
+      pageCount: GOLD_EDITION_INFO.pageCount,
+      publicationInfo: data.publicationInfo,
     },
-    articles: transformArticles(edition),
-    ads: transformAds(edition),
+    articles: data.articles,
+    ads: data.ads,
     otherContent: [],
     pagination: { nextCursor: null, hasMore: false },
   };
@@ -52,11 +46,8 @@ export async function GET(
 
     if (!result) {
       if (date === GOLD_DATE) {
-        try {
-          return NextResponse.json(loadGoldEdition());
-        } catch {
-          // gold file missing — fall through to 404
-        }
+        const goldResponse = buildGoldResponse();
+        if (goldResponse) return NextResponse.json(goldResponse);
       }
       return NextResponse.json(
         { error: "Edition not found" },
