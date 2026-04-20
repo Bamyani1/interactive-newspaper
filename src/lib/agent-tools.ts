@@ -117,6 +117,7 @@ async function executeSearchArchive(
       summary: r.summary,
       excerpt: r.bodyPlain.slice(0, 500),
       imageUrls: r.imageUrls,
+      imageCaptions: r.imageCaptions,
     })),
   };
 }
@@ -128,7 +129,7 @@ async function executeReadArticle(
 
   const rows = await getSql()`
     SELECT id, edition_date, category, headline, summary, byline,
-           body_plain, image_urls
+           body_plain, image_urls, image_captions
     FROM articles
     WHERE id = ${articleId}
   `;
@@ -147,6 +148,7 @@ async function executeReadArticle(
     byline: r.byline ?? null,
     bodyPlain: r.body_plain,
     imageUrls: r.image_urls ?? [],
+    imageCaptions: r.image_captions ?? [],
   };
 }
 

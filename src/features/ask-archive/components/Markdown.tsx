@@ -55,6 +55,29 @@ type AnchorProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
     children?: React.ReactNode;
 };
 
+// Intercept <img> so LLM-emitted inline images render with the
+// ask-answer-image class (constrained width, rounded corners) and
+// lazy-load. Drop the element entirely if src is empty/undefined so
+// a malformed embed can't break layout. The src typing is widened
+// because react-markdown's component prop types permit Blob sources
+// we will never receive from markdown parsing.
+const renderImg: React.FC<
+    React.ImgHTMLAttributes<HTMLImageElement>
+> = ({ src, alt, ...rest }) => {
+    if (typeof src !== "string" || src.trim().length === 0) return null;
+    return (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+            {...rest}
+            src={src}
+            alt={alt ?? ""}
+            loading="lazy"
+            decoding="async"
+            className="ask-answer-image"
+        />
+    );
+};
+
 // Intercept <a> so in-document citation links get smooth-scroll behavior
 // and the ask-citation-link class. External links open in a new tab with
 // the usual safety attributes.
@@ -140,7 +163,7 @@ export const Markdown: React.FC<MarkdownProps> = ({
         return (
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                components={{ a: renderAnchor }}
+                components={{ a: renderAnchor, img: renderImg }}
             >
                 {preprocessed}
             </ReactMarkdown>
@@ -151,7 +174,7 @@ export const Markdown: React.FC<MarkdownProps> = ({
         <div className={className}>
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                components={{ a: renderAnchor }}
+                components={{ a: renderAnchor, img: renderImg }}
             >
                 {preprocessed}
             </ReactMarkdown>

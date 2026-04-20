@@ -25,6 +25,8 @@ function makeArticle(overrides: Partial<RetrievedArticle> = {}): RetrievedArticl
     bodyPlain: "Test body",
     distance: 0.25,
     source: "vector",
+    imageUrls: [],
+    imageCaptions: [],
     ...overrides,
   };
 }

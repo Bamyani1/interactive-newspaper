@@ -51,6 +51,7 @@ describe("agent-tools", () => {
             summary: "Test summary",
             bodyPlain: "Full article body text here for testing excerpt truncation",
             imageUrls: [],
+            imageCaptions: [],
             distance: 0.5,
             source: "both" as const,
             byline: null,
@@ -124,9 +125,25 @@ describe("agent-tools", () => {
                         summary: "Test summary",
                         excerpt: "Full article body text here for testing excerpt truncation",
                         imageUrls: [],
+                        imageCaptions: [],
                     },
                 ],
             });
+        });
+
+        it("passes through imageUrls and imageCaptions from hybridSearch", async () => {
+            (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+                {
+                    ...mockArticle,
+                    imageUrls: ["https://cdn/a.webp", "https://cdn/b.webp"],
+                    imageCaptions: ["Homecoming 1978", null],
+                },
+            ]);
+
+            const result = await executeTool("search_archive", { query: "test" });
+            const article = (result.results as Array<Record<string, unknown>>)[0];
+            expect(article.imageUrls).toEqual(["https://cdn/a.webp", "https://cdn/b.webp"]);
+            expect(article.imageCaptions).toEqual(["Homecoming 1978", null]);
         });
 
         it("truncates excerpt to 500 chars", async () => {
@@ -169,6 +186,7 @@ describe("agent-tools", () => {
                     byline: "Author Name",
                     body_plain: "Full text",
                     image_urls: ["img.jpg"],
+                    image_captions: ["A photo"],
                 },
             ]);
 
@@ -183,7 +201,27 @@ describe("agent-tools", () => {
                 byline: "Author Name",
                 bodyPlain: "Full text",
                 imageUrls: ["img.jpg"],
+                imageCaptions: ["A photo"],
             });
+        });
+
+        it("defaults imageCaptions to [] when column is null", async () => {
+            mockSqlResult.mockResolvedValueOnce([
+                {
+                    id: "1965-03-15-4",
+                    edition_date: "1965-03-15",
+                    category: "News",
+                    headline: "Test",
+                    summary: "Summary",
+                    byline: null,
+                    body_plain: "Full text",
+                    image_urls: [],
+                    image_captions: null,
+                },
+            ]);
+
+            const result = await executeTool("read_article", { articleId: "1965-03-15-4" });
+            expect((result as Record<string, unknown>).imageCaptions).toEqual([]);
         });
 
         it("returns error when article not found", async () => {

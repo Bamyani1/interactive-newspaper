@@ -134,6 +134,7 @@ const mockArticle = {
   distance: 0.25,
   source: "vector" as const,
   imageUrls: [],
+  imageCaptions: [],
 };
 
 describe("POST /api/ask", () => {
@@ -1048,6 +1049,7 @@ describe("Complexity routing", () => {
           byline: "Staff",
           bodySnippet: "Fraternities and sororities...",
           imageUrls: [],
+          imageCaptions: [],
         }],
       ]),
     });
@@ -1088,6 +1090,7 @@ describe("Complexity routing", () => {
           byline: "Author",
           bodySnippet: "Snippet",
           imageUrls: ["img.jpg"],
+          imageCaptions: ["A photo caption"],
         }],
       ]),
     });
