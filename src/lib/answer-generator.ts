@@ -17,6 +17,15 @@ const MAX_ANSWER_TOKENS = 4096;
 const GENERATION_TIMEOUT_MS = 15_000;
 const MAX_SOURCE_CHARS = 5000;
 
+// Confidence thresholds — calibrated for gemini-embedding-2-preview.
+// Distance: lower = closer. Reranker score: 0–10, higher = more relevant.
+const DIST_STRONG_MATCH = 0.26; // strong vector match
+const DIST_WEAK_MATCH = 0.3; // above this = weak/off-topic
+const RERANK_TANGENTIAL = 5; // below this = tangential or worse
+const RERANK_MEDIUM = 6;
+const RERANK_RELEVANT = 7;
+const RERANK_CONFIDENT = 8;
+
 // ─── Types ───────────────────────────────────────────────────────
 
 export interface GeneratedAnswer {
@@ -216,7 +225,11 @@ export async function generateAnswer(
     // If we have vector results AND they're all far away AND the reranker
     // agrees they're weak, skip the expensive Gemini call. Don't trigger
     // this for FTS-only paths because there's no distance to compare against.
-    if (avgDistance !== null && avgDistance > 0.30 && avgRerankerScore < 5) {
+    if (
+        avgDistance !== null &&
+        avgDistance > DIST_WEAK_MATCH &&
+        avgRerankerScore < RERANK_TANGENTIAL
+    ) {
         return {
             answer:
                 "I don't have enough information in the archive to answer this question. The articles I found don't seem to be closely related to what you're asking about.",
@@ -391,7 +404,11 @@ export async function* generateAnswerStream(
     );
 
     // Same skip-gemini guard as generateAnswer — distant AND weak reranker
-    if (avgDistance !== null && avgDistance > 0.30 && avgRerankerScore < 5) {
+    if (
+        avgDistance !== null &&
+        avgDistance > DIST_WEAK_MATCH &&
+        avgRerankerScore < RERANK_TANGENTIAL
+    ) {
         yield {
             type: "done",
             answer:
@@ -572,24 +589,24 @@ function computeConfidence(
     // fake "medium" default distance, which used to cap FTS-only confidence
     // at medium even with strong reranker scores.
     if (avgDistance === null) {
-        if (avgRerankerScore >= 8) return "high";
-        if (avgRerankerScore >= 5) return "medium";
+        if (avgRerankerScore >= RERANK_CONFIDENT) return "high";
+        if (avgRerankerScore >= RERANK_TANGENTIAL) return "medium";
         return "low";
     }
 
     // Vector-aware path. Thresholds calibrated for gemini-embedding-2-preview
     // distance distribution:
-    // - Strong matches: < 0.26 (protests, Greek life, cagers)
-    // - Good matches: 0.26 - 0.30 (food, war, general topics)
-    // - Weak matches: > 0.30 (quantum physics, off-topic)
+    // - Strong matches: < DIST_STRONG_MATCH (protests, Greek life, cagers)
+    // - Good matches: DIST_STRONG_MATCH – DIST_WEAK_MATCH (food, war, general topics)
+    // - Weak matches: > DIST_WEAK_MATCH (quantum physics, off-topic)
     //
     // Reranker scores (0-10) provide an independent relevance signal:
-    // - >=7: reranker is confident articles are relevant
-    // - >=5: somewhat relevant
-    // - <5: tangential or worse
-    if (avgDistance < 0.26 && avgRerankerScore >= 7 && articleCount >= 2) return "high";
-    if (avgRerankerScore >= 8 && articleCount >= 2) return "high"; // strong reranker rescues mediocre distance
-    if (avgDistance < 0.30 && avgRerankerScore >= 5) return "medium";
-    if (avgRerankerScore >= 6) return "medium";
+    // - RERANK_RELEVANT: reranker is confident articles are relevant
+    // - RERANK_TANGENTIAL: somewhat relevant
+    // - below RERANK_TANGENTIAL: tangential or worse
+    if (avgDistance < DIST_STRONG_MATCH && avgRerankerScore >= RERANK_RELEVANT && articleCount >= 2) return "high";
+    if (avgRerankerScore >= RERANK_CONFIDENT && articleCount >= 2) return "high"; // strong reranker rescues mediocre distance
+    if (avgDistance < DIST_WEAK_MATCH && avgRerankerScore >= RERANK_TANGENTIAL) return "medium";
+    if (avgRerankerScore >= RERANK_MEDIUM) return "medium";
     return "low";
 }
