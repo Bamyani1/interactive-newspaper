@@ -133,6 +133,7 @@ gold/
 # Project docs — kept local only, with exceptions for notes referenced from source
 CLAUDE.md
 docs/*
+!docs/architecture/
 !docs/issues/
 docs/issues/*
 !docs/issues/README.md

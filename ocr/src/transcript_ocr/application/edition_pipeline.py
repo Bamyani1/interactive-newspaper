@@ -166,7 +166,6 @@ def process_edition(
                         docai_results[img] = result
                 except DocAIError as exc:
                     page_diag = PageDiagnostics()
-                    page_diag.docai_status = f"failed: {exc}"
                     page_diag.error = str(exc)
                     page_diag_map[img] = page_diag
                     error(f"DocAI failed on {os.path.basename(img)}: {exc} — skipping page")

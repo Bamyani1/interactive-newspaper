@@ -25,6 +25,27 @@ import type { AskResponse, AskErrorKind, Citation } from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 import { getCachedAnswer, setCachedAnswer } from "@/src/lib/answer-cache";
 import { checkDailyBudget, DailyBudgetExceededError } from "@/src/lib/cost-tracker";
+import {
+    DEDUP_TTL_MS,
+    dedupKey,
+    freshResponseFromCached,
+    getOrExtract,
+    inFlightAsk,
+    type DedupEntry,
+    _clearAskDedupForTests,
+    _askDedupInternalsForTests,
+} from "@/src/lib/ask-dedup";
+import {
+    computeRerankSignals,
+    logRerankSignals,
+    _computeRerankSignalsForTests,
+} from "@/src/lib/rerank-signals";
+
+export {
+    _clearAskDedupForTests,
+    _askDedupInternalsForTests,
+    _computeRerankSignalsForTests,
+};
 
 const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
@@ -248,81 +269,6 @@ async function rerankWithCragRetry(params: {
     return ranked;
 }
 
-// ── Concurrent request dedup (Step 10) ──
-// Coalesces two identical (ip, question, filters) POSTs that overlap in
-// time so the second one piggybacks on the first instead of running the
-// full pipeline twice. embedQuery already has its own LRU cache; this
-// adds dedup for reformulator + rerank + answer-gen which don't.
-
-const DEDUP_TTL_MS = 30_000;
-
-interface DedupExtracted {
-    body: unknown;
-    status: number;
-    headers: Record<string, string>;
-}
-
-interface DedupEntry {
-    promise: Promise<NextResponse>;
-    // The extraction is cached as a PROMISE rather than a settled value so
-    // all concurrent waiters share a single response.clone().json() call.
-    // Caching only the result (old impl) had a race window between the
-    // second check and the cache write where two waiters could both call
-    // response.clone() in parallel — fragile across runtimes.
-    extractPromise?: Promise<DedupExtracted>;
-}
-
-const inFlightAsk = new Map<string, DedupEntry>();
-
-function dedupKey(
-    ip: string,
-    question: string,
-    filters: unknown,
-    sessionId: string,
-): string {
-    // Simple non-cryptographic fingerprint; collisions don't matter because
-    // they're scoped to the same IP and would only cause a missed dedup, not
-    // wrong data. sessionId is part of the key because piggybackers skip the
-    // pipeline body, so two different sessions sharing a dedup entry would
-    // leave one of them without a conversation-store turn (follow-up history
-    // lost) and with the first requester's sessionId baked into the SSE
-    // done-event payload.
-    let h = 0;
-    const s = `${question}|${JSON.stringify(filters ?? {})}|${sessionId}`;
-    for (let i = 0; i < s.length; i++) {
-        h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-    }
-    return `${ip}:${h}`;
-}
-
-async function getOrExtract(entry: DedupEntry): Promise<DedupExtracted> {
-    if (!entry.extractPromise) {
-        entry.extractPromise = (async () => {
-            const response = await entry.promise;
-            const body = await response.clone().json();
-            const headers: Record<string, string> = {};
-            response.headers.forEach((value, key) => {
-                headers[key] = value;
-            });
-            return { body, status: response.status, headers };
-        })();
-    }
-    return entry.extractPromise;
-}
-
-function freshResponseFromCached(data: DedupExtracted): NextResponse {
-    return NextResponse.json(data.body, {
-        status: data.status,
-        headers: data.headers,
-    });
-}
-
-// Test hook: clears the in-flight dedup map between tests so prior runs
-// don't leak into new ones.
-export function _clearAskDedupForTests(): void {
-    inFlightAsk.clear();
-}
-
 // Test hook: tests set this to a short value so they can exercise the
 // global deadline path without waiting 30 real seconds. Null = default.
 let _testDeadlineMsOverride: number | null = null;
@@ -336,102 +282,6 @@ let _testRetrievalTimeoutMsOverride: number | null = null;
 export function _setRetrievalTimeoutForTests(ms: number | null): void {
     _testRetrievalTimeoutMsOverride = ms;
 }
-
-// Test hook: exposes the dedup extract internals so unit tests can
-// directly verify getOrExtract's exactly-once extraction guarantee with
-// a mock response. Kept out of the public route surface via the `_`
-// prefix convention.
-export const _askDedupInternalsForTests = {
-    getOrExtract,
-    makeEntry: (response: NextResponse): DedupEntry => ({
-        promise: Promise.resolve(response),
-    }),
-};
-
-/**
- * Retrieval-shape signals, computed once from the hybrid-search result
- * set and emitted on every /api/ask request via `logRerankSignals`. These
- * signals used to gate a reranker-bypass optimization that never fired in
- * practice (see the "Delete rerank bypass, keep telemetry" investigation
- * — all 11 golden cases had avgVectorDist > 0.20, and no clean threshold
- * separated legitimate good retrieval from prompt-injection payloads).
- *
- * Today they exist purely as production observability: operators can
- * grep stderr for `stage: "retrieval-signals"` to see retrieval quality
- * over time, and any future optimization built on top of these numbers
- * can be designed from real multi-run data rather than n=1 theory.
- */
-interface RerankSignals {
-    avgVectorDist: number | null;
-    vectorCount: number;
-    bothCount: number;
-    ftsOnlyCount: number;
-    vectorOnlyCount: number;
-    topThreeBothCount: number;
-    totalArticles: number;
-}
-
-function computeRerankSignals(articles: RetrievedArticle[]): RerankSignals {
-    const vectorArticles = articles.filter((a) => a.distance !== null);
-    const avgVectorDist =
-        vectorArticles.length > 0
-            ? vectorArticles.reduce((sum, a) => sum + (a.distance ?? 0), 0) /
-              vectorArticles.length
-            : null;
-    const bothCount = articles.filter((a) => a.source === "both").length;
-    const ftsOnlyCount = articles.filter((a) => a.source === "fts").length;
-    const vectorOnlyCount = articles.filter((a) => a.source === "vector").length;
-    const topThreeBothCount = articles
-        .slice(0, 3)
-        .filter((a) => a.source === "both").length;
-
-    return {
-        avgVectorDist,
-        vectorCount: vectorArticles.length,
-        bothCount,
-        ftsOnlyCount,
-        vectorOnlyCount,
-        topThreeBothCount,
-        totalArticles: articles.length,
-    };
-}
-
-/**
- * Emit retrieval-signals telemetry for an /api/ask request. Writes at
- * warn level because the project's eslint `no-console` rule restricts to
- * {error, warn}; this is semantically info-level.
- */
-function logRerankSignals(
-    requestId: string,
-    signals: RerankSignals,
-    mode: "text" | "visual",
-    pathTag: "streaming" | "default",
-): void {
-    console.warn(
-        JSON.stringify({
-            level: "info",
-            route: "/api/ask",
-            requestId,
-            stage: "retrieval-signals",
-            msg: `retrieval signals (${pathTag})`,
-            avgVectorDist:
-                signals.avgVectorDist !== null
-                    ? Number(signals.avgVectorDist.toFixed(4))
-                    : null,
-            vectorCount: signals.vectorCount,
-            bothCount: signals.bothCount,
-            ftsOnlyCount: signals.ftsOnlyCount,
-            vectorOnlyCount: signals.vectorOnlyCount,
-            topThreeBothCount: signals.topThreeBothCount,
-            totalArticles: signals.totalArticles,
-            mode,
-        }),
-    );
-}
-
-// Test hook: exposes the signals helper so unit tests can assert the
-// telemetry shape directly without standing up a full route-level fetch.
-export const _computeRerankSignalsForTests = computeRerankSignals;
 
 interface AskRequestBody {
     question: string;
