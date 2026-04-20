@@ -16,7 +16,7 @@ _AD_SIGNALS = [
     r"(?i)\bcoupon\b",
     r"(?i)\bfree\s+(?:trial|delivery|shipping)\b",
     r"(?i)\border\s+(?:now|today)\b",
-    r"(?i)\bsave\s+\$?\d",
+    r"(?i)\bsave\s+\$\d",
     r"(?i)\bspecial\s+offer\b",
 ]
 
@@ -52,7 +52,9 @@ def postprocess_page_content(
     new_ads = list(page_content.ads)
     for art in articles:
         signal_count = sum(1 for pat in _AD_SIGNALS if re.search(pat, art.body))
-        if signal_count >= 2 and not art.author:
+        body_paragraphs = sum(1 for p in art.body.split("\n\n") if p.strip())
+        is_long_article = len(art.body) >= 500 and body_paragraphs >= 3
+        if signal_count >= 2 and not art.author and not is_long_article:
             substep(f"Reclassified as ad: '{art.headline[:50]}' ({signal_count} ad signals)")
             new_ads.append(
                 Ad(
