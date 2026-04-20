@@ -305,6 +305,18 @@ async function main() {
           }
         }
 
+        // Author portrait: caption names the article's author — keep regardless of score
+        const authorLower = (article.author || "").toLowerCase().trim();
+        if (authorLower.length >= 4 && caption.toLowerCase().includes(authorLower)) {
+          continue;
+        }
+
+        // Only image and body is short-ish: image IS the article (comics, cartoons,
+        // photo briefs). Removing would leave 0 images, defeating the content.
+        if (article.image_files.length === 1 && bodyLen < 800) {
+          continue;
+        }
+
         if (score < 0.15) {
           // Try to find a better article on the same page
           const currentPage = article.source_pages?.[0];
