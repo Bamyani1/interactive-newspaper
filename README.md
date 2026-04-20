@@ -65,7 +65,7 @@ Ohio Wesleyan University's student newspaper, *The Transcript*, has been publish
 5. **Serve** a Next.js 16 application with a period-accurate reading UI and an "Ask the Archive" chat experience powered by a full RAG pipeline with agent-loop fallback for complex queries.
 6. **Search multimodally** — text queries match text content; visual queries (e.g., "show me protest photos") match article thumbnails and text in a single shared embedding space.
 
-**Scale today:** ~290 editions fully ingested, ~9,600 articles with 768-dim multimodal embeddings, ~6,800 ads with structured metadata, a multi-thread conversation archive, an offline Ohio weather archive covering 1950–2000 (18,628 daily entries), and a monthly US top-10 music archive for 1958–2000.
+**Scale today:** 351 editions fully ingested (1950-01-11 through 2006-04-20), 11,705 articles with 768-dim multimodal embeddings (100% embedded), 6,846 ads with 6,804 enriched with structured metadata, a multi-thread conversation archive, an offline Ohio weather archive covering 1950–2000 (18,628 daily entries), and a monthly US top-10 music archive for 1958–2010 (6,290 chart entries across 629 months).
 
 ---
 
@@ -78,7 +78,7 @@ Ohio Wesleyan University's student newspaper, *The Transcript*, has been publish
 - **Budget-aware by default.** A $0.50/day hard kill switch stops the pipeline before a runaway loop can drain the Gemini quota.
 - **Multimodal visual queries.** "Show me protest photos" returns a visual-mode answer with a `TimelineGallery` of matching article thumbnails. Text and image embeddings live in the same vector space.
 - **End-to-end OCR pipeline.** A seven-phase Python pipeline turns raw TIF scans into structured `edition.json`: DocAI layout parsing, DocLayout-YOLO region detection, Gemini structuring, cross-page article merging, ad enrichment, content triage, and per-run diagnostics.
-- **Historical context.** Offline Ohio weather archive (1950–2000) and monthly US top-10 music archive (1958–2000) feed period-accurate sidebars.
+- **Historical context.** Offline Ohio weather archive (1950–2000) and monthly US top-10 music archive (1958–2010) feed period-accurate sidebars.
 
 ---
 
