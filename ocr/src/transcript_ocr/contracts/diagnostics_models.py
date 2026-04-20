@@ -49,8 +49,6 @@ class DeduplicationInfo:
 @dataclass
 class PostprocessingInfo:
     ad_reclassifications: list[dict] = field(default_factory=list)
-    proper_noun_warnings: list[dict] = field(default_factory=list)
-    proper_noun_corrections: list[dict] = field(default_factory=list)
 
 
 @dataclass
