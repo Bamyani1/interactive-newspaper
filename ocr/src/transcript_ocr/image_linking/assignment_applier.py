@@ -99,6 +99,4 @@ def _apply_visual_assignments(
     return region_to_article, region_to_ad, unmatched, captions
 
 
-apply_visual_assignments = _apply_visual_assignments
-
-__all__ = ["_apply_visual_assignments", "apply_visual_assignments"]
+__all__ = ["_apply_visual_assignments"]

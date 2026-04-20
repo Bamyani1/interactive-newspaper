@@ -72,7 +72,6 @@ def extract_page_docai(
         snapshots_dir,
         f"docai_page{_extract_page_number_from_filename(base_name) or '0'}.json",
         {
-            "docai_status": "success",
             "mean_confidence": docai_result.mean_confidence,
             "continuation_markers": docai_result.continuation_markers,
             "low_confidence_words": docai_result.low_confidence_words,
@@ -82,7 +81,6 @@ def extract_page_docai(
     )
 
     if diag is not None:
-        diag.docai_status = "success"
         diag.docai_mean_confidence = docai_result.mean_confidence
 
     regions = detect_image_regions(raw_image, diag=diag)
