@@ -83,7 +83,7 @@ export const AskLanding: React.FC<AskLandingProps> = ({ onPickQuestion }) => {
 
             <p className="ask-landing-stats">
                 Answers cite primary sources. Always verify. · 1950 – 2006 ·
-                293 editions · 9,582 articles
+                351 editions · 11,705 articles
             </p>
         </div>
     );
