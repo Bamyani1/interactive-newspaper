@@ -12,15 +12,16 @@ As of this writing:
 
 | Metric | Value |
 |---|---|
-| Editions | ~290 |
-| Articles | ~9,600 |
-| Ads | ~6,800 |
+| Editions | 351 |
+| Articles | 11,705 |
+| Ads | 6,846 |
+| Embedded articles | 11,705 (100%) |
 | Embedding dimension | 768 |
-| Vector data size | ~6 MB |
-| FTS index size | ~12 MB |
-| HNSW index size | ~15 MB |
+| Vector data size | ~7 MB |
+| FTS index size | ~14 MB |
+| HNSW index size | ~18 MB |
 
-Every tuning decision in this doc is anchored in that scale. "RRF K=40 because the corpus is small" means "small relative to ~10k articles."
+Every tuning decision in this doc is anchored in that scale. "RRF K=40 because the corpus is small" means "small relative to ~12k articles."
 
 ## Table of contents
 
