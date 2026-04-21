@@ -41,9 +41,12 @@ export function dedupSourceImages(
 }
 
 /**
- * Build a URL → metadata map keyed by both encoded and raw forms, so a
- * consumer that received the URL in either shape (LLM markdown vs. DB
- * column) can resolve it in O(1).
+ * Build a URL → metadata map so a consumer that received the URL in
+ * any plausible shape — raw, %20-encoded, or fully decoded — can
+ * resolve it in O(1). The LLM is told to emit URLs verbatim but its
+ * parser or our mdSafeUrl helper may flip space↔%20, so we pre-seed
+ * the map with every form that we can derive locally without
+ * guessing at arbitrary characters.
  */
 export function indexImagesByUrl(
   images: TurnImage[],
@@ -51,9 +54,14 @@ export function indexImagesByUrl(
   const map = new Map<string, TurnImage & { index: number }>();
   images.forEach((img, index) => {
     const entry = { ...img, index };
-    map.set(img.src, entry);
-    const encoded = img.src.replace(/ /g, "%20");
-    if (encoded !== img.src) map.set(encoded, entry);
+    const variants = new Set<string>([img.src]);
+    variants.add(img.src.replace(/ /g, "%20"));
+    try {
+      variants.add(decodeURI(img.src));
+    } catch {
+      // Malformed percent escape — the raw key above is still present.
+    }
+    variants.forEach((v) => map.set(v, entry));
   });
   return map;
 }

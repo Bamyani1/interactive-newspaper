@@ -73,40 +73,55 @@ export function Lightbox(props: LightboxProps) {
     ? [{ src: props.src }]
     : [];
   const open = images.length > 0;
+  const initialIndex = isGallery ? props.initialIndex ?? 0 : 0;
 
-  const [index, setIndex] = React.useState(
-    isGallery ? props.initialIndex ?? 0 : 0,
-  );
+  // Hold the latest onClose in a ref so the keyboard effect doesn't
+  // tear down + re-register on every parent render. Passing `props`
+  // in the dep array used to re-run the effect each render (new
+  // object identity) and could fire a stale onClose between the
+  // register/unregister pair.
+  const onCloseRef = React.useRef(props.onClose);
+  React.useLayoutEffect(() => {
+    onCloseRef.current = props.onClose;
+  });
 
-  // Re-anchor the index whenever the gallery opens with a new initialIndex
-  // or the images array changes identity (new lightbox session).
+  const [index, setIndex] = React.useState(initialIndex);
+
+  // Re-anchor the index whenever the gallery opens with a new
+  // initialIndex or the underlying image set changes identity.
+  const imagesKey = isGallery ? props.images : props.src;
   React.useEffect(() => {
     if (!open) return;
-    setIndex(isGallery ? props.initialIndex ?? 0 : 0);
+    setIndex(initialIndex);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isGallery ? props.images : props.src]);
+  }, [open, imagesKey, initialIndex]);
 
+  const total = images.length;
   React.useEffect(() => {
     if (!open) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        props.onClose();
-      } else if (isGallery && images.length > 1) {
+        // Stop bubbling so a parent drawer (e.g. SourceReader's own
+        // document-level Escape handler) doesn't also close when the
+        // user only meant to dismiss the lightbox.
+        e.stopPropagation();
+        onCloseRef.current();
+      } else if (total > 1) {
         if (e.key === "ArrowRight") {
           e.preventDefault();
-          setIndex((i) => (i + 1) % images.length);
+          setIndex((i) => (i + 1) % total);
         } else if (e.key === "ArrowLeft") {
           e.preventDefault();
-          setIndex((i) => (i - 1 + images.length) % images.length);
+          setIndex((i) => (i - 1 + total) % total);
         }
       }
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, isGallery, images.length, props]);
+    // Capture phase so we fire before parent bubble-phase listeners.
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [open, total]);
 
   const current = images[Math.min(index, images.length - 1)];
-  const total = images.length;
 
   return (
     <AnimatePresence>
@@ -116,7 +131,7 @@ export function Lightbox(props: LightboxProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={props.onClose}
+          onClick={() => onCloseRef.current()}
         >
           <motion.div
             className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center"
@@ -151,14 +166,26 @@ export function Lightbox(props: LightboxProps) {
 
             {total > 1 ? (
               <>
+                {/* Chevrons sit inside the image frame so they stay on
+                    screen for narrow viewports (left-[-3rem] used to
+                    push the left chevron off-screen below ~420px). */}
                 <button
                   type="button"
                   aria-label="Previous photo"
                   onClick={() =>
                     setIndex((i) => (i - 1 + total) % total)
                   }
-                  className="absolute left-[-3rem] top-1/2 -translate-y-1/2 text-white text-3xl font-serif opacity-80 hover:opacity-100 cursor-pointer select-none"
-                  style={{ background: "none", border: "none" }}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 text-white text-3xl font-serif cursor-pointer select-none rounded-full"
+                  style={{
+                    width: "2.5rem",
+                    height: "2.5rem",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(0,0,0,0.55)",
+                    border: "1px solid rgba(255,255,255,0.25)",
+                    lineHeight: 1,
+                  }}
                 >
                   ‹
                 </button>
@@ -166,18 +193,30 @@ export function Lightbox(props: LightboxProps) {
                   type="button"
                   aria-label="Next photo"
                   onClick={() => setIndex((i) => (i + 1) % total)}
-                  className="absolute right-[-3rem] top-1/2 -translate-y-1/2 text-white text-3xl font-serif opacity-80 hover:opacity-100 cursor-pointer select-none"
-                  style={{ background: "none", border: "none" }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-white text-3xl font-serif cursor-pointer select-none rounded-full"
+                  style={{
+                    width: "2.5rem",
+                    height: "2.5rem",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(0,0,0,0.55)",
+                    border: "1px solid rgba(255,255,255,0.25)",
+                    lineHeight: 1,
+                  }}
                 >
                   ›
                 </button>
                 <span
-                  className="absolute top-[-2rem] right-0 text-white"
+                  className="absolute top-2 right-2 text-white"
                   style={{
                     fontFamily: "var(--font-mono)",
                     fontSize: "11px",
                     letterSpacing: "0.12em",
-                    opacity: 0.75,
+                    padding: "3px 8px",
+                    background: "rgba(0,0,0,0.55)",
+                    border: "1px solid rgba(255,255,255,0.25)",
+                    borderRadius: "2px",
                   }}
                 >
                   {index + 1} / {total}

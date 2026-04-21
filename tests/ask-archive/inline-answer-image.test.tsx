@@ -29,8 +29,8 @@ describe("Markdown inline images", () => {
         );
         const img = container.querySelector("img");
         expect(img).not.toBeNull();
-        expect(container.querySelector("figure")).toBeNull();
-        expect(container.querySelector("figcaption")).toBeNull();
+        expect(container.querySelector(".ask-answer-figure")).toBeNull();
+        expect(container.querySelector(".ask-answer-figcaption")).toBeNull();
     });
 
     it("drops empty-src images silently", () => {
@@ -38,7 +38,7 @@ describe("Markdown inline images", () => {
         expect(container.querySelector("img")).toBeNull();
     });
 
-    it("upgrades to <figure> with figcaption + attribution when url is in context", () => {
+    it("upgrades to figure wrapper with caption + attribution when url is in context", () => {
         const img: TurnImage = {
             src: "https://x/p.webp",
             caption: "Homecoming queen, 1965",
@@ -49,10 +49,12 @@ describe("Markdown inline images", () => {
             "![alt](https://x/p.webp)",
             [img],
         );
-        expect(container.querySelector("figure")).not.toBeNull();
-        expect(container.querySelector("figcaption")?.textContent).toBe(
-            "Homecoming queen, 1965",
-        );
+        const figure = container.querySelector(".ask-answer-figure");
+        expect(figure).not.toBeNull();
+        expect(figure?.getAttribute("role")).toBe("figure");
+        expect(
+            container.querySelector(".ask-answer-figcaption")?.textContent,
+        ).toBe("Homecoming queen, 1965");
         const attr = container.querySelector(".ask-answer-image-attr");
         expect(attr).not.toBeNull();
         expect(attr?.getAttribute("href")).toBe("#ask-source-2");
@@ -70,8 +72,8 @@ describe("Markdown inline images", () => {
             "![](https://x/p.webp)",
             [img],
         );
-        expect(container.querySelector("figure")).not.toBeNull();
-        expect(container.querySelector("figcaption")).toBeNull();
+        expect(container.querySelector(".ask-answer-figure")).not.toBeNull();
+        expect(container.querySelector(".ask-answer-figcaption")).toBeNull();
         const attr = container.querySelector(".ask-answer-image-attr");
         expect(attr?.getAttribute("href")).toBe("#ask-source-3");
     });
@@ -87,11 +89,11 @@ describe("Markdown inline images", () => {
             "![alt](https://x/unknown.webp)",
             [img],
         );
-        expect(container.querySelector("figure")).toBeNull();
+        expect(container.querySelector(".ask-answer-figure")).toBeNull();
         expect(container.querySelector("img")).not.toBeNull();
     });
 
-    it("clicks through to openLightbox with the matching url", async () => {
+    it("clicks through to openLightbox with the matching url", () => {
         const img: TurnImage = {
             src: "https://x/p.webp",
             caption: "c",
@@ -105,5 +107,26 @@ describe("Markdown inline images", () => {
         const btn = screen.getByRole("button", { name: /expand photo/i });
         btn.click();
         expect(calls).toEqual(["https://x/p.webp"]);
+    });
+
+    it("does not wrap the figure in a paragraph that produces invalid HTML", () => {
+        // Regression guard: the inline image in a sentence with a citation
+        // should not nest <figure>/<figcaption> inside <p> (which would
+        // trigger a hydration error). Using phrasing-content spans makes
+        // nesting valid regardless of surrounding inline text.
+        const img: TurnImage = {
+            src: "https://x/p.webp",
+            caption: "c",
+            sourceIndex: 1,
+            sourceId: "x",
+        };
+        const { container } = renderWithContext(
+            "sentence ![alt](https://x/p.webp) tail",
+            [img],
+        );
+        expect(container.querySelector("figure")).toBeNull();
+        expect(container.querySelector("figcaption")).toBeNull();
+        const wrapper = container.querySelector(".ask-answer-figure");
+        expect(wrapper?.tagName.toLowerCase()).toBe("span");
     });
 });

@@ -84,6 +84,22 @@ describe("indexImagesByUrl", () => {
         expect(ix.get("https://x/Page%201.webp")?.caption).toBe("cap");
     });
 
+    it("keys by the fully decoded form as well", () => {
+        const images = dedupSourceImages([
+            src("a", ["https://x/Page%201.webp"], ["cap"]),
+        ]);
+        const ix = indexImagesByUrl(images);
+        expect(ix.get("https://x/Page%201.webp")?.caption).toBe("cap");
+        expect(ix.get("https://x/Page 1.webp")?.caption).toBe("cap");
+    });
+
+    it("tolerates malformed percent escapes without throwing", () => {
+        const images = dedupSourceImages([
+            src("a", ["https://x/bad%Zfile.webp"]),
+        ]);
+        expect(() => indexImagesByUrl(images)).not.toThrow();
+    });
+
     it("returns the canonical index for each URL", () => {
         const images = dedupSourceImages([
             src("a", ["u1", "u2"]),
