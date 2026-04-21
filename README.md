@@ -19,8 +19,8 @@
 
 ---
 
-> ** Status **
-> The RAG pipeline, OCR pipeline, chat UI, and data ingestion are all functional and running locally. The hosted site is not yet public. Run locally to explore, or read [`docs/architecture/`](./docs/architecture/) for production-level deep-dives on each subsystem.
+
+> Status: the RAG pipeline, OCR pipeline, chat UI, and data ingestion are all functional and running locally. The hosted site is not yet public. Run locally to explore, or read [`docs/architecture/`](./docs/architecture/) for production-level deep-dives on each subsystem.
 
 ---
 
