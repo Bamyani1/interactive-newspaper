@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
     dedupSourceImages,
+    extractInlineImageUrls,
     indexImagesByUrl,
 } from "@/features/ask-archive/lib/dedup-source-images";
 import type { AskResponse } from "@/src/types";
@@ -109,5 +110,47 @@ describe("indexImagesByUrl", () => {
         expect(ix.get("u1")?.index).toBe(0);
         expect(ix.get("u2")?.index).toBe(1);
         expect(ix.get("u3")?.index).toBe(2);
+    });
+});
+
+describe("extractInlineImageUrls", () => {
+    it("returns an empty set when the markdown has no images", () => {
+        const out = extractInlineImageUrls(
+            "A paragraph about [a source](https://example.com).",
+        );
+        expect(out.size).toBe(0);
+    });
+
+    it("extracts every ![...](url) url in the markdown", () => {
+        const md = [
+            "Intro ![first](https://x/a.webp) middle",
+            "",
+            "![second](https://x/b.webp) tail ![third](https://x/c.webp).",
+        ].join("\n");
+        const out = extractInlineImageUrls(md);
+        expect(out.has("https://x/a.webp")).toBe(true);
+        expect(out.has("https://x/b.webp")).toBe(true);
+        expect(out.has("https://x/c.webp")).toBe(true);
+    });
+
+    it("seeds both raw and decoded forms", () => {
+        const out = extractInlineImageUrls(
+            "![cap](https://x/Page%201.webp)",
+        );
+        expect(out.has("https://x/Page%201.webp")).toBe(true);
+        expect(out.has("https://x/Page 1.webp")).toBe(true);
+    });
+
+    it("tolerates a malformed percent escape", () => {
+        const bad = "![cap](https://x/bad%Zfile.webp)";
+        expect(() => extractInlineImageUrls(bad)).not.toThrow();
+        expect(
+            extractInlineImageUrls(bad).has("https://x/bad%Zfile.webp"),
+        ).toBe(true);
+    });
+
+    it("handles an empty alt text", () => {
+        const out = extractInlineImageUrls("![](https://x/nocap.webp)");
+        expect(out.has("https://x/nocap.webp")).toBe(true);
     });
 });
