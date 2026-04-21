@@ -103,6 +103,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
                     bodySnippet: a.bodySnippet,
                     distance: null,
                     imageUrls: a.imageUrls,
+                    imageCaptions: a.imageCaptions,
                 })),
             timestamp: t.timestamp,
         })),

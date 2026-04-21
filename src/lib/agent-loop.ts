@@ -33,7 +33,17 @@ RULES:
 5. For questions spanning multiple eras, issue MULTIPLE search_archive calls in a SINGLE response to search different decades simultaneously. This is critical for efficiency.
 6. Use past tense for historical events.
 7. Never fabricate quotes or statistics.
-8. Aim to gather all sources within 2-3 rounds, then write your answer. Do not spend more than 4 rounds searching.`;
+8. Aim to gather all sources within 2-3 rounds, then write your answer. Do not spend more than 4 rounds searching.
+
+IMAGES:
+- search_archive and read_article results may include imageUrls (array of URLs) and imageCaptions (parallel array of captions, some may be null).
+- When a specific image visually illustrates a point you are making, you MAY embed it inline in your answer with markdown \`![short alt](exact-url)\` immediately after the first [Article ID] citation of that article.
+- Use the URL EXACTLY as returned by the tool — never modify, shorten, or invent URLs.
+- Do not invent captions or describe image content not grounded in the caption or article body.
+- Cap inline image embeds at 3 per answer. Never embed the same image twice.
+- If no image meaningfully illustrates a claim, omit the embed and continue in prose.
+
+MARKDOWN: Use \`##\` for headings (never deeper), \`**bold**\` for emphasis, no bullets or lists, and \`![alt](url)\` ONLY with URLs returned by the tools.`;
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -45,6 +55,7 @@ export interface ArticleMeta {
     byline: string | null;
     bodySnippet: string;
     imageUrls: string[];
+    imageCaptions: (string | null)[];
 }
 
 export interface AgentResult {
@@ -125,6 +136,7 @@ export function accumulateArticleMeta(
                     byline: (rec.byline as string) ?? null,
                     bodySnippet: typeof rec.excerpt === "string" ? (rec.excerpt as string).slice(0, 300) : "",
                     imageUrls: Array.isArray(rec.imageUrls) ? (rec.imageUrls as string[]) : [],
+                    imageCaptions: Array.isArray(rec.imageCaptions) ? (rec.imageCaptions as (string | null)[]) : [],
                 });
             }
         }
@@ -139,6 +151,7 @@ export function accumulateArticleMeta(
             byline: (result.byline as string) ?? null,
             bodySnippet: typeof result.bodyPlain === "string" ? (result.bodyPlain as string).slice(0, 300) : "",
             imageUrls: Array.isArray(result.imageUrls) ? (result.imageUrls as string[]) : [],
+            imageCaptions: Array.isArray(result.imageCaptions) ? (result.imageCaptions as (string | null)[]) : [],
         });
     }
 }
