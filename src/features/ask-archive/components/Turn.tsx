@@ -9,6 +9,7 @@ import { LowConfidenceCaveat } from "./LowConfidenceCaveat";
 import { ErrorInline } from "./ErrorInline";
 import {
     dedupSourceImages,
+    extractInlineImageUrls,
     indexImagesByUrl,
 } from "../lib/dedup-source-images";
 import {
@@ -72,10 +73,27 @@ export const Turn: React.FC<TurnProps> = ({
     const hasText = turn.answer.trim().length > 0;
     const showStagePill = isStreaming && !hasText;
 
+    // Photos the LLM already embedded inline shouldn't re-appear in
+    // the "More pictures" grid, otherwise the reader sees the same
+    // thumbnail twice.
+    const moreImages = useMemo(() => {
+        const inlined = extractInlineImageUrls(turn.answer);
+        if (inlined.size === 0) return turnImages;
+        return turnImages.filter((img) => {
+            if (inlined.has(img.src)) return false;
+            try {
+                if (inlined.has(decodeURI(img.src))) return false;
+            } catch {
+                // Malformed URL — fall through; raw compare already ran.
+            }
+            return true;
+        });
+    }, [turnImages, turn.answer]);
+
     const showPhotosPanel =
         turn.mode === "visual" &&
-        turn.status !== "error" &&
-        turnImages.length > 0;
+        turn.status === "done" &&
+        moreImages.length > 0;
 
     return (
         <article className={`ask-turn${isLatest ? "" : " ask-turn--previous"}`}>
@@ -121,13 +139,6 @@ export const Turn: React.FC<TurnProps> = ({
                             </div>
                         ) : null}
 
-                        {showPhotosPanel ? (
-                            <PhotosPanel
-                                images={turnImages}
-                                onOpen={(index) => setLightboxIndex(index)}
-                            />
-                        ) : null}
-
                         {hasText ? (
                             <>
                                 <p className="ask-turn-assistant-label">
@@ -157,6 +168,12 @@ export const Turn: React.FC<TurnProps> = ({
                                 <LowConfidenceCaveat
                                     confidence={turn.confidence}
                                 />
+                                {showPhotosPanel ? (
+                                    <PhotosPanel
+                                        images={moreImages}
+                                        onOpenUrl={openLightbox}
+                                    />
+                                ) : null}
                                 <SourceList
                                     sources={turn.sourceArticles}
                                     defaultExpanded={false}

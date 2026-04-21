@@ -41,6 +41,27 @@ export function dedupSourceImages(
 }
 
 /**
+ * Pull every `![...](url)` URL out of a markdown string, seeded into
+ * the set under both its raw and fully decoded forms. Used to filter
+ * the "More pictures" panel down to photos the reader hasn't seen
+ * inlined in the answer yet. Our URLs are `%20`-encoded upstream by
+ * `mdSafeUrl`, so whitespace is a safe terminator in the regex.
+ */
+export function extractInlineImageUrls(markdown: string): Set<string> {
+  const out = new Set<string>();
+  for (const match of markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
+    const url = match[1];
+    out.add(url);
+    try {
+      out.add(decodeURI(url));
+    } catch {
+      // Malformed percent escape — raw form above still matches.
+    }
+  }
+  return out;
+}
+
+/**
  * Build a URL → metadata map so a consumer that received the URL in
  * any plausible shape — raw, %20-encoded, or fully decoded — can
  * resolve it in O(1). The LLM is told to emit URLs verbatim but its

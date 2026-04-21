@@ -32,14 +32,23 @@ function makeImages(n: number): TurnImage[] {
 describe("PhotosPanel", () => {
     it("renders nothing when the images list is empty", () => {
         const { container } = render(
-            <PhotosPanel images={[]} onOpen={() => {}} />,
+            <PhotosPanel images={[]} onOpenUrl={() => {}} />,
         );
         expect(container.firstChild).toBeNull();
     });
 
+    it("uses the 'More pictures' heading", () => {
+        render(
+            <PhotosPanel images={makeImages(3)} onOpenUrl={() => {}} />,
+        );
+        expect(
+            screen.getByRole("heading", { level: 3 }).textContent,
+        ).toBe("More pictures — 3");
+    });
+
     it("renders one tile per image with caption where present", () => {
         render(
-            <PhotosPanel images={makeImages(3)} onOpen={() => {}} />,
+            <PhotosPanel images={makeImages(3)} onOpenUrl={() => {}} />,
         );
         expect(screen.getAllByRole("button")).toHaveLength(3);
         // Even-indexed entries have captions.
@@ -49,23 +58,28 @@ describe("PhotosPanel", () => {
 
     it("caps tiles at 12 and surfaces an overflow hint", () => {
         render(
-            <PhotosPanel images={makeImages(15)} onOpen={() => {}} />,
+            <PhotosPanel images={makeImages(15)} onOpenUrl={() => {}} />,
         );
         expect(screen.getAllByRole("button")).toHaveLength(12);
         expect(screen.getByText(/showing first 12/i)).toBeInTheDocument();
     });
 
-    it("passes the dedup index to onOpen when a tile is clicked", () => {
-        const calls: number[] = [];
+    it("passes the clicked image src to onOpenUrl", () => {
+        const calls: string[] = [];
         const images = makeImages(4);
-        render(<PhotosPanel images={images} onOpen={(i) => calls.push(i)} />);
+        render(
+            <PhotosPanel
+                images={images}
+                onOpenUrl={(src) => calls.push(src)}
+            />,
+        );
         screen.getAllByRole("button")[2].click();
-        expect(calls).toEqual([2]);
+        expect(calls).toEqual([images[2].src]);
     });
 
     it("shows source attribution chip for every tile", () => {
         render(
-            <PhotosPanel images={makeImages(3)} onOpen={() => {}} />,
+            <PhotosPanel images={makeImages(3)} onOpenUrl={() => {}} />,
         );
         const attrs = document.querySelectorAll(".ask-photos-tile-attr");
         expect(attrs).toHaveLength(3);
