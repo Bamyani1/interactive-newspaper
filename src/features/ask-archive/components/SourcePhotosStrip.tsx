@@ -42,13 +42,11 @@ export const SourcePhotosStrip: React.FC<SourcePhotosStripProps> = ({
                     if (i >= 0) setOpenIndex(i);
                 }}
             />
-            {openIndex !== null ? (
-                <Lightbox
-                    images={images}
-                    initialIndex={openIndex}
-                    onClose={() => setOpenIndex(null)}
-                />
-            ) : null}
+            <Lightbox
+                images={openIndex !== null ? images : []}
+                initialIndex={openIndex ?? 0}
+                onClose={() => setOpenIndex(null)}
+            />
         </div>
     );
 };

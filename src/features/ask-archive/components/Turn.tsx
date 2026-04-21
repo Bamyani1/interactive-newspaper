@@ -175,16 +175,18 @@ export const Turn: React.FC<TurnProps> = ({
                 )}
             </div>
 
-            {lightboxIndex !== null ? (
-                <Lightbox
-                    images={turnImages.map((img) => ({
-                        src: img.src,
-                        caption: img.caption,
-                    }))}
-                    initialIndex={lightboxIndex}
-                    onClose={() => setLightboxIndex(null)}
-                />
-            ) : null}
+            <Lightbox
+                images={
+                    lightboxIndex !== null
+                        ? turnImages.map((img) => ({
+                              src: img.src,
+                              caption: img.caption,
+                          }))
+                        : []
+                }
+                initialIndex={lightboxIndex ?? 0}
+                onClose={() => setLightboxIndex(null)}
+            />
         </article>
     );
 };

@@ -6,8 +6,15 @@ import type { TurnImage } from "@/features/ask-archive/lib/dedup-source-images";
 
 vi.mock("next/image", () => ({
     __esModule: true,
-    default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => {
-        const { alt, src, ...rest } = props;
+    default: (
+        props: React.ImgHTMLAttributes<HTMLImageElement> & {
+            fill?: boolean;
+            sizes?: string;
+        },
+    ) => {
+        const { alt, src, fill: _fill, sizes: _sizes, ...rest } = props;
+        void _fill;
+        void _sizes;
         // eslint-disable-next-line @next/next/no-img-element
         return <img alt={alt ?? ""} src={String(src)} {...rest} />;
     },

@@ -208,9 +208,10 @@
     border: 1px solid var(--stroke-accent-soft);
 }
 
-/* When an image is wrapped in a figure (caption + attribution available)
-   the figure owns the vertical rhythm so the <img> inside it can drop
-   its own margin without stacking double space. */
+/* Inline image wrapper — structured as phrasing content (span) so the
+   LLM can emit `![...](...)` mid-paragraph without producing invalid
+   HTML. CSS gives it block rhythm. The caption span is also display
+   block, so it drops below the image. */
 .ask-answer-figure {
     display: block;
     margin: 1rem 0;
@@ -234,6 +235,7 @@
 }
 
 .ask-answer-figcaption {
+    display: block;
     font-family: var(--font-body);
     font-size: 0.78rem;
     font-style: italic;
