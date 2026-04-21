@@ -1,7 +1,8 @@
 "use client";
 import React from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
+
+export { Lightbox, ImageGallery } from "@/src/components/ui/lightbox";
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -228,57 +229,6 @@ export function ArticleImage({
   );
 }
 
-// Gallery occupies 90% of the feed area and splits into N tiles.
-const GALLERY_IMAGE_SIZES = "(max-width: 768px) 90vw, (max-width: 1280px) 40vw, 30vw";
-
-/** Row of additional images (index 1+) displayed below the column text. */
-export function ImageGallery({
-  images,
-  alt,
-  onClick,
-}: {
-  images: { src: string; caption?: string | null }[];
-  alt: string;
-  onClick: (src: string) => void;
-}) {
-  if (images.length === 0) return null;
-  return (
-    <div className="flex gap-4 mt-4" style={{ width: "90%", margin: "0 auto" }}>
-      {images.map((img, i) => (
-        <div key={i} style={{ flex: 1, minWidth: 0 }}>
-          <div
-            className="relative border-3 border-[var(--color-text-primary)] overflow-hidden cursor-pointer"
-            style={{ width: "100%", aspectRatio: "4/3" }}
-            onClick={() => onClick(img.src)}
-          >
-            <Image
-              src={img.src}
-              alt={`${alt} — image ${i + 2}`}
-              fill
-              sizes={GALLERY_IMAGE_SIZES}
-              className="object-cover"
-              style={{ objectPosition: "center 20%" }}
-            />
-          </div>
-          {img.caption && (
-            <p
-              className="mt-1"
-              style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "12px",
-                fontStyle: "italic",
-                color: "var(--color-text-secondary)",
-              }}
-            >
-              {img.caption}
-            </p>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /**
  * Compute insertion positions for images interleaved between paragraphs.
  * Returns an array of length N where positions[i] is the paragraph index
@@ -476,34 +426,3 @@ export function PhotoFeature({
   );
 }
 
-/** Full-screen lightbox overlay for article images. */
-export function Lightbox({ src, onClose }: { src: string | null; onClose: () => void }) {
-  return (
-    <AnimatePresence>
-      {src && (
-        <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 cursor-pointer"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-        >
-          <motion.div
-            className="relative max-w-[90vw] max-h-[90vh]"
-            initial={{ scale: 0.85, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.85, opacity: 0 }}
-            transition={{ type: "spring", damping: 25, stiffness: 300 }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={src}
-              alt="Full-size view"
-              className="max-w-[90vw] max-h-[90vh] object-contain border-4 border-[var(--color-border-default)] shadow-2xl"
-            />
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
