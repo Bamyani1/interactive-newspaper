@@ -312,19 +312,34 @@ export function useAskArchive(): UseAskArchiveReturn {
                     expired?: boolean;
                 };
                 if (cancelled) return;
-                const serverTurns: Turn[] = (json.turns ?? []).map((t, i) => ({
-                    id: `hydrated-${t.timestamp}-${i}`,
-                    question: t.question,
-                    answer: t.answer,
-                    status: "done" as const,
-                    sourceArticles: t.sourceArticles ?? [],
-                    citations: [],
-                    meta: null,
-                    confidence: "medium" as const,
-                    requestId: "",
-                    mode: "text" as const,
-                    createdAt: t.timestamp,
-                }));
+                // The session API doesn't persist mode/confidence/meta, but
+                // localStorage does. When a local turn aligns with a
+                // server turn (same position + same question), recover
+                // those fields so the visual-mode photos panel, the
+                // confidence badge, and the answer meta survive a
+                // reload. Position-matching is safe because both the
+                // reducer and the server store turns in strict order.
+                const localTurns = archivedActive?.turns ?? [];
+                const serverTurns: Turn[] = (json.turns ?? []).map((t, i) => {
+                    const local =
+                        localTurns[i]?.question === t.question
+                            ? localTurns[i]
+                            : undefined;
+                    return {
+                        id: `hydrated-${t.timestamp}-${i}`,
+                        question: t.question,
+                        answer: t.answer,
+                        status: "done" as const,
+                        sourceArticles:
+                            t.sourceArticles ?? local?.sourceArticles ?? [],
+                        citations: local?.citations ?? [],
+                        meta: local?.meta ?? null,
+                        confidence: local?.confidence ?? "medium",
+                        requestId: local?.requestId ?? "",
+                        mode: local?.mode ?? "text",
+                        createdAt: t.timestamp,
+                    };
+                });
                 // Prefer server turns when present (most recent); fall
                 // through to the local archive if server reports empty
                 // but we have a stored thread for this sessionId.
