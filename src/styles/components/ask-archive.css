@@ -199,7 +199,10 @@
 .ask-answer-image {
     display: block;
     max-width: min(100%, 480px);
+    max-height: 60vh;
+    width: auto;
     height: auto;
+    object-fit: contain;
     margin: 1rem 0;
     border-radius: var(--radius-md);
     border: 1px solid var(--stroke-accent-soft);
