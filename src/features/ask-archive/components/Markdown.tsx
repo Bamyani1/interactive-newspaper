@@ -69,6 +69,34 @@ const renderImg: React.FC<
     return <InlineAnswerImage {...rest} src={src} alt={alt} />;
 };
 
+// react-markdown wraps inline content in <p>. When the sole meaningful
+// child of a paragraph is an image (which we promote to <figure>), a
+// <figure>-in-<p> hydration mismatch fires. Unwrap the paragraph in
+// that case so block-level figures live directly under the answer div.
+// The child react-markdown hands us is the rendered `img` override
+// (renderImg above), so we detect "image-only" by inspecting each
+// child element's props.src rather than matching on component type.
+function isImageNode(node: React.ReactNode): boolean {
+    if (!React.isValidElement(node)) return false;
+    const props = node.props as { src?: unknown };
+    return typeof props.src === "string" && props.src.length > 0;
+}
+
+const renderParagraph: React.FC<
+    React.HTMLAttributes<HTMLParagraphElement> & {
+        children?: React.ReactNode;
+    }
+> = ({ children, ...rest }) => {
+    const array = React.Children.toArray(children);
+    const nonWhitespace = array.filter(
+        (c) => !(typeof c === "string" && c.trim().length === 0),
+    );
+    if (nonWhitespace.length === 1 && isImageNode(nonWhitespace[0])) {
+        return <>{nonWhitespace[0]}</>;
+    }
+    return <p {...rest}>{children}</p>;
+};
+
 // Intercept <a> so in-document citation links get smooth-scroll behavior
 // and the ask-citation-link class. External links open in a new tab with
 // the usual safety attributes.
@@ -154,7 +182,11 @@ export const Markdown: React.FC<MarkdownProps> = ({
         return (
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                components={{ a: renderAnchor, img: renderImg }}
+                components={{
+                    a: renderAnchor,
+                    img: renderImg,
+                    p: renderParagraph,
+                }}
             >
                 {preprocessed}
             </ReactMarkdown>
@@ -165,7 +197,11 @@ export const Markdown: React.FC<MarkdownProps> = ({
         <div className={className}>
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                components={{ a: renderAnchor, img: renderImg }}
+                components={{
+                    a: renderAnchor,
+                    img: renderImg,
+                    p: renderParagraph,
+                }}
             >
                 {preprocessed}
             </ReactMarkdown>
