@@ -193,6 +193,18 @@
     opacity: 0.6;
 }
 
+/* Inline image emitted by the LLM in answer markdown (![alt](url)).
+   Thumbnail images inside source cards use next/image and are styled
+   separately under .ask-source-card-thumb. */
+.ask-answer-image {
+    display: block;
+    max-width: min(100%, 480px);
+    height: auto;
+    margin: 1rem 0;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--stroke-accent-soft);
+}
+
 /* =========================================
    SOURCE CARD
    ========================================= */

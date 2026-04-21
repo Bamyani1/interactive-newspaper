@@ -284,6 +284,7 @@ describe("agent-loop", () => {
             byline: null,
             bodySnippet: "",
             imageUrls: [],
+            imageCaptions: [],
         });
 
         it("extracts valid citation IDs", () => {
@@ -319,6 +320,7 @@ describe("agent-loop", () => {
                 byline: null,
                 bodySnippet: "",
                 imageUrls: [],
+                imageCaptions: [],
             });
             const citations = parseCitations("[1965-03-15-4] and [1970-05-20-2].", lookup);
             expect(citations).toHaveLength(2);

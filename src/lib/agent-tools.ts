@@ -4,6 +4,12 @@ import type { NeonQueryFunction } from "@neondatabase/serverless";
 import { hybridSearch, queryEditions } from "@/src/lib/db";
 import { embedQuery } from "@/src/lib/embeddings";
 
+// R2 keys can contain spaces; encode them so the LLM can embed these URLs
+// inside markdown `![](...)` without the parser choking on the space.
+function mdSafeUrls(urls: string[]): string[] {
+    return urls.map((u) => u.replace(/ /g, "%20"));
+}
+
 let _sql: NeonQueryFunction<false, false> | null = null;
 function getSql() {
     if (!_sql) _sql = neon(process.env.DATABASE_URL!);
@@ -116,7 +122,8 @@ async function executeSearchArchive(
       category: r.category,
       summary: r.summary,
       excerpt: r.bodyPlain.slice(0, 500),
-      imageUrls: r.imageUrls,
+      imageUrls: mdSafeUrls(r.imageUrls),
+      imageCaptions: r.imageCaptions,
     })),
   };
 }
@@ -128,7 +135,7 @@ async function executeReadArticle(
 
   const rows = await getSql()`
     SELECT id, edition_date, category, headline, summary, byline,
-           body_plain, image_urls
+           body_plain, image_urls, image_captions
     FROM articles
     WHERE id = ${articleId}
   `;
@@ -146,7 +153,8 @@ async function executeReadArticle(
     summary: r.summary,
     byline: r.byline ?? null,
     bodyPlain: r.body_plain,
-    imageUrls: r.image_urls ?? [],
+    imageUrls: mdSafeUrls(r.image_urls ?? []),
+    imageCaptions: r.image_captions ?? [],
   };
 }
 

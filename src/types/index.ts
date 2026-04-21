@@ -185,6 +185,7 @@ export interface AskResponse {
         bodySnippet: string;
         distance: number | null;
         imageUrls: string[];
+        imageCaptions?: (string | null)[];
     }[];
     followUpQuestions?: string[];
     meta: {

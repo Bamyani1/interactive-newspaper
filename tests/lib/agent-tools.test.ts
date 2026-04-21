@@ -51,6 +51,7 @@ describe("agent-tools", () => {
             summary: "Test summary",
             bodyPlain: "Full article body text here for testing excerpt truncation",
             imageUrls: [],
+            imageCaptions: [],
             distance: 0.5,
             source: "both" as const,
             byline: null,
@@ -124,9 +125,41 @@ describe("agent-tools", () => {
                         summary: "Test summary",
                         excerpt: "Full article body text here for testing excerpt truncation",
                         imageUrls: [],
+                        imageCaptions: [],
                     },
                 ],
             });
+        });
+
+        it("passes through imageUrls and imageCaptions from hybridSearch", async () => {
+            (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+                {
+                    ...mockArticle,
+                    imageUrls: ["https://cdn/a.webp", "https://cdn/b.webp"],
+                    imageCaptions: ["Homecoming 1978", null],
+                },
+            ]);
+
+            const result = await executeTool("search_archive", { query: "test" });
+            const article = (result.results as Array<Record<string, unknown>>)[0];
+            expect(article.imageUrls).toEqual(["https://cdn/a.webp", "https://cdn/b.webp"]);
+            expect(article.imageCaptions).toEqual(["Homecoming 1978", null]);
+        });
+
+        it("URL-encodes spaces so LLM can embed URLs inside markdown `![](...)`", async () => {
+            (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+                {
+                    ...mockArticle,
+                    imageUrls: ["https://cdn/1986-02-21/images/0003_Page 3_img3.webp"],
+                    imageCaptions: ["photo"],
+                },
+            ]);
+
+            const result = await executeTool("search_archive", { query: "test" });
+            const article = (result.results as Array<Record<string, unknown>>)[0];
+            expect(article.imageUrls).toEqual([
+                "https://cdn/1986-02-21/images/0003_Page%203_img3.webp",
+            ]);
         });
 
         it("truncates excerpt to 500 chars", async () => {
@@ -169,6 +202,7 @@ describe("agent-tools", () => {
                     byline: "Author Name",
                     body_plain: "Full text",
                     image_urls: ["img.jpg"],
+                    image_captions: ["A photo"],
                 },
             ]);
 
@@ -183,7 +217,48 @@ describe("agent-tools", () => {
                 byline: "Author Name",
                 bodyPlain: "Full text",
                 imageUrls: ["img.jpg"],
+                imageCaptions: ["A photo"],
             });
+        });
+
+        it("URL-encodes spaces in read_article imageUrls", async () => {
+            mockSqlResult.mockResolvedValueOnce([
+                {
+                    id: "1986-02-21-19",
+                    edition_date: "1986-02-21",
+                    category: "News",
+                    headline: "Test",
+                    summary: "Summary",
+                    byline: null,
+                    body_plain: "Full text",
+                    image_urls: ["https://cdn/1986-02-21/images/0003_Page 3_img3.webp"],
+                    image_captions: ["photo"],
+                },
+            ]);
+
+            const result = await executeTool("read_article", { articleId: "1986-02-21-19" });
+            expect((result as Record<string, unknown>).imageUrls).toEqual([
+                "https://cdn/1986-02-21/images/0003_Page%203_img3.webp",
+            ]);
+        });
+
+        it("defaults imageCaptions to [] when column is null", async () => {
+            mockSqlResult.mockResolvedValueOnce([
+                {
+                    id: "1965-03-15-4",
+                    edition_date: "1965-03-15",
+                    category: "News",
+                    headline: "Test",
+                    summary: "Summary",
+                    byline: null,
+                    body_plain: "Full text",
+                    image_urls: [],
+                    image_captions: null,
+                },
+            ]);
+
+            const result = await executeTool("read_article", { articleId: "1965-03-15-4" });
+            expect((result as Record<string, unknown>).imageCaptions).toEqual([]);
         });
 
         it("returns error when article not found", async () => {

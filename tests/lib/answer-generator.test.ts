@@ -27,6 +27,7 @@ function makeArticle(overrides: Partial<RankedArticle> = {}): RankedArticle {
     distance: 0.25,
     source: "vector",
     imageUrls: [],
+    imageCaptions: [],
     relevanceScore: 8, // default to "relevant" so confidence tests still work
     ...overrides,
   };
@@ -431,6 +432,80 @@ describe("generateAnswer", () => {
 
       expect(result.citations).toEqual([]);
       expect(result.confidence).toBe("low");
+    });
+  });
+
+  describe("image-aware prompt", () => {
+    function lastUserPromptText(): string {
+      const call = mockGenerateContent.mock.calls[0][0] as {
+        contents: Array<{ parts: Array<{ text: string }> }>;
+      };
+      return call.contents[0].parts[0].text;
+    }
+
+    it("appends an Images: block per source when imageUrls are present", async () => {
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Answer with image [Source 1].")
+      );
+
+      const articles = [
+        makeArticle({
+          id: "1978-10-14-3",
+          imageUrls: [
+            "https://cdn/a.webp",
+            "https://cdn/b.webp",
+          ],
+          imageCaptions: ["Homecoming parade 1978", null],
+        }),
+      ];
+
+      await generateAnswer("what was homecoming like?", articles);
+
+      const prompt = lastUserPromptText();
+      expect(prompt).toContain("Images:");
+      expect(prompt).toContain("[Homecoming parade 1978]");
+      expect(prompt).toContain("https://cdn/a.webp");
+      expect(prompt).toContain("[Untitled photo]");
+      expect(prompt).toContain("https://cdn/b.webp");
+    });
+
+    it("URL-encodes spaces in image URLs so the LLM emits markdown-safe inline images", async () => {
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Answer [Source 1].")
+      );
+
+      const articles = [
+        makeArticle({
+          imageUrls: [
+            "https://cdn/1986-02-21/images/0003_Page 3_img3.webp",
+          ],
+          imageCaptions: ["photo"],
+        }),
+      ];
+
+      await generateAnswer("test", articles);
+
+      const prompt = lastUserPromptText();
+      expect(prompt).toContain(
+        "https://cdn/1986-02-21/images/0003_Page%203_img3.webp"
+      );
+      expect(prompt).not.toContain("Page 3_img3.webp");
+    });
+
+    it("omits the Images: block entirely when no sources have images", async () => {
+      const generateAnswer = await importGenerateAnswer();
+      mockGenerateContent.mockResolvedValue(
+        jsonMock("Plain answer [Source 1].")
+      );
+
+      const articles = [makeArticle({ imageUrls: [], imageCaptions: [] })];
+
+      await generateAnswer("what happened?", articles);
+
+      const prompt = lastUserPromptText();
+      expect(prompt).not.toContain("Images:");
     });
   });
 

@@ -115,6 +115,7 @@ describe("GET /api/ask/session", () => {
                         byline: "Writer A",
                         bodySnippet: "Body A…",
                         imageUrls: [],
+                        imageCaptions: [],
                     },
                 ],
                 [
@@ -128,6 +129,7 @@ describe("GET /api/ask/session", () => {
                         byline: null,
                         bodySnippet: "Body B…",
                         imageUrls: ["https://example.com/b.jpg"],
+                        imageCaptions: ["Caption B"],
                     },
                 ],
             ]),
@@ -178,6 +180,7 @@ describe("GET /api/ask/session", () => {
                         byline: null,
                         bodySnippet: "Body A…",
                         imageUrls: [],
+                        imageCaptions: [],
                     },
                 ],
             ]),

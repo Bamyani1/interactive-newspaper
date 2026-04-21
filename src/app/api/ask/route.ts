@@ -436,6 +436,7 @@ async function handleStreamingAsk(params: {
                                 bodySnippet: meta?.bodySnippet ?? "",
                                 distance: null,
                                 imageUrls: meta?.imageUrls ?? [],
+                                imageCaptions: meta?.imageCaptions ?? [],
                             };
                         });
 
@@ -742,6 +743,7 @@ async function handleStreamingAsk(params: {
                     distance:
                         a.distance !== null ? parseFloat(a.distance.toFixed(4)) : null,
                     imageUrls: a.imageUrls,
+                    imageCaptions: a.imageCaptions,
                 }));
 
                 send({
@@ -1089,6 +1091,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     bodySnippet: meta?.bodySnippet ?? "",
                     distance: null,
                     imageUrls: meta?.imageUrls ?? [],
+                    imageCaptions: meta?.imageCaptions ?? [],
                 };
             });
 
@@ -1353,6 +1356,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 bodySnippet: (a.bodyPlain || "").slice(0, 300) + ((a.bodyPlain || "").length > 300 ? "…" : ""),
                 distance: a.distance !== null ? parseFloat(a.distance.toFixed(4)) : null,
                 imageUrls: a.imageUrls,
+                imageCaptions: a.imageCaptions,
             })),
             followUpQuestions: followUps,
             meta: {
