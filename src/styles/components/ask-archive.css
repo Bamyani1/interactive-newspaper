@@ -489,6 +489,19 @@
     border: 3px solid var(--color-text-primary);
 }
 
+.ask-source-thumb-count {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    padding: 2px 5px;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    color: #fff;
+    background: color-mix(in oklab, var(--color-accent) 82%, #000 18%);
+    border-radius: 2px;
+}
+
 .ask-source-list {
     margin-top: 2rem;
 }
@@ -1803,6 +1816,18 @@
   font-size: 0.9rem;
   font-style: italic;
   color: var(--color-text-secondary);
+}
+
+.ask-reader-photos {
+  margin: 0 0 1.75rem;
+}
+
+/* The ImageGallery primitive enforces 90% width with auto margin by
+   default, which looks off inside the reader drawer. Override to the
+   reader's full text width. */
+.ask-reader-photos > div {
+  width: 100% !important;
+  margin: 0 !important;
 }
 
 .ask-reader-body {
