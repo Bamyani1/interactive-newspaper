@@ -1,12 +1,23 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import type { Turn as TurnData } from "../hooks/askReducer";
 import { Markdown } from "./Markdown";
 import { SourceList } from "./SourceList";
 import { FollowUpQuestions } from "./FollowUpQuestions";
 import { LowConfidenceCaveat } from "./LowConfidenceCaveat";
 import { ErrorInline } from "./ErrorInline";
+import {
+    dedupSourceImages,
+    extractInlineImageUrls,
+    indexImagesByUrl,
+} from "../lib/dedup-source-images";
+import {
+    AnswerImageContext,
+    type AnswerImageContextValue,
+} from "./AnswerImageContext";
+import { PhotosPanel } from "./PhotosPanel";
+import { Lightbox } from "@/src/components/ui/lightbox";
 
 interface TurnProps {
     turn: TurnData;
@@ -34,9 +45,55 @@ export const Turn: React.FC<TurnProps> = ({
         [turn.sourceArticles],
     );
 
+    const turnImages = useMemo(
+        () => dedupSourceImages(turn.sourceArticles),
+        [turn.sourceArticles],
+    );
+    const imageIndex = useMemo(
+        () => indexImagesByUrl(turnImages),
+        [turnImages],
+    );
+
+    const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+    const openLightbox = useCallback(
+        (url: string) => {
+            const match = imageIndex.get(url);
+            if (match) setLightboxIndex(match.index);
+        },
+        [imageIndex],
+    );
+
+    const contextValue = useMemo<AnswerImageContextValue>(
+        () => ({ metaByUrl: imageIndex, openLightbox }),
+        [imageIndex, openLightbox],
+    );
+
     const isStreaming = turn.status === "streaming";
     const hasText = turn.answer.trim().length > 0;
     const showStagePill = isStreaming && !hasText;
+
+    // Photos the LLM already embedded inline shouldn't re-appear in
+    // the "More pictures" grid, otherwise the reader sees the same
+    // thumbnail twice.
+    const moreImages = useMemo(() => {
+        const inlined = extractInlineImageUrls(turn.answer);
+        if (inlined.size === 0) return turnImages;
+        return turnImages.filter((img) => {
+            if (inlined.has(img.src)) return false;
+            try {
+                if (inlined.has(decodeURI(img.src))) return false;
+            } catch {
+                // Malformed URL — fall through; raw compare already ran.
+            }
+            return true;
+        });
+    }, [turnImages, turn.answer]);
+
+    const showPhotosPanel =
+        turn.mode === "visual" &&
+        turn.status === "done" &&
+        moreImages.length > 0;
 
     return (
         <article className={`ask-turn${isLatest ? "" : " ask-turn--previous"}`}>
@@ -47,11 +104,6 @@ export const Turn: React.FC<TurnProps> = ({
 
             <div
                 className="ask-turn-assistant"
-                // Keep aria-live="polite" on the region at all times so
-                // a transition from streaming → error announces to
-                // screen readers. Previously the attribute was only
-                // set while streaming, which left silent TURN_ERROR
-                // transitions for AT users.
                 aria-live="polite"
                 aria-atomic="false"
             >
@@ -98,9 +150,15 @@ export const Turn: React.FC<TurnProps> = ({
                                         isStreaming ? "true" : undefined
                                     }
                                 >
-                                    <Markdown articleIdIndex={articleIdIndex}>
-                                        {turn.answer}
-                                    </Markdown>
+                                    <AnswerImageContext.Provider
+                                        value={contextValue}
+                                    >
+                                        <Markdown
+                                            articleIdIndex={articleIdIndex}
+                                        >
+                                            {turn.answer}
+                                        </Markdown>
+                                    </AnswerImageContext.Provider>
                                 </div>
                             </>
                         ) : null}
@@ -110,6 +168,12 @@ export const Turn: React.FC<TurnProps> = ({
                                 <LowConfidenceCaveat
                                     confidence={turn.confidence}
                                 />
+                                {showPhotosPanel ? (
+                                    <PhotosPanel
+                                        images={moreImages}
+                                        onOpenUrl={openLightbox}
+                                    />
+                                ) : null}
                                 <SourceList
                                     sources={turn.sourceArticles}
                                     defaultExpanded={false}
@@ -127,6 +191,19 @@ export const Turn: React.FC<TurnProps> = ({
                     </>
                 )}
             </div>
+
+            <Lightbox
+                images={
+                    lightboxIndex !== null
+                        ? turnImages.map((img) => ({
+                              src: img.src,
+                              caption: img.caption,
+                          }))
+                        : []
+                }
+                initialIndex={lightboxIndex ?? 0}
+                onClose={() => setLightboxIndex(null)}
+            />
         </article>
     );
 };

@@ -199,10 +199,164 @@
 .ask-answer-image {
     display: block;
     max-width: min(100%, 480px);
+    max-height: 60vh;
+    width: auto;
     height: auto;
+    object-fit: contain;
     margin: 1rem 0;
     border-radius: var(--radius-md);
     border: 1px solid var(--stroke-accent-soft);
+}
+
+/* Inline image wrapper — structured as phrasing content (span) so the
+   LLM can emit `![...](...)` mid-paragraph without producing invalid
+   HTML. CSS gives it block rhythm. The caption span is also display
+   block, so it drops below the image. */
+.ask-answer-figure {
+    display: block;
+    margin: 1rem 0;
+    max-width: min(100%, 480px);
+}
+
+.ask-answer-figure .ask-answer-image {
+    margin: 0;
+}
+
+.ask-answer-image-btn {
+    all: unset;
+    display: block;
+    cursor: zoom-in;
+    border-radius: var(--radius-md);
+}
+
+.ask-answer-image-btn:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+}
+
+.ask-answer-figcaption {
+    display: block;
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    font-style: italic;
+    color: var(--color-text-secondary);
+    margin-top: 0.35rem;
+    line-height: 1.45;
+}
+
+.ask-answer-image-attr {
+    display: inline-block;
+    margin-top: 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.8;
+}
+
+.ask-answer-image-attr:hover,
+.ask-answer-image-attr:focus-visible {
+    opacity: 1;
+}
+
+/* =========================================
+   PHOTOS PANEL (visual-mode)
+   ========================================= */
+
+.ask-photos-panel {
+    margin: 0.25rem 0 1.4rem;
+}
+
+.ask-photos-panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.55rem;
+}
+
+.ask-photos-panel-label {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+}
+
+.ask-photos-panel-overflow {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    opacity: 0.7;
+}
+
+.ask-photos-grid {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.9rem;
+}
+
+.ask-photos-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.ask-photos-tile-btn {
+    all: unset;
+    display: block;
+    cursor: zoom-in;
+    position: relative;
+}
+
+.ask-photos-tile-btn:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+}
+
+.ask-photos-tile-frame {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border: 2px solid var(--color-text-primary);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ask-photos-tile-btn:hover .ask-photos-tile-frame,
+.ask-photos-tile-btn:focus-visible .ask-photos-tile-frame {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px color-mix(in oklab, var(--color-accent) 18%, transparent);
+}
+
+.ask-photos-tile-caption {
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    font-style: italic;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.ask-photos-tile-attr {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+    opacity: 0.85;
 }
 
 /* =========================================
@@ -338,6 +492,19 @@
     aspect-ratio: 4 / 3;
     overflow: hidden;
     border: 3px solid var(--color-text-primary);
+}
+
+.ask-source-thumb-count {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    padding: 2px 5px;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    color: #fff;
+    background: color-mix(in oklab, var(--color-accent) 82%, #000 18%);
+    border-radius: 2px;
 }
 
 .ask-source-list {
@@ -1654,6 +1821,18 @@
   font-size: 0.9rem;
   font-style: italic;
   color: var(--color-text-secondary);
+}
+
+.ask-reader-photos {
+  margin: 0 0 1.75rem;
+}
+
+/* The ImageGallery primitive enforces 90% width with auto margin by
+   default, which looks off inside the reader drawer. Override to the
+   reader's full text width. */
+.ask-reader-photos > div {
+  width: 100% !important;
+  margin: 0 !important;
 }
 
 .ask-reader-body {

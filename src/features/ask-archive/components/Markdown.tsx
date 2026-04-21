@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { InlineAnswerImage } from "./InlineAnswerImage";
 
 interface MarkdownProps {
     children: string;
@@ -55,27 +56,19 @@ type AnchorProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
     children?: React.ReactNode;
 };
 
-// Intercept <img> so LLM-emitted inline images render with the
-// ask-answer-image class (constrained width, rounded corners) and
-// lazy-load. Drop the element entirely if src is empty/undefined so
-// a malformed embed can't break layout. The src typing is widened
-// because react-markdown's component prop types permit Blob sources
-// we will never receive from markdown parsing.
+// Intercept <img> so LLM-emitted inline images render through
+// InlineAnswerImage, which upgrades to a clickable caption + chip
+// when an AnswerImageContext is present, and falls back to a plain
+// lazy <img> otherwise. The wrapper is phrasing content (spans) so
+// nesting inside the <p> react-markdown wraps around inline content
+// is valid HTML; no paragraph-unwrap required. Drop the element
+// entirely if src is empty/undefined so a malformed embed can't
+// break layout.
 const renderImg: React.FC<
     React.ImgHTMLAttributes<HTMLImageElement>
 > = ({ src, alt, ...rest }) => {
     if (typeof src !== "string" || src.trim().length === 0) return null;
-    return (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-            {...rest}
-            src={src}
-            alt={alt ?? ""}
-            loading="lazy"
-            decoding="async"
-            className="ask-answer-image"
-        />
-    );
+    return <InlineAnswerImage {...rest} src={src} alt={alt} />;
 };
 
 // Intercept <a> so in-document citation links get smooth-scroll behavior

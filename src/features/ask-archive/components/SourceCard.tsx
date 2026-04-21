@@ -74,6 +74,14 @@ export const SourceCard: React.FC<SourceCardProps> = ({
                 className="object-cover"
                 style={{ objectPosition: "center 20%" }}
               />
+              {source.imageUrls.length > 1 ? (
+                <span
+                  className="ask-source-thumb-count"
+                  aria-label={`${source.imageUrls.length} photos in this article`}
+                >
+                  +{source.imageUrls.length - 1}
+                </span>
+              ) : null}
             </div>
           </div>
         ) : null}

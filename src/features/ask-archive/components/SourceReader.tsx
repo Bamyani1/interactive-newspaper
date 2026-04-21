@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { AskResponse } from "@/src/types";
+import { SourcePhotosStrip } from "./SourcePhotosStrip";
 
 type SourceArticle = AskResponse["sourceArticles"][number];
 
@@ -244,6 +245,14 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
 
                         {source.byline ? (
                             <p className="ask-reader-byline">{source.byline}</p>
+                        ) : null}
+
+                        {source.imageUrls.length > 0 ? (
+                            <SourcePhotosStrip
+                                urls={source.imageUrls}
+                                captions={source.imageCaptions}
+                                alt={source.headline || "Source photo"}
+                            />
                         ) : null}
 
                         <div className="ask-reader-body">
