@@ -1,0 +1,344 @@
+/**
+ * Ask the Archive — Markdown prose
+ *
+ * Typography for rendered markdown inside the RAG answer container.
+ * Applies to both the existing .ask-turn-answer parent (current markup)
+ * and the .prose wrapper emitted by the <Prose /> primitive, so swapping
+ * one for the other is a no-op. Covers h1–h6, paragraphs, lists,
+ * blockquote, code (inline + block), tables, images (InlineAnswerImage),
+ * and the citation-link superscript.
+ *
+ * The streaming/typing cursor lives in typing-cursor.css; animated
+ * "thinking" indicators live in transcript.css.
+ */
+
+/* =========================================
+   CONTAINER
+   Body text density for the rendered markdown block. Styles apply to
+   either the legacy .ask-turn-answer parent or the <Prose> wrapper.
+   ========================================= */
+
+.ask-turn-answer,
+.prose {
+  color: var(--color-text-primary);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+}
+
+/* =========================================
+   PARAGRAPHS
+   ========================================= */
+
+.ask-turn-answer p,
+.prose p {
+  margin: 0 0 var(--space-4);
+}
+.ask-turn-answer p:last-child,
+.prose p:last-child {
+  margin-bottom: 0;
+}
+
+/* =========================================
+   HEADINGS
+   H1-H3 share the accent-rule treatment; H4 is a lighter italic
+   inflection for sub-sections. H5/H6 borrow the H4 scale.
+   ========================================= */
+
+.ask-turn-answer h1,
+.ask-turn-answer h2,
+.ask-turn-answer h3,
+.prose h1,
+.prose h2,
+.prose h3 {
+  font-family: var(--font-header);
+  font-size: 1.25rem;
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+  margin: 1.75rem 0 var(--space-2);
+  position: relative;
+}
+.ask-turn-answer h3::before,
+.ask-turn-answer h2::before,
+.ask-turn-answer h1::before,
+.prose h3::before,
+.prose h2::before,
+.prose h1::before {
+  content: "";
+  display: block;
+  width: 2.5rem;
+  height: 2px;
+  background: var(--color-accent);
+  margin-bottom: 0.65rem;
+}
+.ask-turn-answer h1:first-child,
+.ask-turn-answer h2:first-child,
+.ask-turn-answer h3:first-child,
+.prose h1:first-child,
+.prose h2:first-child,
+.prose h3:first-child {
+  margin-top: 0;
+}
+.ask-turn-answer h1:first-child::before,
+.ask-turn-answer h2:first-child::before,
+.ask-turn-answer h3:first-child::before,
+.prose h1:first-child::before,
+.prose h2:first-child::before,
+.prose h3:first-child::before {
+  display: none;
+}
+.ask-turn-answer h4,
+.ask-turn-answer h5,
+.ask-turn-answer h6,
+.prose h4,
+.prose h5,
+.prose h6 {
+  font-family: var(--font-header);
+  font-size: 1.1rem;
+  font-weight: var(--font-semibold);
+  font-style: italic;
+  color: var(--color-text-primary);
+  margin: var(--space-4) 0 0.4rem;
+}
+
+/* =========================================
+   INLINE EMPHASIS
+   ========================================= */
+
+.ask-turn-answer strong,
+.prose strong {
+  color: var(--color-text-primary);
+  font-weight: var(--font-semibold);
+}
+
+/* =========================================
+   LISTS
+   ========================================= */
+
+.ask-turn-answer ul,
+.ask-turn-answer ol,
+.prose ul,
+.prose ol {
+  padding-left: var(--space-6);
+  margin: 0 0 var(--space-4);
+}
+.ask-turn-answer li,
+.prose li {
+  margin: var(--space-1) 0;
+}
+
+/* =========================================
+   CODE
+   ========================================= */
+
+.ask-turn-answer pre,
+.prose pre {
+  background: var(--color-bg-secondary);
+  padding: 0.75rem;
+  border-radius: var(--radius-default);
+  overflow-x: auto;
+  font-size: 0.85rem;
+  margin: 0 0 var(--space-4);
+}
+.ask-turn-answer code,
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--color-bg-secondary);
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-sm);
+}
+.ask-turn-answer pre code,
+.prose pre code {
+  background: transparent;
+  padding: 0;
+}
+
+/* =========================================
+   BLOCKQUOTE
+   Left accent rule + italic deck type per /design.md prose spec.
+   ========================================= */
+
+.ask-turn-answer blockquote,
+.prose blockquote {
+  margin: 0 0 var(--space-4);
+  padding: 0 0 0 var(--space-4);
+  border-left: 2px solid var(--color-accent);
+  font-style: italic;
+  color: var(--color-text-deck, var(--color-text-primary));
+}
+.ask-turn-answer blockquote p,
+.prose blockquote p {
+  margin-bottom: 0;
+}
+
+/* =========================================
+   TABLES
+   ========================================= */
+
+.ask-turn-answer table,
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-2) 0 var(--space-4);
+  font-size: 0.9rem;
+}
+.ask-turn-answer th,
+.ask-turn-answer td,
+.prose th,
+.prose td {
+  border: 1px solid var(--color-border-default);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+}
+.ask-turn-answer th,
+.prose th {
+  background: var(--color-bg-secondary);
+}
+
+/* =========================================
+   IMAGES (InlineAnswerImage)
+   Inline image emitted by the LLM in answer markdown (![alt](url)).
+   Thumbnail images inside source cards use next/image and are styled
+   separately (see sources.css).
+   ========================================= */
+
+.ask-answer-image {
+  display: block;
+  max-width: min(100%, 480px);
+  max-height: 60vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  margin: var(--space-4) 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--stroke-accent-soft);
+}
+
+/* Inline image wrapper — structured as phrasing content (span) so the
+   LLM can emit `![...](...)` mid-paragraph without producing invalid
+   HTML. CSS gives it block rhythm. The caption span is also display
+   block, so it drops below the image. */
+.ask-answer-figure {
+  display: block;
+  margin: var(--space-4) 0;
+  max-width: min(100%, 480px);
+}
+
+.ask-answer-figure .ask-answer-image {
+  margin: 0;
+}
+
+.ask-answer-image-btn {
+  all: unset;
+  display: block;
+  cursor: zoom-in;
+  border-radius: var(--radius-md);
+}
+
+.ask-answer-image-btn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 3px;
+}
+
+.ask-answer-figcaption {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  margin-top: 0.35rem;
+  line-height: 1.45;
+}
+
+.ask-answer-image-attr {
+  display: inline-block;
+  margin-top: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.ask-answer-image-attr:hover,
+.ask-answer-image-attr:focus-visible {
+  opacity: 1;
+}
+
+/* =========================================
+   CITATION LINKS
+   [Source N] and [YYYY-MM-DD-N] citations become red-chip superscript
+   anchors that scroll to the matching SourceCard.
+   ========================================= */
+
+.ask-citation-link {
+  display: inline-block;
+  vertical-align: super;
+  font-family: var(--font-mono);
+  font-size: 0.72em;
+  font-weight: var(--font-medium);
+  line-height: 1;
+  padding: 0 2px;
+  color: var(--color-accent);
+  cursor: pointer;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.ask-citation-link:hover {
+  color: var(--color-bg-primary);
+  background: var(--color-accent);
+}
+
+.ask-citation-unlinked {
+  color: var(--color-accent);
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+
+/* The answer-container scope already inherits .ask-citation-link — this
+   selector is retained so the rule order stays explicit for future
+   readers. */
+.ask-turn-answer .ask-citation-link {
+  /* inherit the global citation treatment — superscript with accent/invert hover */
+}
+
+/* =========================================
+   LEGACY ANSWER PANEL
+   Older .ask-answer wrapper kept for backwards compatibility; the
+   active answer container is .ask-turn-answer above. Safe to remove
+   once no references remain in historical fixtures.
+   ========================================= */
+
+.ask-answer {
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  line-height: 1.75;
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+  border: 1px dashed var(--stroke-accent-soft);
+  border-radius: var(--radius-default);
+  padding: 1.25rem var(--space-6);
+}
+
+.ask-answer p {
+  margin: 0 0 var(--space-4);
+}
+
+.ask-answer p:last-child {
+  margin-bottom: 0;
+}
+
+.ask-answer-heading {
+  font-family: var(--font-headline, var(--font-body));
+  font-size: 1.1rem;
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-label-sm);
+  color: var(--color-accent);
+  margin: var(--space-6) 0 var(--space-2);
+}
+
+.ask-answer-heading:first-child {
+  margin-top: 0;
+}

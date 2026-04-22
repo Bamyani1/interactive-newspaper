@@ -1,0 +1,156 @@
+/**
+ * Ask the Archive — Landing / empty state
+ *
+ * Centered editorial welcome rendered inside the main column when no
+ * turns exist. The composer stays pinned below, so the first submit has
+ * no layout jolt. A one-time entrance ramp is gated via data-animate so
+ * returning visitors get instant paint.
+ */
+
+.ask-landing {
+  max-width: 38rem;
+  margin: 0 auto;
+  padding: 3.5rem var(--space-6) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  text-align: center;
+}
+
+.ask-landing-title {
+  margin: 0;
+  font-family: var(--font-header);
+  font-size: clamp(1.9rem, 3.6vw, 2.75rem);
+  font-weight: var(--font-medium);
+  line-height: 1.08;
+  letter-spacing: -0.018em;
+  color: var(--color-text-primary);
+}
+.ask-landing-title em {
+  font-style: italic;
+  color: var(--color-accent);
+}
+
+.ask-landing-lede {
+  margin: 0 auto;
+  font-family: var(--font-body);
+  font-size: 1.04rem;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  max-width: 32rem;
+}
+.ask-landing-lede em {
+  font-style: italic;
+  color: var(--color-text-primary);
+}
+
+/* Suggestions — hairline-ruled list with arrow indent on hover. */
+.ask-landing-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding-top: var(--space-1);
+}
+
+.ask-landing-suggestions-label {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: var(--font-medium);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.ask-landing-suggestions ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ask-landing-suggestions li:first-child .ask-landing-suggestion {
+  border-top: 1px solid var(--stroke-accent-soft);
+}
+
+.ask-landing-suggestion {
+  width: 100%;
+  text-align: left;
+  padding: 0.85rem var(--space-1);
+  background: transparent;
+  color: var(--color-text-primary);
+  border: 0;
+  border-bottom: 1px solid var(--stroke-accent-soft);
+  border-radius: 0;
+  font-family: var(--font-body);
+  font-size: 1.02rem;
+  font-style: italic;
+  line-height: 1.35;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  transition: padding-left 0.18s ease, color 0.18s ease;
+}
+.ask-landing-suggestion-arrow {
+  font-family: var(--font-mono);
+  font-weight: var(--font-medium);
+  font-style: normal;
+  color: var(--color-accent);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+.ask-landing-suggestion:hover {
+  padding-left: 0.75rem;
+  color: var(--color-accent);
+}
+.ask-landing-suggestion:hover .ask-landing-suggestion-arrow {
+  transform: translateX(3px);
+}
+
+/* Footer strip — merges the "verify before quoting" disclaimer with
+   archive-scope coverage. Single source of truth for both; no more
+   duplicated stats anywhere else on the page. */
+.ask-landing-stats {
+  margin: 0 auto;
+  max-width: 34rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid color-mix(in oklab, var(--color-text-secondary) 14%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: var(--font-medium);
+  letter-spacing: var(--tracking-label-md);
+  line-height: 1.7;
+  text-transform: uppercase;
+  /* Direct secondary — the 58% color-mix failed WCAG AA by a wide
+     margin. */
+  color: var(--color-text-secondary);
+}
+
+/* One-time entrance animation — gated via data-animate so returning
+   visitors get instant paint; first-time visitors see a staggered
+   rise. Up to 5 children (H1, optional notice, lede, suggestions,
+   stats) so the ramp covers either 4- or 5-element cases. */
+@keyframes ask-landing-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ask-landing[data-animate="true"] > * {
+  animation: ask-landing-rise 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.ask-landing[data-animate="true"] > *:nth-child(1) { animation-delay: 0ms; }
+.ask-landing[data-animate="true"] > *:nth-child(2) { animation-delay: 80ms; }
+.ask-landing[data-animate="true"] > *:nth-child(3) { animation-delay: 160ms; }
+.ask-landing[data-animate="true"] > *:nth-child(4) { animation-delay: 240ms; }
+.ask-landing[data-animate="true"] > *:nth-child(5) { animation-delay: 320ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-landing[data-animate="true"] > * { animation: none; }
+}
+
+@media (max-width: 640px) {
+  .ask-landing {
+    padding: 2.25rem var(--space-4) var(--space-6);
+    gap: 1.2rem;
+  }
+}

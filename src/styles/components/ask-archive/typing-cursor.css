@@ -1,0 +1,93 @@
+/**
+ * Ask the Archive — Typing / streaming cursor
+ *
+ * Two blinking-cursor treatments:
+ *   1. .ask-answer-cursor — legacy inline-span cursor appended next to a
+ *      partial answer while tokens stream (kept for compatibility).
+ *   2. .ask-turn-answer[data-streaming="true"] ::after — a CSS-drawn
+ *      accent block that follows the last streamed paragraph/list-item
+ *      in the live answer container.
+ *
+ * Both share the "blink on 50%" idiom but use separate keyframes so the
+ * timing can drift independently without causing reflow on either.
+ */
+
+/* =========================================
+   LEGACY INLINE-SPAN CURSOR
+   Blinking cursor appended to the partial answer while tokens are
+   streaming in from /api/ask?stream=1. Hidden once the `done` event fires.
+   ========================================= */
+
+.ask-answer-cursor {
+  display: inline-block;
+  margin-left: 0.15em;
+  color: var(--color-accent);
+  animation: ask-answer-cursor-blink 1s steps(2, start) infinite;
+}
+
+@keyframes ask-answer-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* =========================================
+   STREAMING-CURSOR ::after
+   Drawn after the last block of the answer. Explicit width/height
+   (em-relative) makes it scale with the paragraph text and stay visible
+   regardless of font glyph coverage. Lives inside the last child's
+   inline flow so it follows the freshly streamed word instead of
+   dropping to a new line.
+
+   Two parent cases: the direct .ask-turn-answer container (legacy
+   markup) and the .ask-turn-answer > .prose wrapper now emitted by
+   the <Prose> primitive. Both shapes converge on the same trailing
+   paragraph/list item, so the cursor follows the streamed word either
+   way.
+   ========================================= */
+
+.ask-turn-answer[data-streaming="true"] > *:last-child::after,
+.ask-turn-answer[data-streaming="true"] > .prose > *:last-child::after,
+.ask-turn-answer[data-streaming="true"] > ul:last-child > li:last-child::after,
+.ask-turn-answer[data-streaming="true"] > ol:last-child > li:last-child::after,
+.ask-turn-answer[data-streaming="true"] > .prose > ul:last-child > li:last-child::after,
+.ask-turn-answer[data-streaming="true"] > .prose > ol:last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  margin-left: 4px;
+  vertical-align: -0.15em;
+  background: var(--color-accent);
+  border-radius: 1px;
+  animation: ask-cursor-blink 0.9s steps(2) infinite;
+}
+
+/* When the last child is a list, cancel the outer rule so only the list
+   item gets the cursor (avoid a double cursor). */
+.ask-turn-answer[data-streaming="true"] > ul:last-child::after,
+.ask-turn-answer[data-streaming="true"] > ol:last-child::after,
+.ask-turn-answer[data-streaming="true"] > .prose > ul:last-child::after,
+.ask-turn-answer[data-streaming="true"] > .prose > ol:last-child::after {
+  content: none;
+}
+
+/* Similarly, when the answer is wrapped in .prose, the Prose <div> is
+   now the .ask-turn-answer's :last-child — cancel the rule on the
+   wrapper itself so only the inner trailing block gets the cursor. */
+.ask-turn-answer[data-streaming="true"] > .prose:last-child::after {
+  content: none;
+}
+
+@keyframes ask-cursor-blink {
+  50% { opacity: 0; }
+}
+
+/* =========================================
+   REDUCED MOTION
+   ========================================= */
+@media (prefers-reduced-motion: reduce) {
+  .ask-turn-answer[data-streaming="true"] > *:last-child::after,
+  .ask-turn-answer[data-streaming="true"] > .prose > *:last-child::after {
+    animation: none;
+  }
+}

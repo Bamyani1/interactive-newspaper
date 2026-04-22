@@ -4,7 +4,7 @@
  * dust motes, mouse-reactive spotlight, and gothic vignette framing.
  *
  * 9-Layer Architecture (bottom to top):
- *   1. Base background (#0d0804)
+ *   1. Base background (--cathedral-base; flips light/dark)
  *   2. Stained glass SVG
  *   3. Ambient color bleed (screen)
  *   4. Light rays / god rays (soft-light)
@@ -16,13 +16,40 @@
  */
 
 /* =========================================
-   CUSTOM PROPERTIES
+   COMPONENT TOKENS (Layer 3 — scene-scoped)
+   Scene-specific hues that don't map onto the Direction-A system
+   (stained-glass panel pigments, warm glow family, dust motes).
+   Alphas are applied downstream via color-mix so a single base value
+   controls every tint of that hue.
    ========================================= */
 
 .cathedral-root {
-    --cathedral-base: #0a0604;
-    --cathedral-gold: #c09030;
-    --cathedral-gold-bright: #ffd060;
+    /* Cathedral shell — flipped to parchment in [data-mode='light'] below */
+    --cathedral-base:         #0a0604;
+    --cathedral-gold:         #c09030;
+    --cathedral-gold-bright:  #ffd060;
+
+    /* Stained-glass panel pigments (ambient bleed + ray accents) */
+    --stained-panel-red:      rgb(184, 48, 48);
+    --stained-panel-teal:     rgb(48, 144, 168);
+    --stained-panel-cyan:     rgb(96, 208, 240);
+    --stained-panel-orange:   rgb(192, 96, 32);
+
+    /* Warm light family (god rays, glows, dust) */
+    --stained-glow-amber:     rgb(255, 144, 64);
+    --stained-glow-warm:      rgb(255, 220, 130);
+    --stained-glow-cream:     rgb(255, 248, 230);
+    --stained-mote:           rgb(255, 240, 210);
+
+    /* Off-white text body on the dark card */
+    --stained-text-on-dark:   rgb(232, 224, 208);
+
+    /* Near-black ink for light-mode parchment card. Distinct from
+       --color-text-body so the cathedral surface can darken without
+       pulling the rest of the system. */
+    --stained-text-on-light:  rgb(13, 8, 4);
+
+    /* Reactive (set from React) */
     --mouse-x: 0.5;
     --mouse-y: 0.5;
 
@@ -70,10 +97,10 @@
     mix-blend-mode: screen;
     opacity: 0.50;
     background:
-        radial-gradient(ellipse 50% 40% at 30% 40%, rgba(184, 48, 48, 0.60), transparent 70%),
-        radial-gradient(ellipse 45% 35% at 70% 35%, rgba(48, 144, 168, 0.60), transparent 70%),
-        radial-gradient(ellipse 40% 30% at 50% 65%, rgba(192, 144, 48, 0.65), transparent 70%),
-        radial-gradient(ellipse 35% 30% at 25% 70%, rgba(192, 96, 32, 0.55), transparent 70%);
+        radial-gradient(ellipse 50% 40% at 30% 40%, color-mix(in srgb, var(--stained-panel-red) 60%, transparent), transparent 70%),
+        radial-gradient(ellipse 45% 35% at 70% 35%, color-mix(in srgb, var(--stained-panel-teal) 60%, transparent), transparent 70%),
+        radial-gradient(ellipse 40% 30% at 50% 65%, color-mix(in srgb, var(--cathedral-gold) 65%, transparent), transparent 70%),
+        radial-gradient(ellipse 35% 30% at 25% 70%, color-mix(in srgb, var(--stained-panel-orange) 55%, transparent), transparent 70%);
     animation: cathedralAmbientPulse 8s ease-in-out infinite;
 }
 
@@ -105,22 +132,22 @@
     background: conic-gradient(
         from 0deg,
         transparent 0deg,
-        rgba(255, 208, 96, 0.12) 15deg,
+        color-mix(in srgb, var(--cathedral-gold-bright) 12%, transparent) 15deg,
         transparent 30deg,
         transparent 60deg,
-        rgba(255, 220, 130, 0.09) 75deg,
+        color-mix(in srgb, var(--stained-glow-warm) 9%, transparent) 75deg,
         transparent 90deg,
         transparent 120deg,
-        rgba(192, 144, 48, 0.10) 135deg,
+        color-mix(in srgb, var(--cathedral-gold) 10%, transparent) 135deg,
         transparent 150deg,
         transparent 180deg,
-        rgba(255, 248, 230, 0.12) 195deg,
+        color-mix(in srgb, var(--stained-glow-cream) 12%, transparent) 195deg,
         transparent 210deg,
         transparent 240deg,
-        rgba(96, 208, 240, 0.09) 255deg,
+        color-mix(in srgb, var(--stained-panel-cyan) 9%, transparent) 255deg,
         transparent 270deg,
         transparent 300deg,
-        rgba(255, 208, 96, 0.10) 315deg,
+        color-mix(in srgb, var(--cathedral-gold-bright) 10%, transparent) 315deg,
         transparent 330deg,
         transparent 360deg
     );
@@ -134,19 +161,19 @@
     background: conic-gradient(
         from 120deg,
         transparent 0deg,
-        rgba(255, 144, 64, 0.10) 20deg,
+        color-mix(in srgb, var(--stained-glow-amber) 10%, transparent) 20deg,
         transparent 40deg,
         transparent 80deg,
-        rgba(255, 208, 96, 0.09) 100deg,
+        color-mix(in srgb, var(--cathedral-gold-bright) 9%, transparent) 100deg,
         transparent 120deg,
         transparent 160deg,
-        rgba(96, 208, 240, 0.12) 180deg,
+        color-mix(in srgb, var(--stained-panel-cyan) 12%, transparent) 180deg,
         transparent 200deg,
         transparent 240deg,
-        rgba(255, 220, 130, 0.10) 260deg,
+        color-mix(in srgb, var(--stained-glow-warm) 10%, transparent) 260deg,
         transparent 280deg,
         transparent 320deg,
-        rgba(184, 48, 48, 0.09) 340deg,
+        color-mix(in srgb, var(--stained-panel-red) 9%, transparent) 340deg,
         transparent 360deg
     );
     animation: cathedralRayRotate 65s linear infinite reverse;
@@ -159,19 +186,19 @@
     background: conic-gradient(
         from 240deg,
         transparent 0deg,
-        rgba(192, 144, 48, 0.15) 10deg,
+        color-mix(in srgb, var(--cathedral-gold) 15%, transparent) 10deg,
         transparent 25deg,
         transparent 70deg,
-        rgba(255, 248, 230, 0.09) 85deg,
+        color-mix(in srgb, var(--stained-glow-cream) 9%, transparent) 85deg,
         transparent 100deg,
         transparent 150deg,
-        rgba(255, 208, 96, 0.12) 165deg,
+        color-mix(in srgb, var(--cathedral-gold-bright) 12%, transparent) 165deg,
         transparent 180deg,
         transparent 220deg,
-        rgba(96, 208, 240, 0.10) 235deg,
+        color-mix(in srgb, var(--stained-panel-cyan) 10%, transparent) 235deg,
         transparent 250deg,
         transparent 300deg,
-        rgba(255, 144, 64, 0.09) 315deg,
+        color-mix(in srgb, var(--stained-glow-amber) 9%, transparent) 315deg,
         transparent 330deg,
         transparent 360deg
     );
@@ -195,7 +222,7 @@
         circle 250px at
             calc(var(--mouse-x) * 100%)
             calc(var(--mouse-y) * 100%),
-        rgba(255, 248, 230, 0.12),
+        color-mix(in srgb, var(--stained-glow-cream) 12%, transparent),
         transparent 70%
     );
 }
@@ -213,20 +240,20 @@
         radial-gradient(
             ellipse 120% 80% at 50% 50%,
             transparent 50%,
-            rgba(13, 8, 4, 0.4) 80%,
-            rgba(13, 8, 4, 0.7) 100%
+            color-mix(in srgb, var(--cathedral-base) 40%, transparent) 80%,
+            color-mix(in srgb, var(--cathedral-base) 70%, transparent) 100%
         ),
         linear-gradient(
             to top,
-            rgba(13, 8, 4, 0.3) 0%,
+            color-mix(in srgb, var(--cathedral-base) 30%, transparent) 0%,
             transparent 20%
         ),
         linear-gradient(
             to right,
-            rgba(13, 8, 4, 0.4) 0%,
+            color-mix(in srgb, var(--cathedral-base) 40%, transparent) 0%,
             transparent 10%,
             transparent 90%,
-            rgba(13, 8, 4, 0.4) 100%
+            color-mix(in srgb, var(--cathedral-base) 40%, transparent) 100%
         );
 }
 
@@ -245,7 +272,7 @@
 .cathedral-mote {
     position: absolute;
     border-radius: 50%;
-    background: rgba(255, 240, 210, 0.7);
+    background: color-mix(in srgb, var(--stained-mote) 70%, transparent);
     mix-blend-mode: screen;
     will-change: transform, opacity;
 }
@@ -269,10 +296,10 @@
     max-width: 440px;
     width: 90%;
     padding: 48px 40px;
-    background: rgba(13, 8, 4, 0.75);
+    background: color-mix(in srgb, var(--cathedral-base) 75%, transparent);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(192, 144, 48, 0.25);
+    border: 1px solid color-mix(in srgb, var(--cathedral-gold) 25%, transparent);
     pointer-events: auto;
     animation: cathedralCardGlow 6s ease-in-out infinite;
 }
@@ -284,7 +311,7 @@
     text-transform: uppercase;
     letter-spacing: 0.2em;
     color: var(--cathedral-gold-bright);
-    text-shadow: 0 0 20px rgba(255, 208, 96, 0.3);
+    text-shadow: 0 0 20px color-mix(in srgb, var(--cathedral-gold-bright) 30%, transparent);
     text-align: center;
     line-height: var(--leading-tight);
     margin-bottom: 12px;
@@ -295,7 +322,7 @@
     font-style: italic;
     font-size: var(--text-base);
     letter-spacing: 0.1em;
-    color: rgba(232, 224, 208, 0.6);
+    color: color-mix(in srgb, var(--stained-text-on-dark) 60%, transparent);
     text-align: center;
     margin-bottom: 24px;
 }
@@ -317,7 +344,7 @@
     background: linear-gradient(
         to right,
         transparent,
-        rgba(192, 144, 48, 0.5),
+        color-mix(in srgb, var(--cathedral-gold) 50%, transparent),
         transparent
     );
 }
@@ -328,7 +355,7 @@
     background: var(--cathedral-gold);
     transform: rotate(45deg);
     flex-shrink: 0;
-    box-shadow: 0 0 6px rgba(255, 208, 96, 0.5);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--cathedral-gold-bright) 50%, transparent);
 }
 
 /* Color swatches */
@@ -365,7 +392,7 @@
     font-variant: small-caps;
     font-size: 0.55rem;
     letter-spacing: 0.08em;
-    color: rgba(232, 224, 208, 0.45);
+    color: color-mix(in srgb, var(--stained-text-on-dark) 45%, transparent);
 }
 
 /* Panel count */
@@ -373,7 +400,7 @@
     font-family: var(--font-body);
     font-size: var(--text-xs);
     letter-spacing: 0.06em;
-    color: rgba(232, 224, 208, 0.35);
+    color: color-mix(in srgb, var(--stained-text-on-dark) 35%, transparent);
     text-align: center;
 }
 
@@ -382,7 +409,7 @@
     position: absolute;
     width: 24px;
     height: 24px;
-    color: rgba(192, 144, 48, 0.3);
+    color: color-mix(in srgb, var(--cathedral-gold) 30%, transparent);
 }
 
 .cathedral-corner--tl {
@@ -480,12 +507,14 @@
 @keyframes cathedralCardGlow {
     0%, 100% {
         box-shadow:
-            0 0 30px rgba(192, 144, 48, 0.05),
+            0 0 30px color-mix(in srgb, var(--cathedral-gold) 5%, transparent),
+            /* Inner neutral shadow: kept as pure black — universal depth cue,
+               not a scene color. */
             inset 0 0 30px rgba(0, 0, 0, 0.2);
     }
     50% {
         box-shadow:
-            0 0 40px rgba(192, 144, 48, 0.1),
+            0 0 40px color-mix(in srgb, var(--cathedral-gold) 10%, transparent),
             inset 0 0 30px rgba(0, 0, 0, 0.15);
     }
 }
@@ -548,7 +577,7 @@
     .cathedral-card {
         animation: none;
         box-shadow:
-            0 0 30px rgba(192, 144, 48, 0.05),
+            0 0 30px color-mix(in srgb, var(--cathedral-gold) 5%, transparent),
             inset 0 0 30px rgba(0, 0, 0, 0.2);
     }
 }
@@ -566,20 +595,20 @@
         radial-gradient(
             ellipse 120% 60% at 50% -10%,
             transparent 40%,
-            rgba(245, 240, 232, 0.4) 75%,
-            rgba(245, 240, 232, 0.85) 100%
+            color-mix(in srgb, var(--cathedral-base) 40%, transparent) 75%,
+            color-mix(in srgb, var(--cathedral-base) 85%, transparent) 100%
         ),
         linear-gradient(
             to top,
-            rgba(245, 240, 232, 0.7) 0%,
+            color-mix(in srgb, var(--cathedral-base) 70%, transparent) 0%,
             transparent 40%
         ),
         linear-gradient(
             to right,
-            rgba(245, 240, 232, 0.6) 0%,
+            color-mix(in srgb, var(--cathedral-base) 60%, transparent) 0%,
             transparent 12%,
             transparent 88%,
-            rgba(245, 240, 232, 0.6) 100%
+            color-mix(in srgb, var(--cathedral-base) 60%, transparent) 100%
         );
 }
 
@@ -589,8 +618,8 @@
 }
 
 [data-mode='light'] .cathedral-card {
-    background: rgba(245, 240, 232, 0.8);
-    border-color: rgba(192, 144, 48, 0.35);
+    background: color-mix(in srgb, var(--cathedral-base) 80%, transparent);
+    border-color: color-mix(in srgb, var(--cathedral-gold) 35%, transparent);
 }
 
 [data-mode='light'] .cathedral-title {
@@ -599,15 +628,15 @@
 }
 
 [data-mode='light'] .cathedral-subtitle {
-    color: rgba(13, 8, 4, 0.5);
+    color: color-mix(in srgb, var(--stained-text-on-light) 50%, transparent);
 }
 
 [data-mode='light'] .cathedral-swatch-label {
-    color: rgba(13, 8, 4, 0.4);
+    color: color-mix(in srgb, var(--stained-text-on-light) 40%, transparent);
 }
 
 [data-mode='light'] .cathedral-meta {
-    color: rgba(13, 8, 4, 0.3);
+    color: color-mix(in srgb, var(--stained-text-on-light) 30%, transparent);
 }
 
 [data-mode='light'] .cathedral-rule::before,
@@ -615,7 +644,7 @@
     background: linear-gradient(
         to right,
         transparent,
-        rgba(192, 144, 48, 0.4),
+        color-mix(in srgb, var(--cathedral-gold) 40%, transparent),
         transparent
     );
 }

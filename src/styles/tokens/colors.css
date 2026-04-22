@@ -32,11 +32,6 @@
   --owu-charcoal: #3A3834;  /* secondary ink */
   --owu-white:    #FBF8F1;  /* warm newsprint — lightest */
 
-  /* Legacy aliases still consumed by cinema-landing.css (Phase 6
-     migration of that surface will retire these). */
-  --owu-dark-gray:   color-mix(in srgb, var(--owu-black) 70%, var(--owu-charcoal));
-  --owu-medium-gray: color-mix(in srgb, var(--owu-white) 65%, var(--owu-charcoal));
-
   /* =========================================================================
    * LAYER 1 · DERIVED PRIMITIVES
    * Built via color-mix so ColorCustomizer cascades naturally.
