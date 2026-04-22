@@ -42,7 +42,9 @@ export const ThemeModeManager = () => {
         }
 
         const stored = window.localStorage.getItem(STORAGE_KEY);
-        const next = stored === "light" ? "light" : "dark";
+        // Direction A (paper + ink) is the canonical default. Users who
+        // explicitly stored "dark" keep dark; first-time visitors see light.
+        const next = stored === "dark" ? "dark" : "light";
 
         if (document.body.dataset.mode !== next) {
             document.body.dataset.mode = next;

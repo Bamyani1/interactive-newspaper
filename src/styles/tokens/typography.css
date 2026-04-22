@@ -1,106 +1,128 @@
 /**
- * Typography Tokens
- * Font families, sizes, weights, and line heights.
+ * Typography Tokens — Direction A (Faithful)
+ *
+ * Source of truth: /design.md at repo root.
  */
 
 :root {
-    /* =========================================
-     FONT FAMILIES
-     Variables set by Next.js font loader in layout.tsx
-     ========================================= */
+    /* =========================================================================
+     * FONT FAMILIES
+     * Variables set by next/font in src/app/layout.tsx.
+     * ========================================================================= */
     --font-playfair-display: "Playfair Display", "EB Garamond", Georgia, serif;
-    --font-source-serif: "Source Serif 4", Georgia, serif;
-    --font-jetbrains: "JetBrains Mono", ui-monospace, monospace;
-    --font-inter: "Inter", system-ui, sans-serif;
+    --font-source-serif:     "Source Serif 4", Georgia, serif;
+    --font-jetbrains:        "JetBrains Mono", ui-monospace, monospace;
+    --font-inter:            "Inter", system-ui, sans-serif;
 
-    /* =========================================
-     SEMANTIC FONT TOKENS
-     Use these in components
-     ========================================= */
-    --font-header: var(--font-playfair-display);
-    --font-body: var(--font-source-serif);
-    --font-masthead: var(--font-playfair-display);
-    --font-mono: var(--font-jetbrains);
-    --font-accent: var(--font-playfair-display);
-    --font-ui: var(--font-inter);
+    /* --- Semantic font tokens (use these in components) ------------------ */
+    --font-header:     var(--font-playfair-display);
+    --font-display:    var(--font-playfair-display);
+    --font-body:       var(--font-source-serif);
+    --font-masthead:   var(--font-playfair-display);
+    --font-mono:       var(--font-jetbrains);
+    --font-accent:     var(--font-playfair-display);
+    --font-ui:         var(--font-inter);
 
-    /* =========================================
-     TYPE SCALE
-     Modular scale with 1.25 ratio
-     ========================================= */
-    --text-6xl: 3.052rem;
-    /* 48.83px */
-    --text-5xl: 2.441rem;
-    /* 39.06px */
-    --text-4xl: 1.953rem;
-    /* 31.25px */
-    --text-3xl: 1.563rem;
-    /* 25.00px */
-    --text-2xl: 1.25rem;
-    /* 20.00px */
-    --text-xl: 1.125rem;
-    /* 18.00px */
-    --text-base: 1rem;
-    /* 16.00px */
-    --text-sm: 0.875rem;
-    /* 14.00px */
-    --text-xs: 0.75rem;
-    /* 12.00px */
+    /* =========================================================================
+     * TYPE SCALE — 1.22 ratio, 12px-anchored (Direction A)
+     * ========================================================================= */
+    --text-xs:   0.75rem;    /* 12 — metadata, labels */
+    --text-sm:   0.875rem;   /* 14 — byline, caption */
+    --text-base: 1rem;       /* 16 — body (default) */
+    --text-md:   1.125rem;   /* 18 — deck, lede */
+    --text-lg:   1.375rem;   /* 22 — sub-headline */
+    --text-xl:   1.75rem;    /* 28 — article headline */
+    --text-2xl:  2.25rem;    /* 36 — section title */
+    --text-3xl:  3rem;       /* 48 — masthead */
 
-    /* =========================================
-     LINE HEIGHTS
-     ========================================= */
-    --leading-none: 1;
-    --leading-tight: 1.25;
-    --leading-snug: 1.375;
-    --leading-normal: 1.5;
+    /* Larger display scale (kept for masthead hero / splash use) */
+    --text-4xl:  3.815rem;   /* 61 */
+    --text-5xl:  4.768rem;   /* 76 */
+    --text-6xl:  5.96rem;    /* 95 */
+
+    /* =========================================================================
+     * LINE HEIGHTS
+     * ========================================================================= */
+    --leading-none:    1;
+    --leading-tight:   1.15;
+    --leading-snug:    1.3;
+    --leading-display: 1.1;
+    --leading-deck:    1.3;
+    --leading-body:    1.55;
+    --leading-meta:    1.35;
+    --leading-normal:  1.5;
     --leading-relaxed: 1.625;
-    --leading-loose: 1.7;
+    --leading-loose:   1.7;
 
-    /* =========================================
-     LETTER SPACING
-     ========================================= */
-    --tracking-tighter: -0.02em;
-    --tracking-tight: -0.01em;
-    --tracking-normal: 0;
-    --tracking-wide: 0.04em;
-    --tracking-wider: 0.08em;
-    --tracking-widest: 0.12em;
+    /* =========================================================================
+     * LETTER SPACING — locked to 4 values (Direction A)
+     * Component code MUST use one of these. No arbitrary tracking-[Nem].
+     * ========================================================================= */
+    --tracking-tight:    -0.01em;
+    --tracking-normal:   0;
+    --tracking-label-sm: 0.08em;   /* small labels, captions */
+    --tracking-label-md: 0.14em;   /* medium labels, buttons, nav */
 
-    /* =========================================
-     FONT WEIGHTS
-     ========================================= */
-    --font-light: 300;
-    --font-normal: 400;
-    --font-medium: 500;
+    /* --- Legacy tracking names (Phase 6 migrates components off these) --- */
+    --tracking-tighter:  -0.02em;
+    --tracking-wide:     var(--tracking-label-sm);
+    --tracking-wider:    var(--tracking-label-sm);
+    --tracking-widest:   var(--tracking-label-md);
+
+    /* =========================================================================
+     * FONT WEIGHTS
+     * ========================================================================= */
+    --font-light:    300;
+    --font-normal:   400;
+    --font-medium:   500;
     --font-semibold: 600;
-    --font-bold: 700;
+    --font-bold:     700;
 }
 
-/* =========================================
-   FONT UTILITY CLASSES
-   ========================================= */
+/* =========================================================================
+ * OpenType FEATURE SETTINGS
+ * Period-appropriate newspaper typography. Guarded with @supports so older
+ * browsers degrade to browser defaults.
+ * ========================================================================= */
 
-.font-header {
-    font-family: var(--font-header);
+@supports (font-feature-settings: "onum") {
+    :root {
+        /* Body text: old-style numerals + standard ligatures + kerning */
+        --features-body:     "onum", "liga", "kern";
+        /* Headlines: standard + discretionary ligatures + kerning */
+        --features-display:  "liga", "dlig", "kern";
+        /* Data/mono: tabular + lining numerals */
+        --features-tabular:  "tnum", "lnum";
+        /* Small-caps (if supported by the specific font) */
+        --features-smallcap: "smcp";
+    }
+
+    body {
+        font-feature-settings: var(--features-body);
+    }
+
+    h1, h2, h3, h4, h5, h6,
+    .font-header, .font-display, .font-masthead, .font-accent {
+        font-feature-settings: var(--features-display);
+    }
+
+    code, kbd, samp, pre,
+    .font-mono, .font-typewriter, .font-marker,
+    time, .metadata {
+        font-feature-settings: var(--features-tabular);
+        font-variant-numeric: tabular-nums lining-nums;
+    }
 }
 
-.font-masthead {
-    font-family: var(--font-masthead);
-}
+/* =========================================================================
+ * FONT UTILITY CLASSES
+ * ========================================================================= */
 
-.font-body {
-    font-family: var(--font-body);
-}
-
-.font-mono {
-    font-family: var(--font-mono);
-}
-
-.font-typewriter {
-    font-family: var(--font-mono);
-}
-
-.font-marker {
-    font-family: var(--font-accent);
-}
+.font-header     { font-family: var(--font-header); }
+.font-display    { font-family: var(--font-display); }
+.font-masthead   { font-family: var(--font-masthead); }
+.font-body       { font-family: var(--font-body); }
+.font-mono       { font-family: var(--font-mono); }
+.font-typewriter { font-family: var(--font-mono); }
+.font-marker     { font-family: var(--font-accent); }
+.font-ui         { font-family: var(--font-ui); }

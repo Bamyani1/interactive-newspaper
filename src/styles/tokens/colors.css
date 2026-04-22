@@ -1,160 +1,182 @@
 /**
- * Color Tokens
- * Single source of truth for all color variables in the project.
- * 
- * Usage:
- *   - Brand colors: Use --owu-* for OWU brand identity
- *   - Semantic tokens: Use --color-* for component styling
- *   - Page-specific: Use --page-* prefix for page-specific overrides
+ * Color Tokens — Direction A (Faithful)
+ *
+ * Three-layer hierarchy:
+ *   LAYER 1 · CUSTOMIZER ANCHORS (the 4 brand primitives)
+ *     --owu-red, --owu-black, --owu-charcoal, --owu-white
+ *     These hex values are overwritten at runtime by ColorCustomizer.
+ *     Names FROZEN — see docs/design/carve-outs.md item 1.
+ *
+ *   LAYER 1 · DERIVED PRIMITIVES (scales built from the 4 anchors)
+ *     --newsprint-*, --ink-*, --red-*
+ *     Defined via color-mix so they cascade when anchors change.
+ *
+ *   LAYER 2 · SEMANTIC (what components use)
+ *     --color-bg-*, --color-text-*, --color-accent, --color-rule-*
+ *     These are what PR code should reference. Dark-mode override inverts
+ *     this layer via [data-mode="dark"].
+ *
+ *   LAYER 3 · COMPONENT SCOPE (temporary; migrates to component CSS in Phase 6)
+ *     --bulletin-*, --featured-*, --page-cinema-*, --page-press-*, --deco-*
+ *
+ * Source of truth: /design.md at repo root.
  */
 
 :root {
-    /* =========================================
-     OWU BRAND COLORS
-     ========================================= */
-    --owu-red: #B80D3E;
-    --owu-red-deep: color-mix(in srgb, var(--owu-red) 70%, var(--owu-black));
-    --owu-red-bright: color-mix(in srgb, var(--owu-red) 75%, var(--owu-white));
-    --owu-red-light: color-mix(in srgb, var(--owu-red) 20%, var(--owu-white));
-    --owu-black: #1A1F24;
-    --owu-charcoal: #4C5158;
-    --owu-dark-gray: color-mix(in srgb, var(--owu-black) 70%, var(--owu-charcoal));
-    --owu-medium-gray: color-mix(in srgb, var(--owu-white) 65%, var(--owu-charcoal));
-    --owu-white: #E8E8E8;
+  /* =========================================================================
+   * LAYER 1 · CUSTOMIZER-ANCHORED PRIMITIVES (runtime contract)
+   * ========================================================================= */
 
-    /* Gray Scale */
-    --owu-gray-100: color-mix(in srgb, var(--owu-black) 5%, var(--owu-white));
-    --owu-gray-200: color-mix(in srgb, var(--owu-black) 15%, var(--owu-white));
-    --owu-gray-700: color-mix(in srgb, var(--owu-white) 40%, var(--owu-black));
-    --owu-gray-800: color-mix(in srgb, var(--owu-white) 20%, var(--owu-black));
+  --owu-red:      #B80D3E;  /* brand anchor */
+  --owu-black:    #1B1917;  /* deep warm-black ink */
+  --owu-charcoal: #3A3834;  /* secondary ink */
+  --owu-white:    #FBF8F1;  /* warm newsprint — lightest */
 
-    /* =========================================
-     SEMANTIC COLOR TOKENS
-     These are the primary tokens to use in components
-     ========================================= */
+  /* =========================================================================
+   * LAYER 1 · DERIVED PRIMITIVES
+   * Built via color-mix so ColorCustomizer cascades naturally.
+   * ========================================================================= */
 
-    /* Backgrounds */
-    --color-bg-primary: var(--owu-black);
-    --color-bg-secondary: color-mix(in srgb, var(--owu-black) 70%, var(--owu-charcoal));
-    --color-bg-inverse: var(--owu-white);
-    --color-bg-muted: color-mix(in srgb, var(--owu-black) 85%, var(--owu-charcoal));
-    --color-bg-glass: color-mix(in srgb, var(--owu-black) 75%, transparent);
+  /* Newsprint (warm paper scale) */
+  --newsprint-50:  var(--owu-white);
+  --newsprint-100: color-mix(in srgb, var(--owu-white) 92%, var(--owu-black));
+  --newsprint-200: color-mix(in srgb, var(--owu-white) 82%, var(--owu-black));
+  --newsprint-300: color-mix(in srgb, var(--owu-white) 70%, var(--owu-black));
+  --newsprint-400: color-mix(in srgb, var(--owu-white) 48%, var(--owu-black));
 
-    /* Text */
-    --color-text-primary: var(--owu-white);
-    --color-text-secondary: color-mix(in srgb, var(--owu-white) 70%, var(--owu-charcoal));
-    --color-text-inverse: var(--owu-black);
-    --color-text-header: var(--owu-white);
+  /* Ink (warm-black scale) */
+  --ink-900: var(--owu-black);
+  --ink-800: color-mix(in srgb, var(--owu-black) 90%, var(--owu-charcoal));
+  --ink-700: var(--owu-charcoal);
+  --ink-600: color-mix(in srgb, var(--owu-charcoal) 65%, var(--owu-white));
+  --ink-500: color-mix(in srgb, var(--owu-charcoal) 45%, var(--owu-white));
 
-    /* Accent */
-    --color-accent: var(--owu-red);
-    --color-accent-hover: color-mix(in srgb, var(--owu-red) 70%, var(--owu-black));
-    --color-accent-light: color-mix(in srgb, var(--owu-red) 35%, var(--owu-white));
+  /* Red (masthead / accent) */
+  --red-600: var(--owu-red);
+  --red-700: color-mix(in srgb, var(--owu-red) 75%, var(--owu-black));
+  --red-800: color-mix(in srgb, var(--owu-red) 55%, var(--owu-black));
+  --red-500: color-mix(in srgb, var(--owu-red) 80%, var(--owu-white));
+  --red-200: color-mix(in srgb, var(--owu-red) 30%, var(--owu-white));
+  --red-100: color-mix(in srgb, var(--owu-red) 15%, var(--owu-white));
 
-    /* Borders & Strokes */
-    --color-border-default: color-mix(in srgb, var(--owu-white) 14%, transparent);
-    --color-border-accent: var(--owu-red);
-    --stroke-accent-soft: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  /* =========================================================================
+   * LAYER 2 · SEMANTIC
+   * Default (no data-mode) = Direction A paper treatment (light).
+   * ========================================================================= */
 
-    /* =========================================
-     PAGE-SPECIFIC TOKENS
-     Used by individual pages/themes
-     ========================================= */
+  /* Surfaces */
+  --color-bg-paper:      var(--newsprint-100);
+  --color-bg-paper-soft: var(--newsprint-50);
+  --color-bg-inset:      var(--newsprint-200);
+  --color-bg-inverse:    var(--ink-900);
 
-    /* Cinema/Landing Page */
-    --page-cinema-bg: var(--color-bg-primary);
-    --page-cinema-overlay: color-mix(in srgb, var(--color-bg-primary) 55%, transparent);
-    --page-cinema-ticker-bg: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
+  /* Text */
+  --color-text-body:     var(--ink-900);
+  --color-text-deck:     var(--ink-800);
+  --color-text-muted:    var(--ink-600);
+  --color-text-faint:    var(--ink-500);
+  --color-text-inverse:  var(--newsprint-50);
 
-    /* Art Deco Frame */
-    --deco-frame-stroke: color-mix(in srgb, var(--color-text-primary) 25%, transparent);
-    --deco-frame-accent: var(--color-accent);
+  /* Accent */
+  --color-accent:        var(--owu-red);
+  --color-accent-deep:   var(--red-700);
+  --color-accent-wash:   var(--red-100);
 
-    /* Press/Printing Theme */
-    --page-press-bg: var(--color-bg-primary);
-    --page-press-metal-dark: color-mix(in srgb, var(--color-bg-primary) 70%, var(--color-bg-inverse));
-    --page-press-metal-light: color-mix(in srgb, var(--color-bg-primary) 55%, var(--color-bg-inverse));
-    --page-press-paper: color-mix(in srgb, var(--color-bg-primary) 60%, var(--color-bg-inverse));
-    --page-press-ink: var(--color-text-primary);
-    --page-press-accent: var(--color-accent);
-    --page-press-rust: color-mix(in srgb, var(--color-accent) 35%, var(--color-bg-primary));
+  /* Rules / borders */
+  --color-rule-hairline: var(--newsprint-300);
+  --color-rule-ink:      var(--owu-black);
+  --color-rule-accent:   var(--owu-red);
 
+  /* Focus */
+  --color-focus-ring:    var(--owu-red);
 
+  /* Status (brand red serves as warning in Direction A) */
+  --color-warning:       var(--owu-red);
+  --color-warning-wash:  var(--red-100);
 
-    /* =========================================
-     COMPONENT-SPECIFIC TOKENS
-     Scoped tokens for reusable components
-     ========================================= */
+  /* --- Legacy semantic names (Phase 6 migrates components off these) ---- */
+  --color-bg-primary:     var(--color-bg-paper);
+  --color-bg-secondary:   var(--color-bg-paper-soft);
+  --color-bg-muted:       var(--color-bg-inset);
+  --color-bg-glass:       color-mix(in srgb, var(--color-bg-paper) 80%, transparent);
+  --color-text-primary:   var(--color-text-body);
+  --color-text-secondary: var(--color-text-muted);
+  --color-text-header:    var(--color-text-body);
+  --color-accent-hover:   var(--color-accent-deep);
+  --color-accent-light:   var(--red-200);
+  --color-border-default: var(--color-rule-hairline);
+  --color-border-accent:  var(--color-accent);
+  --stroke-accent-soft:   color-mix(in srgb, var(--color-accent) 35%, transparent);
 
-    /* Bulletin Board */
-    --bulletin-card-bg: linear-gradient(145deg,
-            color-mix(in srgb, var(--color-bg-secondary) 85%, var(--color-bg-inverse)) 0%,
-            var(--color-bg-secondary) 50%,
-            var(--color-bg-primary) 100%);
-    --bulletin-card-border: color-mix(in srgb, var(--color-text-primary) 20%, transparent);
-    --bulletin-rope: var(--color-text-secondary);
-    --bulletin-rope-light: color-mix(in srgb, var(--color-text-secondary) 60%, var(--color-text-primary));
-    --bulletin-pin: var(--color-accent);
-    --bulletin-pin-dark: color-mix(in srgb, var(--color-accent) 70%, var(--color-bg-primary));
-    --bulletin-tape: color-mix(in srgb, var(--color-bg-inverse) 18%, transparent);
-    --bulletin-text: var(--color-text-primary);
-    --bulletin-text-muted: var(--color-text-secondary);
+  /* =========================================================================
+   * LAYER 3 · COMPONENT SCOPE
+   * TODO (Phase 6): relocate each group into its owning component CSS file.
+   * ========================================================================= */
 
-    /* Featured Grid */
-    --featured-card-bg: var(--color-bg-secondary);
-    --featured-card-border: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
-    --featured-text-primary: var(--color-text-primary);
-    --featured-text-hover: var(--color-accent);
+  /* Bulletin Board */
+  --bulletin-card-bg: linear-gradient(145deg,
+          color-mix(in srgb, var(--color-bg-paper-soft) 90%, var(--color-bg-paper)) 0%,
+          var(--color-bg-paper-soft) 50%,
+          var(--color-bg-paper) 100%);
+  --bulletin-card-border: var(--color-rule-hairline);
+  --bulletin-rope:        var(--color-text-muted);
+  --bulletin-rope-light:  color-mix(in srgb, var(--color-text-muted) 60%, var(--color-text-body));
+  --bulletin-pin:         var(--color-accent);
+  --bulletin-pin-dark:    var(--color-accent-deep);
+  --bulletin-tape:        color-mix(in srgb, var(--color-bg-paper) 60%, transparent);
+  --bulletin-text:        var(--color-text-body);
+  --bulletin-text-muted:  var(--color-text-muted);
+
+  /* Featured Grid */
+  --featured-card-bg:      var(--color-bg-paper-soft);
+  --featured-card-border:  var(--color-rule-hairline);
+  --featured-text-primary: var(--color-text-body);
+  --featured-text-hover:   var(--color-accent);
+
+  /* Cinema / Landing page */
+  --page-cinema-bg:         var(--color-bg-paper);
+  --page-cinema-overlay:    color-mix(in srgb, var(--color-bg-paper) 55%, transparent);
+  --page-cinema-ticker-bg:  color-mix(in srgb, var(--color-bg-paper) 80%, transparent);
+
+  /* Art Deco frame */
+  --deco-frame-stroke: color-mix(in srgb, var(--color-text-body) 25%, transparent);
+  --deco-frame-accent: var(--color-accent);
+
+  /* Press / printing theme */
+  --page-press-bg:          var(--color-bg-paper);
+  --page-press-metal-dark:  var(--ink-700);
+  --page-press-metal-light: var(--ink-600);
+  --page-press-paper:       var(--newsprint-200);
+  --page-press-ink:         var(--color-text-body);
+  --page-press-rust:        color-mix(in srgb, var(--color-accent) 35%, var(--color-bg-paper));
 }
 
-/* =========================================
-   ERA THEME OVERRIDES
-   Applied via data-theme attribute on body
-   ========================================= */
+/* =========================================================================
+ * COLOR MODE OVERRIDES
+ * Default (no data-mode or data-mode="light") = Direction-A paper treatment.
+ * data-mode="dark" = inverted ink-first surface.
+ * The customizer-anchored --owu-* values do NOT flip between modes — they
+ * represent brand identity, not mode-dependent colors.
+ * ========================================================================= */
 
-[data-theme='jazz'],
-[data-theme='midcentury'],
-[data-theme='digital'] {
-    /* Currently all eras use the same OWU palette */
-    --color-bg-primary: var(--owu-black);
-    --color-text-primary: var(--owu-white);
-    --color-text-header: var(--owu-white);
-    --color-accent: var(--owu-red);
-}
+[data-mode="dark"] {
+  /* Surfaces flip: ink becomes background, newsprint becomes text */
+  --color-bg-paper:      var(--owu-black);
+  --color-bg-paper-soft: color-mix(in srgb, var(--owu-black) 90%, var(--owu-charcoal));
+  --color-bg-inset:      var(--ink-700);
+  --color-bg-inverse:    var(--newsprint-100);
 
-/* =========================================
-   COLOR MODE OVERRIDES
-   Applied via data-mode attribute on body
-   ========================================= */
+  --color-text-body:     var(--newsprint-50);
+  --color-text-deck:     var(--newsprint-100);
+  --color-text-muted:    var(--newsprint-300);
+  --color-text-faint:    var(--newsprint-400);
+  --color-text-inverse:  var(--owu-black);
 
-[data-mode='light'] {
-    --color-bg-primary: var(--owu-white);
-    --color-bg-secondary: color-mix(in srgb, var(--owu-white) 88%, var(--owu-black));
-    --color-bg-inverse: var(--owu-black);
-    --color-bg-muted: color-mix(in srgb, var(--owu-white) 82%, var(--owu-black));
-    --color-bg-glass: color-mix(in srgb, var(--owu-white) 80%, transparent);
+  --color-accent-wash:   color-mix(in srgb, var(--owu-red) 18%, var(--owu-black));
 
-    --color-text-primary: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
-    --color-text-secondary: color-mix(in srgb, var(--owu-black) 55%, var(--owu-white));
-    --color-text-inverse: var(--owu-white);
-    --color-text-header: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
+  --color-rule-hairline: var(--ink-700);
+  --color-rule-ink:      var(--newsprint-50);
 
-    --color-accent: var(--owu-red);
-    --color-accent-hover: color-mix(in srgb, var(--owu-red) 70%, var(--owu-black));
-    --color-accent-light: color-mix(in srgb, var(--owu-red) 20%, var(--owu-white));
-
-    --color-border-default: color-mix(in srgb, var(--owu-black) 14%, transparent);
-    --color-border-accent: var(--owu-red);
-    --stroke-accent-soft: color-mix(in srgb, var(--color-accent) 35%, transparent);
-
-    --page-cinema-bg: var(--color-bg-primary);
-    --page-cinema-overlay: color-mix(in srgb, var(--owu-white) 55%, transparent);
-    --page-cinema-ticker-bg: color-mix(in srgb, var(--owu-white) 70%, transparent);
-
-    --deco-frame-stroke: color-mix(in srgb, var(--color-text-primary) 20%, transparent);
-
-    --featured-card-bg: var(--owu-white);
-    --featured-card-border: color-mix(in srgb, var(--owu-black) 14%, transparent);
-    --featured-text-primary: var(--color-text-primary);
-    --featured-text-hover: var(--owu-red);
+  --color-warning-wash:  color-mix(in srgb, var(--owu-red) 18%, var(--owu-black));
+  --color-bg-glass:      color-mix(in srgb, var(--owu-black) 75%, transparent);
 }
