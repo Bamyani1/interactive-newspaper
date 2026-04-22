@@ -2,13 +2,23 @@
 
 import React, { useEffect, useLayoutEffect, useState } from "react";
 import { Sun, Moon } from "lucide-react";
-import {
-    DEFAULT_DARK_TOKENS,
-    DEFAULT_LIGHT_TOKENS,
-    PRESET_STORAGE_KEY,
-} from "@/font-color/data/colorPresets";
 
 const STORAGE_KEY = "transcript-mode";
+
+// Kept in sync with ThemeModeManager defaults.
+const DEFAULT_LIGHT_TOKENS: Record<string, string> = {
+    "--owu-red": "#B80D3E",
+    "--owu-black": "#1B1917",
+    "--owu-charcoal": "#3A3834",
+    "--owu-white": "#FBF8F1",
+};
+
+const DEFAULT_DARK_TOKENS: Record<string, string> = {
+    "--owu-red": "#B80D3E",
+    "--owu-black": "#1B1917",
+    "--owu-charcoal": "#3A3834",
+    "--owu-white": "#FBF8F1",
+};
 
 type ThemeMode = "dark" | "light";
 
@@ -25,10 +35,9 @@ export interface ThemeModeToggleProps {
 }
 
 export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = false }) => {
-    // Always start "dark" on both server and client to avoid hydration mismatch
+    // Start "dark" on both server and client to avoid hydration mismatch.
     const [mode, setMode] = useState<ThemeMode>("dark");
 
-    // Sync with localStorage after mount (must be effect — localStorage unavailable during SSR)
     useEffect(() => {
         const stored = window.localStorage.getItem(STORAGE_KEY);
         if (stored === "light") setMode("light"); // eslint-disable-line react-hooks/set-state-in-effect
@@ -36,10 +45,7 @@ export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = fal
 
     useLayoutEffect(() => {
         document.body.dataset.mode = mode;
-        const hasPreset = !!window.localStorage.getItem(PRESET_STORAGE_KEY);
-        if (!hasPreset) {
-            applyBrandTokens(mode === "light" ? DEFAULT_LIGHT_TOKENS : DEFAULT_DARK_TOKENS);
-        }
+        applyBrandTokens(mode === "light" ? DEFAULT_LIGHT_TOKENS : DEFAULT_DARK_TOKENS);
     }, [mode]);
 
     const handleToggle = () => {
@@ -47,11 +53,7 @@ export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = fal
         setMode(next);
         document.body.dataset.mode = next;
         window.localStorage.setItem(STORAGE_KEY, next);
-
-        const hasPreset = !!window.localStorage.getItem(PRESET_STORAGE_KEY);
-        if (!hasPreset) {
-            applyBrandTokens(next === "light" ? DEFAULT_LIGHT_TOKENS : DEFAULT_DARK_TOKENS);
-        }
+        applyBrandTokens(next === "light" ? DEFAULT_LIGHT_TOKENS : DEFAULT_DARK_TOKENS);
     };
 
     const label = mode === "dark" ? "Switch to light mode" : "Switch to dark mode";

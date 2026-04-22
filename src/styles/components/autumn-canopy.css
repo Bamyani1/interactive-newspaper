@@ -17,8 +17,8 @@
    COMPONENT-SCOPED TOKENS (Layer 3)
    Autumn-canopy foliage + control-chrome palette.
    Scene colors (base/gold) are overridden at runtime by JS per theme;
-   control tokens derive from --owu-* / --ink-* / --newsprint-* so the
-   ColorCustomizer cascades.
+   control tokens derive from --owu-* / --ink-* / --newsprint-* so they
+   cascade with the brand anchors.
    ========================================= */
 
 :root {

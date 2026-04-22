@@ -2,14 +2,15 @@
  * Color Tokens — Direction A (Faithful)
  *
  * Three-layer hierarchy:
- *   LAYER 1 · CUSTOMIZER ANCHORS (the 4 brand primitives)
+ *   LAYER 1 · BRAND ANCHORS (the 4 legacy customizer tokens)
  *     --owu-red, --owu-black, --owu-charcoal, --owu-white
- *     These hex values are overwritten at runtime by ColorCustomizer.
- *     Names FROZEN — see docs/design/carve-outs.md item 1.
+ *     Kept as aliases after the floating ColorCustomizer was removed, so any
+ *     stale localStorage entry that still tries to setProperty these is inert.
+ *     Names preserved — see docs/design/carve-outs.md #6.
  *
  *   LAYER 1 · DERIVED PRIMITIVES (scales built from the 4 anchors)
  *     --newsprint-*, --ink-*, --red-*
- *     Defined via color-mix so they cascade when anchors change.
+ *     Defined via color-mix so they cascade from the anchors.
  *
  *   LAYER 2 · SEMANTIC (what components use)
  *     --color-bg-*, --color-text-*, --color-accent, --color-rule-*
@@ -24,7 +25,7 @@
 
 :root {
   /* =========================================================================
-   * LAYER 1 · CUSTOMIZER-ANCHORED PRIMITIVES (runtime contract)
+   * LAYER 1 · BRAND ANCHORS (legacy --owu-* aliases)
    * ========================================================================= */
 
   --owu-red:      #B80D3E;  /* brand anchor */
@@ -34,7 +35,7 @@
 
   /* =========================================================================
    * LAYER 1 · DERIVED PRIMITIVES
-   * Built via color-mix so ColorCustomizer cascades naturally.
+   * Built via color-mix so scales derive from the brand anchors.
    * ========================================================================= */
 
   /* Newsprint (warm paper scale) */
