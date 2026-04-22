@@ -26,7 +26,8 @@ colors:
   red-200:         "#E8C3CD"
   red-100:         "#F4DFE5"
 
-  # ColorCustomizer-anchored (names preserved per docs/design/carve-outs.md #1)
+  # Legacy --owu-* aliases (kept so stale localStorage writes from removed
+  # customizer are inert; not consumed directly by new code)
   owu-red:         "#B80D3E"
   owu-black:       "#1B1917"
   owu-charcoal:    "#3A3834"
@@ -491,34 +492,18 @@ Example prompt that leads agents astray:
 
 Be specific. Reference tokens. Reference primitives. Reference this doc.
 
-## ColorCustomizer preset contract
+## Legacy `--owu-*` aliases
 
-This project ships a live user-facing customizer (`font-color/components/ColorCustomizer.tsx` + `FontCustomizer.tsx`). It writes to four CSS custom properties at runtime:
+The floating ColorCustomizer and FontCustomizer were removed. Four brand-anchor tokens remain in `src/styles/tokens/colors.css`:
 
-| Token | Customizable | Default (Direction A) |
-|---|---|---|
-| `--owu-red` | yes | `#B80D3E` |
-| `--owu-black` | yes | `#1B1917` |
-| `--owu-charcoal` | yes | `#3A3834` |
-| `--owu-white` | yes | `#FBF8F1` |
+| Token | Default (Direction A) |
+|---|---|
+| `--owu-red` | `#B80D3E` |
+| `--owu-black` | `#1B1917` |
+| `--owu-charcoal` | `#3A3834` |
+| `--owu-white` | `#FBF8F1` |
 
-**These four names are frozen.** Renaming breaks the customizer. Every other token is an alias built on top of these four primitives.
-
-Preset contract (simplified):
-```ts
-type ColorPreset = {
-  id: string;
-  name: string;
-  colors: {
-    "--owu-red":      string;
-    "--owu-black":    string;
-    "--owu-charcoal": string;
-    "--owu-white":    string;
-  };
-};
-```
-
-**WCAG guarantee:** the default preset (`owu-default`) passes AAA for body text. Non-default presets may drop to AA or below — that is user choice, but the picker UI should surface a contrast warning when a preset falls below AA. (Enhancement for a future phase, not Phase 2.)
+They are aliases into the primitive palette (e.g. `--newsprint-50`, `--ink-900`, `--red-600`). Kept as ballast so any stale `localStorage["tts-color-preset"]` entry in a returning user's browser can still call `document.documentElement.style.setProperty("--owu-red", …)` without error. Do not rename. Do not rely on them from new code — use the semantic layer.
 
 ## Versioning
 

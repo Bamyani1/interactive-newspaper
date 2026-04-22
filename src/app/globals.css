@@ -33,7 +33,7 @@
  *   --ease-default     → ease-default
  *
  * Values reference the underlying tokens via var(), so dark/light mode
- * flips and the ColorCustomizer cascade work automatically.
+ * flips cascade automatically.
  * ========================================================================= */
 
 @theme {

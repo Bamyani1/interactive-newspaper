@@ -6,15 +6,12 @@ import {
   Inter,
 } from "next/font/google";
 import "./globals.css";
-import "../../font-color/styles/font-color-kit.css";
 import { ArchiveProvider } from "@/features/archive";
 import { ThemeModeManager } from "@/features/theme";
 import { MotionProvider } from "@/shared/motion/MotionProvider";
 import { PageTransition } from "@/shared/motion/PageTransition";
 import { ErrorBoundary } from "@/shared";
 import { getEditionsList } from "@/src/lib/editions-server";
-import ColorCustomizer from "../../font-color/components/ColorCustomizer";
-import FontCustomizer from "../../font-color/components/FontCustomizer";
 
 const playfairDisplay = Playfair_Display({
   variable: "--font-playfair-display",
@@ -72,8 +69,6 @@ export default async function RootLayout({
             <ErrorBoundary>
               <PageTransition>{children}</PageTransition>
             </ErrorBoundary>
-            <ColorCustomizer />
-            <FontCustomizer />
           </ArchiveProvider>
         </MotionProvider>
       </body>
