@@ -3,7 +3,6 @@
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { PageShell, CathedralBackground, Ticker, useTickerAnimation, EditionPicker } from "@/shared";
@@ -91,7 +90,7 @@ export default function Home() {
                                 className="cinema-btn"
                             >
                                 <span>Ask the archive</span>
-                                <ArrowRight size={14} />
+                                <span className="cinema-btn-arrow" aria-hidden="true">→</span>
                             </Link>
                         </div>
 
@@ -113,8 +112,8 @@ export default function Home() {
                                     onClick={handleEnter}
                                     disabled={!selectedEdition}
                                 >
-                                    <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
-                                    <ArrowRight size={14} />
+                                    <span>{selectedEdition ? "Open this issue" : "No Editions Available"}</span>
+                                    <span className="cinema-btn-arrow" aria-hidden="true">→</span>
                                 </button>
                             )}
                         </div>
