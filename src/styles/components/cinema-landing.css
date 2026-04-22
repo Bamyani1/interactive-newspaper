@@ -241,18 +241,19 @@
     margin: 10px auto 0;
 }
 
-.cinema-col-brand {
+.cinema-col-chat {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
+    gap: 14px;
 }
 
-.cinema-col-brand--hidden {
+.cinema-col-chat--hidden {
     display: none;
 }
 
-/* When picker is open: hide brand + divider, let action span full width */
+/* When picker is open: hide chat col + divider, let action span full width */
 .cinema-paper-grid--picker-open .cinema-divider {
     display: none;
 }
@@ -331,7 +332,7 @@
     font-weight: var(--font-bold);
     line-height: var(--leading-snug);
     text-align: center;
-    margin-bottom: 22px;
+    margin: 0;
     color: var(--color-text-primary);
 }
 
@@ -545,20 +546,85 @@
 }
 
 /* =========================================
-   ASK CTA BLOCK (homepage integration)
-   Below the two-column hero grid: an editorial
-   teaser line + dual CTAs (filled Read + ghost
-   Ask). Gated in JSX on !isPickerOpen so it
-   vanishes cleanly when the EditionPicker opens.
+   CHAT INPUT (left column of the hero grid)
+   ========================================= */
+
+.cinema-chat-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+}
+
+.cinema-chat-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+    letter-spacing: var(--tracking-label-md);
+    text-transform: uppercase;
+    color: var(--color-accent);
+}
+
+.cinema-chat-input-row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--color-rule-hairline);
+    transition: border-bottom-color var(--duration-fast) ease;
+}
+
+.cinema-chat-input-row:focus-within {
+    border-bottom-color: var(--color-accent);
+}
+
+.cinema-chat-input {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+    font-family: var(--font-body);
+    font-size: 1rem;
+    color: var(--color-text-primary);
+    outline: none;
+}
+
+.cinema-chat-input::placeholder {
+    color: var(--color-text-secondary);
+    opacity: 0.7;
+    font-style: italic;
+}
+
+.cinema-chat-submit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 10px;
+    background: transparent;
+    border: 0;
+    color: var(--color-accent);
+    cursor: pointer;
+    transition: transform var(--duration-fast) ease;
+}
+
+.cinema-chat-submit:hover {
+    transform: translateX(3px);
+}
+
+/* =========================================
+   TAGLINE + READ CTA BLOCK
+   Below the two-column hero grid: the editorial
+   tagline + the filled Read button. Gated in JSX
+   on !isPickerOpen so it vanishes when the
+   EditionPicker opens.
    ========================================= */
 
 .cinema-cta-block {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
+    gap: 18px;
     width: 100%;
-    margin-top: 20px;
+    margin-top: 28px;
 }
 
 /* The slot reserves the vertical space the teaser will occupy so
@@ -617,59 +683,7 @@
     transform: translateX(4px);
 }
 
-/* Row of the two CTAs — filled Read on the left, ghost Ask on the
-   right. Flex lets the pair center-align as a group; wraps / stacks
-   on narrow screens via the mobile override below. */
-.cinema-cta-buttons {
-    display: flex;
-    gap: 12px;
-    justify-content: center;
-    flex-wrap: wrap;
-    width: 100%;
-}
-
-/* Buttons inside the row don't get the default .cinema-btn auto-
-   centering margins (those make sense for a single-button layout).
-   Flex sizes them to content instead of the 100%/360px single-CTA
-   sizing. */
-.cinema-cta-buttons .cinema-btn {
-    margin: 0;
-    width: auto;
-    min-width: 200px;
-    max-width: none;
-}
-
-/* Ghost variant — filled accent button paired with the filled Read
-   button. Same shape / padding / typography as Read; fill is
-   `--color-accent` (red) instead of `--ink-800` (dark), so the pair
-   reads as two matching doors in different finishes. Red carries
-   attention, dark carries primary action. */
-.cinema-btn--ghost {
-    background: var(--color-accent);
-    color: var(--color-text-inverse);
-    text-decoration: none;
-    border: none;
-}
-
-/* Override the base sliding accent-fill pseudo — Ask is already
-   accent-filled, so hover slides a darker wash up instead. */
-.cinema-btn--ghost::before {
-    background: var(--color-accent-deep);
-}
-
-.cinema-btn--ghost span,
-.cinema-btn--ghost svg {
-    color: var(--color-text-inverse);
-}
-
 @media (max-width: 640px) {
-    .cinema-cta-buttons {
-        flex-direction: column;
-    }
-    .cinema-cta-buttons .cinema-btn {
-        width: 100%;
-        max-width: 360px;
-    }
     .cinema-ask-teaser {
         flex-wrap: wrap;
         justify-content: center;
