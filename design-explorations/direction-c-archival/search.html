@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Direction C · Search — The Transcript Archive</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  .search-header {
+    padding: var(--space-6) 0 var(--space-4);
+    margin-top: var(--space-5);
+    border-bottom: 1px solid var(--color-rule-divider);
+  }
+  .search-header__label {
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label-md);
+    color: var(--color-text-meta);
+    margin: 0 0 var(--space-2);
+    font-weight: var(--weight-semibold);
+  }
+  .search-header h1 {
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-medium);
+    margin: 0 0 var(--space-5);
+    letter-spacing: var(--tracking-tight);
+  }
+  .search-row {
+    display: flex;
+    gap: var(--space-3);
+  }
+  .search-row .input { flex: 1; font-size: var(--text-md); }
+
+  /* Facets — Inter, inline, restrained */
+  .facets {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-5);
+    padding: var(--space-4) 0;
+    margin-bottom: var(--space-5);
+    border-bottom: 1px solid var(--color-rule-hairline);
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+    color: var(--color-text-meta);
+    font-variant-numeric: tabular-nums;
+  }
+  .facet { display: flex; gap: var(--space-2); align-items: baseline; }
+  .facet__label {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label-sm);
+    font-weight: var(--weight-semibold);
+  }
+  .facet a { color: var(--color-text-meta); text-decoration: none; border-bottom: 1px dotted var(--color-rule-divider); }
+  .facet a:hover { color: var(--color-text-strong); border-color: var(--color-text-strong); }
+  .facet strong { color: var(--color-text-strong); font-weight: var(--weight-semibold); }
+
+  .results {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Result — bibliographic-list entry */
+  .result {
+    padding: var(--space-5) 0;
+    border-bottom: 1px solid var(--color-rule-hairline);
+  }
+  .result:first-child { padding-top: 0; }
+  .result__cite {
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+    color: var(--color-text-meta);
+    margin: 0 0 var(--space-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .result__cite span:not(:last-child)::after {
+    content: " · ";
+    color: var(--color-text-faint);
+  }
+  .result__headline {
+    font-size: var(--text-md);
+    font-weight: var(--weight-medium);
+    font-family: var(--font-display);
+    line-height: var(--leading-deck);
+    margin: 0 0 var(--space-2);
+  }
+  .result__headline a { color: var(--color-text-strong); text-decoration: none; }
+  .result__headline a:hover { text-decoration: underline; text-decoration-color: var(--color-text-strong); }
+  .result__excerpt {
+    font-size: var(--text-meta);
+    color: var(--color-text-body);
+    margin: 0 0 var(--space-2);
+    line-height: var(--leading-deck);
+    font-family: var(--font-body);
+  }
+  .result__excerpt mark {
+    background: var(--color-bg-citation);
+    color: var(--color-text-strong);
+    padding: 0 0.2em;
+    border-radius: var(--radius-sm);
+  }
+  .result__actions {
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+    color: var(--color-text-meta);
+    display: flex;
+    gap: var(--space-4);
+  }
+  .result__actions a {
+    color: var(--color-text-meta);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--color-rule-divider);
+    padding-bottom: 1px;
+  }
+  .result__actions a:hover { color: var(--color-text-strong); border-color: var(--color-text-strong); }
+
+  .pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: var(--space-7);
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--color-rule-divider);
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .pagination a, .pagination strong, .pagination span {
+    padding: var(--space-2) var(--space-3);
+    text-decoration: none;
+    color: var(--color-text-meta);
+    min-width: 2.4em;
+    text-align: center;
+    border-radius: var(--radius-sm);
+  }
+  .pagination a:hover { color: var(--color-text-strong); background: var(--color-bg-inset); }
+  .pagination strong {
+    color: var(--color-text-strong);
+    background: var(--color-bg-citation);
+    font-weight: var(--weight-semibold);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <nav class="nav" aria-label="Primary">
+    <a href="index.html" class="nav__brand">The Transcript Archive</a>
+    <div class="nav__links">
+      <a href="index.html">Browse</a>
+      <a href="search.html" aria-current="page">Search</a>
+      <a href="ask.html">Ask</a>
+      <a href="#">Citation guide</a>
+      <a href="#">About</a>
+    </div>
+  </nav>
+
+  <header class="search-header">
+    <p class="search-header__label">Full-text search · 11,705 articles · 351 editions</p>
+    <h1>Search the archive</h1>
+    <form class="search-row" onsubmit="event.preventDefault();">
+      <input class="input" type="search" value="library hours extended" placeholder="Search the archive…">
+      <button class="btn btn--primary">Search</button>
+    </form>
+  </header>
+
+  <div class="facets" aria-label="Result filters">
+    <span class="facet"><strong>47</strong> results for "library hours extended"</span>
+    <span class="facet">
+      <span class="facet__label">Decade</span>
+      <strong>1950s</strong> (12)
+      <a href="#">1960s</a> (18)
+      <a href="#">1970s</a> (9)
+      <a href="#">1980s</a> (5)
+      <a href="#">1990s</a> (3)
+    </span>
+    <span class="facet">
+      <span class="facet__label">Sort</span>
+      <strong>Relevance</strong>
+      <a href="#">Newest</a>
+      <a href="#">Oldest</a>
+    </span>
+  </div>
+
+  <ol class="results">
+
+    <li class="result">
+      <p class="result__cite">
+        <span>Whitman, R. E.</span>
+        <span>1960-01-13</span>
+        <span>Vol. XCVI, No. 14</span>
+        <span>p. 1</span>
+        <span>1,240 words</span>
+        <span>Campus News</span>
+      </p>
+      <h2 class="result__headline"><a href="article.html">Student senate approves widened <mark>library hours</mark>, citing exam-week demand</a></h2>
+      <p class="result__excerpt">After two readings and a sustained debate over staffing costs, the measure passes on a twelve-to-three vote. The <mark>library</mark> will remain open until 2 a.m. during final weeks, effective spring term.</p>
+      <p class="result__actions">
+        <a href="article.html">Read article</a>
+        <a href="#">View page scan</a>
+        <a href="#">Cite</a>
+      </p>
+    </li>
+
+    <li class="result">
+      <p class="result__cite">
+        <span>Pearson, M. L.</span>
+        <span>1959-12-09</span>
+        <span>Vol. XCVI, No. 10</span>
+        <span>p. 3</span>
+        <span>580 words</span>
+        <span>Campus News</span>
+      </p>
+      <h2 class="result__headline"><a href="article.html">Finance committee tables vote on <mark>extended library hours</mark>; asks for staffing data</a></h2>
+      <p class="result__excerpt">In a closely-watched Wednesday session, the committee voted 4–2 to refer the proposal for <mark>extending library hours</mark> back to the library director's office pending additional figures.</p>
+      <p class="result__actions">
+        <a href="article.html">Read article</a>
+        <a href="#">View page scan</a>
+        <a href="#">Cite</a>
+      </p>
+    </li>
+
+    <li class="result">
+      <p class="result__cite">
+        <span>Anonymous</span>
+        <span>1959-12-16</span>
+        <span>Vol. XCVI, No. 11</span>
+        <span>p. 4</span>
+        <span>310 words</span>
+        <span>Letter to the Editor</span>
+      </p>
+      <h2 class="result__headline"><a href="article.html">On the <mark>hours</mark> of our library</a></h2>
+      <p class="result__excerpt">The writer, a senior, argues that extending <mark>library hours</mark> during exam weeks "should have been done a decade ago" and notes that peer institutions already offer similar arrangements.</p>
+      <p class="result__actions">
+        <a href="article.html">Read article</a>
+        <a href="#">View page scan</a>
+        <a href="#">Cite</a>
+      </p>
+    </li>
+
+    <li class="result">
+      <p class="result__cite">
+        <span>Editorial Board</span>
+        <span>1960-01-13</span>
+        <span>Vol. XCVI, No. 14</span>
+        <span>p. 4</span>
+        <span>420 words</span>
+        <span>Editorial</span>
+      </p>
+      <h2 class="result__headline"><a href="article.html">Open — but at what cost?</a></h2>
+      <p class="result__excerpt">This page has long supported extending the <mark>library's</mark> reading-room <mark>hours</mark> through the exam period. It has been less sanguine, however, about the financial assumptions on which that extension rests.</p>
+      <p class="result__actions">
+        <a href="article.html">Read article</a>
+        <a href="#">View page scan</a>
+        <a href="#">Cite</a>
+      </p>
+    </li>
+
+    <li class="result">
+      <p class="result__cite">
+        <span>Richter, D. E.</span>
+        <span>1960-05-18</span>
+        <span>Vol. XCVI, No. 31</span>
+        <span>p. 5</span>
+        <span>890 words</span>
+        <span>Feature</span>
+      </p>
+      <h2 class="result__headline"><a href="article.html">A night at the Slocum: what goes on between 11 and 2</a></h2>
+      <p class="result__excerpt">On the first night of the <mark>extended-hours</mark> pilot, this reporter spent three hours in the Slocum reading room. The scene: forty-two students, six textbooks per table, and the quiet insistence of the radiator.</p>
+      <p class="result__actions">
+        <a href="article.html">Read article</a>
+        <a href="#">View page scan</a>
+        <a href="#">Cite</a>
+      </p>
+    </li>
+
+    <li class="result">
+      <p class="result__cite">
+        <span>Anonymous</span>
+        <span>1959-11-04</span>
+        <span>Vol. XCVI, No. 5</span>
+        <span>p. 2</span>
+        <span>240 words</span>
+        <span>Campus News</span>
+      </p>
+      <h2 class="result__headline"><a href="article.html">Senate weekly: petition on <mark>library hours</mark> now at 683 signatures</a></h2>
+      <p class="result__excerpt">A petition circulated by the student senate asking the administration to reconsider winter <mark>library hours</mark> has reached 683 signatures, vice-president Margaret Deane '61 reported at this week's meeting.</p>
+      <p class="result__actions">
+        <a href="article.html">Read article</a>
+        <a href="#">View page scan</a>
+        <a href="#">Cite</a>
+      </p>
+    </li>
+
+  </ol>
+
+  <nav class="pagination" aria-label="Pagination">
+    <a href="#">&larr; Prev</a>
+    <strong>1</strong>
+    <a href="#">2</a>
+    <a href="#">3</a>
+    <a href="#">4</a>
+    <span>…</span>
+    <a href="#">8</a>
+    <a href="#">Next &rarr;</a>
+  </nav>
+
+</div>
+</body>
+</html>
