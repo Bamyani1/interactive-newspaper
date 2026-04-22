@@ -573,12 +573,15 @@
 .cinema-ask-teaser-text {
     font-family: var(--font-header);
     font-style: italic;
-    /* Weight 500 keeps the italic readable at 0.95rem on the textured
-       cinema-paper — Playfair italic at 400 goes thin against the
-       background noise. */
-    font-weight: 500;
-    font-size: 0.95rem;
-    line-height: 1.3;
+    /* Semibold + primary color at 1.05rem — Playfair italic needs more
+       ink weight than 500/secondary to hold up against the grainy
+       cinema-paper texture. Overrides the parent teaser's secondary
+       color so only the quote itself jumps to primary; the label and
+       arrow stay at their original red accent + muted tone. */
+    font-weight: var(--font-semibold);
+    font-size: 1.05rem;
+    line-height: 1.35;
+    color: var(--color-text-primary);
 }
 
 .cinema-ask-teaser-arrow {
@@ -591,26 +594,28 @@
     transform: translateX(4px);
 }
 
-/* Ghost variant — filled accent button paired with the filled Read
-   button. Same shape / padding / typography as Read; fill is
-   `--color-accent` (red) instead of `--ink-800` (dark), so the pair
-   reads as two matching doors in different finishes. Red carries
-   attention, dark carries primary action. */
+/* Ghost variant — dark outlined secondary to Read's filled primary.
+   Sits quietly on the cream paper texture; earlier red-outlined and
+   red-filled treatments both fought the paper. Hover slides a dark
+   ink fill up, previewing Read's visual weight as you commit. */
 .cinema-btn--ghost {
-    background: var(--color-accent);
-    color: var(--color-text-inverse);
+    background: transparent;
+    color: var(--color-text-primary);
     text-decoration: none;
-    border: none;
+    border: 1px solid var(--color-text-primary);
 }
 
-/* Override the base sliding accent-fill pseudo — Ask is already
-   accent-filled, so hover slides a darker wash up instead. */
 .cinema-btn--ghost::before {
-    background: var(--color-accent-deep);
+    background: var(--ink-800);
 }
 
 .cinema-btn--ghost span,
 .cinema-btn--ghost svg {
+    color: var(--color-text-primary);
+}
+
+.cinema-btn--ghost:hover span,
+.cinema-btn--ghost:hover svg {
     color: var(--color-text-inverse);
 }
 
