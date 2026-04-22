@@ -75,7 +75,7 @@ describe("TimeControls theme tokens", () => {
         const dateButton = screen.getByRole("button", { name: "Select edition date" });
         const dateButtonClass = dateButton.getAttribute("class") ?? "";
         expect(dateButtonClass).toContain("hover:bg-[var(--color-accent)]/8");
-        expect(dateButtonClass).toContain("focus:ring-[var(--color-accent)]/30");
+        expect(dateButtonClass).toContain("focus-visible:outline-[var(--color-focus-ring)]");
         expect(dateButtonClass).not.toContain("var(--owu-white)");
     });
 

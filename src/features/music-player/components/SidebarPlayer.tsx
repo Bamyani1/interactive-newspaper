@@ -58,6 +58,7 @@ function TracksPlayer({
   const trackIndexClamped = Math.min(currentTrackIndex, Math.max(0, tracks.length - 1));
   const effectiveTrack = currentTrack ?? tracks[trackIndexClamped];
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset transport state when the YouTube track changes; the <iframe> always reloads paused so UI must match.
     setIsPlaying(false);
   }, [effectiveTrack?.youtubeId]);
 
