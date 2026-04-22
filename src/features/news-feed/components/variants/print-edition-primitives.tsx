@@ -4,6 +4,18 @@ import Image from "next/image";
 
 export { Lightbox, ImageGallery } from "@/src/components/ui/lightbox";
 
+/*
+ * PERIOD-MATCHING CARVE-OUT
+ *
+ * Inline font sizes (15/14/12/11/10 px, 3.5em, clamp(20/3vw/28px)) and the
+ * `color: "#fff"` in HeaderBar below are INTENTIONAL. They reproduce the
+ * typographic proportions of a printed 1960s broadsheet, not a digital
+ * design system. Do not blanket-migrate these to tokens without reviewing
+ * the printed output.
+ *
+ * See docs/design/carve-outs.md item 3.
+ */
+
 // ─── Helpers ───────────────────────────────────────────────────────
 
 /** Extract clean text paragraphs from HTML-formatted fullText. */
