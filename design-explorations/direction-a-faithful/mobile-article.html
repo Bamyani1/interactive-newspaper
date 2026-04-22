@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- Locked to 375px to simulate mobile while viewing on desktop -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Direction A · Mobile Article (375px)</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  /* Simulate a 375px viewport for desktop review.
+     On actual mobile, body will naturally be 375px wide. */
+  body {
+    background: #d4cfc2;
+    padding: 24px;
+  }
+  .phone {
+    width: 375px;
+    min-height: 812px;
+    margin: 0 auto;
+    background: var(--color-bg-paper);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.08);
+    overflow: hidden;
+    position: relative;
+  }
+  .phone::before {
+    content: "375 × 812 — simulated mobile viewport";
+    display: block;
+    background: var(--color-bg-inverse);
+    color: var(--color-text-inverse);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-align: center;
+    padding: var(--space-2);
+    letter-spacing: var(--tracking-label-md);
+    text-transform: uppercase;
+  }
+
+  .phone .page {
+    max-width: 375px;
+    padding: var(--space-4) var(--space-4) var(--space-6);
+  }
+
+  .phone .nav {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .phone .nav__links { gap: var(--space-3); }
+
+  .phone .article-category {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label-md);
+    color: var(--color-accent);
+    margin: var(--space-4) 0 var(--space-2);
+  }
+  .phone h1 {
+    font-family: var(--font-display);
+    font-size: 1.55rem;   /* ~25px at mobile — smaller than desktop xl */
+    line-height: 1.15;
+    letter-spacing: var(--tracking-tight);
+    margin: 0 0 var(--space-3);
+  }
+  .phone .deck {
+    font-size: var(--text-base);
+    margin: var(--space-3) 0;
+  }
+  .phone .byline {
+    flex-direction: column;
+    gap: 0;
+    align-items: flex-start;
+    border-top: 1px solid var(--color-rule-hairline);
+    padding-top: var(--space-2);
+    margin-top: var(--space-3);
+  }
+  .phone .prose { font-size: 1.0625rem; line-height: 1.6; }
+  .phone .prose p:first-of-type::first-letter {
+    font-size: 3.2em;
+  }
+  .phone .prose blockquote {
+    margin-left: 0;
+    margin-right: 0;
+  }
+  .phone .prose table {
+    font-size: var(--text-xs);
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .phone .composer {
+    margin: var(--space-4) 0;
+  }
+  .phone .composer__row {
+    flex-direction: column;
+  }
+
+  /* Sticky bottom ask button on mobile */
+  .mobile-ask-fab {
+    position: sticky;
+    bottom: var(--space-3);
+    z-index: 10;
+    width: calc(100% - var(--space-8));
+    margin: var(--space-5) auto 0;
+    display: block;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-accent);
+    color: var(--color-text-inverse);
+    border: none;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label-md);
+    font-weight: var(--weight-semibold);
+    text-decoration: none;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="page">
+
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="label">The Transcript</a>
+      <div class="nav__links">
+        <a href="index.html">Home</a>
+        <a href="search.html">Search</a>
+        <a href="ask.html">Ask</a>
+      </div>
+    </nav>
+
+    <article>
+      <p class="article-category">Front Page &middot; Campus News</p>
+      <h1>Student senate approves widened library hours</h1>
+      <p class="deck">After two readings and a sustained debate over staffing costs, the measure passes on a twelve-to-three vote.</p>
+      <div class="byline">
+        <span>By <strong>ROBERT E. WHITMAN</strong></span>
+        <span class="byline__date">Jan 13, 1960 &middot; Page 1</span>
+      </div>
+
+      <hr class="rule rule--thick">
+
+      <div class="prose">
+        <p>The Student Senate on Tuesday night approved, by a vote of twelve to three, a proposal to extend library hours during final examination weeks, ending a two-month deliberation that had occupied four of the body's last six meetings. Under the measure, the Slocum Library will remain open until 2 a.m. each night of the designated exam period, beginning with the spring term in May.</p>
+
+        <p>The debate, which stretched past 11:15 p.m. in Merrick Hall, turned less on the merits of extended hours than on the question of who would staff them. Proponents led by Vice President Margaret Deane '61 cited a petition signed by 683 students.</p>
+
+        <blockquote>"It is a small thing, but small things accumulate. A library open at one in the morning is a different library than one that closed at ten."<br><br>&mdash; <em>Prof. H. Alan Feltcher</em></blockquote>
+
+        <h2>Staffing breakdown</h2>
+        <table>
+          <thead><tr><th>Role</th><th>Rate</th><th>Total</th></tr></thead>
+          <tbody>
+            <tr><td>Librarian</td><td>$3.10</td><td>$124</td></tr>
+            <tr><td>Student asst.</td><td>$1.05</td><td>$42</td></tr>
+            <tr><td>Heat</td><td>—</td><td>$174</td></tr>
+          </tbody>
+        </table>
+
+        <h3>What the amendment does</h3>
+        <ul>
+          <li>Extends Slocum Library closing to 2 a.m. during exam weeks.</li>
+          <li>Applies to the fall and spring exam periods.</li>
+          <li>Sunsets after two years pending review.</li>
+        </ul>
+
+        <p>Full story on Page 1 &middot; 1,240 words.</p>
+      </div>
+    </article>
+
+    <a href="ask.html" class="mobile-ask-fab">Ask the archive &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

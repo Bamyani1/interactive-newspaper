@@ -24,7 +24,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
 }) => {
   if (error) {
     return (
-      <div className="py-8 text-center opacity-70" style={{ color: "var(--color-text-primary)" }}>
+      <div className="py-8 text-center opacity-70 text-[var(--color-text-primary)]">
         Search failed. Please try again.
       </div>
     );
@@ -36,7 +36,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
 
   if (!query.trim()) {
     return (
-      <div className="py-12 text-center opacity-50" style={{ color: "var(--color-text-primary)" }}>
+      <div className="py-12 text-center opacity-50 text-[var(--color-text-primary)]">
         Enter a search term to explore the archive.
       </div>
     );
@@ -44,7 +44,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
 
   if (!isLoading && results.length === 0) {
     return (
-      <div className="py-8 text-center opacity-70" style={{ color: "var(--color-text-primary)" }}>
+      <div className="py-8 text-center opacity-70 text-[var(--color-text-primary)]">
         No results found for &ldquo;{query}&rdquo;.
       </div>
     );
@@ -53,7 +53,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
   return (
     <div>
       {pagination && (
-        <p className="text-sm opacity-50 mb-4" style={{ color: "var(--color-text-primary)" }}>
+        <p className="text-sm opacity-50 mb-4 text-[var(--color-text-primary)]">
           {pagination.total} result{pagination.total !== 1 ? "s" : ""} found
         </p>
       )}
@@ -69,13 +69,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
           <button
             onClick={onLoadMore}
             disabled={isLoading}
-            className="px-6 py-2 text-sm uppercase tracking-widest transition-colors hover:opacity-80 disabled:opacity-40"
-            style={{
-              color: "var(--color-accent)",
-              border: "1px solid var(--color-accent)",
-              borderRadius: "4px",
-              backgroundColor: "transparent",
-            }}
+            className="px-6 py-2 text-sm uppercase tracking-label-md transition-colors hover:opacity-80 disabled:opacity-40 text-[var(--color-accent)] border border-[var(--color-accent)] rounded-sm bg-transparent focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
           >
             {isLoading ? "Loading..." : "Load More"}
           </button>

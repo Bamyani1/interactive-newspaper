@@ -68,8 +68,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 lg:hidden z-[var(--z-header)] bg-[var(--color-bg-primary)]/95 backdrop-blur-md border-t"
-      style={{ borderColor: "var(--stroke-accent-soft)" }}
+      className="fixed bottom-0 left-0 right-0 lg:hidden z-[var(--z-header)] bg-[var(--color-bg-primary)]/95 backdrop-blur-md border-t border-[var(--stroke-accent-soft)]"
     >
       <div className="flex items-center justify-around px-2 py-2 max-w-lg mx-auto">
         {sections.slice(0, 5).map((section) => {
@@ -91,7 +90,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               aria-label={section.label}
             >
               <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
-              <span className="text-[10px] font-medium uppercase tracking-wider truncate max-w-[56px]">
+              <span className="text-xs font-medium uppercase tracking-label-sm truncate max-w-[56px]">
                 {section.id === "Arts & Entertainment" ? "Arts" : section.label}
               </span>
               {isActive && (
@@ -118,7 +117,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           aria-label="Search the archive"
         >
           <Search size={20} strokeWidth={isSearchActive ? 2.5 : 2} />
-          <span className="text-[10px] font-medium uppercase tracking-wider">
+          <span className="text-xs font-medium uppercase tracking-label-sm">
             Search
           </span>
           {isSearchActive && (
@@ -142,7 +141,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           aria-label="Ask the archive"
         >
           <MessageCircleQuestion size={20} strokeWidth={isAskActive ? 2.5 : 2} />
-          <span className="text-[10px] font-medium uppercase tracking-wider">
+          <span className="text-xs font-medium uppercase tracking-label-sm">
             Ask
           </span>
           {isAskActive && (
@@ -167,7 +166,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 <span className="w-1 h-1 rounded-full bg-current" />
                 <span className="w-1 h-1 rounded-full bg-current" />
               </div>
-              <span className="text-[10px] font-medium uppercase tracking-wider">
+              <span className="text-xs font-medium uppercase tracking-label-sm">
                 More
               </span>
             </button>
@@ -180,8 +179,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 8 }}
                   transition={TRANSITIONS.micro}
-                  className="absolute bottom-full right-0 mb-2 py-2 bg-[var(--color-bg-secondary)] rounded-lg shadow-xl border"
-                  style={{ borderColor: "var(--stroke-accent-soft)" }}
+                  className="absolute bottom-full right-0 mb-2 py-2 bg-[var(--color-bg-secondary)] rounded-lg shadow-xl border border-[var(--stroke-accent-soft)]"
                 >
                   {sections.slice(5).map((section) => {
                     const Icon = SECTION_ICONS[section.id] || Newspaper;

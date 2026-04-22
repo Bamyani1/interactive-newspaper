@@ -14,13 +14,36 @@
  */
 
 /* =========================================
+   COMPONENT-SCOPED TOKENS (Layer 3)
+   Autumn-canopy foliage + control-chrome palette.
+   Scene colors (base/gold) are overridden at runtime by JS per theme;
+   control tokens derive from --owu-* / --ink-* / --newsprint-* so they
+   cascade with the brand anchors.
+   ========================================= */
+
+:root {
+    /* Scene primitives — JS overrides these per-theme via inline style */
+    --foliage-shadow: color-mix(in srgb, var(--ink-900) 92%, #0a1428);
+    --foliage-amber:  #c8a030;
+    --foliage-gold:   #ffe060;
+    --foliage-red:    var(--red-700);
+    --foliage-rust:   color-mix(in srgb, var(--red-800) 70%, var(--ink-900));
+
+    /* Control-chrome tokens (glassmorphic toolbar, z-index: 10) */
+    --foliage-control-ink:        var(--ink-900);
+    --foliage-control-paper:      var(--newsprint-50);
+    --foliage-control-text-dark:  color-mix(in srgb, var(--ink-900) 80%, var(--foliage-amber) 20%);
+    --foliage-control-text-light: color-mix(in srgb, var(--newsprint-50) 85%, var(--foliage-gold) 15%);
+}
+
+/* =========================================
    BASE LAYOUT
    ========================================= */
 
 .canopy-root {
-    --canopy-base: #0a1428;
-    --canopy-gold: #c8a030;
-    --canopy-gold-bright: #ffe060;
+    --canopy-base: var(--foliage-shadow);
+    --canopy-gold: var(--foliage-amber);
+    --canopy-gold-bright: var(--foliage-gold);
     position: fixed;
     inset: 0;
     overflow: hidden;
@@ -569,13 +592,13 @@
 
 .canopy-controls {
     position: fixed;
-    bottom: 24px;
-    right: 24px;
+    bottom: var(--space-6);
+    right: var(--space-6);
     z-index: 10;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
 }
 
 /* ── Mode toggle button ── */
@@ -587,27 +610,27 @@
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.4);
+    background: color-mix(in srgb, var(--foliage-control-ink) 40%, transparent);
     backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: rgba(255, 240, 200, 0.85);
+    border: 1px solid color-mix(in srgb, var(--foliage-control-paper) 20%, transparent);
+    color: color-mix(in srgb, var(--foliage-control-text-light) 85%, transparent);
     cursor: pointer;
     transition: background 0.3s, transform 0.2s;
 }
 
 .canopy-mode-toggle:hover {
-    background: rgba(0, 0, 0, 0.6);
+    background: color-mix(in srgb, var(--foliage-control-ink) 60%, transparent);
     transform: scale(1.1);
 }
 
 [data-mode='light'] .canopy-mode-toggle {
-    background: rgba(255, 255, 255, 0.5);
-    border-color: rgba(0, 0, 0, 0.15);
-    color: rgba(60, 40, 20, 0.85);
+    background: color-mix(in srgb, var(--foliage-control-paper) 50%, transparent);
+    border-color: color-mix(in srgb, var(--foliage-control-ink) 15%, transparent);
+    color: color-mix(in srgb, var(--foliage-control-text-dark) 85%, transparent);
 }
 
 [data-mode='light'] .canopy-mode-toggle:hover {
-    background: rgba(255, 255, 255, 0.7);
+    background: color-mix(in srgb, var(--foliage-control-paper) 70%, transparent);
 }
 
 /* ── Theme selector ── */
@@ -626,27 +649,27 @@
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.4);
+    background: color-mix(in srgb, var(--foliage-control-ink) 40%, transparent);
     backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: rgba(255, 240, 200, 0.85);
+    border: 1px solid color-mix(in srgb, var(--foliage-control-paper) 20%, transparent);
+    color: color-mix(in srgb, var(--foliage-control-text-light) 85%, transparent);
     cursor: pointer;
     transition: background 0.3s, transform 0.2s;
 }
 
 .canopy-theme-trigger:hover {
-    background: rgba(0, 0, 0, 0.6);
+    background: color-mix(in srgb, var(--foliage-control-ink) 60%, transparent);
     transform: scale(1.1);
 }
 
 [data-mode='light'] .canopy-theme-trigger {
-    background: rgba(255, 255, 255, 0.5);
-    border-color: rgba(0, 0, 0, 0.15);
-    color: rgba(60, 40, 20, 0.85);
+    background: color-mix(in srgb, var(--foliage-control-paper) 50%, transparent);
+    border-color: color-mix(in srgb, var(--foliage-control-ink) 15%, transparent);
+    color: color-mix(in srgb, var(--foliage-control-text-dark) 85%, transparent);
 }
 
 [data-mode='light'] .canopy-theme-trigger:hover {
-    background: rgba(255, 255, 255, 0.7);
+    background: color-mix(in srgb, var(--foliage-control-paper) 70%, transparent);
 }
 
 /* ── Theme swatch strip ── */
@@ -654,15 +677,15 @@
 .canopy-theme-strip {
     display: flex;
     flex-direction: column-reverse;
-    gap: 8px;
+    gap: var(--space-2);
     position: absolute;
-    bottom: calc(100% + 8px);
+    bottom: calc(100% + var(--space-2));
     right: 0;
-    padding: 8px;
+    padding: var(--space-2);
     border-radius: 22px;
-    background: rgba(0, 0, 0, 0.5);
+    background: color-mix(in srgb, var(--foliage-control-ink) 50%, transparent);
     backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid color-mix(in srgb, var(--foliage-control-paper) 12%, transparent);
     opacity: 0;
     transform: translateY(10px) scale(0.95);
     pointer-events: none;
@@ -679,7 +702,7 @@
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.25);
+    border: 2px solid color-mix(in srgb, var(--foliage-control-paper) 25%, transparent);
     cursor: pointer;
     transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
     flex-shrink: 0;
@@ -687,12 +710,12 @@
 
 .canopy-theme-swatch:hover {
     transform: scale(1.15);
-    border-color: rgba(255, 255, 255, 0.6);
+    border-color: color-mix(in srgb, var(--foliage-control-paper) 60%, transparent);
 }
 
 .canopy-theme-swatch--active {
-    border-color: rgba(255, 255, 255, 0.9);
-    box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+    border-color: color-mix(in srgb, var(--foliage-control-paper) 90%, transparent);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--foliage-control-paper) 40%, transparent);
     transform: scale(1.1);
 }
 
@@ -706,9 +729,9 @@
     }
 
     .canopy-controls {
-        bottom: 16px;
-        right: 16px;
-        gap: 8px;
+        bottom: var(--space-4);
+        right: var(--space-4);
+        gap: var(--space-2);
     }
 
     .canopy-theme-swatch {

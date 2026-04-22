@@ -268,10 +268,10 @@ export function useAskArchive(): UseAskArchiveReturn {
 
     // ── Hydrate on mount ──
     useEffect(() => {
-        if (typeof window === "undefined") return;
+        if (typeof window === "undefined") return undefined;
         const sessionId = readOrCreateSessionId();
         sessionIdRef.current = sessionId;
-        if (!sessionId) return;
+        if (!sessionId) return undefined;
 
         // Read archived threads from localStorage — survives server
         // TTL and gives the sidebar something to show immediately.

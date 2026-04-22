@@ -1,9 +1,13 @@
 /**
  * Global Styles
- * 
- * This file is now minimal - it imports Tailwind and the organized styles.
- * All component-specific and token styles live in src/styles/.
- * 
+ *
+ * Imports Tailwind v4 + the project's CSS architecture, then maps every
+ * semantic design token into the `@theme {}` block so each becomes a
+ * Tailwind utility (bg-paper, text-body, p-4, font-display, ...).
+ *
+ * Source of truth: /design.md at repo root.
+ * Token definitions: src/styles/tokens/{colors,typography,spacing}.css
+ *
  * Structure:
  *   src/styles/
  *   ├── tokens/       - Design tokens (colors, typography, spacing)
@@ -14,22 +18,123 @@
 @import "tailwindcss";
 @import "../styles/index.css";
 
-/* =========================================
-   TAILWIND THEME CONFIGURATION
-   Maps CSS variables to Tailwind tokens
-   ========================================= */
+/* =========================================================================
+ * TAILWIND THEME CONFIGURATION (Tailwind v4)
+ *
+ * Each @theme entry maps a semantic CSS variable into a Tailwind utility:
+ *   --color-paper      → bg-paper / text-paper / border-paper
+ *   --font-display     → font-display
+ *   --spacing-4        → p-4 / m-4 / gap-4
+ *   --text-xl          → text-xl
+ *   --tracking-label-md→ tracking-label-md
+ *   --radius-sm        → rounded-sm
+ *   --shadow-md        → shadow-md
+ *   --duration-normal  → duration-normal
+ *   --ease-default     → ease-default
+ *
+ * Values reference the underlying tokens via var(), so dark/light mode
+ * flips cascade automatically.
+ * ========================================================================= */
 
 @theme {
-  /* Colors */
-  --color-bg-primary: var(--color-bg-primary);
-  --color-bg-secondary: var(--color-bg-secondary);
-  --color-text-primary: var(--color-text-primary);
-  --color-text-header: var(--color-text-header);
-  --color-accent: var(--color-accent);
+  /* ---- Colors · semantic (Direction A) ---------------------------------- */
+  --color-paper:        var(--color-bg-paper);
+  --color-paper-soft:   var(--color-bg-paper-soft);
+  --color-inset:        var(--color-bg-inset);
+  --color-inverse:      var(--color-bg-inverse);
+
+  --color-body:         var(--color-text-body);
+  --color-deck:         var(--color-text-deck);
+  --color-muted:        var(--color-text-muted);
+  --color-faint:        var(--color-text-faint);
+  --color-text-inverse: var(--color-text-inverse);
+
+  --color-accent:       var(--color-accent);
+  --color-accent-deep:  var(--color-accent-deep);
+  --color-accent-wash:  var(--color-accent-wash);
+
+  --color-rule:         var(--color-rule-hairline);
+  --color-rule-ink:     var(--color-rule-ink);
+  --color-rule-accent:  var(--color-rule-accent);
+
+  --color-focus-ring:   var(--color-focus-ring);
+
+  --color-warning:      var(--color-warning);
+  --color-warning-wash: var(--color-warning-wash);
+
+  /* ---- Colors · legacy aliases (Phase 6 migrates consumers off these) -- */
+  --color-bg-primary:     var(--color-bg-primary);
+  --color-bg-secondary:   var(--color-bg-secondary);
+  --color-text-primary:   var(--color-text-primary);
+  --color-text-header:    var(--color-text-header);
   --color-border-default: var(--color-border-default);
 
-  /* Typography */
-  --font-header: var(--font-header);
-  --font-body: var(--font-body);
-  --font-mono: var(--font-mono);
+  /* ---- Fonts ----------------------------------------------------------- */
+  --font-display:  var(--font-display);
+  --font-header:   var(--font-header);
+  --font-body:     var(--font-body);
+  --font-mono:     var(--font-mono);
+  --font-ui:       var(--font-ui);
+
+  /* ---- Type scale ------------------------------------------------------ */
+  --text-xs:   var(--text-xs);
+  --text-sm:   var(--text-sm);
+  --text-base: var(--text-base);
+  --text-md:   var(--text-md);
+  --text-lg:   var(--text-lg);
+  --text-xl:   var(--text-xl);
+  --text-2xl:  var(--text-2xl);
+  --text-3xl:  var(--text-3xl);
+  --text-4xl:  var(--text-4xl);
+  --text-5xl:  var(--text-5xl);
+  --text-6xl:  var(--text-6xl);
+
+  /* ---- Tracking — locked to Direction-A 4 values ----------------------- */
+  --tracking-tight:    var(--tracking-tight);
+  --tracking-normal:   var(--tracking-normal);
+  --tracking-label-sm: var(--tracking-label-sm);
+  --tracking-label-md: var(--tracking-label-md);
+
+  /* ---- Spacing (Tailwind v4 reads --spacing-N for p-/m-/gap-/...) ----- */
+  --spacing-0:  var(--space-0);
+  --spacing-1:  var(--space-1);
+  --spacing-2:  var(--space-2);
+  --spacing-3:  var(--space-3);
+  --spacing-4:  var(--space-4);
+  --spacing-5:  var(--space-5);
+  --spacing-6:  var(--space-6);
+  --spacing-8:  var(--space-8);
+  --spacing-10: var(--space-10);
+  --spacing-12: var(--space-12);
+  --spacing-16: var(--space-16);
+  --spacing-20: var(--space-20);
+  --spacing-24: var(--space-24);
+
+  /* ---- Radius ---------------------------------------------------------- */
+  --radius-none:    var(--radius-none);
+  --radius-sm:      var(--radius-sm);
+  --radius-default: var(--radius-default);
+  --radius-md:      var(--radius-md);
+  --radius-lg:      var(--radius-lg);
+  --radius-xl:      var(--radius-xl);
+  --radius-full:    var(--radius-full);
+
+  /* ---- Shadows --------------------------------------------------------- */
+  --shadow-sm:      var(--shadow-sm);
+  --shadow-default: var(--shadow-default);
+  --shadow-md:      var(--shadow-md);
+  --shadow-lg:      var(--shadow-lg);
+  --shadow-xl:      var(--shadow-xl);
+  --shadow-2xl:     var(--shadow-2xl);
+
+  /* ---- Animation timing ------------------------------------------------ */
+  --duration-fast:   var(--duration-fast);
+  --duration-normal: var(--duration-normal);
+  --duration-slow:   var(--duration-slow);
+  --duration-slower: var(--duration-slower);
+
+  --ease-default: var(--ease-default);
+  --ease-in:      var(--ease-in);
+  --ease-out:     var(--ease-out);
+  --ease-in-out:  var(--ease-in-out);
 }

@@ -78,7 +78,7 @@ function adText(ad: VintageAd, maxLen?: number): string {
 
 function CategoryBadge({ category }: { category: string }) {
     return (
-        <span className="inline-block self-start px-2 py-0.5 text-[10px] uppercase tracking-widest font-semibold border border-[var(--color-border-default)] text-[var(--color-text-secondary)]">
+        <span className="inline-block self-start px-2 py-0.5 text-xs uppercase tracking-widest font-semibold border border-[var(--color-border-default)] text-[var(--color-text-secondary)]">
             {category}
         </span>
     );
@@ -87,7 +87,7 @@ function CategoryBadge({ category }: { category: string }) {
 function AdContactFooter({ ad }: { ad: VintageAd }) {
     if (!ad.phone && !ad.address && !ad.price) return null;
     return (
-        <div className="border-t border-[var(--color-border-default)] pt-2 mt-auto flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-typewriter text-[var(--color-text-secondary)]">
+        <div className="border-t border-[var(--color-border-default)] pt-2 mt-auto flex flex-wrap gap-x-4 gap-y-1 text-xs font-typewriter text-[var(--color-text-secondary)]">
             {ad.phone && <span>{ad.phone}</span>}
             {ad.address && <span>{ad.address}</span>}
             {ad.price && <span className="font-bold">{ad.price}</span>}
@@ -151,7 +151,7 @@ const MiniDisplay: React.FC<TemplateProps> = ({ ad }) => (
 /** 4. RetailCoupon — Dashed border, "Clip & Save" ribbon */
 const RetailCoupon: React.FC<TemplateProps> = ({ ad }) => (
     <div className="border border-dashed border-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]/60 p-5 relative overflow-hidden flex flex-col gap-2">
-        <span className="absolute -top-1 -left-6 bg-[var(--color-accent)] text-[var(--color-text-inverse)] text-[8px] font-bold uppercase tracking-wider px-8 py-0.5 rotate-[-35deg] origin-center">
+        <span className="absolute -top-1 -left-6 bg-[var(--color-accent)] text-[var(--color-text-inverse)] text-xs font-bold uppercase tracking-wider px-8 py-0.5 rotate-[-35deg] origin-center">
             Clip & Save
         </span>
         <h4 className="font-header text-lg font-bold uppercase text-center text-[var(--color-text-primary)] mt-2">
@@ -167,7 +167,7 @@ const RetailCoupon: React.FC<TemplateProps> = ({ ad }) => (
         </p>
         <AdContactFooter ad={ad} />
         <div className="border-t border-dashed border-[var(--color-text-secondary)] pt-2">
-            <p className="font-typewriter text-[9px] uppercase tracking-widest text-center text-[var(--color-text-secondary)]">
+            <p className="font-typewriter text-xs uppercase tracking-widest text-center text-[var(--color-text-secondary)]">
                 Present this coupon at time of purchase
             </p>
         </div>
@@ -207,7 +207,7 @@ const Bulletin: React.FC<TemplateProps> = ({ ad }) => (
 /** 7. Marquee — Star borders */
 const Marquee: React.FC<TemplateProps> = ({ ad }) => (
     <div className="border border-[var(--color-text-primary)]/25 border-t-2 border-t-[var(--stroke-accent-soft)] border-b-2 border-b-[var(--stroke-accent-soft)] bg-[var(--color-bg-secondary)]/60 p-4 flex flex-col text-center gap-2">
-        <p className="font-header text-xs tracking-[0.4em] text-[var(--color-accent)] opacity-50 select-none" aria-hidden="true">
+        <p className="font-header text-xs tracking-label-md text-[var(--color-accent)] opacity-50 select-none" aria-hidden="true">
             &#9733; &#9733; &#9733; &#9733; &#9733;
         </p>
         <h4 className="font-header text-xl font-bold uppercase tracking-wider text-[var(--color-text-primary)]">
@@ -222,7 +222,7 @@ const Marquee: React.FC<TemplateProps> = ({ ad }) => (
             {adText(ad)}
         </p>
         <AdContactFooter ad={ad} />
-        <p className="font-header text-xs tracking-[0.4em] text-[var(--color-accent)] opacity-50 select-none" aria-hidden="true">
+        <p className="font-header text-xs tracking-label-md text-[var(--color-accent)] opacity-50 select-none" aria-hidden="true">
             &#9733; &#9733; &#9733; &#9733; &#9733;
         </p>
     </div>
@@ -256,7 +256,7 @@ const Broadsheet: React.FC<TemplateProps> = ({ ad }) => {
 /** 9. EditorialStyle — "— Advertisement —" header */
 const EditorialStyle: React.FC<TemplateProps> = ({ ad }) => (
     <div className="border border-[var(--color-text-secondary)]/40 border-b-2 border-b-[var(--stroke-accent-soft)] bg-[var(--color-bg-secondary)]/60 p-5 flex flex-col gap-2">
-        <p className="font-header text-[10px] uppercase tracking-[0.4em] text-center text-[var(--color-accent)] opacity-60">
+        <p className="font-header text-xs uppercase tracking-label-md text-center text-[var(--color-accent)] opacity-60">
             &mdash; Advertisement &mdash;
         </p>
         <h4 className="font-header text-2xl text-center text-[var(--color-text-primary)] leading-tight">
@@ -266,7 +266,7 @@ const EditorialStyle: React.FC<TemplateProps> = ({ ad }) => (
             {adText(ad)}
         </p>
         {(ad.phone || ad.address || ad.price) && (
-            <div className="border-t border-[var(--color-text-secondary)]/30 pt-2 mt-auto flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-typewriter text-[var(--color-text-secondary)]">
+            <div className="border-t border-[var(--color-text-secondary)]/30 pt-2 mt-auto flex flex-wrap gap-x-4 gap-y-1 text-xs font-typewriter text-[var(--color-text-secondary)]">
                 {ad.address && <span className="font-semibold">{ad.address}</span>}
                 {ad.phone && <span>{ad.phone}</span>}
                 {ad.price && <span>{ad.price}</span>}
@@ -361,7 +361,7 @@ export const AdsSection: React.FC<AdsSectionProps> = ({ displayAds }) => {
         <section className="w-full">
             <div className="flex items-center justify-between border-b pb-3 mb-6">
                 <div>
-                    <p className="font-mono text-[11px] uppercase tracking-[0.35em] opacity-70">
+                    <p className="font-mono text-xs uppercase tracking-label-md opacity-70">
                         Advertisements
                     </p>
                     <h3 className="font-header text-2xl md:text-3xl leading-tight">
@@ -387,7 +387,7 @@ export const AdsSection: React.FC<AdsSectionProps> = ({ displayAds }) => {
             {displayAds.length > INITIAL_VISIBLE && !expanded && (
                 <button
                     onClick={() => setExpanded(true)}
-                    className="w-full py-3 border border-[var(--color-text-primary)] text-xs uppercase tracking-[0.25em] font-header font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] transition-colors"
+                    className="w-full py-3 border border-[var(--color-text-primary)] text-xs uppercase tracking-label-md font-header font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
                 >
                     See All {displayAds.length} Ads
                 </button>
@@ -421,7 +421,7 @@ export const ClassifiedsSection: React.FC<ClassifiedsSectionProps> = ({ classifi
         <section className="w-full">
             <div className="flex items-center justify-between border-b pb-3 mb-6">
                 <div>
-                    <p className="font-mono text-[11px] uppercase tracking-[0.35em] opacity-70">
+                    <p className="font-mono text-xs uppercase tracking-label-md opacity-70">
                         Classifieds
                     </p>
                     <h3 className="font-header text-2xl md:text-3xl leading-tight">
@@ -447,7 +447,7 @@ export const ClassifiedsSection: React.FC<ClassifiedsSectionProps> = ({ classifi
             {classifiedAds.length > INITIAL_VISIBLE && !expanded && (
                 <button
                     onClick={() => setExpanded(true)}
-                    className="w-full py-3 border border-[var(--color-text-primary)] text-xs uppercase tracking-[0.25em] font-header font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] transition-colors"
+                    className="w-full py-3 border border-[var(--color-text-primary)] text-xs uppercase tracking-label-md font-header font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
                 >
                     See All {classifiedAds.length} Listings
                 </button>

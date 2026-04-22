@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Prose } from "@/shared/ui/primitives";
 import { InlineAnswerImage } from "./InlineAnswerImage";
 
 interface MarkdownProps {
@@ -147,24 +148,30 @@ export const Markdown: React.FC<MarkdownProps> = ({
         [children, articleIdIndex],
     );
 
-    // Render without an extra wrapper when no className is needed, so the
-    // paragraphs/headings become direct children of the parent (e.g.
-    // .ask-turn-answer). That lets `::after` selectors like the streaming
-    // cursor attach to the last paragraph's inline flow instead of
-    // dropping onto a wrapper div's new line.
+    // Wrap the markdown in the <Prose> primitive so every RAG answer
+    // picks up the Direction-A prose typography defined in
+    // markdown-prose.css. When a className is provided by the caller,
+    // keep it on a wrapper <div> and apply .prose alongside it so both
+    // the legacy per-parent class AND the new prose spec style the
+    // content. The streaming cursor in typing-cursor.css matches both
+    // .ask-turn-answer > :last-child and .ask-turn-answer > .prose >
+    // :last-child, so the Prose wrapper doesn't break the trailing-
+    // cursor invariant.
     if (!className) {
         return (
-            <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{ a: renderAnchor, img: renderImg }}
-            >
-                {preprocessed}
-            </ReactMarkdown>
+            <Prose measure="narrow">
+                <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{ a: renderAnchor, img: renderImg }}
+                >
+                    {preprocessed}
+                </ReactMarkdown>
+            </Prose>
         );
     }
 
     return (
-        <div className={className}>
+        <div className={`${className} prose`}>
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{ a: renderAnchor, img: renderImg }}
