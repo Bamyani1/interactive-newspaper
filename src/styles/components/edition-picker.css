@@ -90,7 +90,6 @@
     font-family: var(--font-header);
     font-size: 1.85rem;
     font-weight: var(--font-bold);
-    font-style: italic;
     color: var(--color-text-primary);
     letter-spacing: 0.01em;
     line-height: 1.2;

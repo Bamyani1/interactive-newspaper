@@ -90,7 +90,6 @@ export default function Home() {
                                 className="cinema-btn"
                             >
                                 <span>Ask the archive</span>
-                                <span className="cinema-btn-arrow" aria-hidden="true">→</span>
                             </Link>
                         </div>
 
