@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
@@ -10,6 +9,7 @@ import { PageShell, CathedralBackground, Ticker, useTickerAnimation, EditionPick
 import { headlines } from "@/shared/landing/data/headlines";
 import { landingCardVariants, TRANSITIONS } from "@/shared/motion/motionTokens";
 import { LandingAskTeaser } from "@/features/ask-archive/components/LandingAskTeaser";
+import { LandingChatInput } from "@/features/ask-archive/components/LandingChatInput";
 
 // The stained-glass SVG has its own inline reveal script: panels appear
 // progressively with data-delay values up to ~2955ms plus an 800ms reveal
@@ -83,17 +83,16 @@ export default function Home() {
                     </header>
 
                     <div className={`cinema-paper-grid ${isPickerOpen ? "cinema-paper-grid--picker-open" : ""}`}>
-                        <div className={`cinema-col-brand ${isPickerOpen ? "cinema-col-brand--hidden" : ""}`}>
-                            <h2 className="cinema-headline">
-                                Travel Back in Time.<br />
-                                Experience Campus History.
-                            </h2>
+                        {/* LEFT: Chat entry */}
+                        <div className={`cinema-col-chat ${isPickerOpen ? "cinema-col-chat--hidden" : ""}`}>
+                            <LandingChatInput />
+                            <LandingAskTeaser />
                         </div>
 
                         {/* DIVIDER */}
                         <div className="cinema-divider" aria-hidden="true" />
 
-                        {/* RIGHT: Action */}
+                        {/* RIGHT: Edition picker */}
                         <div className="cinema-col-action">
                             <EditionPicker
                                 editions={editions}
@@ -105,28 +104,22 @@ export default function Home() {
 
                     </div>
 
-                    {/* Teaser + dual CTAs — hidden when picker is open. */}
+                    {/* Tagline + Read CTA — hidden when picker is open. */}
                     {!isPickerOpen && (
                         <div className="cinema-cta-block">
-                            <LandingAskTeaser />
-                            <div className="cinema-cta-buttons">
-                                <Link
-                                    href="/ask"
-                                    className="cinema-btn cinema-btn--ghost"
-                                >
-                                    <span>Ask the archive</span>
-                                    <ArrowRight size={20} />
-                                </Link>
-                                <button
-                                    type="button"
-                                    className="cinema-btn"
-                                    onClick={handleEnter}
-                                    disabled={!selectedEdition}
-                                >
-                                    <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
-                                    <ArrowRight size={20} />
-                                </button>
-                            </div>
+                            <h2 className="cinema-headline">
+                                Travel Back in Time.<br />
+                                Experience Campus History.
+                            </h2>
+                            <button
+                                type="button"
+                                className="cinema-btn"
+                                onClick={handleEnter}
+                                disabled={!selectedEdition}
+                            >
+                                <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
+                                <ArrowRight size={20} />
+                            </button>
                         </div>
                     )}
                 </motion.div>
