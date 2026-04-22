@@ -436,7 +436,7 @@
     justify-content: center;
     padding: 11px 26px;
     min-width: 180px;
-    background: var(--ink-800);
+    background: color-mix(in srgb, var(--ink-800) 85%, transparent);
     color: var(--color-text-inverse);
     font-family: var(--font-header);
     font-size: 1.1rem;
@@ -449,7 +449,7 @@
     cursor: pointer;
     box-shadow:
         1px 1px 0 0 var(--color-accent),
-        inset 0 0 0 4px var(--ink-800),
+        inset 0 0 0 4px color-mix(in srgb, var(--ink-800) 85%, transparent),
         inset 0 0 0 5px var(--color-text-inverse);
     transition:
         box-shadow var(--duration-normal) ease,
@@ -460,7 +460,7 @@
     transform: translate(1px, 1px);
     box-shadow:
         0 0 0 0 var(--color-accent),
-        inset 0 0 0 4px var(--ink-800),
+        inset 0 0 0 4px color-mix(in srgb, var(--ink-800) 85%, transparent),
         inset 0 0 0 5px var(--color-accent);
 }
 
