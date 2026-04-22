@@ -89,7 +89,7 @@ export default function Home() {
                                 href="/ask"
                                 className="cinema-btn"
                             >
-                                <span>Ask the archive</span>
+                                <span>Ask · the · archive</span>
                             </Link>
                         </div>
 
@@ -111,8 +111,8 @@ export default function Home() {
                                     onClick={handleEnter}
                                     disabled={!selectedEdition}
                                 >
-                                    <span>{selectedEdition ? "Open this issue" : "No Editions Available"}</span>
-                                    <span className="cinema-btn-arrow" aria-hidden="true">→</span>
+                                    <span>{selectedEdition ? "Open · this · issue" : "No editions available"}</span>
+                                    <span className="cinema-btn-arrow" aria-hidden="true">⟶</span>
                                 </button>
                             )}
                         </div>
