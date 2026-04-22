@@ -356,10 +356,10 @@
    CTA BUTTON
    ========================================= */
 
-/* Chapter-head CTA: Playfair italic with a double accent-red rule
-   beneath. Matches the teaser voice — no box, no fill, just typography
-   plus decorative rules. Hover: primary rule extends full-width,
-   secondary rule nudges right, arrow slides, text goes accent. */
+/* Chapter-head CTA: Playfair bold upright with a double accent-red
+   rule beneath. No box, no fill — just typography plus decorative
+   rules. Hover: primary rule extends full-width, secondary rule
+   nudges right, text goes accent. */
 .cinema-btn {
     display: inline-flex;
     justify-content: center;
@@ -370,7 +370,6 @@
     color: var(--color-text-primary);
     border: none;
     font-family: var(--font-header);
-    font-style: italic;
     font-weight: var(--font-bold);
     font-size: 1.22rem;
     line-height: var(--leading-tight);
@@ -604,14 +603,10 @@
 }
 
 .cinema-ask-teaser-text {
-    font-family: var(--font-header);
-    font-style: italic;
-    /* Semibold + primary color at 1.05rem — Playfair italic needs more
-       ink weight than 500/secondary to hold up against the grainy
-       cinema-paper texture. */
-    font-weight: var(--font-semibold);
+    font-family: var(--font-body);
+    font-weight: 500;
     font-size: 1.15rem;
-    line-height: 1.35;
+    line-height: 1.45;
     color: var(--color-text-primary);
 }
 
