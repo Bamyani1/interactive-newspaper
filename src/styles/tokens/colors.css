@@ -180,4 +180,16 @@
 
   --color-warning-wash:  color-mix(in srgb, var(--owu-red) 18%, var(--owu-black));
   --color-bg-glass:      color-mix(in srgb, var(--owu-black) 75%, transparent);
+
+  /* Legacy aliases must be redeclared here: CSS custom properties compute
+     their var() references at the declaring element. Without these, an
+     alias defined in :root (using light base tokens) keeps its light
+     computed value and never flips, even though the base tokens above do. */
+  --color-bg-primary:     var(--color-bg-paper);
+  --color-bg-secondary:   var(--color-bg-paper-soft);
+  --color-bg-muted:       var(--color-bg-inset);
+  --color-text-primary:   var(--color-text-body);
+  --color-text-secondary: var(--color-text-muted);
+  --color-text-header:    var(--color-text-body);
+  --color-border-default: var(--color-rule-hairline);
 }
