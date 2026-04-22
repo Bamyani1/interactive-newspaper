@@ -81,7 +81,7 @@ fontSize: "15px",
 ```
 
 **Selective migration allowed** for values that don't serve the period look:
-- `height: "3px"` dividers → `h-[var(--space-0.5)]` or equivalent
+- `height: "3px"` dividers could become a token-based Tailwind utility (e.g. a 2px height class) in Phase 6, but only if it doesn't hurt the printed-page fidelity.
 - Inline `fontFamily: "var(--font-header)"` blocks → className utility
 - The `DropCap` / `OrnamentRow` components if they use tokens that exist in the new system
 
