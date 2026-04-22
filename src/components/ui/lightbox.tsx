@@ -93,7 +93,6 @@ export function Lightbox(props: LightboxProps) {
   React.useEffect(() => {
     if (!open) return;
     setIndex(initialIndex);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, imagesKey, initialIndex]);
 
   const total = images.length;

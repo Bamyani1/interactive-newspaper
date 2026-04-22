@@ -60,6 +60,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
     const historyPushedRef = useRef(false);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR→client mount flag; required so the portal target (document.body) only renders post-hydration.
         setMounted(true);
     }, []);
 
@@ -72,6 +73,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
         const cached = cacheRef.current.get(source.editionDate);
         if (cached) {
             const match = cached.find((a) => a.id === source.id);
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- cache-hit sync: hydrate article state from an in-memory cache keyed by source.id; avoiding the network hop requires setting state here.
             setArticle(match ?? null);
             setError(match ? null : "Article not found in this edition.");
             return undefined;
