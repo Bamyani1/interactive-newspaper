@@ -201,15 +201,11 @@ export const TimeControls = () => {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -10 }}
                             transition={TRANSITIONS.micro}
-                            className="absolute right-0 top-full z-[var(--z-max)] mt-1 bg-[var(--color-bg-secondary)] rounded-sm shadow-lg border overflow-hidden min-w-[240px]"
-                            style={{ borderColor: "var(--color-border-default)" }}
+                            className="absolute right-0 top-full z-[var(--z-max)] mt-1 bg-[var(--color-bg-secondary)] rounded-sm shadow-lg border border-[var(--color-border-default)] overflow-hidden min-w-[240px]"
                             role="listbox"
                             aria-label="Available editions"
                         >
-                            <div
-                                className="px-4 py-2 border-b"
-                                style={{ borderColor: "var(--color-border-default)" }}
-                            >
+                            <div className="px-4 py-2 border-b border-[var(--color-border-default)]">
                                 <p className="text-xs font-mono text-[var(--color-text-secondary)] uppercase tracking-widest">
                                     {editions.length} Editions Available
                                 </p>
