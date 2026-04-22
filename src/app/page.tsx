@@ -79,7 +79,7 @@ export default function Home() {
                 >
                     <header className="cinema-masthead">
                         <h1 className="cinema-title">The Transcript Archive</h1>
-                        <p className="cinema-subtitle">Student Newspaper Since 1867</p>
+                        <p className="cinema-subtitle">Travel Back in Time. Experience Campus History.</p>
                     </header>
 
                     <div className={`cinema-paper-grid ${isPickerOpen ? "cinema-paper-grid--picker-open" : ""}`}>
