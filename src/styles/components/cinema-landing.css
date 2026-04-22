@@ -639,29 +639,27 @@
     max-width: none;
 }
 
-/* Ghost variant — outlined accent, no sliding fill. Same shape /
-   padding / typography as the filled Read button so the pair reads
-   as equal doors, but Read's fill carries visual primacy. */
+/* Ghost variant — filled accent button paired with the filled Read
+   button. Same shape / padding / typography as Read; fill is
+   `--color-accent` (red) instead of `--ink-800` (dark), so the pair
+   reads as two matching doors in different finishes. Red carries
+   attention, dark carries primary action. */
 .cinema-btn--ghost {
-    background: transparent;
-    border: 1px solid var(--color-accent);
-    color: var(--color-accent);
+    background: var(--color-accent);
+    color: var(--color-text-inverse);
     text-decoration: none;
+    border: none;
 }
 
-/* Disable the sliding-fill pseudo that .cinema-btn uses — the ghost
-   variant has a simple color-mix wash on hover instead. */
+/* Override the base sliding accent-fill pseudo — Ask is already
+   accent-filled, so hover slides a darker wash up instead. */
 .cinema-btn--ghost::before {
-    display: none;
-}
-
-.cinema-btn--ghost:hover {
-    background: color-mix(in oklab, var(--color-accent) 10%, transparent);
+    background: var(--color-accent-deep);
 }
 
 .cinema-btn--ghost span,
 .cinema-btn--ghost svg {
-    color: var(--color-accent);
+    color: var(--color-text-inverse);
 }
 
 @media (max-width: 640px) {
