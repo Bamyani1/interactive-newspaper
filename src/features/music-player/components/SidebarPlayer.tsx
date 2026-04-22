@@ -20,18 +20,11 @@ function MessageCard({ title, body }: { title: string; body: string }) {
   return (
     <div className="relative w-full mb-6">
       <h3
-        className="uppercase font-mono text-[12px] tracking-[0.2em] mb-3 border-b border-dashed pb-1"
-        style={{ borderColor: "var(--stroke-accent-soft)" }}
+        className="uppercase font-mono text-xs tracking-label-md mb-3 border-b border-dashed border-[var(--stroke-accent-soft)] pb-1"
       >
         {title}
       </h3>
-      <div
-        className="border p-4 text-sm"
-        style={{
-          borderColor: "var(--color-border-default)",
-          background: "color-mix(in srgb, var(--color-bg-secondary) 50%, transparent)",
-        }}
-      >
+      <div className="border border-[var(--color-border-default)] bg-[color-mix(in_srgb,var(--color-bg-secondary)_50%,transparent)] p-4 text-sm">
         <p className="text-text-primary/70">{body}</p>
       </div>
     </div>
@@ -73,20 +66,14 @@ function TracksPlayer({
   return (
     <div className="relative w-full mb-4">
       <h3
-        className="uppercase font-mono text-[12px] tracking-[0.2em] mb-2 border-b border-dashed pb-1"
-        style={{ borderColor: "var(--stroke-accent-soft)" }}
+        className="uppercase font-mono text-xs tracking-label-md mb-2 border-b border-dashed border-[var(--stroke-accent-soft)] pb-1"
       >
         {header}
       </h3>
 
       <div className="sidebar-player-surface">
-      <div
-        className="relative border overflow-hidden"
-        style={{
-          borderColor: "var(--color-border-default)",
-          background: "color-mix(in srgb, var(--color-bg-secondary) 50%, transparent)",
-        }}
-      >
+      <div className="relative border border-[var(--color-border-default)] bg-[color-mix(in_srgb,var(--color-bg-secondary)_50%,transparent)] overflow-hidden">
+        {/* bg-black: YouTube-player visual cue (framing of thumbnail). Do not tokenize. */}
         <div className="bg-black min-h-[140px]">
           {showEmbed && effectiveTrack.youtubeId ? (
             isPlaying ? (
@@ -114,6 +101,7 @@ function TracksPlayer({
                   className="object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
+                  {/* Intentional YouTube brand red — affordance over the yt thumbnail. Do NOT replace with --color-accent. See docs/design/carve-outs.md item 2. */}
                   <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                     <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
                   </div>
@@ -138,19 +126,16 @@ function TracksPlayer({
           )}
         </div>
 
-        <div
-          className="border-t border-dashed"
-          style={{ borderColor: "var(--color-border-default)" }}
-        >
+        <div className="border-t border-dashed border-[var(--color-border-default)]">
           <button
             type="button"
             onClick={() => setIsTrackListOpen((open) => !open)}
-            className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-[var(--color-bg-secondary)] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent/50"
+            className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-[var(--color-bg-secondary)] focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
             aria-expanded={isTrackListOpen}
             aria-controls="sidebar-track-list"
             id="sidebar-track-toggle"
           >
-            <span className="flex-1 min-w-0 truncate font-mono text-[11px]">
+            <span className="flex-1 min-w-0 truncate font-mono text-xs">
               <span className="font-medium">{effectiveTrack.title}</span>
               <span className="text-text-primary/60"> — {effectiveTrack.artist}</span>
             </span>
@@ -187,12 +172,12 @@ function TracksPlayer({
                         {isActive ? (
                           <Music className="w-3 h-3 text-text-primary/60" />
                         ) : (
-                          <span className="text-[10px] text-text-primary/40 font-mono">{index + 1}</span>
+                          <span className="text-xs text-text-primary/40 font-mono">{index + 1}</span>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className={`font-mono text-[11px] truncate ${isActive ? "font-medium" : ""}`}>{track.title}</div>
-                        <div className="font-mono text-[9px] text-text-primary/50 truncate">{track.artist}</div>
+                        <div className={`font-mono text-xs truncate ${isActive ? "font-medium" : ""}`}>{track.title}</div>
+                        <div className="font-mono text-xs text-text-primary/50 truncate">{track.artist}</div>
                       </div>
                       {!isActive && (
                         <Play className="w-3 h-3 text-text-primary/30 opacity-0 group-hover:opacity-100 flex-shrink-0" />

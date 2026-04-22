@@ -36,8 +36,8 @@
 
 .site-footer__primary button {
     color: var(--color-text-secondary);
-    font-size: 1rem;
-    letter-spacing: 0.24em;
+    font-size: var(--text-base);
+    letter-spacing: var(--tracking-label-md);
     text-transform: uppercase;
     text-decoration: none;
     background: none;
@@ -64,10 +64,10 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0.675rem;
+    gap: var(--space-3);
     color: var(--color-text-secondary);
-    font-size: 0.702rem;
-    letter-spacing: 0.08em;
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label-sm);
     text-align: center;
 }
 
@@ -75,7 +75,7 @@
     color: var(--color-text-secondary);
     text-decoration: none;
     text-transform: uppercase;
-    letter-spacing: 0.24em;
+    letter-spacing: var(--tracking-label-md);
     transition: color var(--duration-fast) var(--ease-default);
 }
 
@@ -85,7 +85,7 @@
 
 .site-footer__links button {
     color: var(--color-text-secondary);
-    letter-spacing: 0.09em;
+    letter-spacing: var(--tracking-label-sm);
     text-transform: none;
 }
 
