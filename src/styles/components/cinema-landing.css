@@ -236,7 +236,11 @@
     display: grid;
     grid-template-columns: 1fr 1px 1fr;
     gap: 0 30px;
-    align-items: center;
+    /* Stretch so both columns share a row height; space-between on
+       each column then pins its CTA to the bottom so the Ask and
+       Read buttons sit on the same horizontal baseline even though
+       the teaser (left) and picker (right) have different heights. */
+    align-items: stretch;
     max-width: 576px;
     margin: 10px auto 0;
 }
@@ -245,7 +249,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
 }
 
 .cinema-col-brand--hidden {
@@ -261,6 +265,9 @@
     grid-column: 1 / -1;
     grid-row: 1;
     align-items: center;
+    /* With the button hidden in picker-open state the column has one
+       child; re-center it (overrides the default space-between). */
+    justify-content: center;
 }
 
 .cinema-divider {
@@ -277,7 +284,8 @@
 .cinema-col-action {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: space-between;
+    align-items: center;
 }
 
 
@@ -353,23 +361,26 @@
    CTA BUTTON
    ========================================= */
 
+/* Compact outlined affordance. Sized to content (not full-column)
+   with a floor via min-width so short labels still read as buttons.
+   Both Ask (Link) and Read (button) share this treatment — unified
+   visual weight, differentiated only by copy and column position. */
 .cinema-btn {
-    display: flex;
+    display: inline-flex;
     justify-content: center;
     align-items: center;
-    gap: 12px;
-    width: 100%;
-    max-width: 360px;
-    margin: 20px auto 0;
-    padding: 12px 30px;
-    background: var(--ink-800);
+    gap: 8px;
+    min-width: 128px;
+    padding: 9px 20px;
+    background: transparent;
     color: var(--color-text-primary);
-    border: none;
+    border: 1px solid var(--color-text-primary);
     font-family: var(--font-mono);
-    font-size: 0.9rem;
+    font-size: 0.72rem;
     font-weight: var(--font-bold);
     letter-spacing: var(--tracking-label-md);
     text-transform: uppercase;
+    text-decoration: none;
     cursor: pointer;
     transition: all var(--duration-normal) ease;
     position: relative;
@@ -380,7 +391,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: var(--color-accent);
+    background: var(--ink-800);
     transform: translateY(100%);
     transition: transform var(--duration-normal) ease;
 }
@@ -393,6 +404,12 @@
 .cinema-btn svg {
     position: relative;
     z-index: 1;
+    color: var(--color-text-primary);
+    transition: color var(--duration-normal) ease;
+}
+
+.cinema-btn:hover span,
+.cinema-btn:hover svg {
     color: var(--color-text-inverse);
 }
 
@@ -593,28 +610,4 @@
     transform: translateX(4px);
 }
 
-/* Ghost variant — dark outlined secondary to Read's filled primary.
-   Sits quietly on the cream paper texture; earlier red-outlined and
-   red-filled treatments both fought the paper. Hover slides a dark
-   ink fill up, previewing Read's visual weight as you commit. */
-.cinema-btn--ghost {
-    background: transparent;
-    color: var(--color-text-primary);
-    text-decoration: none;
-    border: 1px solid var(--color-text-primary);
-}
-
-.cinema-btn--ghost::before {
-    background: var(--ink-800);
-}
-
-.cinema-btn--ghost span,
-.cinema-btn--ghost svg {
-    color: var(--color-text-primary);
-}
-
-.cinema-btn--ghost:hover span,
-.cinema-btn--ghost:hover svg {
-    color: var(--color-text-inverse);
-}
 

@@ -88,10 +88,10 @@ export default function Home() {
                             <LandingAskTeaser />
                             <Link
                                 href="/ask"
-                                className="cinema-btn cinema-btn--ghost"
+                                className="cinema-btn"
                             >
                                 <span>Ask the archive</span>
-                                <ArrowRight size={20} />
+                                <ArrowRight size={14} />
                             </Link>
                         </div>
 
@@ -114,7 +114,7 @@ export default function Home() {
                                     disabled={!selectedEdition}
                                 >
                                     <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
-                                    <ArrowRight size={20} />
+                                    <ArrowRight size={14} />
                                 </button>
                             )}
                         </div>
