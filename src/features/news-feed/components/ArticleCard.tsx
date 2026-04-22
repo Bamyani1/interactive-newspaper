@@ -248,8 +248,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
             <div className="card-expanded-grid">
                 <div
                     id={expandedPanelId}
-                    className="card-expanded-inner pt-6 border-t border-dashed space-y-4"
-                    style={{ borderColor: "var(--stroke-accent-soft)" }}
+                    className="card-expanded-inner pt-6 border-t border-dashed border-[var(--stroke-accent-soft)] space-y-4"
                     aria-hidden={!isExpanded}
                 >
                     {/* Expanded Images */}
@@ -273,7 +272,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                                         />
                                     </div>
                                     {caption && (
-                                        <p className="image-caption text-sm text-left mt-1" style={{ fontStyle: "italic" }}>
+                                        <p className="image-caption text-sm text-left mt-1 italic">
                                             {caption}
                                         </p>
                                     )}
@@ -299,7 +298,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                                                 />
                                             </div>
                                             {caption && (
-                                                <p className="image-caption text-sm text-left mt-1" style={{ fontStyle: "italic" }}>
+                                                <p className="image-caption text-sm text-left mt-1 italic">
                                                     {caption}
                                                 </p>
                                             )}
@@ -325,10 +324,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                         </p>
                     )}
 
-                    <div
-                        className="flex flex-wrap gap-4 mt-8 pt-4 border-t justify-end opacity-80"
-                        style={{ borderColor: "var(--stroke-accent-soft)" }}
-                    >
+                    <div className="flex flex-wrap gap-4 mt-8 pt-4 border-t border-[var(--stroke-accent-soft)] justify-end opacity-80">
                         {onViewOriginal && (
                             <button
                                 type="button"
