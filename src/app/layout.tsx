@@ -63,8 +63,7 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        data-theme="jazz"
-        data-mode="dark"
+        data-mode="light"
         className={`${playfairDisplay.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} ${inter.variable} antialiased`}
       >
         <ThemeModeManager />

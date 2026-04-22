@@ -13,18 +13,20 @@ export interface ColorPreset {
 
 export const PRESET_STORAGE_KEY = "tts-color-preset";
 
+// Direction A (Faithful) — the canonical defaults per /design.md.
+// Other presets below remain user-selectable variants.
 export const DEFAULT_LIGHT_TOKENS: ColorPreset["colors"] = {
-    "--owu-red": "#D02B45",
-    "--owu-black": "#1A1D22",
-    "--owu-charcoal": "#52565D",
-    "--owu-white": "#F2F0EE",
+    "--owu-red": "#B80D3E",
+    "--owu-black": "#1B1917",
+    "--owu-charcoal": "#3A3834",
+    "--owu-white": "#FBF8F1",
 };
 
 export const DEFAULT_DARK_TOKENS: ColorPreset["colors"] = {
     "--owu-red": "#B80D3E",
-    "--owu-black": "#1A1F24",
-    "--owu-charcoal": "#4C5158",
-    "--owu-white": "#E8E8E8",
+    "--owu-black": "#1B1917",
+    "--owu-charcoal": "#3A3834",
+    "--owu-white": "#FBF8F1",
 };
 
 export const PRESET_CATEGORIES = ["Broadsheet Dark", "Broadsheet Light"] as const;
