@@ -183,7 +183,7 @@ export const ScanViewer: React.FC<ScanViewerProps> = ({
                                             loading="lazy"
                                         />
                                         <span className={`
-                                            absolute top-1 left-1 text-[10px] font-mono px-2 py-1 rounded
+                                            absolute top-1 left-1 text-xs font-mono px-2 py-1 rounded
                                             ${isActive ? "bg-[var(--color-text-primary)] text-[var(--color-text-inverse)]" : "bg-[color-mix(in_srgb,var(--color-bg-primary)_80%,transparent)] text-[var(--color-text-primary)]"}
                                         `}>
                                             Pg {index + 1}

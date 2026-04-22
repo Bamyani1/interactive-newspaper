@@ -135,10 +135,9 @@ export default function Home() {
             {/* BOTTOM TICKER */}
             <Ticker items={tickerItems} reverse />
 
-            {/* White wash-out transition */}
+            {/* Paper wash-out transition (Direction A paper tone) */}
             <motion.div
-                className="fixed inset-0 z-50 pointer-events-none"
-                style={{ backgroundColor: "#fff" }}
+                className="fixed inset-0 z-50 pointer-events-none bg-[var(--color-bg-paper)]"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: isExiting ? 1 : 0 }}
                 transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
