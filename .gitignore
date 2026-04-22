@@ -41,6 +41,7 @@ mockups/
 download_iiif_tiles.py
 item.json
 manifest.json
+public/cta-variations.html
 
 # Large source images (use tiles in /public/tiles instead)
 campus-map-1936-full.jpg
