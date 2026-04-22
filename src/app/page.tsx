@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
@@ -9,7 +10,6 @@ import { PageShell, CathedralBackground, Ticker, useTickerAnimation, EditionPick
 import { headlines } from "@/shared/landing/data/headlines";
 import { landingCardVariants, TRANSITIONS } from "@/shared/motion/motionTokens";
 import { LandingAskTeaser } from "@/features/ask-archive/components/LandingAskTeaser";
-import { LandingChatInput } from "@/features/ask-archive/components/LandingChatInput";
 
 // The stained-glass SVG has its own inline reveal script: panels appear
 // progressively with data-delay values up to ~2955ms plus an 800ms reveal
@@ -83,16 +83,22 @@ export default function Home() {
                     </header>
 
                     <div className={`cinema-paper-grid ${isPickerOpen ? "cinema-paper-grid--picker-open" : ""}`}>
-                        {/* LEFT: Chat entry */}
-                        <div className={`cinema-col-chat ${isPickerOpen ? "cinema-col-chat--hidden" : ""}`}>
-                            <LandingChatInput />
+                        {/* LEFT: Ask flow — daily rotating prompt + Ask CTA */}
+                        <div className={`cinema-col-brand ${isPickerOpen ? "cinema-col-brand--hidden" : ""}`}>
                             <LandingAskTeaser />
+                            <Link
+                                href="/ask"
+                                className="cinema-btn cinema-btn--ghost"
+                            >
+                                <span>Ask the archive</span>
+                                <ArrowRight size={20} />
+                            </Link>
                         </div>
 
                         {/* DIVIDER */}
                         <div className="cinema-divider" aria-hidden="true" />
 
-                        {/* RIGHT: Edition picker */}
+                        {/* RIGHT: Read flow — EditionPicker + Read CTA */}
                         <div className="cinema-col-action">
                             <EditionPicker
                                 editions={editions}
@@ -100,28 +106,19 @@ export default function Home() {
                                 onSelect={setUserSelectedEdition}
                                 onOpenChange={setIsPickerOpen}
                             />
+                            {!isPickerOpen && (
+                                <button
+                                    type="button"
+                                    className="cinema-btn"
+                                    onClick={handleEnter}
+                                    disabled={!selectedEdition}
+                                >
+                                    <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
+                                    <ArrowRight size={20} />
+                                </button>
+                            )}
                         </div>
-
                     </div>
-
-                    {/* Tagline + Read CTA — hidden when picker is open. */}
-                    {!isPickerOpen && (
-                        <div className="cinema-cta-block">
-                            <h2 className="cinema-headline">
-                                Travel Back in Time.<br />
-                                Experience Campus History.
-                            </h2>
-                            <button
-                                type="button"
-                                className="cinema-btn"
-                                onClick={handleEnter}
-                                disabled={!selectedEdition}
-                            >
-                                <span>{selectedEdition ? "Read" : "No Editions Available"}</span>
-                                <ArrowRight size={20} />
-                            </button>
-                        </div>
-                    )}
                 </motion.div>
             </main>
 

@@ -241,19 +241,18 @@
     margin: 10px auto 0;
 }
 
-.cinema-col-chat {
+.cinema-col-brand {
     display: flex;
     flex-direction: column;
-    align-items: stretch;
+    align-items: center;
     justify-content: center;
-    gap: 14px;
 }
 
-.cinema-col-chat--hidden {
+.cinema-col-brand--hidden {
     display: none;
 }
 
-/* When picker is open: hide chat col + divider, let action span full width */
+/* When picker is open: hide brand + divider, let action span full width */
 .cinema-paper-grid--picker-open .cinema-divider {
     display: none;
 }
@@ -324,16 +323,6 @@
     color: var(--color-text-secondary);
     margin-bottom: 0;
     padding-bottom: 0;
-}
-
-.cinema-headline {
-    font-family: var(--font-masthead);
-    font-size: 1.4rem;
-    font-weight: var(--font-bold);
-    line-height: var(--leading-snug);
-    text-align: center;
-    margin: 0;
-    color: var(--color-text-primary);
 }
 
 .cinema-date-box {
@@ -488,10 +477,6 @@
         font-size: 2.2rem;
     }
 
-    .cinema-headline {
-        font-size: 1.4rem;
-    }
-
     .cinema-paper-grid {
         gap: 0 20px;
         max-width: 72%;
@@ -528,11 +513,6 @@
         font-size: 2rem;
     }
 
-    .cinema-headline {
-        font-size: 1.3rem;
-        text-align: center;
-    }
-
     .cinema-edition-info {
         margin-bottom: 20px;
         padding-bottom: 10px;
@@ -546,101 +526,29 @@
 }
 
 /* =========================================
-   CHAT INPUT (left column of the hero grid)
+   ASK TEASER (left column of the hero grid)
+   Rotating daily "Try asking '…' →" prompt that deep-links into /ask.
+   Paired in JSX with the Ask CTA button directly below it.
    ========================================= */
 
-.cinema-chat-form {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    width: 100%;
-}
-
-.cinema-chat-label {
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    font-weight: var(--font-semibold);
-    letter-spacing: var(--tracking-label-md);
-    text-transform: uppercase;
-    color: var(--color-accent);
-}
-
-.cinema-chat-input-row {
-    display: flex;
-    align-items: stretch;
-    border-bottom: 1px solid var(--color-rule-hairline);
-    transition: border-bottom-color var(--duration-fast) ease;
-}
-
-.cinema-chat-input-row:focus-within {
-    border-bottom-color: var(--color-accent);
-}
-
-.cinema-chat-input {
-    flex: 1;
-    min-width: 0;
-    padding: 8px 0;
-    border: 0;
-    background: transparent;
-    font-family: var(--font-body);
-    font-size: 1rem;
-    color: var(--color-text-primary);
-    outline: none;
-}
-
-.cinema-chat-input::placeholder {
-    color: var(--color-text-secondary);
-    opacity: 0.7;
-    font-style: italic;
-}
-
-.cinema-chat-submit {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px 10px;
-    background: transparent;
-    border: 0;
-    color: var(--color-accent);
-    cursor: pointer;
-    transition: transform var(--duration-fast) ease;
-}
-
-.cinema-chat-submit:hover {
-    transform: translateX(3px);
-}
-
-/* =========================================
-   TAGLINE + READ CTA BLOCK
-   Below the two-column hero grid: the editorial
-   tagline + the filled Read button. Gated in JSX
-   on !isPickerOpen so it vanishes when the
-   EditionPicker opens.
-   ========================================= */
-
-.cinema-cta-block {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 18px;
-    width: 100%;
-    margin-top: 28px;
-}
-
-/* The slot reserves the vertical space the teaser will occupy so
-   the CTA row doesn't jump up when the day-of-year pick lands
+/* Reserves the vertical space the teaser will occupy so the Ask
+   button below doesn't jump up when the day-of-year pick lands
    post-hydration. */
 .cinema-ask-teaser-slot {
     min-height: 1.4rem;
     display: flex;
     justify-content: center;
     align-items: center;
+    width: 100%;
 }
 
 .cinema-ask-teaser {
     display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: baseline;
     gap: 0.65rem;
+    text-align: center;
     text-decoration: none;
     /* --color-text-secondary matches the masthead subtitle — legible on
        the warm cinema-paper background. A cool/neutral gray reads bluish
@@ -683,10 +591,26 @@
     transform: translateX(4px);
 }
 
-@media (max-width: 640px) {
-    .cinema-ask-teaser {
-        flex-wrap: wrap;
-        justify-content: center;
-        text-align: center;
-    }
+/* Ghost variant — filled accent button paired with the filled Read
+   button. Same shape / padding / typography as Read; fill is
+   `--color-accent` (red) instead of `--ink-800` (dark), so the pair
+   reads as two matching doors in different finishes. Red carries
+   attention, dark carries primary action. */
+.cinema-btn--ghost {
+    background: var(--color-accent);
+    color: var(--color-text-inverse);
+    text-decoration: none;
+    border: none;
 }
+
+/* Override the base sliding accent-fill pseudo — Ask is already
+   accent-filled, so hover slides a darker wash up instead. */
+.cinema-btn--ghost::before {
+    background: var(--color-accent-deep);
+}
+
+.cinema-btn--ghost span,
+.cinema-btn--ghost svg {
+    color: var(--color-text-inverse);
+}
+
