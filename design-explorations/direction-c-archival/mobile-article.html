@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Direction C · Mobile Article (375px)</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  /* Simulate a 375px viewport for desktop review.
+     On actual mobile, body will naturally be 375px wide. */
+  body {
+    background: #e5e5e3;   /* hardcoded frame — not a token, per spec */
+    padding: 24px;
+  }
+  .phone {
+    width: 375px;
+    min-height: 812px;
+    margin: 0 auto;
+    background: var(--color-bg-paper);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.06);
+    overflow: hidden;
+    position: relative;
+    border-radius: 2px;
+  }
+  .phone::before {
+    content: "375 × 812 — simulated mobile viewport";
+    display: block;
+    background: var(--color-bg-inverse);
+    color: var(--color-text-inverse);
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    text-align: center;
+    padding: var(--space-2);
+    letter-spacing: var(--tracking-label-md);
+    text-transform: uppercase;
+  }
+
+  .phone .page {
+    max-width: 375px;
+    padding: var(--space-4) var(--space-4) var(--space-6);
+  }
+
+  .phone .nav {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
+  }
+  .phone .nav__links { gap: var(--space-4); }
+  .phone .nav__brand { font-size: var(--text-sm); }
+
+  .phone .citation-preamble {
+    font-size: var(--text-xs);
+    margin-top: var(--space-4);
+  }
+  .phone h1.mobile-headline {
+    font-family: var(--font-display);
+    font-size: 1.45rem;   /* ~23px */
+    line-height: 1.2;
+    letter-spacing: var(--tracking-tight);
+    font-weight: var(--weight-medium);
+    margin: var(--space-2) 0 var(--space-3);
+    color: var(--color-text-strong);
+  }
+  .phone .article-lede {
+    font-size: 1rem;
+    line-height: var(--leading-deck);
+    margin: 0 0 var(--space-3);
+    color: var(--color-text-body);
+  }
+  /* Single-column byline on mobile */
+  .phone .byline {
+    font-size: var(--text-xs);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--color-rule-hairline);
+  }
+  .phone .byline strong { display: block; }
+
+  .phone .prose { font-size: 1rem; line-height: 1.6; }
+  .phone .prose blockquote { margin-left: 0; margin-right: 0; padding: 0 var(--space-4); font-size: 0.95rem; }
+
+  /* Condensed table on mobile */
+  .phone .prose table {
+    font-size: var(--text-xs);
+  }
+  .phone .prose th, .phone .prose td {
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .phone .prose figure { margin: var(--space-4) 0; }
+  .phone .prose figcaption { font-size: var(--text-xs); }
+
+  /* Sticky bottom Ask CTA — NEUTRAL treatment, not red */
+  .mobile-ask-fab {
+    position: sticky;
+    bottom: var(--space-3);
+    z-index: 10;
+    display: block;
+    width: calc(100% - var(--space-6));
+    margin: var(--space-6) auto 0;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-text-strong);
+    color: var(--color-text-inverse);
+    border: 1px solid var(--color-text-strong);
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    text-align: center;
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  }
+  .mobile-ask-fab:hover { background: var(--ink-700); border-color: var(--ink-700); }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="page">
+
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="nav__brand">The Transcript</a>
+      <div class="nav__links">
+        <a href="index.html">Browse</a>
+        <a href="search.html">Search</a>
+        <a href="ask.html">Ask</a>
+      </div>
+    </nav>
+
+    <article>
+      <p class="citation-preamble">
+        <span>Vol. XCVI, No. 14</span>
+        <span>13 Jan. 1960</span>
+        <span>p. 1</span>
+      </p>
+      <h1 class="mobile-headline">Student senate approves widened library hours</h1>
+      <p class="article-lede">After two readings and a sustained debate over staffing costs, the measure passes on a twelve-to-three vote.</p>
+      <p class="byline">
+        <strong>Whitman, Robert E.</strong>
+        Staff Writer · 1,240 words
+      </p>
+
+      <div class="prose" style="margin-top: var(--space-4);">
+        <p>The Student Senate on Tuesday night approved, by a vote of twelve to three, a proposal to extend library hours during final examination weeks, ending a two-month deliberation that had occupied four of the body's last six meetings. Under the measure, the Slocum Library will remain open until 2 a.m. each night of the designated exam period, beginning with the spring term in May.</p>
+
+        <p>The debate, which stretched past 11:15 p.m. in Merrick Hall, turned less on the merits of extended hours than on the question of who would staff them. Proponents led by Vice President Margaret Deane '61 cited a petition signed by 683 students.</p>
+
+        <blockquote>
+          It is a small thing, but small things accumulate. A library open at one in the morning is a different library than one that closed at ten.
+          <cite>Feltcher, H. A. — Dept. of History.</cite>
+        </blockquote>
+
+        <h3>Table 1. Staffing breakdown</h3>
+        <table>
+          <thead><tr><th>Role</th><th>Rate</th><th>Total</th></tr></thead>
+          <tbody>
+            <tr><td>Librarian</td><td>$3.10</td><td>$124</td></tr>
+            <tr><td>Student asst.</td><td>$1.05</td><td>$42</td></tr>
+            <tr><td>Heat</td><td>—</td><td>$174</td></tr>
+            <tr><td><strong>Total</strong></td><td></td><td><strong>$340</strong></td></tr>
+          </tbody>
+        </table>
+
+        <h3>What the amendment does</h3>
+        <ul>
+          <li>Extends Slocum Library closing to 2 a.m. during exam weeks.</li>
+          <li>Applies to the fall and spring exam periods.</li>
+          <li>Sunsets after two years pending review.</li>
+        </ul>
+
+        <p>Full story on Page 1 · 1,240 words.</p>
+      </div>
+    </article>
+
+    <a href="ask.html" class="mobile-ask-fab">Ask the archive &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

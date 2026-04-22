@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Direction A · Home — The Transcript Archive</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  /* Home-specific layout */
+  .hero-edition {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: var(--space-7);
+    margin: var(--space-6) 0;
+  }
+  .hero-edition__teaser h2 {
+    font-size: var(--text-2xl);
+    line-height: var(--leading-display);
+    letter-spacing: var(--tracking-tight);
+    margin: 0 0 var(--space-3);
+  }
+  .edition-picker {
+    border: 1px solid var(--color-rule-hairline);
+    padding: var(--space-4);
+  }
+  .edition-picker__year {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label-md);
+    color: var(--color-accent);
+    margin-bottom: var(--space-2);
+  }
+  .edition-picker__list {
+    list-style: none; padding: 0; margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.9;
+  }
+  .edition-picker__list li { border-bottom: 1px dotted var(--color-rule-hairline); }
+  .edition-picker__list a {
+    display: flex; justify-content: space-between;
+    color: var(--color-text-body);
+    text-decoration: none;
+    padding: var(--space-1) 0;
+  }
+  .edition-picker__list a:hover { color: var(--color-accent); }
+  .edition-picker__list span { color: var(--color-text-muted); font-size: var(--text-xs); }
+
+  .stories {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-6);
+    border-top: 2px solid var(--color-rule-ink);
+    padding-top: var(--space-5);
+    margin-top: var(--space-6);
+  }
+  .story { }
+  .story__category {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label-md);
+    color: var(--color-accent);
+    margin-bottom: var(--space-2);
+  }
+  .story h3 {
+    font-size: var(--text-lg);
+    line-height: var(--leading-deck);
+    margin: 0 0 var(--space-2);
+    font-weight: var(--weight-semibold);
+  }
+  .story h3 a { color: var(--color-text-body); text-decoration: none; }
+  .story h3 a:hover { color: var(--color-accent); }
+  .story__excerpt {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-2);
+  }
+  .story__meta {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label-sm);
+    color: var(--color-text-faint);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="label">The Transcript</a>
+      <div class="nav__links">
+        <a href="index.html" aria-current="page">Home</a>
+        <a href="search.html">Search</a>
+        <a href="ask.html">Ask</a>
+        <a href="#">About</a>
+      </div>
+    </nav>
+
+    <div class="masthead">
+      <h1 class="masthead__title">The Transcript</h1>
+      <p class="masthead__subtitle">Ohio Wesleyan University &middot; Established 1867</p>
+      <p class="masthead__tagline">Wednesday, January 13, 1960 &middot; Volume XCVI, No. 14 &middot; Delaware, Ohio</p>
+    </div>
+  </header>
+
+  <section class="hero-edition">
+    <article class="hero-edition__teaser">
+      <p class="byline">
+        <span class="byline__date">Jan 13, 1960</span>
+        <span>&middot;</span>
+        <span>Front page</span>
+        <span>&middot;</span>
+        <span>12 pages</span>
+      </p>
+      <h2>Student senate approves widened library hours, cites exam-week demand</h2>
+      <p class="deck">After two readings and a sustained debate over staffing costs, the measure passes on a twelve-to-three vote. The library will remain open until 2 a.m. during final weeks, effective spring term.</p>
+      <div class="byline" style="margin-bottom: var(--space-4);">
+        <span>By <strong>ROBERT E. WHITMAN</strong></span>
+        <span>&middot;</span>
+        <span>Staff</span>
+      </div>
+      <a href="article.html" class="btn btn--primary">Read the issue &rarr;</a>
+    </article>
+
+    <aside class="edition-picker">
+      <p class="edition-picker__year">1960 &middot; browse editions</p>
+      <ul class="edition-picker__list">
+        <li><a href="#">Jan 13 · Vol 96, No. 14 <span>12p</span></a></li>
+        <li><a href="#">Jan 20 · Vol 96, No. 15 <span>8p</span></a></li>
+        <li><a href="#">Jan 27 · Vol 96, No. 16 <span>14p</span></a></li>
+        <li><a href="#">Feb 3 · Vol 96, No. 17 <span>8p</span></a></li>
+        <li><a href="#">Feb 10 · Vol 96, No. 18 <span>10p</span></a></li>
+        <li><a href="#">Feb 17 · Vol 96, No. 19 <span>12p</span></a></li>
+      </ul>
+      <hr class="rule" style="margin: var(--space-3) 0;">
+      <a href="#" class="label label--accent">View all 351 editions &rarr;</a>
+    </aside>
+  </section>
+
+  <section class="stories">
+    <article class="story">
+      <p class="story__category">Campus Life</p>
+      <h3><a href="article.html">Freshman class stages winter mixer, draws four hundred</a></h3>
+      <p class="story__excerpt">The formal, held in Stuyvesant Hall, marked the first all-class dance since the October homecoming…</p>
+      <p class="story__meta">Page 3 &middot; 620 words</p>
+    </article>
+
+    <article class="story">
+      <p class="story__category">Athletics</p>
+      <h3><a href="article.html">Battling Bishops take the Ohio Conference, 68-54</a></h3>
+      <p class="story__excerpt">A third-quarter run of fifteen unanswered points sealed the road win against Marietta; the Bishops now stand 11-3…</p>
+      <p class="story__meta">Page 7 &middot; 480 words</p>
+    </article>
+
+    <article class="story">
+      <p class="story__category">Editorial</p>
+      <h3><a href="article.html">On the cost of midwinter heat</a></h3>
+      <p class="story__excerpt">The administration's decision to reduce residence-hall temperatures by two degrees is defensible, but it prompts a larger question about transparency in utility decisions…</p>
+      <p class="story__meta">Page 4 &middot; 390 words</p>
+    </article>
+  </section>
+
+  <hr class="rule rule--double" style="margin-top: var(--space-7);">
+
+  <section style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-6);">
+    <div>
+      <p class="label">Features</p>
+      <h3 style="font-size: var(--text-xl); font-weight: var(--weight-semibold); margin: var(--space-2) 0 var(--space-3);">
+        <a href="ask.html" style="color: var(--color-text-body); text-decoration: none;">Ask the archive &mdash; a new way to read sixty years of student journalism</a>
+      </h3>
+      <p style="color: var(--color-text-muted); margin-bottom: var(--space-3);">Type a question in plain English. The archive will answer using only passages it can cite from the editions, with links back to every source.</p>
+      <a href="ask.html" class="btn btn--accent">Try Ask &rarr;</a>
+    </div>
+    <aside class="card card--inset">
+      <p class="label label--accent">Today in 1960</p>
+      <p style="font-size: var(--text-sm); margin: var(--space-2) 0 0; line-height: var(--leading-deck);">
+        <em>January 13, 1960</em> — Senator John F. Kennedy had announced his candidacy eleven days earlier; on the OWU campus, the debate society was preparing to host its first televised exhibition round.
+      </p>
+    </aside>
+  </section>
+
+  <footer class="rule" style="margin-top: var(--space-8); border-top: 2px solid var(--color-rule-ink); padding-top: var(--space-4);">
+    <p class="label" style="text-align: center;">The Transcript Archive &middot; Ohio Wesleyan University &middot; Digitized 2026</p>
+  </footer>
+
+</div>
+</body>
+</html>
