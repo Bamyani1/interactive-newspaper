@@ -83,37 +83,18 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding-bottom: 18px;
-  position: relative;
-}
-
-/* Double accent rule beneath — matches the landing CTA chapter-head
-   treatment so the Ask-the-archive gesture reads consistently across
-   landing → sidebar. */
-.ask-sidebar-title::before {
-  content: '';
-  position: absolute;
-  left: 0; bottom: 7px;
-  width: 70%; height: 3px;
-  background: var(--color-accent);
-}
-
-.ask-sidebar-title::after {
-  content: '';
-  position: absolute;
-  left: 18%; bottom: 1px;
-  width: 40%; height: 1.5px;
-  background: color-mix(in srgb, var(--color-accent) 75%, transparent);
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .ask-sidebar-heading {
   margin: 0;
   font-family: var(--font-header);
   font-size: var(--text-lg);
-  font-weight: var(--font-bold);
-  line-height: var(--leading-tight);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-display);
   color: var(--color-text-primary);
-  letter-spacing: 0.005em;
+  letter-spacing: var(--tracking-tight);
 }
 
 .ask-sidebar-actions {
