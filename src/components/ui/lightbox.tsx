@@ -151,14 +151,7 @@ export function Lightbox(props: LightboxProps) {
 
             {current.caption ? (
               <p
-                className="mt-2 text-center"
-                style={{
-                  fontFamily: "var(--font-body)",
-                  fontSize: "13px",
-                  fontStyle: "italic",
-                  color: "rgba(255,255,255,0.88)",
-                  maxWidth: "80ch",
-                }}
+                className="mt-2 text-center font-body text-sm italic text-white/90 max-w-[80ch] mx-auto"
               >
                 {current.caption}
               </p>
@@ -175,17 +168,7 @@ export function Lightbox(props: LightboxProps) {
                   onClick={() =>
                     setIndex((i) => (i - 1 + total) % total)
                   }
-                  className="absolute left-2 top-1/2 -translate-y-1/2 text-white text-3xl font-serif cursor-pointer select-none rounded-full"
-                  style={{
-                    width: "2.5rem",
-                    height: "2.5rem",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "rgba(0,0,0,0.55)",
-                    border: "1px solid rgba(255,255,255,0.25)",
-                    lineHeight: 1,
-                  }}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white text-3xl font-serif leading-none cursor-pointer select-none rounded-full bg-black/55 border border-white/25 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
                 >
                   ‹
                 </button>
@@ -193,32 +176,11 @@ export function Lightbox(props: LightboxProps) {
                   type="button"
                   aria-label="Next photo"
                   onClick={() => setIndex((i) => (i + 1) % total)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-white text-3xl font-serif cursor-pointer select-none rounded-full"
-                  style={{
-                    width: "2.5rem",
-                    height: "2.5rem",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "rgba(0,0,0,0.55)",
-                    border: "1px solid rgba(255,255,255,0.25)",
-                    lineHeight: 1,
-                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-white text-3xl font-serif leading-none cursor-pointer select-none rounded-full bg-black/55 border border-white/25 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
                 >
                   ›
                 </button>
-                <span
-                  className="absolute top-2 right-2 text-white"
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "11px",
-                    letterSpacing: "0.12em",
-                    padding: "3px 8px",
-                    background: "rgba(0,0,0,0.55)",
-                    border: "1px solid rgba(255,255,255,0.25)",
-                    borderRadius: "2px",
-                  }}
-                >
+                <span className="absolute top-2 right-2 text-white font-mono text-xs tracking-label-md px-2 py-1 rounded-sm bg-black/55 border border-white/25">
                   {index + 1} / {total}
                 </span>
               </>
