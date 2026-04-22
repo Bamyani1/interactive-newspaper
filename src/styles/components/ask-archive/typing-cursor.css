@@ -1,34 +1,10 @@
 /**
  * Ask the Archive — Typing / streaming cursor
  *
- * Two blinking-cursor treatments:
- *   1. .ask-answer-cursor — legacy inline-span cursor appended next to a
- *      partial answer while tokens stream (kept for compatibility).
- *   2. .ask-turn-answer[data-streaming="true"] ::after — a CSS-drawn
- *      accent block that follows the last streamed paragraph/list-item
- *      in the live answer container.
- *
- * Both share the "blink on 50%" idiom but use separate keyframes so the
- * timing can drift independently without causing reflow on either.
+ * CSS-drawn accent block that follows the last streamed paragraph or
+ * list-item in the live answer container while tokens stream in from
+ * /api/ask?stream=1. Blinks and disappears once the `done` event fires.
  */
-
-/* =========================================
-   LEGACY INLINE-SPAN CURSOR
-   Blinking cursor appended to the partial answer while tokens are
-   streaming in from /api/ask?stream=1. Hidden once the `done` event fires.
-   ========================================= */
-
-.ask-answer-cursor {
-  display: inline-block;
-  margin-left: 0.15em;
-  color: var(--color-accent);
-  animation: ask-answer-cursor-blink 1s steps(2, start) infinite;
-}
-
-@keyframes ask-answer-cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
 
 /* =========================================
    STREAMING-CURSOR ::after

@@ -291,12 +291,6 @@
   background: var(--color-accent);
 }
 
-.ask-citation-unlinked {
-  color: var(--color-accent);
-  font-size: 0.8em;
-  opacity: 0.6;
-}
-
 /* The answer-container scope already inherits .ask-citation-link — this
    selector is retained so the rule order stays explicit for future
    readers. */
