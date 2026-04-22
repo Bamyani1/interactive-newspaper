@@ -331,9 +331,9 @@
 }
 
 /* =========================================
-   LOADING + FEED
-   Skeleton placeholder, research-feed entries, summary row, and the
-   shared fade/pulse keyframes they animate against.
+   LOADING
+   Skeleton placeholder + shared fade/pulse keyframes the rest of the
+   transcript animates against.
    ========================================= */
 
 .ask-loading-skeleton {
@@ -377,133 +377,6 @@
   }
 }
 
-/* Meta row on the answer footer. */
-.ask-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  font-size: var(--text-xs);
-  font-family: var(--font-mono, monospace);
-  color: var(--color-text-secondary);
-  opacity: 0.7;
-}
-
-/* Feedback row (thumbs up/down) */
-.ask-feedback-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  margin-top: 0.75rem;
-  font-size: var(--text-xs);
-  font-family: var(--font-mono, monospace);
-  color: var(--color-text-secondary);
-  opacity: 0.75;
-}
-
-.ask-feedback-label {
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label-sm);
-}
-
-.ask-feedback-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  background: transparent;
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-default);
-  cursor: pointer;
-  transition: color var(--duration-fast) ease, border-color var(--duration-fast) ease, transform var(--duration-fast) ease;
-}
-
-.ask-feedback-btn:hover:not(:disabled) {
-  color: var(--color-accent);
-  border-color: var(--color-accent);
-  transform: translateY(-1px);
-}
-
-.ask-feedback-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.ask-feedback-error {
-  /* Kept explicit: this is an error state distinct from the brand
-     --color-warning (which resolves to brand red and would collide with
-     the accent treatment already used on the retry button). */
-  color: #ef4444;
-  margin-left: var(--space-2);
-}
-
-/* Research feed entries */
-.ask-feed {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.ask-feed-entry {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.8rem;
-  line-height: var(--leading-normal);
-  color: var(--color-text-secondary);
-  margin: 0;
-  animation: askFadeIn var(--duration-normal) var(--ease-default, ease) both;
-}
-
-.ask-feed-entry--query {
-  font-style: italic;
-  color: var(--color-accent);
-}
-
-.ask-feed-entry--tool {
-  color: var(--color-text-secondary);
-}
-
-.ask-feed-entry--result {
-  color: var(--color-text-secondary);
-  opacity: 0.7;
-  font-size: var(--text-xs);
-}
-
-.ask-feed-entry--status {
-  color: var(--color-text-secondary);
-}
-
-.ask-feed-entry--last.ask-feed-entry--status {
-  animation: askFadeIn var(--duration-normal) var(--ease-default, ease) both,
-             askPulse 1.5s ease-in-out infinite;
-}
-
-/* Research summary row */
-.ask-summary {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  opacity: 0.7;
-}
-
-.ask-summary-segment {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.ask-summary-separator {
-  color: var(--color-text-secondary);
-  opacity: 0.4;
-}
-
 /* =========================================
    CONFIDENCE BADGE
    ========================================= */
@@ -545,14 +418,8 @@
    ========================================= */
 
 @media (prefers-reduced-motion: reduce) {
-  .ask-feedback-btn {
-    transition: none;
-  }
   .ask-example-chip {
     transition: none;
-  }
-  .ask-feed-entry {
-    animation: none;
   }
   .ask-thinking-dot {
     animation: none;
