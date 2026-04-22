@@ -134,6 +134,7 @@ gold/
 CLAUDE.md
 docs/*
 !docs/architecture/
+!docs/design/
 !docs/issues/
 docs/issues/*
 !docs/issues/README.md
