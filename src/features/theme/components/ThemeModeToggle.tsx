@@ -61,7 +61,7 @@ export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = fal
             <button
                 type="button"
                 onClick={handleToggle}
-                className="p-1.5 rounded-sm hover:bg-[var(--color-accent)]/8 hover:text-[var(--color-text-primary)] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent)]/30"
+                className="p-1.5 rounded-sm hover:bg-accent/8 hover:text-[var(--color-text-primary)] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                 aria-label={label}
                 aria-pressed={mode === "light"}
             >

@@ -368,7 +368,7 @@
     max-width: 360px;
     margin: 20px auto 0;
     padding: 12px 30px;
-    background: var(--owu-dark-gray);
+    background: var(--ink-800);
     color: var(--color-text-primary);
     border: none;
     font-family: var(--font-header);
@@ -399,7 +399,7 @@
 .cinema-btn svg {
     position: relative;
     z-index: 1;
-    color: var(--owu-medium-gray);
+    color: var(--color-text-inverse);
 }
 
 /* =========================================
@@ -573,8 +573,8 @@
     gap: 0.65rem;
     text-decoration: none;
     /* --color-text-secondary matches the masthead subtitle — legible on
-       the warm cinema-paper background. --owu-medium-gray reads cool /
-       bluish against the beige texture and washes out. */
+       the warm cinema-paper background. A cool/neutral gray reads bluish
+       against the beige texture and washes out. */
     color: var(--color-text-secondary);
     transition: color var(--duration-normal) ease;
 }

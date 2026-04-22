@@ -1,0 +1,456 @@
+/**
+ * Ask the Archive — Sources
+ *
+ * Hosts the inline source list, individual source cards, the thumbnail
+ * strip, the expand/collapse toggle, the full-bleed SourceReader drawer
+ * opened when a card is clicked, and the timeline gallery rendered when
+ * a date-aware answer surfaces nearby context. Photo strips inside
+ * answers (PhotosPanel) live in photos.css.
+ */
+
+/* =========================================
+   SOURCE CARD
+   ========================================= */
+
+.ask-source-card {
+  padding: 1.1rem 0 1.2rem;
+  border-top: 1px dashed var(--stroke-accent-soft);
+  position: relative;
+  cursor: pointer;
+  transition: padding-left var(--duration-fast) ease, background var(--duration-fast) ease;
+}
+
+.ask-source-card:first-child {
+  border-top: 0;
+}
+
+.ask-source-card[role="button"]:hover {
+  padding-left: var(--space-2);
+}
+
+.ask-source-card[data-highlighted="true"] {
+  background: color-mix(in oklab, var(--color-accent) 8%, transparent);
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--color-accent);
+  animation: ask-source-flash 1.2s ease;
+}
+
+@keyframes ask-source-flash {
+  0% { background: color-mix(in oklab, var(--color-accent) 16%, transparent); }
+  100% { background: color-mix(in oklab, var(--color-accent) 8%, transparent); }
+}
+
+.ask-source-card-inner {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.ask-source-card-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ask-source-card-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+}
+
+.ask-source-card-category {
+  color: var(--color-accent);
+  font-weight: var(--font-medium);
+}
+
+.ask-source-card-date {
+  color: var(--color-text-secondary);
+  font-weight: var(--font-normal);
+  opacity: 0.7;
+}
+
+.ask-source-card-headline {
+  font-family: var(--font-header);
+  font-size: 1.2rem;
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  line-height: var(--leading-snug);
+  margin: 0;
+}
+
+.ask-source-card-num {
+  color: var(--color-text-secondary);
+  opacity: 0.55;
+  font-weight: var(--font-normal);
+  margin-right: 0.2rem;
+}
+
+.ask-source-card-byline {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.ask-source-card-snippet {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  margin: 0.2rem 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ask-source-card-hint {
+  margin-top: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: var(--font-medium);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-accent);
+  opacity: 0;
+  transition: opacity var(--duration-fast) ease;
+  align-self: flex-end;
+}
+
+.ask-source-card[role="button"]:hover .ask-source-card-hint,
+.ask-source-card[role="button"]:focus-visible .ask-source-card-hint {
+  opacity: 1;
+}
+
+.ask-source-card-thumb {
+  flex-shrink: 0;
+  width: 80px;
+}
+
+.ask-source-thumb-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 3px solid var(--color-text-primary);
+}
+
+.ask-source-thumb-count {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 2px 5px;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: var(--tracking-label-sm);
+  /* Badge text sits on an accent-tinted background; keep the literal
+     white so it stays readable regardless of the accent's hue. */
+  color: #fff;
+  background: color-mix(in oklab, var(--color-accent) 82%, #000 18%);
+  border-radius: var(--radius-sm);
+}
+
+/* =========================================
+   SOURCE LIST
+   ========================================= */
+
+.ask-source-list {
+  margin-top: var(--space-8);
+}
+
+.ask-source-list-content {
+  margin-top: 0.75rem;
+}
+
+.ask-source-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: var(--space-1) 0 var(--space-1);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  transition: border-bottom-color var(--duration-fast) ease;
+}
+
+.ask-source-toggle:hover {
+  border-bottom-color: var(--color-accent);
+}
+
+/* =========================================
+   TIMELINE GALLERY
+   ========================================= */
+
+.ask-timeline-section {
+  margin-top: var(--space-8);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px dashed var(--stroke-accent-soft);
+}
+
+.ask-timeline-label {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label-md);
+  color: var(--color-accent);
+  margin-bottom: var(--space-4);
+}
+
+.ask-timeline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-4);
+}
+
+.ask-timeline-card {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  transition: transform var(--duration-fast) ease;
+}
+
+.ask-timeline-card:hover {
+  transform: translateY(-2px);
+}
+
+.ask-timeline-image-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  margin-bottom: var(--space-2);
+  border: 2px solid var(--color-text-primary);
+  background: var(--color-bg-secondary);
+}
+
+.ask-timeline-card:hover .ask-timeline-image-wrapper {
+  border-color: var(--color-accent);
+}
+
+.ask-timeline-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0 0.125rem;
+}
+
+.ask-timeline-date {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  opacity: 0.55;
+  color: var(--color-text-primary);
+  letter-spacing: 0.03em;
+}
+
+.ask-timeline-headline {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* =========================================
+   SOURCE READER DRAWER
+   ========================================= */
+
+.ask-reader-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-popover);
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  background: color-mix(in srgb, var(--color-bg-primary) 70%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+
+.ask-reader-overlay[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ask-reader {
+  position: relative;
+  width: min(720px, 92vw);
+  height: 100%;
+  background: var(--color-bg-secondary);
+  border-left: 1px solid var(--color-border-default);
+  padding: var(--space-12) 3.5rem;
+  overflow-y: auto;
+  transform: translateX(32px);
+  transition: transform var(--duration-normal) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ask-reader-overlay[data-open="true"] .ask-reader {
+  transform: translateX(0);
+}
+
+.ask-reader-close {
+  position: absolute;
+  top: 1.25rem;
+  right: var(--space-6);
+  padding: 0.4rem 0.7rem;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: var(--font-medium);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.ask-reader-close:hover {
+  color: var(--color-accent);
+}
+
+.ask-reader-dateline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: var(--font-medium);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+}
+
+.ask-reader-section {
+  color: var(--color-accent);
+}
+
+.ask-reader-date,
+.ask-reader-page {
+  color: var(--color-text-secondary);
+}
+
+.ask-reader-dot {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.ask-reader-title {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-header);
+  font-size: 2.25rem;
+  font-weight: var(--font-semibold);
+  line-height: 1.15;
+  color: var(--color-text-primary);
+  letter-spacing: var(--tracking-tight);
+}
+
+.ask-reader-byline {
+  margin: 0 0 1.75rem;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.ask-reader-photos {
+  margin: 0 0 1.75rem;
+}
+
+/* The ImageGallery primitive enforces 90% width with auto margin by
+   default, which looks off inside the reader drawer. Override to the
+   reader's full text width. */
+.ask-reader-photos > div {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+.ask-reader-body {
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  color: var(--color-text-primary);
+}
+
+.ask-reader-body p {
+  margin: 0 0 1em;
+}
+
+.ask-reader-body p:last-child {
+  margin-bottom: 0;
+}
+
+.ask-reader-body p:first-of-type::first-letter {
+  font-family: var(--font-header);
+  font-size: 3.4em;
+  float: left;
+  line-height: 0.88;
+  padding: 4px 10px 0 0;
+  color: var(--color-accent);
+  font-weight: var(--font-semibold);
+}
+
+.ask-reader-status {
+  font-family: var(--font-body);
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.ask-reader-footer {
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px dashed var(--stroke-accent-soft);
+}
+
+.ask-reader-edition-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: var(--font-medium);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-bottom-color var(--duration-fast) ease;
+}
+
+.ask-reader-edition-link:hover {
+  border-bottom-color: var(--color-accent);
+}
+
+/* =========================================
+   REDUCED MOTION
+   ========================================= */
+@media (prefers-reduced-motion: reduce) {
+  .ask-source-card[data-highlighted="true"] {
+    animation: none;
+  }
+  .ask-reader,
+  .ask-reader-overlay {
+    transition: none;
+  }
+}
