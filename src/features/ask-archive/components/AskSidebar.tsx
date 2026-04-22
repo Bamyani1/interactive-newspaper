@@ -41,7 +41,7 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
     return (
         <aside className="ask-sidebar">
             <div className="ask-sidebar-title">
-                <h1 className="ask-sidebar-heading">Ask the Archive</h1>
+                <h1 className="ask-sidebar-heading">Ask the archive</h1>
             </div>
 
             <div className="ask-sidebar-actions">
