@@ -46,7 +46,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
+    gap: 9px;
     width: 100%;
     max-width: 220px;
     padding: 0;
@@ -70,7 +70,8 @@
 
 .ep-closed-label {
     font-family: var(--font-mono);
-    font-size: var(--text-xs);
+    font-size: 0.75rem;
+    font-weight: 600;
     letter-spacing: var(--tracking-label-md);
     text-transform: uppercase;
     color: var(--color-text-secondary);
@@ -87,7 +88,7 @@
 
 .ep-closed-date {
     font-family: var(--font-header);
-    font-size: 1.55rem;
+    font-size: 1.85rem;
     font-weight: var(--font-bold);
     font-style: italic;
     color: var(--color-text-primary);
@@ -109,11 +110,12 @@
 
 .ep-closed-change {
     font-family: var(--font-mono);
-    font-size: var(--text-xs);
+    font-size: 0.75rem;
+    font-weight: 600;
     letter-spacing: var(--tracking-label-sm);
     text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-accent) 65%, transparent);
-    margin-top: var(--space-1);
+    color: color-mix(in srgb, var(--color-accent) 80%, transparent);
+    margin-top: 8px;
     transition:
         color var(--duration-normal) var(--ease-default),
         letter-spacing var(--duration-normal) var(--ease-default);

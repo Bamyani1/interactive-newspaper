@@ -187,7 +187,7 @@
    ========================================= */
 
 .cinema-paper {
-    padding: 40px 45px;
+    padding: 48px 52px;
     position: relative;
     overflow: visible;
     filter:
@@ -246,6 +246,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
+    gap: var(--space-6);
 }
 
 .cinema-col-brand--hidden {
@@ -279,6 +280,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
+    gap: var(--space-6);
 }
 
 
@@ -288,11 +290,10 @@
 
 .cinema-masthead {
     text-align: center;
-    margin-bottom: 30px;
-    padding-bottom: 15px;
+    padding-bottom: 18px;
     border-bottom: 3px solid var(--color-accent);
     max-width: 576px;
-    margin: 0 auto 30px;
+    margin: 0 auto 36px;
 }
 
 .cinema-title {
@@ -306,10 +307,11 @@
 
 .cinema-subtitle {
     font-family: var(--font-mono);
-    font-size: 0.85rem;
+    font-size: 1rem;
+    font-weight: 500;
     letter-spacing: var(--tracking-label-md);
     text-transform: uppercase;
-    color: var(--color-text-secondary);
+    color: color-mix(in srgb, var(--color-text-primary) 72%, transparent);
 }
 
 .cinema-edition-info {
@@ -592,10 +594,10 @@
 
 .cinema-ask-teaser-label {
     display: block;
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.55rem;
     font-family: var(--font-mono);
-    font-size: 0.66rem;
-    font-weight: 500;
+    font-size: 0.75rem;
+    font-weight: 600;
     letter-spacing: var(--tracking-label-md);
     text-transform: uppercase;
     color: var(--color-accent);
@@ -608,7 +610,7 @@
        ink weight than 500/secondary to hold up against the grainy
        cinema-paper texture. */
     font-weight: var(--font-semibold);
-    font-size: 1.05rem;
+    font-size: 1.15rem;
     line-height: 1.35;
     color: var(--color-text-primary);
 }
