@@ -196,9 +196,13 @@
     width: 100%;
     cursor: default;
 
-    /* Force dark text on cream paper in both modes */
+    /* Paper card is mode-locked (cream with dark text) regardless of body
+       data-mode. Lock the text triad — primary, secondary, inverse — so
+       inline descendants like the solid .cinema-btn (dark bg, cream text)
+       keep the same contrast in light and dark modes. */
     --color-text-primary: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
     --color-text-secondary: color-mix(in srgb, var(--owu-black) 55%, var(--owu-white));
+    --color-text-inverse: var(--newsprint-50);
     color: var(--color-text-primary);
 }
 
