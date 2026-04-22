@@ -1,0 +1,429 @@
+/**
+ * Ask the Archive — Transcript
+ *
+ * Scrollable conversation surface and the turn-level containers it holds:
+ * question pullquote, assistant block, thinking indicator, inline error,
+ * follow-up chips, loading skeleton, and the compaction rules that trim
+ * earlier turns. Markdown inside .ask-turn-answer is styled by
+ * markdown-prose.css; the streaming/typing cursor lives in
+ * typing-cursor.css; landing empty-state is landing.css.
+ */
+
+/* =========================================
+   TRANSCRIPT CONTAINER
+   ========================================= */
+
+.ask-transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-1) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  /* When there are no turns, the empty state centers in the
+     available space instead of hugging the top. */
+}
+
+.ask-transcript:has(.ask-hydrating-indicator),
+.ask-transcript:has(.ask-cleared-indicator),
+.ask-transcript:has(> .ask-landing) {
+  justify-content: center;
+}
+
+/* When AskLanding renders inline inside the transcript ("New
+   conversation" empty state), drop its first-visit padding so it
+   doesn't push off-screen inside the scrollable container. */
+.ask-transcript > .ask-landing {
+  padding-top: var(--space-6);
+  padding-bottom: var(--space-6);
+}
+
+.ask-hydrating-indicator,
+.ask-cleared-indicator {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-text-secondary) 70%, transparent);
+}
+
+/* Subtle scrollbar that matches the dark theme */
+.ask-transcript::-webkit-scrollbar { width: 8px; }
+.ask-transcript::-webkit-scrollbar-track { background: transparent; }
+.ask-transcript::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-text-secondary) 20%, transparent);
+  border-radius: var(--radius-default);
+}
+.ask-transcript::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--color-text-secondary) 35%, transparent);
+}
+
+/* =========================================
+   TURN
+   ========================================= */
+
+.ask-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.ask-turn + .ask-turn {
+  padding-top: var(--space-6);
+  border-top: 1px dashed var(--stroke-accent-soft);
+}
+
+/* Q — user question block (editorial pullquote, not a chat bubble) */
+.ask-turn-user {
+  display: block;
+}
+
+.ask-turn-user-label {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin: 0 0 0.4rem;
+}
+
+.ask-turn-user-bubble {
+  margin: 0;
+  max-width: 100%;
+  padding: 0 0 0 var(--space-4);
+  border-left: 2px solid var(--color-accent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-header);
+  font-size: 1.25rem;
+  font-weight: var(--font-normal);
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--color-text-primary);
+}
+
+/* A — assistant reply block */
+.ask-turn-assistant {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ask-turn-assistant-label {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.2rem;
+}
+
+/* Previous-turn compaction: older turns trim to the lede and hide
+   scaffolding, so the latest turn owns the viewport. */
+.ask-turn--previous .ask-turn-answer p:nth-of-type(n+3) {
+  display: none;
+}
+.ask-turn--previous .ask-turn-answer::after {
+  content: "…";
+  color: var(--color-text-secondary);
+  margin-left: 0.1rem;
+}
+.ask-turn--previous .ask-source-list-content {
+  display: none;
+}
+.ask-turn--previous .ask-followups {
+  display: none;
+}
+
+/* =========================================
+   THINKING RULE
+   "Consulting the archive…" — editorial in-progress rule, no pill,
+   no shimmer. Separate from the streaming cursor: this renders
+   while the agent plans; the cursor renders while tokens stream.
+   ========================================= */
+.ask-thinking-rule {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: var(--space-1) 0;
+  width: fit-content;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.ask-thinking-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  opacity: 0.3;
+  animation: ask-thinking-bounce 1.2s ease-in-out infinite;
+}
+
+.ask-thinking-dot:nth-of-type(2) {
+  animation-delay: 0.15s;
+}
+
+.ask-thinking-dot:nth-of-type(3) {
+  animation-delay: var(--duration-normal);
+}
+
+@keyframes ask-thinking-bounce {
+  0%, 60%, 100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* =========================================
+   FOLLOW-UP QUESTIONS + EXAMPLE CHIPS
+   ========================================= */
+
+.ask-followups {
+  margin-top: 1.25rem;
+  padding-top: var(--space-4);
+  border-top: 1px dashed var(--stroke-accent-soft);
+}
+
+.ask-followups-label {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label-md);
+  color: var(--color-accent);
+  margin: 0 0 var(--space-2);
+}
+
+.ask-examples {
+  display: block;
+  margin-top: var(--space-2);
+}
+
+.ask-example-chip {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.65rem 0 0.65rem var(--space-4);
+  border: 0;
+  border-left: 2px solid transparent;
+  border-bottom: 1px dashed var(--stroke-accent-soft);
+  background: transparent;
+  font-family: var(--font-header);
+  font-style: italic;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: border-left-color var(--duration-fast) ease;
+}
+
+.ask-example-chip::before {
+  content: "→";
+  font-family: var(--font-mono);
+  color: var(--color-accent);
+  opacity: 0.65;
+  margin-right: 0.55rem;
+  font-style: normal;
+  display: inline-block;
+  transition: transform var(--duration-fast) ease, opacity var(--duration-fast) ease;
+}
+
+.ask-example-chip:last-child {
+  border-bottom: 0;
+}
+
+.ask-example-chip:hover {
+  border-left-color: var(--color-accent);
+}
+
+.ask-example-chip:hover::before {
+  transform: translateX(2px);
+  opacity: 1;
+}
+
+.ask-example-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* =========================================
+   INLINE ERROR BLOCK
+   Rendered inside the transcript flow when a request fails.
+   ========================================= */
+
+.ask-error-inline {
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-default);
+  padding: 0.9rem var(--space-4);
+  background: color-mix(in oklab, var(--color-accent) 5%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: flex-start;
+}
+
+.ask-error-inline-label {
+  margin: 0 0 0.1rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.ask-error-inline-message {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  line-height: var(--leading-normal);
+}
+
+.ask-error-inline-countdown {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.ask-error-inline-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-default);
+  background: transparent;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  cursor: pointer;
+  margin-top: 0.35rem;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.ask-error-inline-retry:hover:not(:disabled) {
+  background: var(--color-accent);
+  color: var(--color-bg-primary);
+}
+
+.ask-error-inline-retry:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* =========================================
+   LOADING
+   Skeleton placeholder + shared fade/pulse keyframes the rest of the
+   transcript animates against.
+   ========================================= */
+
+.ask-loading-skeleton {
+  animation: askPulse 1.5s ease-in-out infinite;
+}
+
+.ask-loading-bar {
+  height: var(--space-4);
+  border-radius: var(--radius-default);
+  background: var(--color-border-default);
+  margin-bottom: 0.75rem;
+}
+
+.ask-loading-bar--short {
+  width: 65%;
+}
+
+.ask-loading-bar--medium {
+  width: 85%;
+}
+
+.ask-loading-bar--long {
+  width: 100%;
+}
+
+@keyframes askFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ask-answer-enter {
+  animation: askFadeIn var(--duration-normal) var(--ease-default) both;
+}
+
+@keyframes askPulse {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* =========================================
+   CONFIDENCE BADGE
+   ========================================= */
+
+.ask-confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label-sm);
+}
+
+.ask-confidence-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+}
+
+/* Confidence dot colours — traffic-light semantics mapped to specific
+   hues rather than semantic accent so the high/medium/low distinction
+   stays legible even when --color-accent/--color-warning collide to
+   brand red. Kept as literal hex. */
+.ask-confidence-dot--high {
+  background: #22c55e;
+}
+
+.ask-confidence-dot--medium {
+  background: #f59e0b;
+}
+
+.ask-confidence-dot--low {
+  background: #9ca3af;
+}
+
+/* =========================================
+   REDUCED MOTION
+   ========================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-example-chip {
+    transition: none;
+  }
+  .ask-thinking-dot {
+    animation: none;
+    opacity: 0.7;
+    transform: none;
+  }
+}

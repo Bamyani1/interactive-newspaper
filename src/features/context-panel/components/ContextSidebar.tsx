@@ -29,27 +29,18 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({ currentDate }) =
 
             {currentDate && (
                 <div className="mb-8">
-                    <h3
-                        className="uppercase font-mono text-[12px] tracking-[0.2em] mb-3 border-b border-dashed pb-1"
-                        style={{ borderColor: "var(--stroke-accent-soft)" }}
-                    >
+                    <h3 className="uppercase font-mono text-xs tracking-label-md mb-3 border-b border-dashed border-[var(--stroke-accent-soft)] pb-1">
                         Weather Report
                     </h3>
 
-                    <div
-                        className="border p-4"
-                        style={{
-                            borderColor: "var(--color-border-default)",
-                            background: "color-mix(in srgb, var(--color-bg-secondary) 50%, transparent)",
-                        }}
-                    >
+                    <div className="border border-[var(--color-border-default)] bg-[color-mix(in_srgb,var(--color-bg-secondary)_50%,transparent)] p-4">
                         {isLoading ? (
-                            <p className="font-mono text-[10px] tracking-widest uppercase animate-pulse opacity-70">
+                            <p className="font-mono text-xs tracking-label-md uppercase animate-pulse opacity-70">
                                 Receiving weather data...
                             </p>
                         ) : highF != null && lowF != null ? (
                             <>
-                                <p className="font-mono text-[10px] tracking-[0.15em] uppercase opacity-60 mb-3">
+                                <p className="font-mono text-xs tracking-label-md uppercase opacity-60 mb-3">
                                     Delaware, Ohio
                                 </p>
 
@@ -58,26 +49,23 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({ currentDate }) =
                                     <span className="font-header text-2xl leading-none opacity-60">/ {lowF}°</span>
                                 </div>
                                 <div className="flex gap-4 mb-1">
-                                    <span className="font-mono text-[9px] tracking-[0.2em] uppercase opacity-50">High</span>
-                                    <span className="font-mono text-[9px] tracking-[0.2em] uppercase opacity-50">Low</span>
+                                    <span className="font-mono text-xs tracking-label-md uppercase opacity-50">High</span>
+                                    <span className="font-mono text-xs tracking-label-md uppercase opacity-50">Low</span>
                                 </div>
 
-                                <div
-                                    className="border-t border-dashed my-3"
-                                    style={{ borderColor: "var(--color-border-default)" }}
-                                />
-                                <p className="font-mono text-[10px] tracking-[0.15em] uppercase opacity-60">
+                                <div className="border-t border-dashed border-[var(--color-border-default)] my-3" />
+                                <p className="font-mono text-xs tracking-label-md uppercase opacity-60">
                                     {formattedDate}
                                 </p>
 
                                 {record?.is_estimated && (
-                                    <p className="font-mono text-[9px] tracking-[0.15em] uppercase opacity-50 mt-2">
+                                    <p className="font-mono text-xs tracking-label-md uppercase opacity-50 mt-2">
                                         * Estimated
                                     </p>
                                 )}
                             </>
                         ) : (
-                            <p className="font-mono text-[10px] tracking-widest uppercase opacity-50">
+                            <p className="font-mono text-xs tracking-label-md uppercase opacity-50">
                                 Weather data unavailable
                             </p>
                         )}

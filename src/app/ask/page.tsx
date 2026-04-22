@@ -52,6 +52,7 @@ export default function AskPage() {
     useEffect(() => {
         if (!lastTurn) return;
         if (lastTurn.status === "done" || lastTurn.status === "error") {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- monotonic focus bridge: bump focusSignal once per turn-completion so the Composer refocuses for the next question. Not an external-system sync.
             setFocusSignal((n) => n + 1);
         }
     }, [lastTurn?.status, lastTurn]);

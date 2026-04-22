@@ -36,4 +36,14 @@
 @import "./components/time-controls.css";
 @import "./components/mock-stained-glass.css";
 @import "./components/autumn-canopy.css";
-@import "./components/ask-archive.css";
+
+/* --- Ask the Archive (split from ask-archive.css, Phase 6) ----------- */
+@import "./components/ask-archive/layout.css";
+@import "./components/ask-archive/composer.css";
+@import "./components/ask-archive/transcript.css";
+@import "./components/ask-archive/markdown-prose.css";
+@import "./components/ask-archive/caveat.css";
+@import "./components/ask-archive/sources.css";
+@import "./components/ask-archive/photos.css";
+@import "./components/ask-archive/typing-cursor.css";
+@import "./components/ask-archive/landing.css";

@@ -24,7 +24,7 @@ export const PageTransition: React.FC<PageTransitionProps> = ({ children }) => {
   }
 
   return (
-    <div style={{ display: "grid", minHeight: "100vh", background: "#fff" }}>
+    <div className="grid min-h-screen bg-[var(--color-bg-paper)]">
       <AnimatePresence mode="sync">
         <motion.div
           key={routeKey}

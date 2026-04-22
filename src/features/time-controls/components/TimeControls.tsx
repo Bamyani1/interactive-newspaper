@@ -149,7 +149,7 @@ export const TimeControls = () => {
             <div className="time-controls-date-group flex items-center gap-2">
                 <Link
                     href="/ask"
-                    className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-sm transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/30 ${
+                    className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] ${
                         pathname?.startsWith("/ask")
                             ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
                             : "opacity-70 hover:opacity-100 hover:bg-[var(--color-accent)]/8"
@@ -160,7 +160,7 @@ export const TimeControls = () => {
                 </Link>
                 <Link
                     href="/search"
-                    className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-sm transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/30 ${
+                    className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] ${
                         pathname?.startsWith("/search")
                             ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
                             : "opacity-70 hover:opacity-100 hover:bg-[var(--color-accent)]/8"
@@ -177,7 +177,7 @@ export const TimeControls = () => {
                         setIsDropdownOpen((prev) => !prev);
                     }}
                     disabled={!canOpenDropdown}
-                    className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-sm hover:bg-[var(--color-accent)]/8 transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]/30"
+                    className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-sm hover:bg-[var(--color-accent)]/8 transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
                     aria-expanded={isDropdownOpen}
                     aria-haspopup="listbox"
                     aria-label="Select edition date"
@@ -201,16 +201,12 @@ export const TimeControls = () => {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -10 }}
                             transition={TRANSITIONS.micro}
-                            className="absolute right-0 top-full z-[var(--z-max)] mt-1 bg-[var(--color-bg-secondary)] rounded-sm shadow-lg border overflow-hidden min-w-[240px]"
-                            style={{ borderColor: "var(--color-border-default)" }}
+                            className="absolute right-0 top-full z-[var(--z-max)] mt-1 bg-[var(--color-bg-secondary)] rounded-sm shadow-lg border border-[var(--color-border-default)] overflow-hidden min-w-[240px]"
                             role="listbox"
                             aria-label="Available editions"
                         >
-                            <div
-                                className="px-4 py-2 border-b"
-                                style={{ borderColor: "var(--color-border-default)" }}
-                            >
-                                <p className="text-[10px] font-mono text-[var(--color-text-secondary)] uppercase tracking-widest">
+                            <div className="px-4 py-2 border-b border-[var(--color-border-default)]">
+                                <p className="text-xs font-mono text-[var(--color-text-secondary)] uppercase tracking-widest">
                                     {editions.length} Editions Available
                                 </p>
                             </div>
@@ -291,7 +287,7 @@ export const TimeControls = () => {
                                                                                     {formatMonth(month)}
                                                                                 </span>
                                                                             </span>
-                                                                            <span className="text-[10px] font-mono text-[var(--color-text-secondary)] opacity-60">
+                                                                            <span className="text-xs font-mono text-[var(--color-text-secondary)] opacity-60">
                                                                                 {dates.length}
                                                                             </span>
                                                                         </button>

@@ -1,0 +1,442 @@
+/* =========================================================================
+   DIRECTION A — FAITHFUL
+   Thesis: "Reading The New York Times in 1963"
+
+   Period-correct newsprint aesthetic. Warm paper, deep warm-black ink,
+   brand red for display and rules. Dense, typographically rich, traditional.
+
+   Consumers: anyone who wants the most authentic 1960s feel.
+   ========================================================================= */
+
+/* Import project fonts via Google Fonts so prototypes run standalone */
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  /* ----- LAYER 1 · PRIMITIVES -----
+     Raw values. No semantic meaning. */
+
+  /* Newsprint (warm paper scale) */
+  --newsprint-50:  #FBF8F1;
+  --newsprint-100: #F5F1E8;   /* default paper */
+  --newsprint-200: #EBE4D4;
+  --newsprint-300: #D9D3C7;   /* hairline rule */
+  --newsprint-400: #B8B0A0;
+
+  /* Ink (warm-black scale, never pure black) */
+  --ink-900: #1B1917;         /* body text on paper */
+  --ink-800: #2B2926;
+  --ink-700: #3A3834;
+  --ink-600: #57534E;         /* muted / secondary text */
+  --ink-500: #7A756E;
+
+  /* Red (masthead / accent) */
+  --red-800: #8A0A2E;
+  --red-700: #A00C36;
+  --red-600: #B80D3E;         /* brand anchor — #B80D3E */
+  --red-500: #D43256;
+  --red-200: #E8C3CD;
+  --red-100: #F4DFE5;
+
+  /* ----- LAYER 1 · CUSTOMIZER ANCHORS -----
+     Names kept verbatim for ColorCustomizer runtime contract.
+     See docs/design/carve-outs.md item #1. */
+  --owu-red:       var(--red-600);
+  --owu-black:     var(--ink-900);
+  --owu-charcoal:  var(--ink-700);
+  --owu-white:     var(--newsprint-50);
+
+  /* ----- LAYER 2 · SEMANTIC -----
+     Use these in components. */
+
+  /* Surface */
+  --color-bg-paper:       var(--newsprint-100);
+  --color-bg-paper-soft:  var(--newsprint-50);
+  --color-bg-inset:       var(--newsprint-200);
+  --color-bg-inverse:     var(--ink-900);
+
+  /* Text */
+  --color-text-body:      var(--ink-900);
+  --color-text-deck:      var(--ink-800);
+  --color-text-muted:     var(--ink-600);
+  --color-text-faint:     var(--ink-500);
+  --color-text-inverse:   var(--newsprint-50);
+
+  /* Accent */
+  --color-accent:         var(--red-600);
+  --color-accent-deep:    var(--red-700);
+  --color-accent-wash:    var(--red-100);
+
+  /* Borders / rules */
+  --color-rule-hairline:  var(--newsprint-300);
+  --color-rule-ink:       var(--ink-900);
+  --color-rule-accent:    var(--red-600);
+
+  /* Focus */
+  --color-focus-ring:     var(--red-600);
+
+  /* ----- TYPOGRAPHY ----- */
+
+  --font-display: "Playfair Display", "EB Garamond", Georgia, serif;
+  --font-body:    "Source Serif 4", "Source Serif Pro", Georgia, serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+
+  /* Period-dense type scale (1.22 ratio, bottom-anchored at 12px) */
+  --text-xs:   0.75rem;    /* 12 — fine print, metadata */
+  --text-sm:   0.875rem;   /* 14 — byline, caption */
+  --text-base: 1rem;       /* 16 — body */
+  --text-md:   1.125rem;   /* 18 — deck / lede */
+  --text-lg:   1.375rem;   /* 22 — sub-headline */
+  --text-xl:   1.75rem;    /* 28 — article headline */
+  --text-2xl:  2.25rem;    /* 36 — section title */
+  --text-3xl:  3rem;       /* 48 — masthead */
+
+  /* Leading (tight for period density) */
+  --leading-display: 1.1;
+  --leading-deck:    1.3;
+  --leading-body:    1.55;
+  --leading-meta:    1.35;
+
+  /* Tracking — only 2 label values per plan */
+  --tracking-tight:  -0.01em;
+  --tracking-normal:  0;
+  --tracking-label-sm: 0.08em;
+  --tracking-label-md: 0.14em;
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  /* ----- SPACING (4px base) ----- */
+  --space-0:   0;
+  --space-1:   0.25rem;   /* 4 */
+  --space-2:   0.5rem;    /* 8 */
+  --space-3:   0.75rem;   /* 12 */
+  --space-4:   1rem;      /* 16 */
+  --space-5:   1.5rem;    /* 24 */
+  --space-6:   2rem;      /* 32 */
+  --space-7:   3rem;      /* 48 */
+  --space-8:   4rem;      /* 64 */
+
+  /* ----- SHAPE ----- */
+  --radius-none: 0;
+  --radius-sm:   2px;      /* period paper — minimal rounding */
+  --radius-md:   3px;
+  --radius-full: 9999px;
+
+  /* ----- SHADOWS (newspaper doesn't do shadows; used sparingly) ----- */
+  --shadow-paper: 0 1px 0 var(--newsprint-300);
+  --shadow-lift:  0 2px 0 var(--newsprint-300);
+
+  /* ----- DURATIONS ----- */
+  --duration-quick:  120ms;
+  --duration-normal: 220ms;
+  --ease-standard:   cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ----- LAYOUT ----- */
+  --max-w-article: 42rem;   /* 672px — comfortable reading measure */
+  --max-w-page:    76rem;   /* 1216px — masthead / search grid */
+  --column-gap:    var(--space-5);
+}
+
+/* =========================================================================
+   BASE
+   ========================================================================= */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg-paper);
+  color: var(--color-text-body);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* OpenType features — guarded with @supports */
+body {
+  font-variant-numeric: oldstyle-nums;
+}
+@supports (font-feature-settings: "onum") {
+  body { font-feature-settings: "onum", "liga", "kern"; }
+}
+
+/* Headlines get ligatures + kerning, not old-style nums */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-variant-numeric: lining-nums;
+  font-feature-settings: "liga", "dlig", "kern";
+  margin: 0;
+}
+
+/* Monospace used for dates, byline metadata, code */
+code, kbd, .mono, .metadata {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum", "lnum";
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 0.05em;
+  text-underline-offset: 0.12em;
+  text-decoration-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  transition: color var(--duration-quick) var(--ease-standard),
+              text-decoration-color var(--duration-quick) var(--ease-standard);
+}
+a:hover { color: var(--color-accent-deep); text-decoration-color: var(--color-accent-deep); }
+
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* =========================================================================
+   REUSABLE COMPONENTS (scoped to this prototype)
+   ========================================================================= */
+
+/* Masthead */
+.masthead {
+  border-top: 3px double var(--color-rule-ink);
+  border-bottom: 1px solid var(--color-rule-ink);
+  padding: var(--space-4) 0 var(--space-3);
+  text-align: center;
+}
+.masthead__title {
+  font-family: var(--font-display);
+  font-weight: var(--weight-bold);
+  font-size: var(--text-3xl);
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-tight);
+  margin-bottom: var(--space-1);
+}
+.masthead__subtitle {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  letter-spacing: var(--tracking-label-sm);
+}
+.masthead__tagline {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label-md);
+  color: var(--color-text-muted);
+  margin-top: var(--space-2);
+}
+
+/* Hairline rules */
+.rule { border: none; border-top: 1px solid var(--color-rule-hairline); margin: var(--space-5) 0; }
+.rule--double { border-top: 3px double var(--color-rule-ink); }
+.rule--thick  { border-top: 2px solid var(--color-rule-ink); }
+
+/* Deck (article subhead) */
+.deck {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--text-md);
+  line-height: var(--leading-deck);
+  color: var(--color-text-deck);
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+/* Byline */
+.byline {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label-md);
+  color: var(--color-text-muted);
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.byline__date { color: var(--color-accent); }
+
+/* Article body */
+.prose {
+  max-width: var(--max-w-article);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+}
+.prose p { margin: 0 0 var(--space-4); }
+.prose p:first-of-type::first-letter {
+  font-family: var(--font-display);
+  font-weight: var(--weight-bold);
+  float: left;
+  font-size: 3.8em;
+  line-height: 0.85;
+  padding: 0.12em 0.12em 0 0;
+  color: var(--color-text-body);
+}
+.prose h2 {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  margin-top: var(--space-6);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-rule-hairline);
+}
+.prose h3 {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  margin-top: var(--space-5);
+  margin-bottom: var(--space-2);
+}
+.prose blockquote {
+  border-left: 3px solid var(--color-accent);
+  margin: var(--space-4) 0;
+  padding: var(--space-1) var(--space-4);
+  font-style: italic;
+  color: var(--color-text-deck);
+}
+.prose code {
+  background: var(--color-bg-inset);
+  padding: 0.08em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.92em;
+}
+.prose pre {
+  background: var(--color-bg-inverse);
+  color: var(--color-text-inverse);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.prose pre code { background: none; padding: 0; color: inherit; }
+.prose ul, .prose ol { padding-left: var(--space-5); margin: 0 0 var(--space-4); }
+.prose li { margin-bottom: var(--space-1); }
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-4) 0;
+  font-size: var(--text-sm);
+}
+.prose th, .prose td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--color-rule-hairline);
+}
+.prose th {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label-sm);
+  color: var(--color-text-muted);
+}
+.prose img { max-width: 100%; height: auto; display: block; margin: var(--space-5) 0 var(--space-2); }
+.prose figcaption {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label-sm);
+  margin-bottom: var(--space-5);
+}
+
+/* Label (replaces text-[10px] tracking-[0.35em] chaos — 3 variants total) */
+.label {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label-md);
+}
+.label--sm { font-size: 0.6875rem; letter-spacing: var(--tracking-label-sm); }
+.label--accent { color: var(--color-accent); }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label-md);
+  text-decoration: none;
+  border: 1px solid var(--color-rule-ink);
+  background: transparent;
+  color: var(--color-text-body);
+  cursor: pointer;
+  transition: background var(--duration-quick) var(--ease-standard),
+              color var(--duration-quick) var(--ease-standard);
+}
+.btn:hover { background: var(--color-text-body); color: var(--color-text-inverse); }
+.btn--primary { background: var(--color-text-body); color: var(--color-text-inverse); border-color: var(--color-text-body); }
+.btn--primary:hover { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-text-inverse); }
+.btn--accent { background: var(--color-accent); color: var(--color-text-inverse); border-color: var(--color-accent); }
+.btn--accent:hover { background: var(--color-accent-deep); border-color: var(--color-accent-deep); }
+.btn--ghost { border-color: var(--color-rule-hairline); }
+.btn--small { padding: var(--space-1) var(--space-3); font-size: 0.6875rem; }
+
+/* Input */
+.input {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  background: var(--color-bg-paper-soft);
+  color: var(--color-text-body);
+  border: 1px solid var(--color-rule-ink);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--duration-quick) var(--ease-standard);
+}
+.input:focus-visible { border-color: var(--color-accent); outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+.input::placeholder { color: var(--color-text-faint); }
+
+/* Card (generic container) */
+.card {
+  background: var(--color-bg-paper-soft);
+  border: 1px solid var(--color-rule-hairline);
+  padding: var(--space-5);
+}
+.card--inset { background: var(--color-bg-inset); }
+
+/* Global page shell */
+.page {
+  max-width: var(--max-w-page);
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4);
+}
+.page--reading { max-width: var(--max-w-article); }
+
+/* Navigation */
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-rule-hairline);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label-md);
+}
+.nav a { color: var(--color-text-muted); text-decoration: none; }
+.nav a:hover, .nav a[aria-current="page"] { color: var(--color-accent); }
+.nav__links { display: flex; gap: var(--space-5); }
+
+/* Dropcap utility (same period effect as .prose but on demand) */
+.dropcap::first-letter {
+  font-family: var(--font-display);
+  font-weight: var(--weight-bold);
+  float: left;
+  font-size: 3.8em;
+  line-height: 0.85;
+  padding: 0.12em 0.12em 0 0;
+}
