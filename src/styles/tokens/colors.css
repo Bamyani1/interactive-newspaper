@@ -192,4 +192,10 @@
   --color-text-secondary: var(--color-text-muted);
   --color-text-header:    var(--color-text-body);
   --color-border-default: var(--color-rule-hairline);
+
+  /* Layer-3 component aliases with live consumers — same freeze rule. */
+  --featured-card-bg:       var(--color-bg-paper-soft);
+  --featured-card-border:   var(--color-rule-hairline);
+  --page-cinema-bg:         var(--color-bg-paper);
+  --page-cinema-ticker-bg:  color-mix(in srgb, var(--color-bg-paper) 80%, transparent);
 }
