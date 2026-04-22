@@ -6,6 +6,7 @@ import {
   Inter,
 } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 import { ArchiveProvider } from "@/features/archive";
 import { ThemeModeManager } from "@/features/theme";
 import { MotionProvider } from "@/shared/motion/MotionProvider";
@@ -71,6 +72,7 @@ export default async function RootLayout({
             </ErrorBoundary>
           </ArchiveProvider>
         </MotionProvider>
+        <Analytics />
       </body>
     </html>
   );
