@@ -12,7 +12,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Turn } from "@/features/ask-archive/hooks/askReducer";
 
 vi.mock("next/navigation", () => ({
@@ -21,8 +21,16 @@ vi.mock("next/navigation", () => ({
 }));
 
 const mockHook = vi.fn();
+const { exportConversationPdfMock } = vi.hoisted(() => ({
+    exportConversationPdfMock: vi.fn(),
+}));
+
 vi.mock("@/features/ask-archive/hooks/useAskArchive", () => ({
     useAskArchive: () => mockHook(),
+}));
+
+vi.mock("@/features/ask-archive/lib/export-conversation-pdf", () => ({
+    exportConversationPdf: exportConversationPdfMock,
 }));
 
 vi.mock("@/features/ask-archive/hooks/useDeepLinkSubmit", () => ({
@@ -97,6 +105,8 @@ function makeStreamingTurn(id: string, question: string): Turn {
 describe("AskPage — render decisions", () => {
     beforeEach(() => {
         mockHook.mockReset();
+        exportConversationPdfMock.mockReset();
+        exportConversationPdfMock.mockResolvedValue(undefined);
     });
 
     it("first-visit state (sessionGen=0, no turns, no expiry) renders the editorial landing", () => {
@@ -190,6 +200,32 @@ describe("AskPage — render decisions", () => {
                 name: /export the conversation as a pdf/i,
             })
             .forEach((btn) => expect(btn).not.toBeDisabled());
+    });
+
+    it("export button downloads the current conversation PDF without using window.print", async () => {
+        const print = vi.fn();
+        Object.defineProperty(window, "print", {
+            configurable: true,
+            value: print,
+        });
+        const turn = makeDoneTurn("t-1", "What happened?", "A full answer.");
+        mockHook.mockReturnValue({
+            ...defaultState(),
+            turns: [turn],
+        });
+        render(<AskPage />);
+
+        fireEvent.click(
+            screen.getAllByRole("button", {
+                name: /export the conversation as a pdf/i,
+            })[0],
+        );
+
+        await waitFor(() => {
+            expect(exportConversationPdfMock).toHaveBeenCalledTimes(1);
+        });
+        expect(exportConversationPdfMock).toHaveBeenCalledWith([turn]);
+        expect(print).not.toHaveBeenCalled();
     });
 
     it("hydrating-with-no-turns stays in the boot skeleton (no intermediate hydrating pill, no hero)", () => {
