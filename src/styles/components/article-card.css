@@ -18,8 +18,10 @@
         border-bottom-width var(--duration-normal) var(--ease-default);
 }
 
-.article-card:hover {
-    background-color: color-mix(in srgb, var(--featured-card-bg) 80%, transparent);
+@media (hover: hover) {
+    .article-card:hover {
+        background-color: color-mix(in srgb, var(--featured-card-bg) 80%, transparent);
+    }
 }
 
 /* Image column — thumbnail on the right */
@@ -116,8 +118,10 @@
     color: var(--color-text-secondary);
     transition: color var(--duration-fast) var(--ease-default);
 }
-.article-card:hover .card-read-more {
-    color: var(--color-accent);
+@media (hover: hover) {
+    .article-card:hover .card-read-more {
+        color: var(--color-accent);
+    }
 }
 
 /* ── Summary: visible when collapsed, hidden when expanded ── */
