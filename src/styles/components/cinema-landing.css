@@ -404,9 +404,18 @@
     transition: transform var(--duration-normal) ease;
 }
 
-.cinema-btn:hover { color: var(--color-accent); }
-.cinema-btn:hover::before { width: 100%; left: 0; }
-.cinema-btn:hover::after { transform: translateX(6px); }
+/* Hover styles gated to hover-capable pointers so taps on touch devices
+   don't leave the CTA stuck in its hover state. */
+@media (hover: hover) {
+    .cinema-btn:hover { color: var(--color-accent); }
+    .cinema-btn:hover::before { width: 100%; left: 0; }
+    .cinema-btn:hover::after { transform: translateX(6px); }
+    .cinema-btn:hover .cinema-btn-arrow { transform: translateX(6px); }
+    .cinema-btn:disabled:hover { color: var(--color-text-primary); }
+    .cinema-btn:disabled:hover::before { width: 76%; left: 12%; }
+    .cinema-btn:disabled:hover::after { transform: none; }
+    .cinema-btn:disabled:hover .cinema-btn-arrow { transform: none; }
+}
 
 .cinema-btn-arrow {
     display: inline-block;
@@ -415,16 +424,10 @@
     transition: transform var(--duration-normal) ease;
 }
 
-.cinema-btn:hover .cinema-btn-arrow { transform: translateX(6px); }
-
 .cinema-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
-.cinema-btn:disabled:hover { color: var(--color-text-primary); }
-.cinema-btn:disabled:hover::before { width: 76%; left: 12%; }
-.cinema-btn:disabled:hover::after { transform: none; }
-.cinema-btn:disabled:hover .cinema-btn-arrow { transform: none; }
 
 /* Dateline stamp — Ask CTA variant. Pressed-ink rectangle with a
    cream inner rim and a 1px misregistered accent-red offset. Hover:
@@ -456,12 +459,14 @@
         transform var(--duration-normal) ease;
 }
 
-.cinema-btn-stamp:hover {
-    transform: translate(1px, 1px);
-    box-shadow:
-        0 0 0 0 var(--color-accent),
-        inset 0 0 0 4px color-mix(in srgb, var(--ink-800) 85%, transparent),
-        inset 0 0 0 5px var(--color-accent);
+@media (hover: hover) {
+    .cinema-btn-stamp:hover {
+        transform: translate(1px, 1px);
+        box-shadow:
+            0 0 0 0 var(--color-accent),
+            inset 0 0 0 4px color-mix(in srgb, var(--ink-800) 85%, transparent),
+            inset 0 0 0 5px var(--color-accent);
+    }
 }
 
 /* =========================================
@@ -636,8 +641,10 @@
     transition: color var(--duration-normal) ease;
 }
 
-.cinema-ask-teaser:hover {
-    color: var(--color-accent);
+@media (hover: hover) {
+    .cinema-ask-teaser:hover {
+        color: var(--color-accent);
+    }
 }
 
 .cinema-ask-teaser-label {
