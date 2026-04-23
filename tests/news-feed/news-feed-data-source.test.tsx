@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { NewsFeed } from "../../src/features/news-feed/components/NewsFeed";
 import { ArticleCard } from "../../src/features/news-feed/components/ArticleCard";
-import type { Article } from "../../src/features/news-feed/data/mockData";
+import type { Article } from "@/src/types";
 import type { SectionId } from "../../src/features/news-feed";
 
 vi.mock("next/link", () => ({
