@@ -77,6 +77,10 @@
     text-transform: uppercase;
     letter-spacing: var(--tracking-label-md);
     transition: color var(--duration-fast) var(--ease-default);
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-inline: var(--space-2);
 }
 
 .site-footer__link:hover {

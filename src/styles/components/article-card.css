@@ -175,6 +175,25 @@
     align-items: flex-start;
 }
 
+/* Mobile: stack image below text rather than forcing a 100px thumb column
+   next to narrow text. Preserves headline rhythm at phone widths. */
+@media (max-width: 640px) {
+    .card-header-flex {
+        flex-direction: column;
+        gap: var(--space-4);
+    }
+
+    .card-image-column {
+        width: 100%;
+        max-width: 240px;
+        align-self: flex-start;
+    }
+
+    .card-image-container {
+        aspect-ratio: 4 / 3;
+    }
+}
+
 /* Expanded State */
 .article-card.is-expanded {
     background-color: color-mix(in srgb, var(--featured-card-bg) 80%, transparent);
