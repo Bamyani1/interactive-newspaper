@@ -118,6 +118,9 @@ ocr/done/
 # IIIF downloads (local artifacts from scripts/iiif/download.py)
 scripts/iiif/downloads/
 
+# IIIF discover.py output — regenerated per-run, never worth committing
+scripts/iiif/manifests/new_manifests.txt
+
 # OCR Model Cache
 ocr/models/
 ocr/models/.cache/
