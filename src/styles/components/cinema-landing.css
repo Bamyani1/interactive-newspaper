@@ -556,27 +556,21 @@
     }
 }
 
-/* Mobile — single-column portrait */
+/* Mobile — single-column portrait. Drops the torn-paper decorative
+   image in favor of a clean rectangular card: cream background, thin
+   accent rule, subtle shadow. Keeps typography and palette intact. */
 @media (max-width: 768px) {
     .cinema-paper {
-        max-width: 520px;
-        padding: 30px 25px;
-        /* Cream scrim behind the torn-paper image so content near its torn
-           top/bottom edges keeps legible contrast against the stained-glass
-           background. The torn-paper image has transparent torn edges baked
-           in, so stretching it alone isn't enough. */
-        background: color-mix(in srgb, var(--owu-white) 88%, transparent);
-        border-radius: 6px;
+        max-width: 440px;
+        padding: 32px 24px;
+        background: color-mix(in srgb, var(--owu-white) 94%, var(--owu-black));
+        border: 1px solid color-mix(in srgb, var(--owu-black) 12%, transparent);
+        border-top: 3px solid var(--color-accent);
+        filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.35));
     }
 
-    /* Stretch torn-paper to fill the card on mobile — portrait aspect-ratio
-       leaves content bleeding off the image's top and bottom otherwise. */
     .cinema-paper::before {
-        transform: translate(-50%, -50%);
-        width: 100%;
-        height: 100%;
-        aspect-ratio: auto;
-        opacity: 1;
+        display: none;
     }
 
     .cinema-paper-grid {
