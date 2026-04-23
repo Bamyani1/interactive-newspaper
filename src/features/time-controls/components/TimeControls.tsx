@@ -223,7 +223,7 @@ export const TimeControls = () => {
                                                     setExpandedYear(isYearExpanded ? null : year);
                                                     if (!isYearExpanded) setExpandedMonth(null);
                                                 }}
-                                                className={`w-full text-left px-4 py-2.5 flex items-center gap-2 transition-colors ${
+                                                className={`w-full text-left px-4 py-2.5 min-h-[44px] flex items-center gap-2 transition-colors ${
                                                     containsCurrent
                                                         ? "text-[var(--color-accent)]"
                                                         : "text-[var(--color-text-primary)]/80"
@@ -271,7 +271,7 @@ export const TimeControls = () => {
                                                                                     isMonthExpanded ? null : month
                                                                                 )
                                                                             }
-                                                                            className={`w-full text-left px-6 py-2 flex items-center justify-between transition-colors ${
+                                                                            className={`w-full text-left px-6 py-2 min-h-[44px] flex items-center justify-between transition-colors ${
                                                                                 monthContainsCurrent
                                                                                     ? "text-[var(--color-accent)]"
                                                                                     : "text-[var(--color-text-primary)]/70"
@@ -323,7 +323,7 @@ export const TimeControls = () => {
                                                                                                             date
                                                                                                         )
                                                                                                     }
-                                                                                                    className={`w-full text-left px-8 py-2 flex items-center justify-between transition-colors ${
+                                                                                                    className={`w-full text-left px-8 py-2 min-h-[44px] flex items-center justify-between transition-colors ${
                                                                                                         isSelected
                                                                                                             ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
                                                                                                             : "text-[var(--color-text-primary)]/70 hover:bg-[var(--color-accent)]/5 hover:text-[var(--color-text-primary)]"
