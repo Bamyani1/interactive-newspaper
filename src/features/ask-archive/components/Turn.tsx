@@ -24,6 +24,7 @@ interface TurnProps {
     isLatest?: boolean;
     onFollowUp: (question: string) => void;
     onRetry: (turnId: string) => void;
+    exportMode?: boolean;
 }
 
 function buildArticleIdIndex(
@@ -39,6 +40,7 @@ export const Turn: React.FC<TurnProps> = ({
     isLatest = true,
     onFollowUp,
     onRetry,
+    exportMode = false,
 }) => {
     const articleIdIndex = useMemo(
         () => buildArticleIdIndex(turn.sourceArticles),
@@ -96,7 +98,11 @@ export const Turn: React.FC<TurnProps> = ({
         moreImages.length > 0;
 
     return (
-        <article className={`ask-turn${isLatest ? "" : " ask-turn--previous"}`}>
+        <article
+            className={`ask-turn${
+                !exportMode && !isLatest ? " ask-turn--previous" : ""
+            }`}
+        >
             <div className="ask-turn-user" aria-label="Your question">
                 <p className="ask-turn-user-label">You asked</p>
                 <p className="ask-turn-user-bubble">{turn.question}</p>
@@ -176,9 +182,11 @@ export const Turn: React.FC<TurnProps> = ({
                                 ) : null}
                                 <SourceList
                                     sources={turn.sourceArticles}
-                                    defaultExpanded={false}
+                                    defaultExpanded={exportMode}
+                                    interactive={!exportMode}
                                 />
-                                {turn.followUpQuestions &&
+                                {!exportMode &&
+                                turn.followUpQuestions &&
                                 turn.followUpQuestions.length > 0 ? (
                                     <FollowUpQuestions
                                         questions={turn.followUpQuestions}
@@ -192,18 +200,20 @@ export const Turn: React.FC<TurnProps> = ({
                 )}
             </div>
 
-            <Lightbox
-                images={
-                    lightboxIndex !== null
-                        ? turnImages.map((img) => ({
-                              src: img.src,
-                              caption: img.caption,
-                          }))
-                        : []
-                }
-                initialIndex={lightboxIndex ?? 0}
-                onClose={() => setLightboxIndex(null)}
-            />
+            {exportMode ? null : (
+                <Lightbox
+                    images={
+                        lightboxIndex !== null
+                            ? turnImages.map((img) => ({
+                                  src: img.src,
+                                  caption: img.caption,
+                              }))
+                            : []
+                    }
+                    initialIndex={lightboxIndex ?? 0}
+                    onClose={() => setLightboxIndex(null)}
+                />
+            )}
         </article>
     );
 };

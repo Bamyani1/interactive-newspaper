@@ -11,11 +11,13 @@ type SourceArticle = AskResponse["sourceArticles"][number];
 interface SourceListProps {
   sources: AskResponse["sourceArticles"];
   defaultExpanded?: boolean;
+  interactive?: boolean;
 }
 
 export const SourceList: React.FC<SourceListProps> = ({
   sources,
   defaultExpanded = true,
+  interactive = true,
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [selected, setSelected] = useState<SourceArticle | null>(null);
@@ -28,9 +30,14 @@ export const SourceList: React.FC<SourceListProps> = ({
   return (
     <section className="ask-source-list">
       <button
+        type="button"
         className="ask-source-toggle"
-        onClick={() => setIsExpanded((prev) => !prev)}
+        onClick={
+          interactive ? () => setIsExpanded((prev) => !prev) : undefined
+        }
         aria-expanded={isExpanded}
+        tabIndex={interactive ? undefined : -1}
+        disabled={!interactive}
       >
         {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span>{labelText}</span>
@@ -43,13 +50,15 @@ export const SourceList: React.FC<SourceListProps> = ({
               key={source.id}
               source={source}
               index={i}
-              onOpen={() => setSelected(source)}
+              onOpen={interactive ? () => setSelected(source) : undefined}
             />
           ))}
         </div>
       )}
 
-      <SourceReader source={selected} onClose={() => setSelected(null)} />
+      {interactive ? (
+        <SourceReader source={selected} onClose={() => setSelected(null)} />
+      ) : null}
     </section>
   );
 };
