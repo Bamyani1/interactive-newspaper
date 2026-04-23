@@ -18,8 +18,10 @@
         border-bottom-width var(--duration-normal) var(--ease-default);
 }
 
-.article-card:hover {
-    background-color: color-mix(in srgb, var(--featured-card-bg) 80%, transparent);
+@media (hover: hover) {
+    .article-card:hover {
+        background-color: color-mix(in srgb, var(--featured-card-bg) 80%, transparent);
+    }
 }
 
 /* Image column — thumbnail on the right */
@@ -116,8 +118,10 @@
     color: var(--color-text-secondary);
     transition: color var(--duration-fast) var(--ease-default);
 }
-.article-card:hover .card-read-more {
-    color: var(--color-accent);
+@media (hover: hover) {
+    .article-card:hover .card-read-more {
+        color: var(--color-accent);
+    }
 }
 
 /* ── Summary: visible when collapsed, hidden when expanded ── */
@@ -173,6 +177,25 @@
 /* Layout adjustments */
 .card-header-flex {
     align-items: flex-start;
+}
+
+/* Mobile: stack image below text rather than forcing a 100px thumb column
+   next to narrow text. Preserves headline rhythm at phone widths. */
+@media (max-width: 640px) {
+    .card-header-flex {
+        flex-direction: column;
+        gap: var(--space-4);
+    }
+
+    .card-image-column {
+        width: 100%;
+        max-width: 240px;
+        align-self: flex-start;
+    }
+
+    .card-image-container {
+        aspect-ratio: 4 / 3;
+    }
 }
 
 /* Expanded State */

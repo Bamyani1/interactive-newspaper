@@ -71,16 +71,18 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       className="fixed bottom-0 left-0 right-0 lg:hidden z-[var(--z-header)] bg-[var(--color-bg-primary)]/95 backdrop-blur-md border-t border-[var(--stroke-accent-soft)]"
     >
       <div className="flex items-center justify-around px-2 py-2 max-w-lg mx-auto">
-        {sections.slice(0, 5).map((section) => {
+        {sections.slice(0, 5).map((section, idx) => {
           const Icon = SECTION_ICONS[section.id] || Newspaper;
           const isActive = activeSection === section.id;
+          const hideOnMobile = idx >= 3;
 
           return (
             <button
               key={section.id}
               onClick={() => onSelect(section.id)}
               className={`
-                relative flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-lg transition-colors min-w-[60px]
+                relative flex-col items-center justify-center gap-1 py-2 px-2 sm:px-3 rounded-lg transition-colors min-w-[48px] sm:min-w-[60px]
+                ${hideOnMobile ? "hidden sm:flex" : "flex"}
                 ${isActive
                   ? "text-[var(--color-accent)]"
                   : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -108,7 +110,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         <Link
           href="/search"
           className={`
-            relative flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-lg transition-colors min-w-[60px]
+            relative flex flex-col items-center justify-center gap-1 py-2 px-2 sm:px-3 rounded-lg transition-colors min-w-[48px] sm:min-w-[60px]
             ${isSearchActive
               ? "text-[var(--color-accent)]"
               : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -132,7 +134,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         <Link
           href="/ask"
           className={`
-            relative flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-lg transition-colors min-w-[60px]
+            relative flex flex-col items-center justify-center gap-1 py-2 px-2 sm:px-3 rounded-lg transition-colors min-w-[48px] sm:min-w-[60px]
             ${isAskActive
               ? "text-[var(--color-accent)]"
               : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -152,12 +154,15 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           )}
         </Link>
 
-        {/* More sections dropdown if more than 5 */}
-        {sections.length > 5 && (
-          <div className="relative" ref={moreRef}>
+        {/* More dropdown — shown on mobile when >3 sections, on sm+ when >5 sections */}
+        {sections.length > 3 && (
+          <div
+            ref={moreRef}
+            className={`relative ${sections.length > 5 ? "" : "sm:hidden"}`}
+          >
             <button
               onClick={() => setIsMoreOpen((prev) => !prev)}
-              className="flex flex-col items-center justify-center gap-1 py-2 px-3 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+              className="flex flex-col items-center justify-center gap-1 py-2 px-2 sm:px-3 rounded-lg min-w-[48px] sm:min-w-[60px] min-h-[56px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
               aria-label="More sections"
               aria-expanded={isMoreOpen}
             >
@@ -181,16 +186,23 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                   transition={TRANSITIONS.micro}
                   className="absolute bottom-full right-0 mb-2 py-2 bg-[var(--color-bg-secondary)] rounded-lg shadow-xl border border-[var(--stroke-accent-soft)]"
                 >
-                  {sections.slice(5).map((section) => {
+                  {sections.map((section, idx) => {
                     const Icon = SECTION_ICONS[section.id] || Newspaper;
                     const isActive = activeSection === section.id;
+                    // On mobile (<sm), indices 3+ show here; on sm+, indices 5+ show here.
+                    const classes =
+                      idx >= 5
+                        ? "flex"
+                        : idx >= 3
+                          ? "flex sm:hidden"
+                          : "hidden";
 
                     return (
                       <button
                         key={section.id}
                         onClick={() => handleMoreSelect(section.id)}
                         className={`
-                          flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors
+                          ${classes} items-center gap-3 w-full px-4 py-2.5 text-left transition-colors min-h-[44px]
                           ${isActive
                             ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
                             : "text-[var(--color-text-primary)] hover:bg-[var(--color-accent)]/5"

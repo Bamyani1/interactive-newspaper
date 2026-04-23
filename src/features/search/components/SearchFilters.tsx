@@ -39,7 +39,7 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
       <select
         value={category}
         onChange={(e) => onCategoryChange(e.target.value)}
-        className="px-3 py-2 text-sm"
+        className="px-3 py-2 text-base"
         style={selectStyle}
       >
         <option value="">All Categories</option>
@@ -55,7 +55,7 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
         value={startDate}
         onChange={(e) => onStartDateChange(e.target.value)}
         placeholder="From date"
-        className="px-3 py-2 text-sm"
+        className="px-3 py-2 text-base"
         style={inputStyle}
       />
 
@@ -64,7 +64,7 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
         value={endDate}
         onChange={(e) => onEndDateChange(e.target.value)}
         placeholder="To date"
-        className="px-3 py-2 text-sm"
+        className="px-3 py-2 text-base"
         style={inputStyle}
       />
     </div>

@@ -16,7 +16,7 @@ export default function ContactPage() {
                         </p>
                     </Reveal>
                     <Reveal delay={0.05}>
-                        <h1 className="font-header text-3xl mb-4">
+                        <h1 className="font-header text-3xl mb-4 text-balance">
                             Reach the Archive Team
                         </h1>
                     </Reveal>
@@ -29,7 +29,7 @@ export default function ContactPage() {
                     <Reveal delay={0.15}>
                         <a
                             href="mailto:manwari@owu.edu"
-                            className="text-base text-[var(--color-text-primary)] hover:text-[var(--color-accent)] transition-colors"
+                            className="inline-flex items-center min-h-[44px] text-base text-[var(--color-text-primary)] underline decoration-[var(--color-accent)]/40 underline-offset-4 hover:text-[var(--color-accent)] hover:decoration-[var(--color-accent)] transition-colors"
                         >
                             manwari@owu.edu
                         </a>

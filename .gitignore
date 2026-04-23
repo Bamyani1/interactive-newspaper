@@ -170,6 +170,9 @@ debug/
 # Playwright MCP session artifacts (browser traces/screenshots)
 .playwright-mcp/
 
+# Chrome DevTools MCP mobile audit screenshots (phone-view-imp)
+.mobile-audit/
+
 # Brainstorming session state (Superpowers skill)
 .superpowers/
 

@@ -275,6 +275,10 @@
             transparent 100%);
 }
 
+.cinema-divider-or {
+    display: none;
+}
+
 .cinema-col-action {
     display: flex;
     flex-direction: column;
@@ -404,9 +408,18 @@
     transition: transform var(--duration-normal) ease;
 }
 
-.cinema-btn:hover { color: var(--color-accent); }
-.cinema-btn:hover::before { width: 100%; left: 0; }
-.cinema-btn:hover::after { transform: translateX(6px); }
+/* Hover styles gated to hover-capable pointers so taps on touch devices
+   don't leave the CTA stuck in its hover state. */
+@media (hover: hover) {
+    .cinema-btn:hover { color: var(--color-accent); }
+    .cinema-btn:hover::before { width: 100%; left: 0; }
+    .cinema-btn:hover::after { transform: translateX(6px); }
+    .cinema-btn:hover .cinema-btn-arrow { transform: translateX(6px); }
+    .cinema-btn:disabled:hover { color: var(--color-text-primary); }
+    .cinema-btn:disabled:hover::before { width: 76%; left: 12%; }
+    .cinema-btn:disabled:hover::after { transform: none; }
+    .cinema-btn:disabled:hover .cinema-btn-arrow { transform: none; }
+}
 
 .cinema-btn-arrow {
     display: inline-block;
@@ -415,16 +428,10 @@
     transition: transform var(--duration-normal) ease;
 }
 
-.cinema-btn:hover .cinema-btn-arrow { transform: translateX(6px); }
-
 .cinema-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
-.cinema-btn:disabled:hover { color: var(--color-text-primary); }
-.cinema-btn:disabled:hover::before { width: 76%; left: 12%; }
-.cinema-btn:disabled:hover::after { transform: none; }
-.cinema-btn:disabled:hover .cinema-btn-arrow { transform: none; }
 
 /* Dateline stamp — Ask CTA variant. Pressed-ink rectangle with a
    cream inner rim and a 1px misregistered accent-red offset. Hover:
@@ -456,12 +463,14 @@
         transform var(--duration-normal) ease;
 }
 
-.cinema-btn-stamp:hover {
-    transform: translate(1px, 1px);
-    box-shadow:
-        0 0 0 0 var(--color-accent),
-        inset 0 0 0 4px color-mix(in srgb, var(--ink-800) 85%, transparent),
-        inset 0 0 0 5px var(--color-accent);
+@media (hover: hover) {
+    .cinema-btn-stamp:hover {
+        transform: translate(1px, 1px);
+        box-shadow:
+            0 0 0 0 var(--color-accent),
+            inset 0 0 0 4px color-mix(in srgb, var(--ink-800) 85%, transparent),
+            inset 0 0 0 5px var(--color-accent);
+    }
 }
 
 /* =========================================
@@ -551,16 +560,21 @@
     }
 }
 
-/* Mobile — single-column portrait */
+/* Mobile — single-column portrait. Drops the torn-paper decorative
+   image in favor of a clean rectangular card: cream background, thin
+   accent rule, subtle shadow. Keeps typography and palette intact. */
 @media (max-width: 768px) {
     .cinema-paper {
-        max-width: 520px;
-        padding: 30px 25px;
+        max-width: 440px;
+        padding: 32px 24px;
+        background: color-mix(in srgb, var(--owu-white) 94%, var(--owu-black));
+        border: 1px solid color-mix(in srgb, var(--owu-black) 12%, transparent);
+        border-top: 3px solid var(--color-accent);
+        filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.35));
     }
 
     .cinema-paper::before {
-        transform: translate(-50%, -50%);
-        width: 95%;
+        display: none;
     }
 
     .cinema-paper-grid {
@@ -569,8 +583,36 @@
         max-width: none;
     }
 
+    /* Mobile divider: horizontal rule with "or" label centered, standing in
+       for the vertical gradient line that separates the two columns on
+       desktop. Uses ::before/::after pseudos as flanking hairlines. */
     .cinema-divider {
-        display: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        height: auto;
+        background: none;
+        margin: var(--space-2) 0;
+    }
+
+    .cinema-divider::before,
+    .cinema-divider::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+    }
+
+    .cinema-divider-or {
+        display: inline-block;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: var(--tracking-label-md);
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--color-text-primary) 55%, transparent);
     }
 
     .cinema-col-action {
@@ -625,8 +667,10 @@
     transition: color var(--duration-normal) ease;
 }
 
-.cinema-ask-teaser:hover {
-    color: var(--color-accent);
+@media (hover: hover) {
+    .cinema-ask-teaser:hover {
+        color: var(--color-accent);
+    }
 }
 
 .cinema-ask-teaser-label {
