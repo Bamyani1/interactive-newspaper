@@ -94,7 +94,9 @@ export default function Home() {
                         </div>
 
                         {/* DIVIDER */}
-                        <div className="cinema-divider" aria-hidden="true" />
+                        <div className="cinema-divider" aria-hidden="true">
+                            <span className="cinema-divider-or">or</span>
+                        </div>
 
                         {/* RIGHT: Read flow — EditionPicker + Read CTA */}
                         <div className="cinema-col-action">
