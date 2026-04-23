@@ -275,6 +275,10 @@
             transparent 100%);
 }
 
+.cinema-divider-or {
+    display: none;
+}
+
 .cinema-col-action {
     display: flex;
     flex-direction: column;
@@ -579,8 +583,36 @@
         max-width: none;
     }
 
+    /* Mobile divider: horizontal rule with "or" label centered, standing in
+       for the vertical gradient line that separates the two columns on
+       desktop. Uses ::before/::after pseudos as flanking hairlines. */
     .cinema-divider {
-        display: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        height: auto;
+        background: none;
+        margin: var(--space-2) 0;
+    }
+
+    .cinema-divider::before,
+    .cinema-divider::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+    }
+
+    .cinema-divider-or {
+        display: inline-block;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: var(--tracking-label-md);
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--color-text-primary) 55%, transparent);
     }
 
     .cinema-col-action {
