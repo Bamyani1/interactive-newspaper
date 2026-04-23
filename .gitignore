@@ -94,6 +94,10 @@ lint_output.txt
 # Claude Code local settings
 .claude/
 
+# Codex / AGENTS.md-style local agent config (parallel to .claude/)
+.agents/
+AGENTS.md
+
 # Git worktrees
 .worktrees/
 

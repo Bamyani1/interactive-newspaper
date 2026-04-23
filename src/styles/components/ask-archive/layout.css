@@ -331,6 +331,89 @@
 }
 
 /* =========================================
+   DOWNLOADED PDF EXPORT
+   The Export button renders this offscreen transcript and captures it
+   with html2canvas/jsPDF so collapsed or scrolled content is included.
+   ========================================= */
+.ask-export-document {
+  --color-bg-primary: #fff;
+  --color-bg-secondary: #fff;
+  --color-text-primary: #111;
+  --color-text-secondary: #555;
+  --color-accent: #8a1f2d;
+  --color-warning: #8a1f2d;
+  --color-border-default: #d0d0d0;
+  --stroke-accent-soft: #d8c3c7;
+  width: 720px;
+  min-height: 100px;
+  background: #fff;
+  color: #111;
+}
+
+.ask-export-header {
+  padding-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.ask-export-kicker {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.ask-export-title {
+  margin: 0;
+  font-family: var(--font-header);
+  font-size: var(--text-lg);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-display);
+  color: var(--color-text-primary);
+}
+
+.ask-transcript--export {
+  overflow: visible;
+  min-height: auto;
+  padding: 0;
+}
+
+.ask-transcript--export .ask-source-toggle {
+  cursor: default;
+}
+
+.ask-transcript--export .ask-source-toggle:disabled {
+  opacity: 1;
+}
+
+.ask-transcript--export .ask-source-card {
+  cursor: default;
+}
+
+.ask-transcript--export .ask-caveat,
+.ask-transcript--export .ask-error-inline {
+  background: #fff7f8;
+  border-color: #8a1f2d;
+}
+
+.ask-transcript--export .ask-caveat-header {
+  color: #8a1f2d;
+}
+
+.ask-transcript--export .ask-source-thumb-count {
+  background: #8a1f2d;
+}
+
+.ask-transcript--export .ask-photos-tile-btn:hover .ask-photos-tile-frame,
+.ask-transcript--export .ask-photos-tile-btn:focus-visible .ask-photos-tile-frame {
+  box-shadow: none;
+  transform: none;
+}
+
+/* =========================================
    RESPONSIVE
    ========================================= */
 
@@ -400,8 +483,8 @@
 
 /* =========================================
    PRINT / PDF EXPORT
-   The "Export as PDF" button calls window.print();
-   these rules also apply to Ctrl-P / Cmd-P.
+   Manual Ctrl-P / Cmd-P print rules. The Export button uses the
+   offscreen downloaded-PDF path above.
    ========================================= */
 @media print {
   @page {
