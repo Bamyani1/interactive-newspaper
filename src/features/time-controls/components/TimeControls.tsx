@@ -134,22 +134,23 @@ export const TimeControls = () => {
         <header
             className="h-[var(--header-height)] w-full flex items-center justify-between px-6 text-[var(--color-text-header)] time-controls-header transition-colors duration-300 z-[var(--z-header)] fixed top-0 left-0"
         >
-            <div className="time-controls-title-group">
-                <h1 className="text-sm font-header uppercase tracking-widest leading-none opacity-80">
+            <div className="time-controls-title-group min-w-0 flex-1 overflow-hidden">
+                <h1 className="text-xs sm:text-sm font-header uppercase tracking-wider sm:tracking-widest leading-none opacity-80 whitespace-nowrap truncate">
                     <Link
                         href="/"
                         className="hover:text-[var(--color-accent)] transition-colors"
                         aria-label="Return to landing page"
                     >
-                        The Transcript Archive
+                        <span className="hidden sm:inline">The Transcript Archive</span>
+                        <span className="sm:hidden">The Transcript</span>
                     </Link>
                 </h1>
             </div>
 
-            <div className="time-controls-date-group flex items-center gap-2">
+            <div className="time-controls-date-group flex items-center gap-0.5 sm:gap-2 flex-shrink-0">
                 <Link
                     href="/ask"
-                    className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] ${
+                    className={`flex items-center justify-center min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] text-xs font-mono rounded-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] ${
                         pathname?.startsWith("/ask")
                             ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
                             : "opacity-70 hover:opacity-100 hover:bg-[var(--color-accent)]/8"
@@ -160,7 +161,7 @@ export const TimeControls = () => {
                 </Link>
                 <Link
                     href="/search"
-                    className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] ${
+                    className={`flex items-center justify-center min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] text-xs font-mono rounded-sm transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] ${
                         pathname?.startsWith("/search")
                             ? "text-[var(--color-accent)] bg-[var(--color-accent)]/10"
                             : "opacity-70 hover:opacity-100 hover:bg-[var(--color-accent)]/8"
@@ -177,13 +178,13 @@ export const TimeControls = () => {
                         setIsDropdownOpen((prev) => !prev);
                     }}
                     disabled={!canOpenDropdown}
-                    className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-sm hover:bg-[var(--color-accent)]/8 transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
+                    className="flex items-center gap-1 sm:gap-2 min-h-[40px] sm:min-h-[44px] text-sm font-medium px-2 sm:px-3 py-1.5 rounded-sm hover:bg-[var(--color-accent)]/8 transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
                     aria-expanded={isDropdownOpen}
                     aria-haspopup="listbox"
                     aria-label="Select edition date"
                 >
                     <Calendar className="w-4 h-4 opacity-60" />
-                    <span className="font-mono tracking-wider uppercase text-xs">
+                    <span className="hidden sm:inline font-mono tracking-wider uppercase text-xs whitespace-nowrap">
                         {hasCurrentEdition && currentDate
                             ? formatDisplayDate(currentDate)
                             : "No editions loaded"}
