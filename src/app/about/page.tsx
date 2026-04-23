@@ -16,7 +16,7 @@ export default function AboutPage() {
                         </p>
                     </Reveal>
                     <Reveal delay={0.05}>
-                        <h1 className="font-header text-3xl mb-4">
+                        <h1 className="font-header text-3xl mb-4 text-balance">
                             The Transcript Archive
                         </h1>
                     </Reveal>
