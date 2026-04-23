@@ -256,7 +256,6 @@ This file is the source of truth for the visual language. CSS tokens and Tailwin
 
 **Sibling docs:**
 - `docs/design/carve-outs.md` — live features the refresh must not break. Read before editing tokens.
-- `design-explorations/` — the three Phase-1 prototypes we chose Direction A from (kept as reference, can be deleted post-implementation).
 
 ---
 
@@ -310,7 +309,7 @@ The Transcript Archive is a RAG-powered interactive archive of a student newspap
 
 ### WCAG contrast reference
 
-Full contrast report in `design-explorations/direction-a-faithful/contrast-report.md`. Summary: body text passes AAA, muted text passes AA with exception, accent links pass AA (hover lifts to AAA).
+Summary: body text passes AAA, muted text passes AA with exception, accent links pass AA (hover lifts to AAA).
 
 ## Typography
 
