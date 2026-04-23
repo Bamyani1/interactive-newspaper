@@ -556,11 +556,22 @@
     .cinema-paper {
         max-width: 520px;
         padding: 30px 25px;
+        /* Cream scrim behind the torn-paper image so content near its torn
+           top/bottom edges keeps legible contrast against the stained-glass
+           background. The torn-paper image has transparent torn edges baked
+           in, so stretching it alone isn't enough. */
+        background: color-mix(in srgb, var(--owu-white) 88%, transparent);
+        border-radius: 6px;
     }
 
+    /* Stretch torn-paper to fill the card on mobile — portrait aspect-ratio
+       leaves content bleeding off the image's top and bottom otherwise. */
     .cinema-paper::before {
         transform: translate(-50%, -50%);
-        width: 95%;
+        width: 100%;
+        height: 100%;
+        aspect-ratio: auto;
+        opacity: 1;
     }
 
     .cinema-paper-grid {
