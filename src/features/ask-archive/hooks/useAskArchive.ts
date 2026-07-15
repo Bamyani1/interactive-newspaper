@@ -265,6 +265,7 @@ export function useAskArchive(): UseAskArchiveReturn {
     const [state, dispatch] = useReducer(askReducer, INITIAL_STATE);
     const abortRef = useRef<AbortController | null>(null);
     const sessionIdRef = useRef<string | null>(null);
+    const interactionRevisionRef = useRef(0);
 
     // ── Hydrate on mount ──
     useEffect(() => {
@@ -272,6 +273,7 @@ export function useAskArchive(): UseAskArchiveReturn {
         const sessionId = readOrCreateSessionId();
         sessionIdRef.current = sessionId;
         if (!sessionId) return undefined;
+        const restoreRevision = interactionRevisionRef.current;
 
         // Read archived threads from localStorage — survives server
         // TTL and gives the sidebar something to show immediately.
@@ -289,6 +291,7 @@ export function useAskArchive(): UseAskArchiveReturn {
                     `/api/ask/session?sessionId=${encodeURIComponent(sessionId)}`,
                 );
                 if (!res.ok) {
+                    if (cancelled) return;
                     // Fall back to local archive — the server may have
                     // dropped the session but we still have turns in
                     // localStorage.
@@ -298,6 +301,8 @@ export function useAskArchive(): UseAskArchiveReturn {
                         expired: false,
                         threads: summaries,
                         activeThreadId: sessionId,
+                        preserveCurrentState:
+                            interactionRevisionRef.current !== restoreRevision,
                     });
                     return;
                 }
@@ -353,6 +358,8 @@ export function useAskArchive(): UseAskArchiveReturn {
                     expired: Boolean(json.expired),
                     threads: summaries,
                     activeThreadId: sessionId,
+                    preserveCurrentState:
+                        interactionRevisionRef.current !== restoreRevision,
                 });
             } catch {
                 if (!cancelled) {
@@ -362,6 +369,8 @@ export function useAskArchive(): UseAskArchiveReturn {
                         expired: false,
                         threads: summaries,
                         activeThreadId: sessionId,
+                        preserveCurrentState:
+                            interactionRevisionRef.current !== restoreRevision,
                     });
                 }
             }
@@ -543,6 +552,7 @@ export function useAskArchive(): UseAskArchiveReturn {
         (question: string) => {
             const trimmed = question.trim();
             if (!trimmed) return;
+            interactionRevisionRef.current += 1;
             const id = newTurnId();
             dispatch({
                 type: "APPEND_USER",
@@ -600,6 +610,7 @@ export function useAskArchive(): UseAskArchiveReturn {
     }, []);
 
     const clearConversation = useCallback(() => {
+        interactionRevisionRef.current += 1;
         abortRef.current?.abort();
         const prevSessionId = sessionIdRef.current;
         // Clear is destructive: wipe the server session AND remove
@@ -619,6 +630,7 @@ export function useAskArchive(): UseAskArchiveReturn {
     }, [dispatch, mintFreshSession, deleteServerSession]);
 
     const newConversation = useCallback(() => {
+        interactionRevisionRef.current += 1;
         abortRef.current?.abort();
         const prevSessionId = sessionIdRef.current;
         // New archives the current thread to the sidebar (so the user
@@ -640,6 +652,7 @@ export function useAskArchive(): UseAskArchiveReturn {
     const switchThread = useCallback(
         (threadId: string) => {
             if (threadId === sessionIdRef.current) return; // no-op
+            interactionRevisionRef.current += 1;
             abortRef.current?.abort();
             // Snapshot the current thread before leaving so we don't
             // lose any turns that weren't archived yet.

@@ -14,6 +14,7 @@
    ========================================= */
 
 .ask-transcript {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -50,6 +51,12 @@
   color: color-mix(in oklab, var(--color-text-secondary) 70%, transparent);
 }
 
+.ask-hydrating-indicator {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+}
+
 /* Subtle scrollbar that matches the dark theme */
 .ask-transcript::-webkit-scrollbar { width: 8px; }
 .ask-transcript::-webkit-scrollbar-track { background: transparent; }
@@ -83,7 +90,7 @@
 
 .ask-turn-user-label {
   font-family: var(--font-mono);
-  font-size: 0.66rem;
+  font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   letter-spacing: 0.22em;
   text-transform: uppercase;
@@ -116,7 +123,7 @@
 
 .ask-turn-assistant-label {
   font-family: var(--font-mono);
-  font-size: 0.66rem;
+  font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   letter-spacing: 0.22em;
   text-transform: uppercase;
@@ -202,7 +209,7 @@
 
 .ask-followups-label {
   font-family: var(--font-mono, monospace);
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: var(--tracking-label-md);
   color: var(--color-accent);
@@ -217,6 +224,7 @@
 .ask-example-chip {
   display: block;
   width: 100%;
+  min-height: 44px;
   text-align: left;
   padding: 0.65rem 0 0.65rem var(--space-4);
   border: 0;
@@ -280,7 +288,7 @@
 .ask-error-inline-label {
   margin: 0 0 0.1rem;
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -330,35 +338,6 @@
   cursor: not-allowed;
 }
 
-/* =========================================
-   LOADING
-   Skeleton placeholder + shared fade/pulse keyframes the rest of the
-   transcript animates against.
-   ========================================= */
-
-.ask-loading-skeleton {
-  animation: askPulse 1.5s ease-in-out infinite;
-}
-
-.ask-loading-bar {
-  height: var(--space-4);
-  border-radius: var(--radius-default);
-  background: var(--color-border-default);
-  margin-bottom: 0.75rem;
-}
-
-.ask-loading-bar--short {
-  width: 65%;
-}
-
-.ask-loading-bar--medium {
-  width: 85%;
-}
-
-.ask-loading-bar--long {
-  width: 100%;
-}
-
 @keyframes askFadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -366,15 +345,6 @@
 
 .ask-answer-enter {
   animation: askFadeIn var(--duration-normal) var(--ease-default) both;
-}
-
-@keyframes askPulse {
-  0%, 100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 0.8;
-  }
 }
 
 /* =========================================

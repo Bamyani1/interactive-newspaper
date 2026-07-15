@@ -22,7 +22,7 @@
 .ask-photos-panel-label {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   letter-spacing: var(--tracking-label-md);
   text-transform: uppercase;
   color: var(--color-text-secondary);
@@ -31,11 +31,10 @@
 
 .ask-photos-panel-overflow {
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: var(--text-xs);
   letter-spacing: var(--tracking-label-sm);
   text-transform: uppercase;
   color: var(--color-text-secondary);
-  opacity: 0.7;
 }
 
 .ask-photos-grid {
@@ -83,7 +82,7 @@
 
 .ask-photos-tile-caption {
   font-family: var(--font-body);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   font-style: italic;
   color: var(--color-text-secondary);
   line-height: 1.4;
@@ -96,9 +95,8 @@
 
 .ask-photos-tile-attr {
   font-family: var(--font-mono);
-  font-size: 0.6rem;
+  font-size: var(--text-xs);
   letter-spacing: var(--tracking-label-md);
   text-transform: uppercase;
   color: var(--color-accent);
-  opacity: 0.85;
 }

@@ -3,7 +3,7 @@
 import React, { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prose } from "@/shared/ui/primitives";
+import { Prose, ProseCodeBlock } from "@/shared/ui/primitives";
 import { InlineAnswerImage } from "./InlineAnswerImage";
 
 interface MarkdownProps {
@@ -70,6 +70,13 @@ const renderImg: React.FC<
 > = ({ src, alt, ...rest }) => {
     if (typeof src !== "string" || src.trim().length === 0) return null;
     return <InlineAnswerImage {...rest} src={src} alt={alt} />;
+};
+
+const renderPre: React.FC<
+    React.HTMLAttributes<HTMLPreElement> & { node?: unknown }
+> = ({ node: _node, ...rest }) => {
+    void _node;
+    return <ProseCodeBlock {...rest} />;
 };
 
 // Intercept <a> so in-document citation links get smooth-scroll behavior
@@ -162,7 +169,7 @@ export const Markdown: React.FC<MarkdownProps> = ({
             <Prose measure="narrow">
                 <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
-                    components={{ a: renderAnchor, img: renderImg }}
+                    components={{ a: renderAnchor, img: renderImg, pre: renderPre }}
                 >
                     {preprocessed}
                 </ReactMarkdown>
@@ -174,7 +181,7 @@ export const Markdown: React.FC<MarkdownProps> = ({
         <div className={`${className} prose`}>
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                components={{ a: renderAnchor, img: renderImg }}
+                components={{ a: renderAnchor, img: renderImg, pre: renderPre }}
             >
                 {preprocessed}
             </ReactMarkdown>
