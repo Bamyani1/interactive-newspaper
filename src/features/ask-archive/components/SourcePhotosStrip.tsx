@@ -37,6 +37,7 @@ export const SourcePhotosStrip: React.FC<SourcePhotosStripProps> = ({
             <ImageGallery
                 images={images}
                 alt={alt}
+                startIndex={1}
                 onClick={(src) => {
                     const i = images.findIndex((img) => img.src === src);
                     if (i >= 0) setOpenIndex(i);

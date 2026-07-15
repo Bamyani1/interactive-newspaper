@@ -254,7 +254,7 @@
   display: inline-block;
   margin-top: var(--space-1);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: var(--text-xs);
   letter-spacing: var(--tracking-label-md);
   text-transform: uppercase;
   opacity: 0.8;

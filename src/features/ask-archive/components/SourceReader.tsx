@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { AskResponse } from "@/src/types";
+import { markExplicitEditionNavigation } from "@/shared/navigation/editionNavigation";
+import { useModalDialog } from "@/shared/ui/useModalDialog";
 import { SourcePhotosStrip } from "./SourcePhotosStrip";
 
 type SourceArticle = AskResponse["sourceArticles"][number];
@@ -48,16 +50,18 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
     source,
     onClose,
 }) => {
-    const router = useRouter();
     const [mounted, setMounted] = useState(false);
     const [article, setArticle] = useState<EditionArticle | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const cacheRef = useRef<Map<string, EditionArticle[]>>(new Map());
-    // Track whether we've pushed a history sentinel for the currently
-    // open drawer. Used so browser-back closes the drawer instead of
-    // leaving /ask, and so clicking close doesn't leave an orphan entry.
-    const historyPushedRef = useRef(false);
+    const closeButtonRef = useRef<HTMLButtonElement>(null);
+    const titleId = useId();
+    const { portalRef, dialogRef } = useModalDialog({
+        isOpen: mounted && source !== null,
+        onDismiss: onClose,
+        initialFocusRef: closeButtonRef,
+    });
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR→client mount flag; required so the portal target (document.body) only renders post-hydration.
@@ -98,9 +102,9 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
                     );
                 }
             })
-            .catch((err: Error) => {
+            .catch(() => {
                 if (!cancelled) {
-                    setError(err.message || "Failed to load article.");
+                    setError("Unable to load this article right now.");
                 }
             })
             .finally(() => {
@@ -111,101 +115,29 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
         };
     }, [source]);
 
-    // Escape to close; lock body scroll while open.
-    useEffect(() => {
-        if (!source) return undefined;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") onClose();
-        };
-        document.addEventListener("keydown", onKey);
-        const prevOverflow = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
-        return () => {
-            document.removeEventListener("keydown", onKey);
-            document.body.style.overflow = prevOverflow;
-        };
-    }, [source, onClose]);
-
-    // History integration: push a sentinel state when the drawer opens so
-    // browser-back closes the drawer instead of navigating away from
-    // /ask. When the drawer is closed by user action (close button /
-    // Escape / overlay click) rewind the pushed entry so nothing
-    // orphaned remains in the back stack.
-    useEffect(() => {
-        if (typeof window === "undefined") return undefined;
-        if (!source) {
-            if (
-                historyPushedRef.current &&
-                (window.history.state as { askReader?: boolean } | null)
-                    ?.askReader
-            ) {
-                historyPushedRef.current = false;
-                window.history.back();
-            } else {
-                historyPushedRef.current = false;
-            }
-            return undefined;
-        }
-        if (!historyPushedRef.current) {
-            window.history.pushState({ askReader: true }, "");
-            historyPushedRef.current = true;
-        }
-        const onPopState = () => {
-            // User hit browser back — the sentinel entry has already been
-            // consumed, so don't try to rewind it again on close.
-            historyPushedRef.current = false;
-            onClose();
-        };
-        window.addEventListener("popstate", onPopState);
-        return () => window.removeEventListener("popstate", onPopState);
-    }, [source, onClose]);
-
-    // Unmount cleanup. If the host tree is torn down while the drawer
-    // is still open (e.g. user clicks "Clear conversation" with a
-    // citation open), the sentinel would otherwise orphan in the back
-    // stack. Previously this called history.back() to rewind it, but
-    // back() during an unmount cascade races with React removing the
-    // popstate listener and with Next.js's own popstate handling —
-    // observed symptom was that Clear felt like an unexpected back-
-    // navigation. replaceState is synchronous, never fires popstate,
-    // and can't navigate, so it's the safe choice here: the sentinel
-    // entry stays in the stack but its `askReader` marker is cleared,
-    // so nothing stale interacts with a future drawer mount. The
-    // normal close path (button / Esc / overlay / browser-back) still
-    // uses history.back() via the [source, onClose] effect above —
-    // that path isn't racing an unmount.
-    useEffect(() => {
-        return () => {
-            if (typeof window === "undefined") return;
-            if (
-                historyPushedRef.current &&
-                (window.history.state as { askReader?: boolean } | null)
-                    ?.askReader
-            ) {
-                historyPushedRef.current = false;
-                window.history.replaceState(null, "");
-            }
-        };
-    }, []);
-
-    if (!mounted) return null;
+    if (!mounted || !source) return null;
 
     const paragraphs = paragraphsFrom(article?.fullText);
 
     return createPortal(
         <div
+            ref={portalRef}
             className="ask-reader-overlay"
-            data-open={source !== null}
-            onClick={onClose}
-            role="dialog"
-            aria-modal="true"
-            aria-label={source?.headline ?? "Article reader"}
+            data-open="true"
+            onClick={(event) => {
+                if (event.target === event.currentTarget) onClose();
+            }}
         >
             <div
+                ref={dialogRef}
                 className="ask-reader"
-                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                tabIndex={-1}
             >
                 <button
+                    ref={closeButtonRef}
                     type="button"
                     className="ask-reader-close"
                     onClick={onClose}
@@ -214,8 +146,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
                     Close ✕
                 </button>
 
-                {source ? (
-                    <>
+                <>
                         <div className="ask-reader-dateline">
                             <span className="ask-reader-section">
                                 {source.category}
@@ -241,7 +172,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
                             ) : null}
                         </div>
 
-                        <h2 className="ask-reader-title">
+                        <h2 id={titleId} className="ask-reader-title">
                             {source.headline || "Untitled"}
                         </h2>
 
@@ -257,11 +188,11 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
                             />
                         ) : null}
 
-                        <div className="ask-reader-body">
+                        <div className="ask-reader-body" aria-busy={loading}>
                             {loading ? (
-                                <p className="ask-reader-status">Loading…</p>
+                                <p className="ask-reader-status" role="status" aria-live="polite">Loading…</p>
                             ) : error ? (
-                                <p className="ask-reader-status">{error}</p>
+                                <p className="ask-reader-status" role="alert">{error}</p>
                             ) : paragraphs.length > 0 ? (
                                 paragraphs.map((p, i) => <p key={i}>{p}</p>)
                             ) : (
@@ -272,51 +203,26 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
                         </div>
 
                         <div className="ask-reader-footer">
-                            <a
+                            <Link
                                 className="ask-reader-edition-link"
                                 href={`/edition/${source.editionDate}`}
                                 onClick={(e) => {
-                                    // Route via Next.js client-side
-                                    // navigation so /ask stays in the
-                                    // App Router cache. Hard nav via
-                                    // plain <a> dropped the page from
-                                    // the cache, so browser-back
-                                    // landed on a fresh SSR shell
-                                    // (empty transcript) instead of
-                                    // the live conversation. Strip
-                                    // the askReader sentinel first so
-                                    // the cached /ask entry doesn't
-                                    // carry the drawer-open bit.
-                                    e.preventDefault();
-                                    const current =
-                                        (window.history.state as
-                                            | ({ askReader?: boolean } & Record<
-                                                  string,
-                                                  unknown
-                                              >)
-                                            | null) ?? null;
                                     if (
-                                        historyPushedRef.current &&
-                                        current?.askReader
+                                        e.button === 0 &&
+                                        !e.metaKey &&
+                                        !e.ctrlKey &&
+                                        !e.shiftKey &&
+                                        !e.altKey
                                     ) {
-                                        historyPushedRef.current = false;
-                                        const { askReader: _askReader, ...rest } =
-                                            current;
-                                        void _askReader;
-                                        window.history.replaceState(
-                                            rest,
-                                            "",
-                                            window.location.href,
-                                        );
+                                        markExplicitEditionNavigation(source.editionDate);
+                                        onClose();
                                     }
-                                    router.push(`/edition/${source.editionDate}`);
                                 }}
                             >
                                 Open full edition →
-                            </a>
+                            </Link>
                         </div>
                     </>
-                ) : null}
             </div>
         </div>,
         document.body,
