@@ -24,7 +24,8 @@ The surrounding `bg-black` container (line 106) is also part of the YouTube-play
 
 ## 2. Print-edition period-matching hardcodes
 
-**Where:** `src/features/news-feed/components/variants/print-edition-primitives.tsx`
+**Where:** `src/features/news-feed/components/variants/print-edition-primitives.tsx`,
+`TopStoriesPrintEdition.tsx`, and `SectionPrintEdition.tsx`
 
 **What's there:**
 - `fontSize: "15px"`, `"14px"`, `"11px"`, `"10px"`, `"12px"`, `"3.5em"`
@@ -35,7 +36,12 @@ The surrounding `bg-black` container (line 106) is also part of the YouTube-play
 
 **Rule:** keep these hardcodes; each is already commented inline as period-matching.
 
-The HTML template string in `src/features/news-feed/components/ArticleCard.tsx:110` (the `window.print()` newspaper HTML) also contains hardcoded `font-size`, `color: #666`, etc. — keep it; it's an independent printable document.
+The former standalone article card also contained an independent `window.print()`
+newspaper document with hardcoded `font-size`, `color: #666`, and related print
+values. That unreachable component and template were removed after the dead-UI
+audit. The carve-out remains in force: if a standalone printable article document
+is restored, keep its print-only hardcodes isolated from screen tokens rather than
+blanket-tokenizing them.
 
 ---
 
@@ -96,8 +102,8 @@ The floating ColorCustomizer + FontCustomizer were removed. Their four brand tok
 | File | Why it's in this doc |
 |---|---|
 | `src/features/music-player/components/SidebarPlayer.tsx` | YouTube affordance |
-| `src/features/news-feed/components/variants/print-edition-primitives.tsx` | Period-matching hardcodes |
-| `src/features/news-feed/components/ArticleCard.tsx` | Print HTML template |
+| `src/features/news-feed/components/variants/print-edition-primitives.tsx` | Period-matching primitives and hardcodes |
+| `src/features/news-feed/components/variants/{TopStoriesPrintEdition,SectionPrintEdition}.tsx` | Period-matching print composition and type scale |
 | `src/styles/tokens/colors.css` | Hosts `--owu-*` legacy aliases |
 | `gold/**` | Regression baseline — read-only |
 
