@@ -55,7 +55,7 @@ export const SkeletonImage: React.FC<SkeletonBaseProps> = ({ className = "" }) =
 export const SkeletonCard: React.FC<SkeletonBaseProps> = ({ className = "" }) => {
   return (
     <div
-      className={`article-card px-5 md:px-6 py-6 md:py-8 ${className}`}
+      className={`relative mb-4 border border-[var(--featured-card-border)] border-b-2 border-b-[var(--color-accent)] bg-[var(--featured-card-bg)]/60 px-5 py-6 md:px-6 md:py-8 ${className}`}
     >
       <div className="flex gap-6 items-start">
         {/* Content area */}

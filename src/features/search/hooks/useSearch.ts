@@ -39,6 +39,18 @@ export function useSearch(options: UseSearchOptions = {}): UseSearchResult {
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const updateQuery = useCallback((nextQuery: string) => {
+    setQuery(nextQuery);
+    if (nextQuery.trim()) return;
+    abortRef.current?.abort();
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setResults([]);
+    setPagination(null);
+    setIsLoading(false);
+    setError(null);
+    setOffset(0);
+  }, []);
+
   const fetchResults = useCallback(
     async (q: string, cat: string, start: string, end: string, currentOffset: number) => {
       abortRef.current?.abort();
@@ -49,6 +61,7 @@ export function useSearch(options: UseSearchOptions = {}): UseSearchResult {
         setResults([]);
         setPagination(null);
         setIsLoading(false);
+        setError(null);
         return;
       }
 
@@ -101,7 +114,7 @@ export function useSearch(options: UseSearchOptions = {}): UseSearchResult {
 
   return {
     query,
-    setQuery,
+    setQuery: updateQuery,
     category,
     setCategory,
     startDate,

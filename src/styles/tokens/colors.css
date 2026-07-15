@@ -2,15 +2,14 @@
  * Color Tokens — Direction A (Faithful)
  *
  * Three-layer hierarchy:
- *   LAYER 1 · BRAND ANCHORS (the 4 legacy customizer tokens)
- *     --owu-red, --owu-black, --owu-charcoal, --owu-white
- *     Kept as aliases after the floating ColorCustomizer was removed, so any
- *     stale localStorage entry that still tries to setProperty these is inert.
- *     Names preserved — see docs/design/carve-outs.md #6.
- *
- *   LAYER 1 · DERIVED PRIMITIVES (scales built from the 4 anchors)
+ *   LAYER 1 · EXACT PRIMITIVES
  *     --newsprint-*, --ink-*, --red-*
- *     Defined via color-mix so they cascade from the anchors.
+ *     Literal values from design.md; they never derive from legacy aliases.
+ *
+ *   COMPATIBILITY ALIASES
+ *     --owu-red, --owu-black, --owu-charcoal, --owu-white
+ *     Kept after the floating ColorCustomizer was removed. Stale writes can
+ *     still target these names, but cannot mutate the canonical primitives.
  *
  *   LAYER 2 · SEMANTIC (what components use)
  *     --color-bg-*, --color-text-*, --color-accent, --color-rule-*
@@ -25,40 +24,38 @@
 
 :root {
   /* =========================================================================
-   * LAYER 1 · BRAND ANCHORS (legacy --owu-* aliases)
-   * ========================================================================= */
-
-  --owu-red:      #B80D3E;  /* brand anchor */
-  --owu-black:    #1B1917;  /* deep warm-black ink */
-  --owu-charcoal: #3A3834;  /* secondary ink */
-  --owu-white:    #FBF8F1;  /* warm newsprint — lightest */
-
-  /* =========================================================================
-   * LAYER 1 · DERIVED PRIMITIVES
-   * Built via color-mix so scales derive from the brand anchors.
+   * LAYER 1 · EXACT PRIMITIVES
+   * These literals mirror design.md. Do not derive them from --owu-*.
    * ========================================================================= */
 
   /* Newsprint (warm paper scale) */
-  --newsprint-50:  var(--owu-white);
-  --newsprint-100: color-mix(in srgb, var(--owu-white) 92%, var(--owu-black));
-  --newsprint-200: color-mix(in srgb, var(--owu-white) 82%, var(--owu-black));
-  --newsprint-300: color-mix(in srgb, var(--owu-white) 70%, var(--owu-black));
-  --newsprint-400: color-mix(in srgb, var(--owu-white) 48%, var(--owu-black));
+  --newsprint-50:  #FBF8F1;
+  --newsprint-100: #F5F1E8;
+  --newsprint-200: #EBE4D4;
+  --newsprint-300: #D9D3C7;
+  --newsprint-400: #B8B0A0;
 
   /* Ink (warm-black scale) */
-  --ink-900: var(--owu-black);
-  --ink-800: color-mix(in srgb, var(--owu-black) 90%, var(--owu-charcoal));
-  --ink-700: var(--owu-charcoal);
-  --ink-600: color-mix(in srgb, var(--owu-charcoal) 65%, var(--owu-white));
-  --ink-500: color-mix(in srgb, var(--owu-charcoal) 45%, var(--owu-white));
+  --ink-900: #1B1917;
+  --ink-800: #2B2926;
+  --ink-700: #3A3834;
+  --ink-600: #57534E;
+  --ink-500: #7A756E;
 
   /* Red (masthead / accent) */
-  --red-600: var(--owu-red);
-  --red-700: color-mix(in srgb, var(--owu-red) 75%, var(--owu-black));
-  --red-800: color-mix(in srgb, var(--owu-red) 55%, var(--owu-black));
-  --red-500: color-mix(in srgb, var(--owu-red) 80%, var(--owu-white));
-  --red-200: color-mix(in srgb, var(--owu-red) 30%, var(--owu-white));
-  --red-100: color-mix(in srgb, var(--owu-red) 15%, var(--owu-white));
+  --red-800: #8A0A2E;
+  --red-700: #A00C36;
+  --red-600: #B80D3E;
+  --red-500: #D43256;
+  --red-200: #E8C3CD;
+  --red-100: #F4DFE5;
+
+  /* Legacy customizer aliases. Keep the names, but never consume them in
+     canonical tokens so stale localStorage writes remain inert. */
+  --owu-red:      var(--red-600);
+  --owu-black:    var(--ink-900);
+  --owu-charcoal: var(--ink-700);
+  --owu-white:    var(--newsprint-50);
 
   /* =========================================================================
    * LAYER 2 · SEMANTIC
@@ -79,20 +76,23 @@
   --color-text-inverse:  var(--newsprint-50);
 
   /* Accent */
-  --color-accent:        var(--owu-red);
+  --color-accent:        var(--red-600);
   --color-accent-deep:   var(--red-700);
   --color-accent-wash:   var(--red-100);
+  --color-accent-text:   var(--red-600);
+  --color-accent-text-hover: var(--red-700);
+  --color-text-on-accent: var(--newsprint-50);
 
   /* Rules / borders */
   --color-rule-hairline: var(--newsprint-300);
-  --color-rule-ink:      var(--owu-black);
-  --color-rule-accent:   var(--owu-red);
+  --color-rule-ink:      var(--ink-900);
+  --color-rule-accent:   var(--red-600);
 
   /* Focus */
-  --color-focus-ring:    var(--owu-red);
+  --color-focus-ring:    var(--red-600);
 
   /* Status (brand red serves as warning in Direction A) */
-  --color-warning:       var(--owu-red);
+  --color-warning:       var(--red-600);
   --color-warning-wash:  var(--red-100);
 
   /* --- Legacy semantic names (Phase 6 migrates components off these) ---- */
@@ -156,14 +156,15 @@
  * COLOR MODE OVERRIDES
  * Default (no data-mode or data-mode="light") = Direction-A paper treatment.
  * data-mode="dark" = inverted ink-first surface.
- * The customizer-anchored --owu-* values do NOT flip between modes — they
- * represent brand identity, not mode-dependent colors.
+ * The compatibility --owu-* values do NOT flip between modes. Text and focus
+ * use dedicated lighter red semantics on ink surfaces; the brand accent itself
+ * remains red-600 for filled treatments.
  * ========================================================================= */
 
 [data-mode="dark"] {
   /* Surfaces flip: ink becomes background, newsprint becomes text */
-  --color-bg-paper:      var(--owu-black);
-  --color-bg-paper-soft: color-mix(in srgb, var(--owu-black) 90%, var(--owu-charcoal));
+  --color-bg-paper:      var(--ink-900);
+  --color-bg-paper-soft: var(--ink-800);
   --color-bg-inset:      var(--ink-700);
   --color-bg-inverse:    var(--newsprint-100);
 
@@ -171,15 +172,23 @@
   --color-text-deck:     var(--newsprint-100);
   --color-text-muted:    var(--newsprint-300);
   --color-text-faint:    var(--newsprint-400);
-  --color-text-inverse:  var(--owu-black);
+  --color-text-inverse:  var(--ink-900);
 
-  --color-accent-wash:   color-mix(in srgb, var(--owu-red) 18%, var(--owu-black));
+  /* red-200 passes AA for normal text and 3:1 for focus indicators against
+     every canonical dark surface, including ink-700 inset panels. */
+  --color-accent-text:       var(--red-200);
+  --color-accent-text-hover: var(--red-100);
+  --color-focus-ring:        var(--red-200);
+  --color-rule-accent:       var(--red-200);
+  --color-warning:           var(--red-200);
+
+  --color-accent-wash:   color-mix(in srgb, var(--red-600) 18%, var(--ink-900));
 
   --color-rule-hairline: var(--ink-700);
   --color-rule-ink:      var(--newsprint-50);
 
-  --color-warning-wash:  color-mix(in srgb, var(--owu-red) 18%, var(--owu-black));
-  --color-bg-glass:      color-mix(in srgb, var(--owu-black) 75%, transparent);
+  --color-warning-wash:  color-mix(in srgb, var(--red-600) 18%, var(--ink-900));
+  --color-bg-glass:      color-mix(in srgb, var(--ink-900) 75%, transparent);
 
   /* Legacy aliases must be redeclared here: CSS custom properties compute
      their var() references at the declaring element. Without these, an

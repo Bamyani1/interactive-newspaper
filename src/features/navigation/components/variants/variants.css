@@ -48,6 +48,7 @@
   display: flex;
   align-items: baseline;
   gap: 0;
+  min-height: 44px;
   padding: calc(8px * 1.05) 0;
   cursor: pointer;
   border: none;
@@ -63,7 +64,7 @@
 }
 
 .nav-fleuron-row:focus-visible {
-  outline: 1px solid var(--color-accent);
+  outline: 1px solid var(--color-focus-ring);
   outline-offset: -1px;
 }
 
@@ -86,19 +87,10 @@
 
 .nav-fleuron-leaders {
   flex: 1;
-  overflow: hidden;
-  font-family: var(--font-body);
-  font-size: calc(11px * 1.05);
-  color: var(--color-text-secondary);
-  opacity: 0.3;
-  white-space: nowrap;
-  line-height: 1;
-  margin: 0 4px;
-  transition: opacity var(--duration-fast) var(--ease-default);
-}
-
-.nav-fleuron-row:hover .nav-fleuron-leaders {
-  opacity: 0.55;
+  min-width: 8px;
+  height: 1px;
+  border-bottom: 1px dotted var(--color-rule-hairline);
+  margin: 0 6px;
 }
 
 .nav-fleuron-count {
@@ -123,7 +115,7 @@
   top: 0;
   bottom: 0;
   width: 3px;
-  background: var(--color-accent);
+  background: var(--color-rule-accent);
 }
 
 .nav-fleuron-row--active .nav-fleuron-name {
@@ -134,12 +126,12 @@
 }
 
 .nav-fleuron-row--active .nav-fleuron-count {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-weight: 600;
 }
 
 .nav-fleuron-row--active .nav-fleuron-leaders {
-  opacity: 0.5;
+  border-bottom-color: var(--color-rule-accent);
 }
 
 /* =========================================
