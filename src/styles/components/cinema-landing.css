@@ -197,11 +197,6 @@
     max-width: 1100px;
     width: 100%;
     cursor: default;
-    background: radial-gradient(
-        ellipse 44% 82% at center,
-        var(--newsprint-100) 0 94%,
-        transparent 95%
-    );
     animation: cinemaPaperSettle var(--duration-normal) var(--ease-default) both;
 
     /* Paper card is mode-locked (cream with dark text) regardless of body
