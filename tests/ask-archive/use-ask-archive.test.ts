@@ -98,9 +98,63 @@ describe("useAskArchive", () => {
 
     it("hydrates with empty turns on mount", async () => {
         const { result } = renderHook(() => useAskArchive());
+        expect(result.current.isHydrating).toBe(true);
         await waitFor(() => expect(result.current.isHydrating).toBe(false));
         expect(result.current.turns).toEqual([]);
         expect(result.current.expiredBanner).toBe(false);
+    });
+
+    it("does not let a late session restore overwrite newer local interaction", async () => {
+        let resolveSession!: (
+            response: ReturnType<typeof makeJsonResponse>,
+        ) => void;
+        const sessionResponse = new Promise<ReturnType<typeof makeJsonResponse>>(
+            (resolve) => {
+                resolveSession = resolve;
+            },
+        );
+        vi.stubGlobal(
+            "fetch",
+            vi.fn((input: RequestInfo | URL) => {
+                const url =
+                    typeof input === "string" ? input : input.toString();
+                if (url.includes("/api/ask/session")) return sessionResponse;
+                return Promise.resolve(makeJsonResponse(mockResponse));
+            }),
+        );
+
+        const { result } = renderHook(() => useAskArchive());
+        expect(result.current.isHydrating).toBe(true);
+
+        act(() => {
+            result.current.submit("Keep this new question");
+        });
+        await waitFor(() => {
+            expect(result.current.turns[0]?.status).toBe("done");
+        });
+
+        await act(async () => {
+            resolveSession(
+                makeJsonResponse({
+                    turns: [
+                        {
+                            question: "Stale restored question",
+                            answer: "Stale answer",
+                            citedArticleIds: [],
+                            timestamp: 1,
+                        },
+                    ],
+                    expired: false,
+                }),
+            );
+            await sessionResponse;
+        });
+        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+        expect(result.current.turns).toHaveLength(1);
+        expect(result.current.turns[0].question).toBe(
+            "Keep this new question",
+        );
     });
 
     it("submit appends a user turn immediately and completes it via the non-streaming fallback", async () => {

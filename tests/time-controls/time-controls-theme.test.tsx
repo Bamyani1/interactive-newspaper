@@ -1,6 +1,6 @@
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useArchive } from "@/features/archive";
 import { TimeControls } from "@/features/time-controls";
@@ -32,31 +32,30 @@ const mockedUseArchive = vi.mocked(useArchive);
 
 describe("TimeControls theme tokens", () => {
     let pushSpy: ReturnType<typeof vi.fn>;
-    let setDateSpy: ReturnType<typeof vi.fn>;
+    let prefetchSpy: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
         pushSpy = vi.fn();
-        setDateSpy = vi.fn();
+        prefetchSpy = vi.fn();
 
         mockedUsePathname.mockReturnValue("/edition/1988-10-12");
         mockedUseRouter.mockReturnValue({
             push: pushSpy,
+            prefetch: prefetchSpy,
         } as ReturnType<typeof useRouter>);
 
         mockedUseArchive.mockReturnValue({
-            currentDate: "1988-10-12",
-            setDate: setDateSpy,
-            editions: ["1988-10-12", "1988-10-05"],
-            editionInfo: [],
+            editions: ["1988-10-05", "1988-10-12"],
             hasEditions: true,
         });
     });
 
     it("uses semantic mode-aware tokens for the header surface and interactions", () => {
-        const { container } = render(<TimeControls />);
+        const { container } = render(<TimeControls currentDate="1988-10-12" />);
 
         const header = container.querySelector("header");
         expect(header).toBeDefined();
+        expect(within(header!).queryByRole("heading", { level: 1 })).toBeNull();
 
         const headerClass = header?.getAttribute("class") ?? "";
         expect(headerClass).toContain("text-[var(--color-text-header)]");
@@ -70,7 +69,8 @@ describe("TimeControls theme tokens", () => {
 
         const homeLink = screen.getByRole("link", { name: "Return to landing page" });
         const homeLinkClass = homeLink.getAttribute("class") ?? "";
-        expect(homeLinkClass).toContain("hover:text-[var(--color-accent)]");
+        expect(homeLinkClass).toContain("min-h-[44px]");
+        expect(homeLinkClass).toContain("hover:text-[var(--color-accent-text)]");
 
         const dateButton = screen.getByRole("button", { name: "Select edition date" });
         const dateButtonClass = dateButton.getAttribute("class") ?? "";
@@ -80,7 +80,7 @@ describe("TimeControls theme tokens", () => {
     });
 
     it("keeps dropdown behavior intact with edition selection", () => {
-        render(<TimeControls />);
+        render(<TimeControls currentDate="1988-10-12" />);
 
         const dateButton = screen.getByRole("button", { name: "Select edition date" });
         fireEvent.click(dateButton);
@@ -90,7 +90,71 @@ describe("TimeControls theme tokens", () => {
 
         fireEvent.click(options[0]);
 
-        expect(setDateSpy).toHaveBeenCalledWith("1988-10-05");
         expect(pushSpy).toHaveBeenCalledWith("/edition/1988-10-05");
+        expect(prefetchSpy).toHaveBeenCalledWith("/edition/1988-10-05");
+    });
+
+    it("renders the latest date synchronously and navigates from a general route", () => {
+        mockedUsePathname.mockReturnValue("/about");
+        render(<TimeControls />);
+
+        expect(screen.getByText("Oct 12, 1988")).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Select edition date" }));
+        const listbox = screen.getByRole("listbox", { name: "Available editions" });
+        fireEvent.click(within(listbox).getAllByRole("option")[1]);
+
+        expect(pushSpy).toHaveBeenCalledWith("/edition/1988-10-12");
+    });
+
+    it("supports roving listbox focus and restores the trigger on Escape", async () => {
+        render(<TimeControls currentDate="1988-10-12" />);
+        const trigger = screen.getByRole("button", {
+            name: "Select edition date",
+        });
+        trigger.focus();
+        fireEvent.keyDown(trigger, { key: "ArrowDown" });
+
+        const options = within(
+            screen.getByRole("listbox", { name: "Available editions" }),
+        ).getAllByRole("option");
+        await waitFor(() => expect(options[0]).toHaveFocus());
+        fireEvent.keyDown(options[0], { key: "End" });
+        expect(options[options.length - 1]).toHaveFocus();
+        fireEvent.keyDown(document, { key: "Escape" });
+        await waitFor(() => expect(trigger).toHaveFocus());
+        await waitFor(() =>
+            expect(
+                screen.queryByRole("listbox", { name: "Available editions" }),
+            ).toBeNull(),
+        );
+    });
+
+    it("keeps the focused option mounted until Tab moves focus outside", async () => {
+        render(
+            <>
+                <TimeControls currentDate="1988-10-12" />
+                <button type="button">After header</button>
+            </>,
+        );
+        fireEvent.click(
+            screen.getByRole("button", { name: "Select edition date" }),
+        );
+        const option = within(
+            screen.getByRole("listbox", { name: "Available editions" }),
+        ).getAllByRole("option")[1];
+        await waitFor(() => expect(option).toHaveFocus());
+
+        fireEvent.keyDown(option, { key: "Tab" });
+        expect(option).toBeInTheDocument();
+        const after = screen.getByRole("button", { name: "After header" });
+        act(() => after.focus());
+
+        expect(after).toHaveFocus();
+        await waitFor(() =>
+            expect(
+                screen.queryByRole("listbox", { name: "Available editions" }),
+            ).toBeNull(),
+        );
     });
 });
