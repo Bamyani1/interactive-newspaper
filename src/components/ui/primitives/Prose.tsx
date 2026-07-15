@@ -11,6 +11,8 @@ export type ProseProps = Omit<
     children: React.ReactNode;
 };
 
+export type ProseCodeBlockProps = React.ComponentPropsWithoutRef<"pre">;
+
 /**
  * Wrapper that applies the Direction-A Markdown-rendered typography spec
  * (per /design.md "prose" component) to anything passed in. Use to wrap
@@ -39,3 +41,16 @@ export const Prose = React.forwardRef<HTMLDivElement, ProseProps>(
 );
 
 Prose.displayName = "Prose";
+
+/**
+ * Keyboard-focusable wrapper for horizontally scrollable prose code blocks.
+ * Axe requires scroll regions to be reachable without a pointing device.
+ */
+export const ProseCodeBlock = React.forwardRef<
+    HTMLPreElement,
+    ProseCodeBlockProps
+>(({ tabIndex = 0, ...rest }, ref) => (
+    <pre ref={ref} tabIndex={tabIndex} {...rest} />
+));
+
+ProseCodeBlock.displayName = "ProseCodeBlock";

@@ -6,7 +6,7 @@
 /* Base HTML setup */
 html {
     font-size: 16px;
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
 }
 
 /* Body defaults */
@@ -14,11 +14,21 @@ body {
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);
     font-family: var(--font-body);
-    line-height: var(--leading-loose);
+    line-height: var(--leading-body);
     transition: background-color var(--duration-slow) var(--ease-default),
         color var(--duration-slow) var(--ease-default);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    body {
+        transition: none;
+    }
 }
 
 /* =========================================
@@ -42,11 +52,11 @@ body {
 .prose {
     font-family: var(--font-body);
     font-size: var(--text-base);
-    line-height: 1.8;
+    line-height: var(--leading-body);
 }
 
 .prose p {
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-4);
 }
 
 .prose li {
@@ -80,11 +90,6 @@ body {
     border-top: 2px solid color-mix(in srgb, var(--color-text-primary) 60%, transparent);
 }
 
-/* Hero article treatment */
-.hero-article {
-    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-}
-
 /* =========================================
    FOCUS RING — canonical accessibility treatment
    See /design.md "focus-ring" component spec.
@@ -99,6 +104,12 @@ body {
 .focus-ring:focus-visible {
     outline: 2px solid var(--color-focus-ring);
     outline-offset: 2px;
+}
+
+/* Tailwind's bare `rounded` utility is a fixed 4px value. Keep legacy
+   consumers inside the canonical shape scale until they migrate to rounded-sm. */
+.rounded {
+    border-radius: var(--radius-sm);
 }
 
 /* Skip link helper for keyboard users — used at the top of the page tree */

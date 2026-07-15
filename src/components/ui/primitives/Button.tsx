@@ -1,11 +1,9 @@
 import * as React from "react";
 
 type ButtonVariant = "primary" | "secondary" | "accent" | "ghost" | "icon" | "link";
-type ButtonSize = "sm" | "md";
 
 type CommonProps = {
     variant?: ButtonVariant;
-    size?: ButtonSize;
     className?: string;
     children: React.ReactNode;
 };
@@ -24,49 +22,50 @@ type ButtonAsAnchor = CommonProps &
 export type ButtonProps = ButtonAsButton | ButtonAsAnchor;
 
 const base =
-    "inline-flex items-center justify-center gap-2 font-mono uppercase " +
+    "inline-flex items-center justify-center gap-2 rounded-sm font-mono text-xs " +
+    "font-semibold uppercase tracking-label-md " +
     "transition-colors duration-fast ease-default cursor-pointer " +
-    "focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 " +
-    "disabled:opacity-50 disabled:cursor-not-allowed";
-
-const sizes: Record<ButtonSize, string> = {
-    sm: "px-3 py-1 text-[0.6875rem] tracking-label-sm",
-    md: "px-4 py-2 text-xs tracking-label-md",
-};
+    "focus-visible:outline-2 focus-visible:outline-offset-2 " +
+    "focus-visible:outline-[var(--color-focus-ring)] " +
+    "disabled:opacity-50 disabled:cursor-not-allowed motion-reduce:transition-none";
 
 const variants: Record<ButtonVariant, string> = {
     primary:
         "bg-[var(--color-text-body)] text-[var(--color-text-inverse)] " +
-        "border border-[var(--color-text-body)] font-semibold " +
+        "border border-[var(--color-text-body)] " +
         "hover:bg-[var(--color-accent)] hover:border-[var(--color-accent)] " +
-        "focus-visible:outline-[var(--color-focus-ring)]",
+        "hover:text-[var(--color-text-on-accent)] active:bg-[var(--color-accent-deep)] " +
+        "disabled:hover:bg-[var(--color-text-body)] disabled:hover:border-[var(--color-text-body)] " +
+        "disabled:hover:text-[var(--color-text-inverse)]",
     secondary:
         "bg-transparent text-[var(--color-text-body)] " +
-        "border border-[var(--color-text-body)] font-semibold " +
+        "border border-[var(--color-text-body)] " +
         "hover:bg-[var(--color-text-body)] hover:text-[var(--color-text-inverse)] " +
-        "focus-visible:outline-[var(--color-focus-ring)]",
+        "active:bg-[var(--color-accent-wash)] active:text-[var(--color-text-body)] " +
+        "disabled:hover:bg-transparent disabled:hover:text-[var(--color-text-body)]",
     accent:
-        "bg-[var(--color-accent)] text-[var(--color-text-inverse)] " +
-        "border border-[var(--color-accent)] font-semibold " +
+        "bg-[var(--color-accent)] text-[var(--color-text-on-accent)] " +
+        "border border-[var(--color-accent)] " +
         "hover:bg-[var(--color-accent-deep)] hover:border-[var(--color-accent-deep)] " +
-        "focus-visible:outline-[var(--color-focus-ring)]",
+        "active:opacity-90 disabled:hover:bg-[var(--color-accent)] " +
+        "disabled:hover:border-[var(--color-accent)]",
     ghost:
         "bg-transparent text-[var(--color-text-body)] " +
         "border border-[var(--color-rule)] " +
-        "hover:border-[var(--color-text-body)] " +
-        "focus-visible:outline-[var(--color-focus-ring)]",
+        "hover:border-[var(--color-text-body)] active:bg-[var(--color-bg-inset)] " +
+        "disabled:hover:border-[var(--color-rule)]",
     icon:
         "bg-transparent text-[var(--color-text-muted)] border-0 " +
-        "p-2 rounded-sm " +
-        "hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-wash)] " +
-        "focus-visible:outline-[var(--color-focus-ring)]",
+        "hover:text-[var(--color-accent-text)] hover:bg-[var(--color-accent-wash)] " +
+        "active:text-[var(--color-accent-text-hover)] " +
+        "disabled:hover:text-[var(--color-text-muted)] disabled:hover:bg-transparent",
     link:
-        "bg-transparent border-0 p-0 " +
-        "text-[var(--color-accent)] underline decoration-[0.05em] underline-offset-[0.12em] " +
-        "decoration-[color-mix(in_srgb,var(--color-accent)_40%,transparent)] " +
-        "hover:text-[var(--color-accent-deep)] hover:decoration-[var(--color-accent-deep)] " +
-        "uppercase tracking-label-sm font-semibold " +
-        "focus-visible:outline-[var(--color-focus-ring)]",
+        "rounded-none bg-transparent border-0 " +
+        "text-[var(--color-accent-text)] underline decoration-[0.05em] underline-offset-[0.12em] " +
+        "decoration-[color-mix(in_srgb,var(--color-accent-text)_40%,transparent)] " +
+        "hover:text-[var(--color-accent-text-hover)] hover:decoration-[var(--color-accent-text-hover)] " +
+        "active:opacity-80 " +
+        "disabled:hover:text-[var(--color-accent-text)]",
 };
 
 export const Button = React.forwardRef<
@@ -75,13 +74,18 @@ export const Button = React.forwardRef<
 >((props, ref) => {
     const {
         variant = "primary",
-        size = "md",
         className = "",
         children,
         ...rest
     } = props;
 
-    const classes = `${base} ${sizes[size]} ${variants[variant]} ${className}`.trim();
+    const dimensions =
+        variant === "link"
+            ? "p-0"
+            : variant === "icon"
+              ? "size-11 shrink-0 p-2"
+              : "min-h-11 px-4 py-2";
+    const classes = `${base} ${dimensions} ${variants[variant]} ${className}`.trim();
 
     if (props.as === "a") {
         const { as: _as, ...anchorProps } = rest as ButtonAsAnchor;

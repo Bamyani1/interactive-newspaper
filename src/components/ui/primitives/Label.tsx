@@ -15,14 +15,14 @@ export type LabelProps = Omit<
 };
 
 const sizes: Record<LabelSize, string> = {
-    xs: "text-[0.6875rem] tracking-label-sm",
+    xs: "text-xs tracking-label-sm",
     sm: "text-xs tracking-label-md",
-    md: "text-sm tracking-label-md",
+    md: "text-xs tracking-label-md",
 };
 
 const tones: Record<LabelTone, string> = {
     muted:  "text-[var(--color-text-muted)]",
-    accent: "text-[var(--color-accent)]",
+    accent: "text-[var(--color-accent-text)]",
     body:   "text-[var(--color-text-body)]",
 };
 

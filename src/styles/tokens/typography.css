@@ -12,7 +12,6 @@
     --font-playfair-display: "Playfair Display", "EB Garamond", Georgia, serif;
     --font-source-serif:     "Source Serif 4", Georgia, serif;
     --font-jetbrains:        "JetBrains Mono", ui-monospace, monospace;
-    --font-inter:            "Inter", system-ui, sans-serif;
 
     /* --- Semantic font tokens (use these in components) ------------------ */
     --font-header:     var(--font-playfair-display);
@@ -21,7 +20,6 @@
     --font-masthead:   var(--font-playfair-display);
     --font-mono:       var(--font-jetbrains);
     --font-accent:     var(--font-playfair-display);
-    --font-ui:         var(--font-inter);
 
     /* =========================================================================
      * TYPE SCALE — 1.22 ratio, 12px-anchored (Direction A)
@@ -43,16 +41,26 @@
     /* =========================================================================
      * LINE HEIGHTS
      * ========================================================================= */
+    --leading-xs:   1.35;
+    --leading-sm:   1.45;
+    --leading-base: 1.55;
+    --leading-md:   1.3;
+    --leading-lg:   1.25;
+    --leading-xl:   1.15;
+    --leading-2xl:  1.1;
+    --leading-3xl:  1.1;
+
+    /* Compatibility names resolve to the documented scale. */
     --leading-none:    1;
-    --leading-tight:   1.15;
-    --leading-snug:    1.3;
-    --leading-display: 1.1;
-    --leading-deck:    1.3;
-    --leading-body:    1.55;
-    --leading-meta:    1.35;
-    --leading-normal:  1.5;
-    --leading-relaxed: 1.625;
-    --leading-loose:   1.7;
+    --leading-tight:   var(--leading-xl);
+    --leading-snug:    var(--leading-md);
+    --leading-display: var(--leading-2xl);
+    --leading-deck:    var(--leading-md);
+    --leading-body:    var(--leading-base);
+    --leading-meta:    var(--leading-xs);
+    --leading-normal:  var(--leading-base);
+    --leading-relaxed: var(--leading-base);
+    --leading-loose:   var(--leading-base);
 
     /* =========================================================================
      * LETTER SPACING — locked to 4 values (Direction A)
@@ -63,8 +71,8 @@
     --tracking-label-sm: 0.08em;   /* small labels, captions */
     --tracking-label-md: 0.14em;   /* medium labels, buttons, nav */
 
-    /* --- Legacy tracking names (Phase 6 migrates components off these) --- */
-    --tracking-tighter:  -0.02em;
+    /* Legacy names resolve to canonical values and introduce no fifth value. */
+    --tracking-tighter:  var(--tracking-tight);
     --tracking-wide:     var(--tracking-label-sm);
     --tracking-wider:    var(--tracking-label-sm);
     --tracking-widest:   var(--tracking-label-md);
@@ -125,4 +133,3 @@
 .font-mono       { font-family: var(--font-mono); }
 .font-typewriter { font-family: var(--font-mono); }
 .font-marker     { font-family: var(--font-accent); }
-.font-ui         { font-family: var(--font-ui); }

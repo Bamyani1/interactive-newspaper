@@ -52,6 +52,9 @@
   --color-accent:       var(--color-accent);
   --color-accent-deep:  var(--color-accent-deep);
   --color-accent-wash:  var(--color-accent-wash);
+  --color-accent-text:  var(--color-accent-text);
+  --color-accent-text-hover: var(--color-accent-text-hover);
+  --color-text-on-accent: var(--color-text-on-accent);
 
   --color-rule:         var(--color-rule-hairline);
   --color-rule-ink:     var(--color-rule-ink);
@@ -74,26 +77,52 @@
   --font-header:   var(--font-header);
   --font-body:     var(--font-body);
   --font-mono:     var(--font-mono);
-  --font-ui:       var(--font-ui);
 
   /* ---- Type scale ------------------------------------------------------ */
   --text-xs:   var(--text-xs);
+  --text-xs--line-height: var(--leading-xs);
   --text-sm:   var(--text-sm);
+  --text-sm--line-height: var(--leading-sm);
   --text-base: var(--text-base);
+  --text-base--line-height: var(--leading-base);
   --text-md:   var(--text-md);
+  --text-md--line-height: var(--leading-md);
   --text-lg:   var(--text-lg);
+  --text-lg--line-height: var(--leading-lg);
   --text-xl:   var(--text-xl);
+  --text-xl--line-height: var(--leading-xl);
   --text-2xl:  var(--text-2xl);
+  --text-2xl--line-height: var(--leading-2xl);
   --text-3xl:  var(--text-3xl);
+  --text-3xl--line-height: var(--leading-3xl);
   --text-4xl:  var(--text-4xl);
+  --text-4xl--line-height: var(--leading-3xl);
   --text-5xl:  var(--text-5xl);
+  --text-5xl--line-height: var(--leading-3xl);
   --text-6xl:  var(--text-6xl);
+  --text-6xl--line-height: var(--leading-3xl);
+
+  /* Explicit leading utilities are compatibility names constrained to the
+     canonical type-scale values. */
+  --leading-none:    var(--leading-none);
+  --leading-tight:   var(--leading-tight);
+  --leading-snug:    var(--leading-snug);
+  --leading-display: var(--leading-display);
+  --leading-deck:    var(--leading-deck);
+  --leading-body:    var(--leading-body);
+  --leading-meta:    var(--leading-meta);
+  --leading-normal:  var(--leading-normal);
+  --leading-relaxed: var(--leading-relaxed);
+  --leading-loose:   var(--leading-loose);
 
   /* ---- Tracking — locked to Direction-A 4 values ----------------------- */
   --tracking-tight:    var(--tracking-tight);
   --tracking-normal:   var(--tracking-normal);
   --tracking-label-sm: var(--tracking-label-sm);
   --tracking-label-md: var(--tracking-label-md);
+  --tracking-wide:     var(--tracking-wide);
+  --tracking-wider:    var(--tracking-wider);
+  --tracking-widest:   var(--tracking-widest);
 
   /* ---- Spacing (Tailwind v4 reads --spacing-N for p-/m-/gap-/...) ----- */
   --spacing-0:  var(--space-0);
@@ -103,6 +132,7 @@
   --spacing-4:  var(--space-4);
   --spacing-5:  var(--space-5);
   --spacing-6:  var(--space-6);
+  --spacing-7:  var(--space-7);
   --spacing-8:  var(--space-8);
   --spacing-10: var(--space-10);
   --spacing-12: var(--space-12);
@@ -126,6 +156,8 @@
   --shadow-lg:      var(--shadow-lg);
   --shadow-xl:      var(--shadow-xl);
   --shadow-2xl:     var(--shadow-2xl);
+  --shadow-overlay: var(--shadow-overlay);
+  --shadow-media:   var(--shadow-media);
 
   /* ---- Animation timing ------------------------------------------------ */
   --duration-fast:   var(--duration-fast);

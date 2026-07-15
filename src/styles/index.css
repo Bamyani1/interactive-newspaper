@@ -27,12 +27,13 @@
    COMPONENTS
    Individual UI component styles
    ========================================= */
-@import "./components/article-card.css";
 @import "./components/cinema-landing.css";
 @import "./components/edition-background.css";
 @import "./components/edition-picker.css";
+@import "./components/search.css";
 @import "./components/site-footer.css";
 @import "./components/sidebar-player.css";
+@import "./components/theme-mode-toggle.css";
 @import "./components/time-controls.css";
 @import "./components/mock-stained-glass.css";
 @import "./components/autumn-canopy.css";
