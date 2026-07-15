@@ -1,14 +1,11 @@
 "use client";
 
-import React, { useMemo, useState, useRef, useEffect } from "react";
+import React, { useMemo } from "react";
 import type { Article, VintageAd, SectionId } from "@/src/types";
 
-import { ScanViewer } from "./ScanViewer";
 import { AdsSection, ClassifiedsSection } from "./AdsSection";
 import { EditionMasthead } from "./EditionMasthead";
 import { EditionFooter } from "./EditionFooter";
-import { useKeyboardNavigation, useScrollCoordinator } from "../hooks/useKeyboardNavigation";
-import { useScanViewer } from "../hooks/useScanViewer";
 
 import { TopStoriesPrintEdition } from "./variants/TopStoriesPrintEdition";
 import { SectionPrintEdition } from "./variants/SectionPrintEdition";
@@ -22,14 +19,6 @@ export const SECTION_ORDER: Article["category"][] = [
     "Arts & Entertainment",
 ];
 
-const getScannedPages = (editionDate: string, pageCount: number): string[] => {
-    return Array.from(
-        { length: pageCount },
-        (_, index) => `/editions/${editionDate}/scanned-newspaper/page${index + 1}.jpg`
-    );
-};
-
-
 interface NewsFeedProps {
     articles: Article[];
     displayAds: VintageAd[];
@@ -40,6 +29,7 @@ interface NewsFeedProps {
     activeSection: SectionId;
     onSectionChange: (section: SectionId) => void;
     publicationInfo?: string;
+    isEditionPending?: boolean;
 }
 
 export const NewsFeed: React.FC<NewsFeedProps> = ({
@@ -52,32 +42,12 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     activeSection,
     onSectionChange: _onSectionChange,
     publicationInfo,
+    isEditionPending = false,
 }) => {
-    const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [focusedIndex, setFocusedIndex] = useState<number>(-1);
-    const articleRefs = useRef<Map<string, HTMLElement>>(new Map());
-    const topExpandedRef = useRef<HTMLDivElement>(null);
-    const pendingFocusRef = useRef<{ id: string; category: Article["category"] } | null>(null);
-    const scrollIntentRef = useRef<{ targetId: string; block: ScrollLogicalPosition } | null>(null);
-
     const resolvedEditionDate = editionDate ?? articles[0]?.date ?? null;
     const daysArticles = articles;
 
     // ── Derived data ──────────────────────────────────────────────
-    const maxPageNumber = useMemo(
-        () => daysArticles.reduce((max, a) => Math.max(max, a.page || 0), 0),
-        [daysArticles]
-    );
-
-    const scannedPages = useMemo(
-        () => resolvedEditionDate && maxPageNumber > 0
-            ? getScannedPages(resolvedEditionDate, maxPageNumber)
-            : [],
-        [resolvedEditionDate, maxPageNumber]
-    );
-
-    const { viewerState, openScanViewer, closeScanViewer, selectPage } = useScanViewer(scannedPages);
-
     const heroArticle = useMemo(
         () => daysArticles.find(a => a.isHero) ?? daysArticles[0],
         [daysArticles]
@@ -123,23 +93,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
         [currentSection, groupedArticles]
     );
 
-    const topExpandedArticle = useMemo(
-        () => currentSection !== "Top" || expandedId == null ? null : articles.find(a => a.id === expandedId) ?? null,
-        [currentSection, expandedId, articles]
-    );
-
-    const topArticles = useMemo(() => {
-        const list: Article[] = [];
-        if (heroArticle) list.push(heroArticle);
-        list.push(...featuredArticles);
-        return list;
-    }, [heroArticle, featuredArticles]);
-
-    const navArticles = useMemo(
-        () => currentSection === "Top" ? topArticles : currentArticles,
-        [currentSection, topArticles, currentArticles]
-    );
-
     const editionHeaderDate = useMemo(() => {
         if (!resolvedEditionDate) return "No date selected";
         try {
@@ -153,35 +106,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
             }).format(new Date(resolvedEditionDate + "T12:00:00"));
         } catch { return resolvedEditionDate; }
     }, [resolvedEditionDate]);
-
-    // Reset focus when switching sections to prevent stale focus state
-    useEffect(() => {
-        setFocusedIndex(-1); // eslint-disable-line react-hooks/set-state-in-effect -- reset on section change
-    }, [currentSection]);
-
-    // ── Extracted hooks ───────────────────────────────────────────
-    useScrollCoordinator({
-        currentSection, currentArticles, topExpandedArticle, expandedId,
-        scrollIntentRef, pendingFocusRef, articleRefs, topExpandedRef,
-    });
-
-    useKeyboardNavigation({
-        currentSection, navArticles, focusedIndex, setFocusedIndex,
-        setExpandedId, scrollIntentRef,
-    });
-
-    // ── Event handlers ────────────────────────────────────────────
-    const handleFeaturedClick = (article: Article) => {
-        scrollIntentRef.current = { targetId: "__top_expanded__", block: "start" };
-        setExpandedId(prev => (prev === article.id ? null : article.id));
-    };
-
-    const handleHeroReadMore = () => {
-        if (heroArticle) {
-            scrollIntentRef.current = { targetId: "__top_expanded__", block: "start" };
-            setExpandedId(heroArticle.id);
-        }
-    };
 
     const strokeWrapperClass =
         "bg-[var(--color-bg-primary)] border-x-[6.4px] border-[var(--color-accent)] px-6 py-8 md:px-10 md:py-10";
@@ -203,16 +127,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                         <TopStoriesPrintEdition
                             heroArticle={heroArticle}
                             featuredArticles={featuredArticles}
-                            topExpandedArticle={topExpandedArticle}
-                            expandedId={expandedId}
-                            focusedIndex={focusedIndex}
-                            topArticles={topArticles}
-                            onHeroReadMore={handleHeroReadMore}
-                            onFeaturedClick={handleFeaturedClick}
-                            onExpandedToggle={() => setExpandedId(null)}
-                            onViewOriginal={openScanViewer}
-                            currentSection={currentSection}
-                            topExpandedRef={topExpandedRef}
                         />
                     ) : currentSection === "Ads" ? (
                         <AdsSection displayAds={displayAds} />
@@ -222,7 +136,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                         <SectionPrintEdition
                             key={currentSection}
                             articles={currentArticles}
-                            onViewOriginal={openScanViewer}
                         />
                     ) : (
                         <div className="p-12 text-center opacity-60">
@@ -231,10 +144,15 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                             </p>
                             <button
                                 onClick={goToNextEdition}
-                                disabled={!canGoToNextEdition}
+                                disabled={!canGoToNextEdition || isEditionPending}
                                 className="px-6 py-3 border border-current hover:bg-[var(--color-text-primary)] hover:text-[var(--color-text-inverse)] transition-colors uppercase tracking-widest text-sm font-bold"
+                                aria-busy={isEditionPending}
                             >
-                                {canGoToNextEdition ? "Jump to Next Available Edition" : "Only One Edition Loaded"}
+                                {isEditionPending
+                                    ? "Opening Edition…"
+                                    : canGoToNextEdition
+                                        ? "Jump to Next Available Edition"
+                                        : "Only One Edition Loaded"}
                             </button>
                         </div>
                     )}
@@ -243,16 +161,10 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                 <EditionFooter
                     onNextEdition={goToNextEdition}
                     canGoToNextEdition={canGoToNextEdition}
+                    isPending={isEditionPending}
                 />
             </div>
 
-            <ScanViewer
-                isOpen={viewerState.open}
-                pages={scannedPages}
-                activeIndex={viewerState.pageIndex}
-                onClose={closeScanViewer}
-                onSelectPage={selectPage}
-            />
         </div>
     );
 };

@@ -110,7 +110,7 @@ function TracksPlayer({
               </button>
             )
           ) : (
-            <div className="h-[140px] flex items-center justify-center text-center px-3 text-xs text-text-primary/70 bg-[var(--color-bg-secondary)]">
+            <div className="h-[140px] flex items-center justify-center text-center px-3 text-xs text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]">
               <div>
                 <p className="font-medium">No verified video for this song</p>
                 <p className="text-xs mt-1">Track list remains available for this month.</p>
@@ -118,7 +118,7 @@ function TracksPlayer({
                   href={toYoutubeSearchUrl(effectiveTrack)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center mt-3 px-2.5 py-1 text-xs font-medium border border-accent/40 rounded-sm text-accent hover:bg-accent/10 transition-colors"
+                  className="inline-flex items-center mt-3 px-2.5 py-1 text-xs font-medium border border-[var(--color-accent-text)] rounded-sm text-[var(--color-accent-text)] hover:bg-accent/10 transition-colors"
                 >
                   Open YouTube search
                 </a>
@@ -131,17 +131,17 @@ function TracksPlayer({
           <button
             type="button"
             onClick={() => setIsTrackListOpen((open) => !open)}
-            className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-[var(--color-bg-secondary)] focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
+            className="flex min-h-11 w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-[var(--color-bg-secondary)] focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
             aria-expanded={isTrackListOpen}
             aria-controls="sidebar-track-list"
             id="sidebar-track-toggle"
           >
             <span className="flex-1 min-w-0 truncate font-mono text-xs">
               <span className="font-medium">{effectiveTrack.title}</span>
-              <span className="text-text-primary/60"> — {effectiveTrack.artist}</span>
+              <span className="text-[var(--color-text-secondary)]"> — {effectiveTrack.artist}</span>
             </span>
             <ChevronDown
-              className={`w-3.5 h-3.5 flex-shrink-0 opacity-60 transition-transform ${isTrackListOpen ? "rotate-180" : ""}`}
+              className={`w-3.5 h-3.5 flex-shrink-0 opacity-60 transition-transform motion-reduce:transition-none ${isTrackListOpen ? "rotate-180" : ""}`}
               aria-hidden
             />
           </button>
@@ -149,7 +149,7 @@ function TracksPlayer({
             id="sidebar-track-list"
             role="region"
             aria-labelledby="sidebar-track-toggle"
-            className={`grid transition-[grid-template-rows] duration-200 ease-out ${isTrackListOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+            className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:duration-0 ${isTrackListOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
           >
             <div className="min-h-0 overflow-hidden">
               <div className="divide-y" style={{ '--tw-divide-color': 'var(--color-border-default)' } as React.CSSProperties}>
@@ -166,19 +166,19 @@ function TracksPlayer({
                       className={`group w-full flex items-center gap-2 px-2.5 py-2 text-left transition-all ${
                         isActive
                           ? "bg-[var(--color-bg-secondary)] text-text-primary"
-                          : "hover:bg-[var(--color-bg-secondary)] text-text-primary/70 hover:text-text-primary"
+                          : "hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:text-text-primary"
                       }`}
                     >
                       <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
                         {isActive ? (
-                          <Music className="w-3 h-3 text-text-primary/60" />
+                          <Music className="w-3 h-3 text-[var(--color-text-secondary)]" />
                         ) : (
-                          <span className="text-xs text-text-primary/40 font-mono">{index + 1}</span>
+                          <span className="text-xs text-[var(--color-text-secondary)] font-mono">{index + 1}</span>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className={`font-mono text-xs truncate ${isActive ? "font-medium" : ""}`}>{track.title}</div>
-                        <div className="font-mono text-xs text-text-primary/50 truncate">{track.artist}</div>
+                        <div className="font-mono text-xs text-[var(--color-text-secondary)] truncate">{track.artist}</div>
                       </div>
                       {!isActive && (
                         <Play className="w-3 h-3 text-text-primary/30 opacity-0 group-hover:opacity-100 flex-shrink-0" />
