@@ -10,8 +10,6 @@ import {
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AskLanding } from "@/features/ask-archive/components/AskLanding";
 
-const VISITED_KEY = "owu-has-visited-ask";
-
 describe("AskLanding", () => {
     beforeEach(() => {
         window.localStorage.clear();
@@ -89,19 +87,19 @@ describe("AskLanding", () => {
         );
     });
 
-    it("plays the entrance animation on the first visit and skips it on subsequent visits", () => {
-        // First visit — localStorage is clear in beforeEach.
-        const { unmount } = render(
-            <AskLanding onPickQuestion={vi.fn()} />,
-        );
-        const landing1 = document.querySelector(".ask-landing");
-        expect(landing1).toHaveAttribute("data-animate", "true");
-        expect(window.localStorage.getItem(VISITED_KEY)).toBe("1");
-        unmount();
+    it("keeps suggestions visible but inert during session restoration", () => {
+        const onPick = vi.fn();
+        render(<AskLanding onPickQuestion={onPick} disabled />);
 
-        // Second visit — the key is now set; animation should NOT fire.
-        render(<AskLanding onPickQuestion={vi.fn()} />);
-        const landing2 = document.querySelector(".ask-landing");
-        expect(landing2).not.toHaveAttribute("data-animate");
+        const suggestions = screen.getAllByRole("button");
+        expect(suggestions).toHaveLength(3);
+        suggestions.forEach((suggestion) => {
+            expect(suggestion).toBeDisabled();
+            fireEvent.click(suggestion);
+        });
+        expect(onPick).not.toHaveBeenCalled();
+        expect(document.querySelector(".ask-landing")).not.toHaveAttribute(
+            "data-animate",
+        );
     });
 });

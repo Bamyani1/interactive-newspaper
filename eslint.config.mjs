@@ -34,6 +34,8 @@ const eslintConfig = defineConfig([
     "ocr/**",
     "font-color/**",
     "scripts/**",
+    ".claude/worktrees/**",
+    "audit-evidence/full/**",
   ]),
 ]);
 

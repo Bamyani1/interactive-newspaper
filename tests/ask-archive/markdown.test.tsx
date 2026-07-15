@@ -26,6 +26,7 @@ describe("Markdown renderer", () => {
         );
         const code = container.querySelector("pre code");
         expect(code?.textContent).toContain("const x = 1;");
+        expect(code?.parentElement).toHaveAttribute("tabindex", "0");
     });
 
     it("renders ordered and unordered lists", () => {

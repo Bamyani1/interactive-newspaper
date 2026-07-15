@@ -1,7 +1,8 @@
 /**
  * Render-decision tests for `/ask`'s page.tsx. Verify that the branch
- * selecting between AskLanding / Transcript / boot-skeleton matches
- * what each user state expects — in particular, that the expired
+ * selecting between AskLanding / Transcript matches what each user state
+ * expects while the surrounding workspace stays mounted — in particular,
+ * that the expired
  * banner isn't swallowed by the editorial hero on return (F3), and
  * that destructive sidebar actions are disabled while a turn is
  * streaming (F5, tested in Commit C).
@@ -46,7 +47,7 @@ vi.mock("@/shared", () => ({
 }));
 
 // Import AFTER the mocks are set up.
-import AskPage from "@/app/ask/page";
+import AskPage from "@/app/ask/AskWorkspace";
 
 function defaultState() {
     return {
@@ -228,25 +229,63 @@ describe("AskPage — render decisions", () => {
         expect(print).not.toHaveBeenCalled();
     });
 
-    it("hydrating-with-no-turns stays in the boot skeleton (no intermediate hydrating pill, no hero)", () => {
-        // Pre-fix, this state rendered the hero during the pre-mount
-        // frame and the Transcript-pill during hydration, so users
-        // saw hero → pill → final UI. The boot skeleton now covers
-        // the full window (pre-mount + initial hydrate), so the only
-        // visible frame is skeleton → final UI.
+    it("renders a meaningful, stable workspace while the saved session hydrates", () => {
         mockHook.mockReturnValue({
             ...defaultState(),
             isHydrating: true,
         });
         const { container } = render(<AskPage />);
+        expect(container.querySelector(".ask-loading-skeleton")).toBeNull();
         expect(
-            container.querySelector(".ask-loading-skeleton"),
+            screen.getByLabelText(/suggested questions, refreshed daily/i),
         ).toBeInTheDocument();
         expect(
-            screen.queryByText(/restoring conversation/i),
-        ).not.toBeInTheDocument();
+            screen.getByText(/checking for a saved conversation/i),
+        ).toBeInTheDocument();
         expect(
-            screen.queryByLabelText(/suggested questions, refreshed daily/i),
-        ).not.toBeInTheDocument();
+            screen.getByRole("complementary"),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByRole("log", { name: /conversation transcript/i }),
+        ).toHaveAttribute("aria-busy", "true");
+        expect(screen.getByLabelText(/ask a question/i)).toBeDisabled();
+        screen
+            .getAllByRole("button", { name: /start a new conversation/i })
+            .forEach((button) => expect(button).toBeDisabled());
+    });
+
+    it("preserves workspace DOM landmarks when hydration restores a thread", () => {
+        mockHook.mockReturnValue({
+            ...defaultState(),
+            isHydrating: true,
+        });
+        const { container, rerender } = render(<AskPage />);
+        const page = container.querySelector(".ask-page");
+        const sidebar = container.querySelector(".ask-sidebar");
+        const column = container.querySelector(".ask-column");
+        const transcript = container.querySelector(".ask-transcript");
+        const composer = container.querySelector(".ask-composer");
+
+        mockHook.mockReturnValue({
+            ...defaultState(),
+            turns: [makeDoneTurn("t-1", "Who edited it?", "An editor did.")],
+            threads: [
+                {
+                    id: "thread-1",
+                    firstQuestion: "Who edited it?",
+                    turnCount: 1,
+                    lastUpdatedAt: 1,
+                },
+            ],
+            activeThreadId: "thread-1",
+        });
+        rerender(<AskPage />);
+
+        expect(container.querySelector(".ask-page")).toBe(page);
+        expect(container.querySelector(".ask-sidebar")).toBe(sidebar);
+        expect(container.querySelector(".ask-column")).toBe(column);
+        expect(container.querySelector(".ask-transcript")).toBe(transcript);
+        expect(container.querySelector(".ask-composer")).toBe(composer);
+        expect(screen.getByText(/an editor did/i)).toBeInTheDocument();
     });
 });

@@ -126,6 +126,18 @@ describe("SidebarPlayer monthly mode", () => {
     expect(screen.getByText("No chart data was found for this month.")).toBeTruthy();
   });
 
+  it("distinguishes an archive request failure from a month with no data", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}, 503));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SidebarPlayer currentDate="1990-10-18" />);
+
+    await screen.findByText("Unable to load monthly chart data right now.");
+    expect(
+      screen.queryByText("No chart data was found for this month."),
+    ).not.toBeInTheDocument();
+  });
+
   it("returns null when no currentDate is provided", () => {
     const { container } = render(<SidebarPlayer />);
     expect(container.innerHTML).toBe("");

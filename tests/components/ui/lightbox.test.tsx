@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { Lightbox } from "@/src/components/ui/lightbox";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { ImageGallery, Lightbox } from "@/src/components/ui/lightbox";
 
 vi.mock("next/image", () => ({
     __esModule: true,
@@ -91,6 +91,20 @@ describe("Lightbox", () => {
         expect(screen.getByText("2 / 3")).toBeInTheDocument();
     });
 
+    it("places captions on a resolved semantic inverse surface", () => {
+        render(
+            <Lightbox
+                images={[{ src: "u1", caption: "Newsroom caption" }]}
+                onClose={() => {}}
+            />,
+        );
+
+        expect(screen.getByText("Newsroom caption")).toHaveClass(
+            "bg-inverse",
+            "text-text-inverse",
+        );
+    });
+
     it("advances with ArrowRight and wraps around", () => {
         render(
             <Lightbox
@@ -115,5 +129,36 @@ describe("Lightbox", () => {
         );
         fireEvent.keyDown(document, { key: "Escape" });
         expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it("renders as a labelled modal and focuses its Close control", async () => {
+        render(<Lightbox src="u1" onClose={vi.fn()} />);
+        expect(
+            screen.getByRole("dialog", { name: "Photo viewer" }),
+        ).toHaveAttribute("aria-modal", "true");
+        await waitFor(() =>
+            expect(
+                screen.getByRole("button", { name: "Close photo viewer" }),
+            ).toHaveFocus(),
+        );
+        expect(document.body.style.overflow).toBe("hidden");
+    });
+
+    it("uses native buttons for gallery image triggers", () => {
+        const onClick = vi.fn();
+        render(
+            <ImageGallery
+                images={[{ src: "u1", caption: "Campus" }]}
+                alt="Test story"
+                startIndex={1}
+                onClick={onClick}
+            />,
+        );
+        const trigger = screen.getByRole("button", {
+            name: "Expand Test story — image 1",
+        });
+        expect(screen.getByRole("img", { name: "Test story — image 1" })).toBeInTheDocument();
+        fireEvent.click(trigger);
+        expect(onClick).toHaveBeenCalledWith("u1");
     });
 });
