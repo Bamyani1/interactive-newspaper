@@ -35,13 +35,15 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search the archive..."
-        className="pl-12 pr-10 text-lg"
+        aria-label="Search the archive"
+        aria-busy={isLoading}
+        className="pl-12 pr-16 text-lg"
       />
       {value && (
         <button
           type="button"
           onClick={() => onChange("")}
-          className="absolute right-3 opacity-50 hover:opacity-100 transition-opacity text-[var(--color-text-body)] focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] rounded-sm"
+          className="absolute right-0 flex min-h-[44px] min-w-[44px] items-center justify-center opacity-50 hover:opacity-100 transition-opacity text-[var(--color-text-body)] focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)] rounded-sm"
           aria-label="Clear search"
         >
           <X size={18} />
@@ -49,7 +51,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       )}
       {isLoading && (
         <div
-          className="absolute right-10 h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent"
+          className="absolute right-12 h-4 w-4 animate-spin rounded-full border-2 border-[var(--color-accent-text)] border-t-transparent motion-reduce:animate-none"
+          aria-hidden="true"
         />
       )}
     </div>

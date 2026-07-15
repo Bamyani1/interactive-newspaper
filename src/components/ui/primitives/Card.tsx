@@ -12,7 +12,7 @@ export type CardProps = Omit<
     children: React.ReactNode;
 };
 
-const base = "p-6";
+const base = "rounded-none p-5";
 
 const variants: Record<CardVariant, string> = {
     default:

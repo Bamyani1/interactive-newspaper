@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 interface UseDeepLinkSubmitArgs {
     /** True while the session-restore roundtrip is in flight. */
@@ -14,12 +14,13 @@ interface UseDeepLinkSubmitArgs {
 
 /**
  * Deep-link support for `/ask?q=<encoded>` — when the page is opened
- * with a `q=` param and the conversation is empty, auto-submit the
- * question once and strip the param so a refresh doesn't re-submit.
+ * with a `q=` param and the restored conversation is empty, auto-submit
+ * the question once and strip the param so a refresh doesn't re-submit.
  *
  * Guarded so it only fires once, waits for hydration, and respects
- * an existing conversation (if the user landed here mid-session,
- * we don't hijack it).
+ * an existing conversation. A deep-link question that collides with an
+ * existing conversation is consumed without submission so clearing that
+ * conversation later cannot unexpectedly fire the stale URL query.
  */
 export function useDeepLinkSubmit({
     isHydrating,
@@ -27,17 +28,20 @@ export function useDeepLinkSubmit({
     submit,
 }: UseDeepLinkSubmitArgs): void {
     const searchParams = useSearchParams();
-    const router = useRouter();
     const firedRef = useRef(false);
 
     useEffect(() => {
         if (firedRef.current) return;
         if (isHydrating) return;
-        if (turnCount > 0) return;
         const q = searchParams?.get("q")?.trim();
         if (!q) return;
         firedRef.current = true;
-        submit(q);
-        router.replace("/ask", { scroll: false });
-    }, [isHydrating, turnCount, searchParams, submit, router]);
+        if (turnCount === 0) submit(q);
+
+        // This only consumes a URL parameter; it is not a route navigation.
+        // Next patches native history calls so the App Router stays in sync,
+        // including in optimized production builds where same-route replaces
+        // can preserve the route cache's original canonical query string.
+        window.history.replaceState(null, "", "/ask");
+    }, [isHydrating, turnCount, searchParams, submit]);
 }

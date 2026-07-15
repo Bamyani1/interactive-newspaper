@@ -82,6 +82,8 @@ export type AskAction =
           expired: boolean;
           threads?: ThreadSummary[];
           activeThreadId?: string | null;
+          /** Ignore a stale restore that completed after local interaction. */
+          preserveCurrentState?: boolean;
       }
     | {
           type: "SET_THREADS";
@@ -126,7 +128,10 @@ export type AskAction =
 
 export const INITIAL_STATE: AskState = {
     turns: [],
-    isHydrating: false,
+    // The first client effect reconciles the saved local/server session.
+    // Starting true closes the pre-effect window in which a deep link or
+    // manual submit could race that restore and then be overwritten by it.
+    isHydrating: true,
     expiredBanner: false,
     sessionGen: 0,
     emptyReason: null,
@@ -169,6 +174,9 @@ export function askReducer(state: AskState, action: AskAction): AskState {
         case "HYDRATING":
             return { ...state, isHydrating: true };
         case "HYDRATE":
+            if (action.preserveCurrentState) {
+                return { ...state, isHydrating: false };
+            }
             return {
                 ...state,
                 turns: action.turns,

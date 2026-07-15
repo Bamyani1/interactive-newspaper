@@ -10,5 +10,5 @@ export type { CardProps, CardVariant } from "./Card";
 export { Label } from "./Label";
 export type { LabelProps, LabelSize, LabelTone } from "./Label";
 
-export { Prose } from "./Prose";
-export type { ProseProps } from "./Prose";
+export { Prose, ProseCodeBlock } from "./Prose";
+export type { ProseCodeBlockProps, ProseProps } from "./Prose";

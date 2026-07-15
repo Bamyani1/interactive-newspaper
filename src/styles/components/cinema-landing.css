@@ -8,11 +8,19 @@
    ========================================= */
 
 .cinema-container {
-    height: 100vh;
+    height: 100svh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     position: relative;
+}
+
+/* Keep the full-canvas landing tied to the stable mobile viewport. The
+   module-scoped PageShell rule uses 100vh as its fallback. */
+.cinema-landing-shell[data-page-shell] {
+    height: 100svh;
+    min-height: 100svh;
+    overflow: hidden;
 }
 
 /* =========================================
@@ -97,43 +105,34 @@
     backdrop-filter: blur(4px);
     flex-shrink: 0;
     border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
-    /* Start hidden on first visit, reveal after the stained-glass SVG
-       has finished its internal panel-by-panel reveal (~2.5s). The
-       .cinema-instant override below skips this on return visits. */
-    opacity: 0;
-    animation: cinemaTickerReveal 1s ease-out 2.7s forwards;
-}
-
-.cinema-instant .cinema-ticker {
     opacity: 1;
-    animation: none;
+    animation: cinemaTickerSettle var(--duration-normal) var(--ease-default) both;
 }
 
-@keyframes cinemaTickerReveal {
-    to {
-        opacity: 1;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .cinema-ticker {
-        opacity: 1;
-        animation: none;
+@keyframes cinemaTickerSettle {
+    from {
+        transform: translateY(-4px);
     }
 }
 
 .cinema-ticker-top {
     order: 1;
+    padding-top: env(safe-area-inset-top);
 }
 
 .cinema-ticker-bottom {
     order: 3;
+    padding-bottom: env(safe-area-inset-bottom);
 }
 
 .cinema-ticker-track {
     display: flex;
-    animation: none;
-    will-change: transform;
+    width: max-content;
+}
+
+.cinema-ticker-sequence {
+    display: flex;
+    flex-shrink: 0;
 }
 
 .cinema-ticker-reverse {
@@ -149,19 +148,19 @@
     text-transform: uppercase;
     letter-spacing: var(--tracking-wide);
     white-space: nowrap;
-    color: color-mix(in srgb, var(--color-text-primary) 35%, transparent);
+    color: var(--color-text-muted);
     border-right: 1px solid color-mix(in srgb, var(--color-accent) 16%, transparent);
     transition: color var(--duration-normal) ease;
 }
 
 .cinema-ticker-item:hover {
-    color: var(--color-accent);
+    color: var(--color-accent-text);
 }
 
 .cinema-ticker-year {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
-    opacity: 0.5;
+    color: var(--color-text-faint);
     margin-left: 10px;
 }
 
@@ -175,11 +174,14 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: 20px;
+    min-height: 0;
+    padding: var(--space-4);
     position: relative;
     z-index: 5;
     order: 2;
     overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
 }
 
 /* =========================================
@@ -195,6 +197,7 @@
     max-width: 1100px;
     width: 100%;
     cursor: default;
+    animation: cinemaPaperSettle var(--duration-normal) var(--ease-default) both;
 
     /* Paper card is mode-locked (cream with dark text) regardless of body
        data-mode. Lock the text triad — primary, secondary, inverse — so
@@ -203,7 +206,14 @@
     --color-text-primary: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
     --color-text-secondary: color-mix(in srgb, var(--owu-black) 55%, var(--owu-white));
     --color-text-inverse: var(--newsprint-50);
+    --color-focus-ring: var(--red-700);
     color: var(--color-text-primary);
+}
+
+@keyframes cinemaPaperSettle {
+    from {
+        transform: translateY(8px) scale(0.995);
+    }
 }
 
 /* Torn paper image — extends beyond card for natural torn edges */
@@ -215,7 +225,7 @@
     transform: translate(-50%, -50%) rotate(90deg);
     width: 65%;
     aspect-ratio: 635.8 / 969.49;
-    background: url('/shape/1.webp') center / 100% 100% no-repeat;
+    background: url('/shape/landing-paper.webp') center / 100% 100% no-repeat;
     pointer-events: none;
     z-index: 0;
     opacity: 0.95;
@@ -382,6 +392,7 @@
     text-decoration: none;
     white-space: nowrap;
     cursor: pointer;
+    min-height: 44px;
     transition: color var(--duration-normal) ease;
     position: relative;
 }
@@ -443,6 +454,7 @@
     justify-content: center;
     padding: 11px 26px;
     min-width: 180px;
+    min-height: 44px;
     background: color-mix(in srgb, var(--ink-800) 85%, transparent);
     color: color-mix(in srgb, var(--color-text-inverse) 82%, var(--ink-800));
     font-family: var(--font-header);
@@ -461,6 +473,13 @@
     transition:
         box-shadow var(--duration-normal) ease,
         transform var(--duration-normal) ease;
+}
+
+.cinema-btn:focus-visible,
+.cinema-btn-stamp:focus-visible,
+.cinema-ask-teaser:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
 }
 
 @media (hover: hover) {
@@ -507,17 +526,17 @@
    LIGHT MODE TUNING
    ========================================= */
 
-[data-mode='light'] .cinema-map {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cinema-map {
     filter: none;
 }
 
-[data-mode='light'] .cinema-vignette {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cinema-vignette {
     background: radial-gradient(ellipse at center,
             transparent 55%,
             color-mix(in srgb, var(--owu-charcoal) 15%, transparent) 100%);
 }
 
-[data-mode='light'] .cinema-overlay {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cinema-overlay {
     background:
         linear-gradient(to bottom,
             color-mix(in srgb, var(--owu-charcoal) 30%, transparent) 0%,
@@ -527,12 +546,12 @@
             color-mix(in srgb, var(--owu-charcoal) 30%, transparent) 100%);
 }
 
-[data-mode='light'] .cinema-paper {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cinema-paper {
     filter:
         drop-shadow(6px 10px 30px color-mix(in srgb, var(--owu-black) 12%, transparent)) drop-shadow(2px 4px 10px color-mix(in srgb, var(--owu-black) 8%, transparent));
 }
 
-[data-mode='light'] .cinema-paper::before {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cinema-paper::before {
     filter: drop-shadow(0 0 15px rgba(0, 0, 0, 0.45));
 }
 
@@ -541,7 +560,7 @@
    ========================================= */
 
 /* Tablet */
-@media (min-width: 769px) and (max-width: 1024px) {
+@media (min-width: 641px) and (max-width: 1024px) {
     .cinema-paper {
         max-width: 900px;
     }
@@ -563,7 +582,7 @@
 /* Mobile — single-column portrait. Drops the torn-paper decorative
    image in favor of a clean rectangular card: cream background, thin
    accent rule, subtle shadow. Keeps typography and palette intact. */
-@media (max-width: 768px) {
+@media (max-width: 640px) {
     .cinema-paper {
         max-width: 440px;
         padding: 32px 24px;
@@ -630,12 +649,32 @@
     }
 
     .cinema-ticker-item {
-        padding: 10px 25px;
-        font-size: 0.65rem;
+        padding: var(--space-2) var(--space-5);
+        font-size: var(--text-xs);
     }
 
     .cinema-btn {
         margin-top: var(--space-5);
+    }
+}
+
+@media (max-width: 640px) and (max-height: 720px) {
+    .cinema-paper {
+        padding: var(--space-5) var(--space-4);
+    }
+
+    .cinema-masthead {
+        margin-bottom: var(--space-5);
+        padding-bottom: var(--space-3);
+    }
+
+    .cinema-paper-grid {
+        gap: var(--space-3) 0;
+    }
+
+    .cinema-col-brand,
+    .cinema-col-action {
+        gap: var(--space-4);
     }
 }
 
@@ -649,7 +688,9 @@
    button below doesn't jump up when the day-of-year pick lands
    post-hydration. */
 .cinema-ask-teaser-slot {
-    min-height: 1.4rem;
+    /* Reserve the largest prompt geometry before the client chooses the
+       day-specific question, preventing the CTA and paper from shifting. */
+    min-height: 7rem;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -705,3 +746,26 @@
     transform: translateX(4px);
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .cinema-ticker,
+    .cinema-paper {
+        animation: none;
+        transform: none;
+    }
+
+    .cinema-ticker-track {
+        transform: none !important;
+        will-change: auto !important;
+    }
+
+    .cinema-ticker-item,
+    .cinema-btn,
+    .cinema-btn::before,
+    .cinema-btn::after,
+    .cinema-btn-arrow,
+    .cinema-btn-stamp,
+    .cinema-ask-teaser,
+    .cinema-ask-teaser-arrow {
+        transition: none;
+    }
+}

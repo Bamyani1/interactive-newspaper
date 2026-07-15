@@ -1,48 +1,37 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { pickSuggestions } from "../data/question-pool";
 
 interface AskLandingProps {
     /** Fire the given question against the live /api/ask flow. */
     onPickQuestion: (question: string) => void;
+    /** Keep suggestions visible but inert while a saved session restores. */
+    disabled?: boolean;
+    /** UTC date seed rendered by the route server component. */
+    suggestionDate?: string;
 }
 
 // Excluded from the daily suggestions so the pool doesn't collide with
 // any pinned example copy elsewhere on this surface.
 const EXCLUDED_FROM_ROTATION = "Tell me about Homecoming in the 1970s.";
 
-const VISITED_KEY = "owu-has-visited-ask";
-
-export const AskLanding: React.FC<AskLandingProps> = ({ onPickQuestion }) => {
-    // Entrance animation runs once per browser. Returning visitors get
-    // instant paint. Reading localStorage in a state initializer would
-    // cause SSR/CSR hydration mismatches, so the flag flips post-mount.
-    const [animate, setAnimate] = useState(false);
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        try {
-            if (!window.localStorage.getItem(VISITED_KEY)) {
-                // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot post-hydration gate
-                setAnimate(true);
-                window.localStorage.setItem(VISITED_KEY, "1");
-            }
-        } catch {
-            // localStorage disabled (Safari private mode, etc.) —
-            // just skip the animation gate.
-        }
-    }, []);
-
+export const AskLanding: React.FC<AskLandingProps> = ({
+    onPickQuestion,
+    disabled = false,
+    suggestionDate = "2000-01-01",
+}) => {
     const suggestions = useMemo(
-        () => pickSuggestions(new Date(), EXCLUDED_FROM_ROTATION),
-        [],
+        () =>
+            pickSuggestions(
+                new Date(`${suggestionDate}T12:00:00.000Z`),
+                EXCLUDED_FROM_ROTATION,
+            ),
+        [suggestionDate],
     );
 
     return (
-        <div
-            className="ask-landing"
-            data-animate={animate ? "true" : undefined}
-        >
+        <div className="ask-landing">
             <h1 className="ask-landing-title">
                 Ask the <em>archive</em>.
             </h1>
@@ -67,6 +56,7 @@ export const AskLanding: React.FC<AskLandingProps> = ({ onPickQuestion }) => {
                                 type="button"
                                 className="ask-landing-suggestion"
                                 onClick={() => onPickQuestion(q)}
+                                disabled={disabled}
                             >
                                 <span
                                     className="ask-landing-suggestion-arrow"

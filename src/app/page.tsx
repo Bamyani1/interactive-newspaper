@@ -1,31 +1,18 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { useArchive } from "@/features/archive";
 import { PageShell, CathedralBackground, Ticker, useTickerAnimation, EditionPicker } from "@/shared";
 import { headlines } from "@/shared/landing/data/headlines";
-import { landingCardVariants, TRANSITIONS } from "@/shared/motion/motionTokens";
+import { markExplicitEditionNavigation } from "@/shared/navigation/editionNavigation";
 import { LandingAskTeaser } from "@/features/ask-archive/components/LandingAskTeaser";
 
-// The stained-glass SVG has its own inline reveal script: panels appear
-// progressively with data-delay values up to ~2955ms plus an 800ms reveal
-// duration per panel. By ~2.5s most panels are visible, so the card waits
-// this long on first visit before gliding in. Return visits are instant
-// via the cinema-instant class.
-const BACKGROUND_REVEAL_DELAY = 2.5;
-const CARD_REVEAL_DURATION = 1.0;
-
-let hasPlayedEntrance = false;
-
 export default function Home() {
-    const router = useRouter();
     const { editions } = useArchive();
-    const [isExiting, setIsExiting] = useState(false);
 
-    // Use the extracted animation hook
+    // Progressive enhancement: the rails are static and readable without
+    // JavaScript, then gain ambient movement when motion is permitted.
     useTickerAnimation();
 
     // Default to latest edition (last in sorted list); user can override via picker
@@ -33,49 +20,27 @@ export default function Home() {
     const [isPickerOpen, setIsPickerOpen] = useState(false);
     const selectedEdition = userSelectedEdition ?? (editions.length > 0 ? editions[editions.length - 1] : null);
 
-    const handleEnter = () => {
-        if (!selectedEdition) return;
-        setIsExiting(true);
-    };
-
-    // Memoize ticker items to prevent recreation on every render
-    const tickerItems = useMemo(
-        () => [...headlines, ...headlines, ...headlines],
-        []
-    );
-
     return (
         <>
-            {/* Preload the torn-paper asset so it streams in during the
-                background's fade-in and is already cached by the time the
-                card reveals. Invisible to the user. */}
-            <link rel="preload" href="/shape/1.webp" as="image" type="image/webp" />
+            <link
+                rel="preload"
+                href="/shape/landing-paper.webp"
+                as="image"
+                type="image/webp"
+                media="(min-width: 641px)"
+            />
             <PageShell
                 variant="cinema"
+                forcedMode="dark"
                 backgroundContent={<CathedralBackground />}
-                className={hasPlayedEntrance ? "cinema-instant" : ""}
+                className="cinema-landing-shell"
             >
             {/* TOP TICKER */}
-            <Ticker items={tickerItems} />
+            <Ticker items={headlines} />
 
             {/* MAIN CONTENT */}
-            <main className="cinema-content">
-                <motion.div
-                    className="cinema-paper"
-                    variants={landingCardVariants}
-                    initial={hasPlayedEntrance ? false : "hidden"}
-                    animate="show"
-                    transition={
-                        hasPlayedEntrance
-                            ? TRANSITIONS.slow
-                            : { ...TRANSITIONS.slow, duration: CARD_REVEAL_DURATION, delay: BACKGROUND_REVEAL_DELAY }
-                    }
-                    onAnimationComplete={(definition) => {
-                        if (definition === "show") {
-                            hasPlayedEntrance = true;
-                        }
-                    }}
-                >
+            <main id="main-content" tabIndex={-1} className="cinema-content">
+                <div className="cinema-paper">
                     <header className="cinema-masthead">
                         <h1 className="cinema-title">The Transcript Archive</h1>
                         <p className="cinema-subtitle">Travel Back in Time. Experience Campus History.</p>
@@ -107,36 +72,28 @@ export default function Home() {
                                 onOpenChange={setIsPickerOpen}
                             />
                             {!isPickerOpen && (
-                                <button
-                                    type="button"
-                                    className="cinema-btn"
-                                    onClick={handleEnter}
-                                    disabled={!selectedEdition}
-                                >
-                                    <span>{selectedEdition ? "Open this issue" : "No Editions Available"}</span>
-                                    <span className="cinema-btn-arrow" aria-hidden="true">→</span>
-                                </button>
+                                selectedEdition ? (
+                                    <Link
+                                        href={`/edition/${selectedEdition}`}
+                                        className="cinema-btn"
+                                        onClick={() => markExplicitEditionNavigation(selectedEdition)}
+                                    >
+                                        <span>Open this issue</span>
+                                        <span className="cinema-btn-arrow" aria-hidden="true">→</span>
+                                    </Link>
+                                ) : (
+                                    <button type="button" className="cinema-btn" disabled>
+                                        <span>No Editions Available</span>
+                                    </button>
+                                )
                             )}
                         </div>
                     </div>
-                </motion.div>
+                </div>
             </main>
 
             {/* BOTTOM TICKER */}
-            <Ticker items={tickerItems} reverse />
-
-            {/* Paper wash-out transition (Direction A paper tone) */}
-            <motion.div
-                className="fixed inset-0 z-50 pointer-events-none bg-[var(--color-bg-paper)]"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: isExiting ? 1 : 0 }}
-                transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
-                onAnimationComplete={() => {
-                    if (isExiting && selectedEdition) {
-                        router.push(`/edition/${selectedEdition}`);
-                    }
-                }}
-            />
+            <Ticker items={headlines} reverse />
             </PageShell>
         </>
     );

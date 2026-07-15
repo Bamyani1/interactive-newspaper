@@ -26,7 +26,7 @@ export default function SearchPage() {
   return (
     <PageShell variant="default" hasHeader>
       <TimeControls />
-      <main className="w-full flex-1">
+      <main id="main-content" tabIndex={-1} className="w-full flex-1">
         <div className="max-w-3xl mx-auto px-6 py-10">
           <p className="text-xs uppercase tracking-widest text-[var(--color-text-secondary)] mb-3">
             Search

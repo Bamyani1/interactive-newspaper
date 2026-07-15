@@ -1,0 +1,33 @@
+/* Both actions stay in the DOM so server and client markup are identical. */
+.theme-mode-toggle__light-action {
+    display: none;
+}
+
+.theme-mode-toggle__dark-action {
+    display: inline-flex;
+}
+
+[data-mode="dark"] .theme-mode-toggle__light-action {
+    display: inline-flex;
+}
+
+[data-mode="dark"] .theme-mode-toggle__dark-action {
+    display: none;
+}
+
+/* A page-scoped mode is the nearest owner when PageShell forces a mode. */
+[data-page-shell][data-mode="light"] .theme-mode-toggle__light-action {
+    display: none;
+}
+
+[data-page-shell][data-mode="light"] .theme-mode-toggle__dark-action {
+    display: inline-flex;
+}
+
+[data-page-shell][data-mode="dark"] .theme-mode-toggle__light-action {
+    display: inline-flex;
+}
+
+[data-page-shell][data-mode="dark"] .theme-mode-toggle__dark-action {
+    display: none;
+}

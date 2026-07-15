@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { EditionPicker } from "../../src/components/landing/EditionPicker";
 
 const EDITIONS = ["1986-09-12", "1987-04-08", "1988-10-12"];
@@ -80,5 +80,68 @@ describe("EditionPicker", () => {
         fireEvent.click(screen.getByText("Pick Edition"));
         fireEvent.click(screen.getByText(/Sep 12, 1986/));
         expect(onSelect).toHaveBeenCalledWith("1986-09-12");
+    });
+
+    it("implements arrow/Home/End navigation for tabs and listbox options", async () => {
+        render(
+            <EditionPicker
+                editions={["1978-02-03", ...EDITIONS]}
+                selectedEdition="1978-02-03"
+                onSelect={vi.fn()}
+            />,
+        );
+        const trigger = screen.getByRole("button", {
+            name: /selected edition/i,
+        });
+        fireEvent.click(trigger);
+
+        const seventies = screen.getByRole("tab", { name: "1970s" });
+        await waitFor(() => expect(seventies).toHaveFocus());
+        fireEvent.keyDown(seventies, { key: "ArrowRight" });
+
+        const eighties = screen.getByRole("tab", { name: "1980s" });
+        expect(eighties).toHaveFocus();
+        expect(eighties).toHaveAttribute("aria-selected", "true");
+
+        const panel = screen.getByRole("tabpanel", { name: "1980s" });
+        expect(eighties).toHaveAttribute("aria-controls", panel.id);
+        expect(panel).toHaveAttribute("aria-labelledby", eighties.id);
+        expect(
+            document.getElementById(
+                screen.getByRole("tab", { name: "1970s" }).getAttribute("aria-controls")!,
+            ),
+        ).toHaveAttribute("hidden");
+
+        const listbox = screen.getByRole("listbox", {
+            name: "Editions from the 1980s",
+        });
+        const options = screen.getAllByRole("option");
+        act(() => options[0].focus());
+        fireEvent.keyDown(options[0], { key: "End" });
+        expect(options[options.length - 1]).toHaveFocus();
+        fireEvent.keyDown(options[options.length - 1], { key: "Home" });
+        expect(options[0]).toHaveFocus();
+        expect(listbox).toContainElement(options[0]);
+    });
+
+    it("returns focus to the closed trigger after Escape", async () => {
+        render(
+            <EditionPicker
+                editions={EDITIONS}
+                selectedEdition={EDITIONS[0]}
+                onSelect={vi.fn()}
+            />,
+        );
+        fireEvent.click(
+            screen.getByRole("button", { name: /selected edition/i }),
+        );
+        fireEvent.keyDown(screen.getByRole("tab", { name: "1980s" }), {
+            key: "Escape",
+        });
+
+        const trigger = await screen.findByRole("button", {
+            name: /selected edition/i,
+        });
+        await waitFor(() => expect(trigger).toHaveFocus());
     });
 });

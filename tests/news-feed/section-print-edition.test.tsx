@@ -32,14 +32,11 @@ function makeArticle(overrides: Partial<Article> = {}): Article {
   };
 }
 
-const onViewOriginal = vi.fn();
-
 describe("SectionPrintEdition", () => {
   it("renders lead article with H1 headline", () => {
     render(
       <SectionPrintEdition
         articles={[makeArticle()]}
-        onViewOriginal={onViewOriginal}
       />
     );
 
@@ -55,7 +52,6 @@ describe("SectionPrintEdition", () => {
           makeArticle({ id: "a2", headline: "Second Story" }),
           makeArticle({ id: "a3", headline: "Third Story" }),
         ]}
-        onViewOriginal={onViewOriginal}
       />
     );
 
@@ -71,7 +67,6 @@ describe("SectionPrintEdition", () => {
     const { container } = render(
       <SectionPrintEdition
         articles={[makeArticle()]}
-        onViewOriginal={onViewOriginal}
       />
     );
 
@@ -87,7 +82,6 @@ describe("SectionPrintEdition", () => {
     render(
       <SectionPrintEdition
         articles={[makeArticle()]}
-        onViewOriginal={onViewOriginal}
       />
     );
 
@@ -96,7 +90,7 @@ describe("SectionPrintEdition", () => {
 
   it("returns null for empty articles array", () => {
     const { container } = render(
-      <SectionPrintEdition articles={[]} onViewOriginal={onViewOriginal} />
+      <SectionPrintEdition articles={[]} />
     );
 
     expect(container.innerHTML).toBe("");
@@ -106,7 +100,6 @@ describe("SectionPrintEdition", () => {
     render(
       <SectionPrintEdition
         articles={[makeArticle({ headline: "Solo Article" })]}
-        onViewOriginal={onViewOriginal}
       />
     );
 
@@ -121,7 +114,6 @@ describe("SectionPrintEdition", () => {
           makeArticle({ id: "a1", category: "Sports" }),
           makeArticle({ id: "a2", category: "Sports" }),
         ]}
-        onViewOriginal={onViewOriginal}
       />
     );
 
@@ -133,7 +125,6 @@ describe("SectionPrintEdition", () => {
     render(
       <SectionPrintEdition
         articles={[makeArticle({ byline: "Jane Reporter" })]}
-        onViewOriginal={onViewOriginal}
       />
     );
 
@@ -144,7 +135,6 @@ describe("SectionPrintEdition", () => {
     render(
       <SectionPrintEdition
         articles={[makeArticle({ byline: null })]}
-        onViewOriginal={onViewOriginal}
       />
     );
 
@@ -160,7 +150,6 @@ describe("SectionPrintEdition", () => {
             imageCaption: "A campus photo",
           }),
         ]}
-        onViewOriginal={onViewOriginal}
       />
     );
 
@@ -177,7 +166,6 @@ describe("SectionPrintEdition", () => {
             imageUrls: ["/editions/1987-10-14/images/photo.jpg"],
           }),
         ]}
-        onViewOriginal={onViewOriginal}
       />
     );
 
@@ -195,7 +183,6 @@ describe("SectionPrintEdition", () => {
     render(
       <SectionPrintEdition
         articles={[makeArticle({ fullText: "", summary: "Summary fallback text." })]}
-        onViewOriginal={onViewOriginal}
       />
     );
 

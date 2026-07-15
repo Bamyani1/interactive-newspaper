@@ -3,16 +3,16 @@ import {
   Playfair_Display,
   Source_Serif_4,
   JetBrains_Mono,
-  Inter,
 } from "next/font/google";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { ArchiveProvider } from "@/features/archive";
-import { ThemeModeManager } from "@/features/theme";
+import { ThemePrepaintScript } from "@/features/theme/components/ThemePrepaintScript";
 import { MotionProvider } from "@/shared/motion/MotionProvider";
-import { PageTransition } from "@/shared/motion/PageTransition";
 import { ErrorBoundary } from "@/shared";
 import { getEditionsList } from "@/src/lib/editions-server";
+
+const isVercelDeployment = process.env.VERCEL === "1";
 
 const playfairDisplay = Playfair_Display({
   variable: "--font-playfair-display",
@@ -35,14 +35,6 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains",
   subsets: ["latin"],
   display: "swap",
-  weight: ["400", "500"],
-});
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  display: "swap",
-  adjustFontFallback: true,
   weight: ["400", "500", "600"],
 });
 
@@ -56,23 +48,29 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const initialEditions = await getEditionsList();
+  const editionDates = (await getEditionsList())
+    .map((edition) => edition.date)
+    .sort((a, b) => a.localeCompare(b));
 
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <ThemePrepaintScript />
+      </head>
       <body
-        data-mode="light"
-        className={`${playfairDisplay.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} ${inter.variable} antialiased`}
+        className={`${playfairDisplay.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} antialiased`}
       >
-        <ThemeModeManager />
+        <a className="skip-link" href="#main-content">
+          Skip to main content
+        </a>
         <MotionProvider>
-          <ArchiveProvider initialEditions={initialEditions}>
+          <ArchiveProvider initialEditions={editionDates}>
             <ErrorBoundary>
-              <PageTransition>{children}</PageTransition>
+              {children}
             </ErrorBoundary>
           </ArchiveProvider>
         </MotionProvider>
-        <Analytics />
+        {isVercelDeployment ? <Analytics /> : null}
       </body>
     </html>
   );

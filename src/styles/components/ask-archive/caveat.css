@@ -25,7 +25,7 @@
 
 .ask-caveat-label {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: var(--tracking-label-md);
 }
@@ -36,5 +36,4 @@
   line-height: var(--leading-normal);
   color: var(--color-text-primary);
   margin: 0;
-  opacity: 0.9;
 }

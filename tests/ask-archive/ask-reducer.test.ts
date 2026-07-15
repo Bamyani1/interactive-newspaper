@@ -62,6 +62,33 @@ describe("askReducer", () => {
         expect(next.expiredBanner).toBe(true);
     });
 
+    it("finishes hydration without overwriting newer local interaction", () => {
+        const currentTurn = makeTurn({ id: "current", question: "New question" });
+        const state: AskState = {
+            ...INITIAL_STATE,
+            turns: [currentTurn],
+            threads: [
+                {
+                    id: "current-session",
+                    firstQuestion: "New question",
+                    turnCount: 1,
+                    lastUpdatedAt: 20,
+                },
+            ],
+            activeThreadId: "current-session",
+        };
+        const next = askReducer(state, {
+            type: "HYDRATE",
+            turns: [makeTurn({ id: "stale", question: "Old question" })],
+            expired: true,
+            threads: [],
+            activeThreadId: "stale-session",
+            preserveCurrentState: true,
+        });
+
+        expect(next).toEqual({ ...state, isHydrating: false });
+    });
+
     it("APPEND_USER adds a new streaming turn", () => {
         const next = askReducer(INITIAL_STATE, {
             type: "APPEND_USER",

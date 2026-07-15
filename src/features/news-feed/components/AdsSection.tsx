@@ -110,7 +110,7 @@ const TinyLiner: React.FC<TemplateProps> = ({ ad }) => (
             <span className="font-semibold uppercase font-header tracking-wide">
                 {ad.title}
             </span>
-            <span className="text-[var(--color-accent)] mx-1">&mdash;</span>
+            <span className="text-[var(--color-accent-text)] mx-1">&mdash;</span>
             <span className="whitespace-pre-line">{adText(ad)}</span>
             {ad.phone && (
                 <span className="text-[var(--color-text-secondary)]"> {ad.phone}</span>
@@ -151,14 +151,14 @@ const MiniDisplay: React.FC<TemplateProps> = ({ ad }) => (
 /** 4. RetailCoupon — Dashed border, "Clip & Save" ribbon */
 const RetailCoupon: React.FC<TemplateProps> = ({ ad }) => (
     <div className="border border-dashed border-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]/60 p-5 relative overflow-hidden flex flex-col gap-2">
-        <span className="absolute -top-1 -left-6 bg-[var(--color-accent)] text-[var(--color-text-inverse)] text-xs font-bold uppercase tracking-wider px-8 py-0.5 rotate-[-35deg] origin-center">
+        <span className="absolute -top-1 -left-6 bg-[var(--color-accent)] text-[var(--color-text-on-accent)] text-xs font-bold uppercase tracking-wider px-8 py-0.5 rotate-[-35deg] origin-center">
             Clip & Save
         </span>
         <h4 className="font-header text-lg font-bold uppercase text-center text-[var(--color-text-primary)] mt-2">
             {ad.title}
         </h4>
         {ad.price && (
-            <p className="font-header text-base font-bold text-center text-[var(--color-accent)]">
+            <p className="font-header text-base font-bold text-center text-[var(--color-accent-text)]">
                 {ad.price}
             </p>
         )}
@@ -207,7 +207,7 @@ const Bulletin: React.FC<TemplateProps> = ({ ad }) => (
 /** 7. Marquee — Star borders */
 const Marquee: React.FC<TemplateProps> = ({ ad }) => (
     <div className="border border-[var(--color-text-primary)]/25 border-t-2 border-t-[var(--stroke-accent-soft)] border-b-2 border-b-[var(--stroke-accent-soft)] bg-[var(--color-bg-secondary)]/60 p-4 flex flex-col text-center gap-2">
-        <p className="font-header text-xs tracking-label-md text-[var(--color-accent)] opacity-50 select-none" aria-hidden="true">
+        <p className="font-header text-xs tracking-label-md text-[var(--color-accent-text)] opacity-50 select-none" aria-hidden="true">
             &#9733; &#9733; &#9733; &#9733; &#9733;
         </p>
         <h4 className="font-header text-xl font-bold uppercase tracking-wider text-[var(--color-text-primary)]">
@@ -222,7 +222,7 @@ const Marquee: React.FC<TemplateProps> = ({ ad }) => (
             {adText(ad)}
         </p>
         <AdContactFooter ad={ad} />
-        <p className="font-header text-xs tracking-label-md text-[var(--color-accent)] opacity-50 select-none" aria-hidden="true">
+        <p className="font-header text-xs tracking-label-md text-[var(--color-accent-text)] opacity-50 select-none" aria-hidden="true">
             &#9733; &#9733; &#9733; &#9733; &#9733;
         </p>
     </div>
@@ -237,13 +237,13 @@ const Broadsheet: React.FC<TemplateProps> = ({ ad }) => {
     const restText = text.slice(1);
 
     return (
-        <div className="border-t-2 border-t-[var(--color-accent)] bg-[var(--color-bg-secondary)]/60 p-5 flex flex-col gap-2">
+        <div className="border-t-2 border-t-[var(--color-rule-accent)] bg-[var(--color-bg-secondary)]/60 p-5 flex flex-col gap-2">
             {ad.category && <CategoryBadge category={ad.category} />}
             <h4 className="font-header text-2xl font-bold uppercase text-center text-[var(--color-text-primary)] pb-2 border-b border-[var(--color-text-primary)]/30">
                 {ad.title}
             </h4>
             <div className="font-body text-sm leading-relaxed text-justify text-[var(--color-text-primary)] whitespace-pre-line">
-                <span className="float-left text-3xl font-bold leading-none mr-1 font-header text-[var(--color-accent)]">
+                <span className="float-left text-3xl font-bold leading-none mr-1 font-header text-[var(--color-accent-text)]">
                     {firstChar}
                 </span>
                 {restText}
@@ -256,7 +256,7 @@ const Broadsheet: React.FC<TemplateProps> = ({ ad }) => {
 /** 9. EditorialStyle — "— Advertisement —" header */
 const EditorialStyle: React.FC<TemplateProps> = ({ ad }) => (
     <div className="border border-[var(--color-text-secondary)]/40 border-b-2 border-b-[var(--stroke-accent-soft)] bg-[var(--color-bg-secondary)]/60 p-5 flex flex-col gap-2">
-        <p className="font-header text-xs uppercase tracking-label-md text-center text-[var(--color-accent)] opacity-60">
+        <p className="font-header text-xs uppercase tracking-label-md text-center text-[var(--color-accent-text)]">
             &mdash; Advertisement &mdash;
         </p>
         <h4 className="font-header text-2xl text-center text-[var(--color-text-primary)] leading-tight">
@@ -278,16 +278,16 @@ const EditorialStyle: React.FC<TemplateProps> = ({ ad }) => (
 /** 10. Showcase — Box-drawing corner ornaments */
 const Showcase: React.FC<TemplateProps> = ({ ad }) => (
     <div className="border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]/60 p-6 flex flex-col text-center gap-2 relative">
-        <span className="absolute top-1 left-2 font-mono text-2xl leading-none text-[var(--color-accent)] opacity-40 select-none" aria-hidden="true">&#9556;</span>
-        <span className="absolute top-1 right-2 font-mono text-2xl leading-none text-[var(--color-accent)] opacity-40 select-none" aria-hidden="true">&#9559;</span>
-        <span className="absolute bottom-1 left-2 font-mono text-2xl leading-none text-[var(--color-accent)] opacity-40 select-none" aria-hidden="true">&#9562;</span>
-        <span className="absolute bottom-1 right-2 font-mono text-2xl leading-none text-[var(--color-accent)] opacity-40 select-none" aria-hidden="true">&#9565;</span>
+        <span className="absolute top-1 left-2 font-mono text-2xl leading-none text-[var(--color-rule-accent)] opacity-40 select-none" aria-hidden="true">&#9556;</span>
+        <span className="absolute top-1 right-2 font-mono text-2xl leading-none text-[var(--color-rule-accent)] opacity-40 select-none" aria-hidden="true">&#9559;</span>
+        <span className="absolute bottom-1 left-2 font-mono text-2xl leading-none text-[var(--color-rule-accent)] opacity-40 select-none" aria-hidden="true">&#9562;</span>
+        <span className="absolute bottom-1 right-2 font-mono text-2xl leading-none text-[var(--color-rule-accent)] opacity-40 select-none" aria-hidden="true">&#9565;</span>
 
         {ad.category && <CategoryBadge category={ad.category} />}
         <h4 className="font-header text-2xl font-bold uppercase tracking-wider text-[var(--color-text-primary)] mt-2">
             {ad.title}
         </h4>
-        <p className="font-mono text-xs text-[var(--color-accent)] opacity-30 select-none" aria-hidden="true">
+        <p className="font-mono text-xs text-[var(--color-rule-accent)] opacity-30 select-none" aria-hidden="true">
             &#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;&#9552;
         </p>
         <p className="font-typewriter text-sm leading-relaxed text-[var(--color-text-primary)] whitespace-pre-line">

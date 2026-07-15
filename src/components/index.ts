@@ -11,7 +11,6 @@ export { ErrorBoundary } from "./ErrorBoundary";
 export { SkeletonFeed } from "./ui/Skeleton";
 
 // Landing components
-export { CinemaBackground } from "./landing/CinemaBackground";
 export { CathedralBackground } from "./landing/CathedralBackground";
 export { EditionPicker } from "./landing/EditionPicker";
 export { Ticker, useTickerAnimation } from "./landing/Ticker";

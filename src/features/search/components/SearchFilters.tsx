@@ -13,19 +13,6 @@ interface SearchFiltersProps {
   onEndDateChange: (date: string) => void;
 }
 
-const selectStyle: React.CSSProperties = {
-  backgroundColor: "var(--color-bg-secondary)",
-  color: "var(--color-text-primary)",
-  border: "1px solid var(--color-border-default)",
-  borderRadius: "4px",
-  fontFamily: "var(--font-body)",
-};
-
-const inputStyle: React.CSSProperties = {
-  ...selectStyle,
-  colorScheme: "dark",
-};
-
 export const SearchFilters: React.FC<SearchFiltersProps> = ({
   category,
   onCategoryChange,
@@ -35,38 +22,52 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
   onEndDateChange,
 }) => {
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <select
-        value={category}
-        onChange={(e) => onCategoryChange(e.target.value)}
-        className="px-3 py-2 text-base"
-        style={selectStyle}
-      >
-        <option value="">All Categories</option>
-        {CATEGORIES.map((cat) => (
-          <option key={cat} value={cat}>
-            {cat}
-          </option>
-        ))}
-      </select>
+    <fieldset className="flex flex-wrap items-center gap-3">
+      <legend className="sr-only">Filter archive search results</legend>
+      <div>
+        <label htmlFor="search-category" className="sr-only">
+          Category
+        </label>
+        <select
+          id="search-category"
+          value={category}
+          onChange={(e) => onCategoryChange(e.target.value)}
+          className="search-filter-control"
+        >
+          <option value="">All Categories</option>
+          {CATEGORIES.map((cat) => (
+            <option key={cat} value={cat}>
+              {cat}
+            </option>
+          ))}
+        </select>
+      </div>
 
-      <input
-        type="date"
-        value={startDate}
-        onChange={(e) => onStartDateChange(e.target.value)}
-        placeholder="From date"
-        className="px-3 py-2 text-base"
-        style={inputStyle}
-      />
+      <div>
+        <label htmlFor="search-start-date" className="sr-only">
+          From date
+        </label>
+        <input
+          id="search-start-date"
+          type="date"
+          value={startDate}
+          onChange={(e) => onStartDateChange(e.target.value)}
+          className="search-filter-control"
+        />
+      </div>
 
-      <input
-        type="date"
-        value={endDate}
-        onChange={(e) => onEndDateChange(e.target.value)}
-        placeholder="To date"
-        className="px-3 py-2 text-base"
-        style={inputStyle}
-      />
-    </div>
+      <div>
+        <label htmlFor="search-end-date" className="sr-only">
+          To date
+        </label>
+        <input
+          id="search-end-date"
+          type="date"
+          value={endDate}
+          onChange={(e) => onEndDateChange(e.target.value)}
+          className="search-filter-control"
+        />
+      </div>
+    </fieldset>
   );
 };

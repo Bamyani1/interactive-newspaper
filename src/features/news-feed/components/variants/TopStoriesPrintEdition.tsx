@@ -20,16 +20,6 @@ import {
 export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
   heroArticle,
   featuredArticles,
-  expandedId: _expandedId,
-  focusedIndex: _focusedIndex,
-  topArticles: _topArticles,
-  onHeroReadMore: _onHeroReadMore,
-  onFeaturedClick: _onFeaturedClick,
-  onExpandedToggle: _onExpandedToggle,
-  onViewOriginal: _onViewOriginal,
-  topExpandedArticle: _topExpandedArticle,
-  currentSection: _currentSection,
-  topExpandedRef: _topExpandedRef,
 }) => {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const closeLightbox = useCallback(() => setLightboxSrc(null), []);
@@ -65,6 +55,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                     caption: heroArticle.imageCaptions?.[i + 1],
                   }))}
                   alt={heroArticle.headline}
+                  startIndex={2}
                   onClick={(src) => setLightboxSrc(src)}
                 />
               )}
@@ -170,6 +161,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                             caption: article.imageCaptions?.[i + 1],
                           }))}
                           alt={article.headline}
+                          startIndex={2}
                           onClick={(src) => setLightboxSrc(src)}
                         />
                       )}

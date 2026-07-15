@@ -17,12 +17,10 @@ import {
 
 interface SectionPrintEditionProps {
   articles: Article[];
-  onViewOriginal: (article: Article) => void;
 }
 
 export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
   articles,
-  onViewOriginal: _onViewOriginal,
 }) => {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const closeLightbox = useCallback(() => setLightboxSrc(null), []);
@@ -59,6 +57,7 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
                   caption: heroArticle.imageCaptions?.[i + 1],
                 }))}
                 alt={heroArticle.headline}
+                startIndex={2}
                 onClick={(src) => setLightboxSrc(src)}
               />
             )}
@@ -163,6 +162,7 @@ export const SectionPrintEdition: React.FC<SectionPrintEditionProps> = ({
                             caption: article.imageCaptions?.[i + 1],
                           }))}
                           alt={article.headline}
+                          startIndex={2}
                           onClick={(src) => setLightboxSrc(src)}
                         />
                       )}
