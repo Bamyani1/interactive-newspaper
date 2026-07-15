@@ -249,8 +249,8 @@ describe("useAskArchive", () => {
                             createdAt: 1,
                         },
                     ],
-                    createdAt: 1,
-                    lastUpdatedAt: 1,
+                    createdAt: Date.now() - 60_000,
+                    lastUpdatedAt: Date.now() - 60_000,
                 },
                 {
                     sessionId: expiredSession,
@@ -295,6 +295,127 @@ describe("useAskArchive", () => {
         expect(result.current.threads.map((t) => t.id)).toEqual([keepSession]);
         expect(result.current.activeThreadId).not.toBe(expiredSession);
         expect(result.current.activeThreadId).not.toBe(keepSession);
+    });
+
+    it("prunes archived threads older than the 7-day retention window on load", async () => {
+        const DAY = 24 * 60 * 60 * 1000;
+        window.localStorage.setItem("owu-ask-session-id", "current-session");
+        window.localStorage.setItem(
+            "owu-ask-threads",
+            JSON.stringify([
+                {
+                    sessionId: "stale-85d",
+                    firstQuestion: "Tell me about campus protests in 1968.",
+                    turns: [
+                        {
+                            id: "s1",
+                            question: "Tell me about campus protests in 1968.",
+                            answer: "old",
+                            status: "done",
+                            sourceArticles: [],
+                            citations: [],
+                            meta: null,
+                            confidence: "medium",
+                            requestId: "",
+                            mode: "text",
+                            createdAt: Date.now() - 85 * DAY,
+                        },
+                    ],
+                    createdAt: Date.now() - 85 * DAY,
+                    lastUpdatedAt: Date.now() - 85 * DAY,
+                },
+                {
+                    sessionId: "fresh-2h",
+                    firstQuestion: "Tell me about the 1969 moon landing.",
+                    turns: [
+                        {
+                            id: "f1",
+                            question: "Tell me about the 1969 moon landing.",
+                            answer: "recent",
+                            status: "done",
+                            sourceArticles: [],
+                            citations: [],
+                            meta: null,
+                            confidence: "medium",
+                            requestId: "",
+                            mode: "text",
+                            createdAt: Date.now() - 2 * 60 * 60 * 1000,
+                        },
+                    ],
+                    createdAt: Date.now() - 2 * 60 * 60 * 1000,
+                    lastUpdatedAt: Date.now() - 2 * 60 * 60 * 1000,
+                },
+            ]),
+        );
+
+        const { result } = renderHook(() => useAskArchive());
+        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+        // Only the recent thread survives in the sidebar…
+        expect(result.current.threads.map((t) => t.id)).toEqual(["fresh-2h"]);
+        // …and the stale one is physically gone from localStorage.
+        const stored = JSON.parse(
+            window.localStorage.getItem("owu-ask-threads") ?? "[]",
+        ) as Array<{ sessionId: string }>;
+        expect(stored.map((t) => t.sessionId)).toEqual(["fresh-2h"]);
+    });
+
+    it("keeps threads just under the retention window and drops those just over", async () => {
+        const DAY = 24 * 60 * 60 * 1000;
+        const HOUR = 60 * 60 * 1000;
+        window.localStorage.setItem("owu-ask-session-id", "current-session-2");
+        window.localStorage.setItem(
+            "owu-ask-threads",
+            JSON.stringify([
+                {
+                    sessionId: "under-7d",
+                    firstQuestion: "Just inside the window",
+                    turns: [
+                        {
+                            id: "u1",
+                            question: "Just inside the window",
+                            answer: "kept",
+                            status: "done",
+                            sourceArticles: [],
+                            citations: [],
+                            meta: null,
+                            confidence: "medium",
+                            requestId: "",
+                            mode: "text",
+                            createdAt: Date.now() - (7 * DAY - HOUR),
+                        },
+                    ],
+                    createdAt: Date.now() - (7 * DAY - HOUR),
+                    lastUpdatedAt: Date.now() - (7 * DAY - HOUR),
+                },
+                {
+                    sessionId: "over-7d",
+                    firstQuestion: "Just outside the window",
+                    turns: [
+                        {
+                            id: "o1",
+                            question: "Just outside the window",
+                            answer: "dropped",
+                            status: "done",
+                            sourceArticles: [],
+                            citations: [],
+                            meta: null,
+                            confidence: "medium",
+                            requestId: "",
+                            mode: "text",
+                            createdAt: Date.now() - (7 * DAY + HOUR),
+                        },
+                    ],
+                    createdAt: Date.now() - (7 * DAY + HOUR),
+                    lastUpdatedAt: Date.now() - (7 * DAY + HOUR),
+                },
+            ]),
+        );
+
+        const { result } = renderHook(() => useAskArchive());
+        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+        expect(result.current.threads.map((t) => t.id)).toEqual(["under-7d"]);
     });
 
     it("submit appends a user turn immediately and completes it via the non-streaming fallback", async () => {

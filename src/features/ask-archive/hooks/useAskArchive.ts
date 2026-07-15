@@ -20,6 +20,11 @@ const SESSION_STORAGE_KEY = "owu-ask-session-id";
 // intentional — we want threads to outlive the 30-min server TTL.
 const THREADS_STORAGE_KEY = "owu-ask-threads";
 
+// Threads not touched within this window drop off the sidebar on load — a
+// browsable local history that doesn't grow without bound. Measured from
+// each thread's lastUpdatedAt (bumped on every turn), not its creation.
+const THREAD_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 interface StoredThread {
     sessionId: string;
     firstQuestion: string;
@@ -34,7 +39,17 @@ function readArchive(): StoredThread[] {
         const raw = window.localStorage.getItem(THREADS_STORAGE_KEY);
         if (!raw) return [];
         const parsed = JSON.parse(raw) as StoredThread[];
-        return Array.isArray(parsed) ? parsed : [];
+        if (!Array.isArray(parsed)) return [];
+        // Lazy expiry: drop threads past the retention window and persist the
+        // pruned list back so stale entries clear from storage, not just view.
+        const cutoff = Date.now() - THREAD_RETENTION_MS;
+        const fresh = parsed.filter(
+            (t) =>
+                typeof t.lastUpdatedAt === "number" &&
+                t.lastUpdatedAt >= cutoff,
+        );
+        if (fresh.length !== parsed.length) writeArchive(fresh);
+        return fresh;
     } catch {
         return [];
     }
