@@ -25,6 +25,10 @@ interface PageShellProps {
    * Additional class names
    */
   className?: string;
+  /**
+   * Scope a color mode to this page without changing the saved site preference.
+   */
+  forcedMode?: "light" | "dark";
 }
 
 /**
@@ -55,6 +59,7 @@ export const PageShell: React.FC<PageShellProps> = ({
   hasHeader = false,
   backgroundContent,
   className = "",
+  forcedMode,
 }) => {
   const shellClasses = [
     styles.pageShell,
@@ -68,7 +73,7 @@ export const PageShell: React.FC<PageShellProps> = ({
   // For variants with background layers
   if (backgroundContent) {
     return (
-      <div className={shellClasses}>
+      <div className={shellClasses} data-page-shell data-mode={forcedMode}>
         <div className={styles.backgroundLayer}>{backgroundContent}</div>
         <div className={styles.contentLayer}>{children}</div>
       </div>
@@ -76,7 +81,7 @@ export const PageShell: React.FC<PageShellProps> = ({
   }
 
   // Simple wrapper for default variant
-  return <div className={shellClasses}>{children}</div>;
+  return <div className={shellClasses} data-page-shell data-mode={forcedMode}>{children}</div>;
 };
 
 export default PageShell;

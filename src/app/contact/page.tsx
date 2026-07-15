@@ -2,38 +2,29 @@ import React from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
 import { SiteFooter } from "@/features/footer";
-import { Reveal } from "@/shared/motion/Reveal";
 
 export default function ContactPage() {
     return (
         <PageShell variant="default" hasHeader>
             <TimeControls />
-            <main className="w-full flex-1">
+            <main id="main-content" tabIndex={-1} className="w-full flex-1">
                 <div className="max-w-3xl mx-auto px-6 py-10">
-                    <Reveal delay={0}>
-                        <p className="text-xs uppercase tracking-widest text-[var(--color-text-secondary)] mb-3">
-                            Contact
-                        </p>
-                    </Reveal>
-                    <Reveal delay={0.05}>
-                        <h1 className="font-header text-3xl mb-4 text-balance">
-                            Reach the Archive Team
-                        </h1>
-                    </Reveal>
-                    <Reveal delay={0.1}>
-                        <p className="text-base text-[var(--color-text-secondary)] leading-relaxed mb-4">
-                            For corrections, accessibility requests, or archival inquiries,
-                            email us and we will respond as soon as we can.
-                        </p>
-                    </Reveal>
-                    <Reveal delay={0.15}>
-                        <a
-                            href="mailto:manwari@owu.edu"
-                            className="inline-flex items-center min-h-[44px] text-base text-[var(--color-text-primary)] underline decoration-[var(--color-accent)]/40 underline-offset-4 hover:text-[var(--color-accent)] hover:decoration-[var(--color-accent)] transition-colors"
-                        >
-                            manwari@owu.edu
-                        </a>
-                    </Reveal>
+                    <p className="text-xs uppercase tracking-widest text-[var(--color-text-secondary)] mb-3">
+                        Contact
+                    </p>
+                    <h1 className="font-header text-3xl mb-4 text-balance">
+                        Reach the Archive Team
+                    </h1>
+                    <p className="text-base text-[var(--color-text-secondary)] leading-relaxed mb-4">
+                        For corrections, accessibility requests, or archival inquiries,
+                        email us and we will respond as soon as we can.
+                    </p>
+                    <a
+                        href="mailto:manwari@owu.edu"
+                        className="inline-flex items-center min-h-[44px] text-base text-[var(--color-text-primary)] underline decoration-[var(--color-accent)]/40 underline-offset-4 hover:text-[var(--color-accent)] hover:decoration-[var(--color-accent)] transition-colors"
+                    >
+                        manwari@owu.edu
+                    </a>
                 </div>
             </main>
             <SiteFooter />
