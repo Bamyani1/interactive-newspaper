@@ -57,6 +57,7 @@
     inset: 0;
     overflow: hidden;
     isolation: isolate;
+    contain: paint;
     background: var(--cathedral-base);
     pointer-events: auto;
     cursor: default;
@@ -74,8 +75,8 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    animation: cathedralGlassFadeIn 1.5s ease-out forwards;
-    will-change: opacity, transform;
+    animation: cathedralGlassSettle var(--duration-normal) var(--ease-default) both;
+    will-change: transform;
 }
 
 .cathedral-glass object,
@@ -455,14 +456,9 @@
    KEYFRAMES
    ========================================= */
 
-@keyframes cathedralGlassFadeIn {
+@keyframes cathedralGlassSettle {
     from {
-        opacity: 0;
-        transform: scale(1.02);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
+        transform: scale(1.01);
     }
 }
 
@@ -586,11 +582,11 @@
    LIGHT MODE
    ========================================= */
 
-[data-mode='light'] .cathedral-root {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-root {
     --cathedral-base: #f5f0e8;
 }
 
-[data-mode='light'] .cathedral-vignette {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-vignette {
     background:
         radial-gradient(
             ellipse 120% 60% at 50% -10%,
@@ -612,35 +608,35 @@
         );
 }
 
-[data-mode='light'] .cathedral-ambient {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-ambient {
     mix-blend-mode: multiply;
     opacity: 0.2;
 }
 
-[data-mode='light'] .cathedral-card {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-card {
     background: color-mix(in srgb, var(--cathedral-base) 80%, transparent);
     border-color: color-mix(in srgb, var(--cathedral-gold) 35%, transparent);
 }
 
-[data-mode='light'] .cathedral-title {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-title {
     color: var(--cathedral-gold);
     text-shadow: none;
 }
 
-[data-mode='light'] .cathedral-subtitle {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-subtitle {
     color: color-mix(in srgb, var(--stained-text-on-light) 50%, transparent);
 }
 
-[data-mode='light'] .cathedral-swatch-label {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-swatch-label {
     color: color-mix(in srgb, var(--stained-text-on-light) 40%, transparent);
 }
 
-[data-mode='light'] .cathedral-meta {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-meta {
     color: color-mix(in srgb, var(--stained-text-on-light) 30%, transparent);
 }
 
-[data-mode='light'] .cathedral-rule::before,
-[data-mode='light'] .cathedral-rule::after {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-rule::before,
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-rule::after {
     background: linear-gradient(
         to right,
         transparent,
@@ -649,6 +645,6 @@
     );
 }
 
-[data-mode='light'] .cathedral-grain {
+:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cathedral-grain {
     opacity: 0.03;
 }
