@@ -14,7 +14,7 @@ vi.mock("next/navigation", () => ({
 describe("Transcript — empty-state indicators", () => {
     const noop = () => {};
 
-    it("shows the 'Restoring conversation' indicator while hydrating with no turns", () => {
+    it("shows restoration status without replacing the meaningful empty state", () => {
         render(
             <Transcript
                 turns={[]}
@@ -26,8 +26,17 @@ describe("Transcript — empty-state indicators", () => {
             />,
         );
         expect(
-            screen.getByText(/restoring conversation/i),
+            screen.getByText(/checking for a saved conversation/i),
         ).toBeInTheDocument();
+        expect(
+            screen.getByRole("heading", {
+                level: 1,
+                name: /ask the archive/i,
+            }),
+        ).toBeInTheDocument();
+        screen
+            .getAllByRole("button")
+            .forEach((button) => expect(button).toBeDisabled());
         expect(
             screen.queryByText(/conversation cleared/i),
         ).not.toBeInTheDocument();
@@ -96,7 +105,7 @@ describe("Transcript — empty-state indicators", () => {
         ).toBeInTheDocument();
     });
 
-    it("hides inline landing and cleared indicators while hydrating", () => {
+    it("keeps the inline landing mounted while hydrating", () => {
         render(
             <Transcript
                 turns={[]}
@@ -111,10 +120,10 @@ describe("Transcript — empty-state indicators", () => {
             screen.queryByText(/conversation cleared/i),
         ).not.toBeInTheDocument();
         expect(
-            screen.queryByRole("heading", {
+            screen.getByRole("heading", {
                 level: 1,
                 name: /ask the archive/i,
             }),
-        ).not.toBeInTheDocument();
+        ).toBeInTheDocument();
     });
 });

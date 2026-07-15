@@ -1,19 +1,27 @@
-import React from "react";
-import {
-    describe,
-    it,
-    expect,
-    vi,
-    beforeEach,
-    afterEach,
-} from "vitest";
-import { render, fireEvent, act, screen } from "@testing-library/react";
+import React, { useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AskResponse } from "@/src/types";
 import { SourceReader } from "@/features/ask-archive/components/SourceReader";
 
-const pushMock = vi.fn();
-vi.mock("next/navigation", () => ({
-    useRouter: () => ({ push: pushMock, replace: vi.fn() }),
+vi.mock("next/link", () => ({
+    default: ({
+        children,
+        onClick,
+        ...props
+    }: React.PropsWithChildren<
+        React.AnchorHTMLAttributes<HTMLAnchorElement>
+    >) => (
+        <a
+            {...props}
+            onClick={(event) => {
+                event.preventDefault();
+                onClick?.(event);
+            }}
+        >
+            {children}
+        </a>
+    ),
 }));
 
 type SourceArticle = AskResponse["sourceArticles"][number];
@@ -29,26 +37,49 @@ function makeSource(overrides: Partial<SourceArticle> = {}): SourceArticle {
         bodySnippet: "A snippet from the article.",
         distance: 0.25,
         imageUrls: [],
+        imageCaptions: [],
         ...overrides,
     };
 }
 
-describe("SourceReader — history sentinel", () => {
-    let pushSpy: ReturnType<typeof vi.spyOn>;
-    let backSpy: ReturnType<typeof vi.spyOn>;
-    let replaceSpy: ReturnType<typeof vi.spyOn>;
+function ReaderHarness() {
+    const [source, setSource] = useState<SourceArticle | null>(null);
+    return (
+        <>
+            <button type="button" onClick={() => setSource(makeSource())}>
+                Open source
+            </button>
+            <SourceReader source={source} onClose={() => setSource(null)} />
+        </>
+    );
+}
 
+function ReaderWithPhotoHarness() {
+    const [source, setSource] = useState<SourceArticle | null>(null);
+    return (
+        <>
+            <button
+                type="button"
+                onClick={() =>
+                    setSource(
+                        makeSource({
+                            imageUrls: [
+                                "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'/%3E",
+                            ],
+                            imageCaptions: ["Newsroom"],
+                        }),
+                    )
+                }
+            >
+                Open source with photo
+            </button>
+            <SourceReader source={source} onClose={() => setSource(null)} />
+        </>
+    );
+}
+
+describe("SourceReader — accessible modal behavior", () => {
     beforeEach(() => {
-        pushMock.mockReset();
-        pushSpy = vi.spyOn(window.history, "pushState");
-        backSpy = vi.spyOn(window.history, "back").mockImplementation(() => {
-            // jsdom's history.back is a no-op in some setups; stub so
-            // we can assert call counts without the extra popstate
-            // firing.
-        });
-        replaceSpy = vi.spyOn(window.history, "replaceState");
-        // Stub fetch so the article-body load in SourceReader doesn't
-        // hit a real endpoint during tests.
         vi.stubGlobal(
             "fetch",
             vi.fn().mockResolvedValue({
@@ -71,102 +102,157 @@ describe("SourceReader — history sentinel", () => {
     });
 
     afterEach(() => {
-        pushSpy.mockRestore();
-        backSpy.mockRestore();
-        replaceSpy.mockRestore();
         vi.unstubAllGlobals();
-        // Clean any sentinel state left on the current entry so tests
-        // don't leak into each other.
-        window.history.replaceState(null, "", window.location.href);
+        document.body.style.overflow = "";
     });
 
-    it("pushes the {askReader:true} sentinel when the drawer opens", () => {
-        const { rerender } = render(
-            <SourceReader source={null} onClose={vi.fn()} />,
+    it("renders no dialog while closed", () => {
+        render(<SourceReader source={null} onClose={vi.fn()} />);
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("labels the dialog, focuses Close, locks scroll, and makes the page inert", async () => {
+        const { container } = render(
+            <SourceReader source={makeSource()} onClose={vi.fn()} />,
         );
-        expect(pushSpy).not.toHaveBeenCalled();
 
-        rerender(<SourceReader source={makeSource()} onClose={vi.fn()} />);
-
-        expect(pushSpy).toHaveBeenCalledTimes(1);
-        expect(pushSpy).toHaveBeenCalledWith({ askReader: true }, "");
+        expect(
+            await screen.findByRole("dialog", { name: "Test Article" }),
+        ).toHaveAttribute("aria-modal", "true");
+        expect(
+            screen.getByRole("button", { name: /close article reader/i }),
+        ).toHaveFocus();
+        expect(document.body.style.overflow).toBe("hidden");
+        expect(container.inert).toBe(true);
+        expect(container).toHaveAttribute("aria-hidden", "true");
     });
 
-    it("rewinds the sentinel via history.back when source becomes null", () => {
-        const onClose = vi.fn();
-        const { rerender } = render(
-            <SourceReader source={makeSource()} onClose={onClose} />,
+    it("traps focus and restores it when Escape closes the reader", async () => {
+        render(<ReaderHarness />);
+        const trigger = screen.getByRole("button", { name: "Open source" });
+        trigger.focus();
+        fireEvent.click(trigger);
+
+        const close = await screen.findByRole("button", {
+            name: /close article reader/i,
+        });
+        const editionLink = screen.getByRole("link", {
+            name: /open full edition/i,
+        });
+        expect(close).toHaveFocus();
+
+        fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+        expect(editionLink).toHaveFocus();
+        fireEvent.keyDown(document, { key: "Tab" });
+        expect(close).toHaveFocus();
+
+        fireEvent.keyDown(document, { key: "Escape" });
+        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+        expect(trigger).toHaveFocus();
+        expect(document.body.style.overflow).toBe("");
+    });
+
+    it("lets Escape close a nested photo viewer before the source reader", async () => {
+        render(<ReaderWithPhotoHarness />);
+        const trigger = screen.getByRole("button", {
+            name: "Open source with photo",
+        });
+        trigger.focus();
+        fireEvent.click(trigger);
+
+        const reader = await screen.findByRole("dialog", {
+            name: "Test Article",
+        });
+        const photo = screen.getByRole("button", {
+            name: "Expand Test Article — image 1",
+        });
+        photo.focus();
+        fireEvent.click(photo);
+        expect(
+            await screen.findByRole("dialog", { name: "Photo viewer" }),
+        ).toBeInTheDocument();
+
+        fireEvent.keyDown(document, { key: "Escape" });
+        await waitFor(() =>
+            expect(
+                screen.queryByRole("dialog", { name: "Photo viewer" }),
+            ).toBeNull(),
         );
-        expect(pushSpy).toHaveBeenCalledTimes(1);
+        expect(reader).toBeInTheDocument();
+        expect(photo).toHaveFocus();
 
-        // The push call above synchronously mutates window.history.state.
-        // Explicitly set it so the null-branch guard can see the sentinel.
-        window.history.replaceState({ askReader: true }, "");
-
-        rerender(<SourceReader source={null} onClose={onClose} />);
-
-        expect(backSpy).toHaveBeenCalledTimes(1);
+        fireEvent.keyDown(document, { key: "Escape" });
+        await waitFor(() =>
+            expect(
+                screen.queryByRole("dialog", { name: "Test Article" }),
+            ).toBeNull(),
+        );
+        expect(trigger).toHaveFocus();
     });
 
-    it("calls onClose when a popstate event fires while the drawer is open", () => {
+    it("closes only when the backdrop itself is clicked", async () => {
         const onClose = vi.fn();
         render(<SourceReader source={makeSource()} onClose={onClose} />);
-        expect(pushSpy).toHaveBeenCalledTimes(1);
+        const dialog = await screen.findByRole("dialog");
 
-        act(() => {
-            window.dispatchEvent(new PopStateEvent("popstate"));
-        });
-
+        fireEvent.click(dialog);
+        expect(onClose).not.toHaveBeenCalled();
+        fireEvent.click(dialog.parentElement!);
         expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it("neutralizes the sentinel via replaceState on unmount (not back) so Clear Conversation doesn't feel like a back-navigation", () => {
+    it("uses a Next-compatible link without mutating browser history", async () => {
         const onClose = vi.fn();
-        const { unmount } = render(
-            <SourceReader source={makeSource()} onClose={onClose} />,
+        const pushState = vi.spyOn(window.history, "pushState");
+        const replaceState = vi.spyOn(window.history, "replaceState");
+        const back = vi.spyOn(window.history, "back");
+        render(
+            <SourceReader
+                source={makeSource({ editionDate: "1991-12-11" })}
+                onClose={onClose}
+            />,
         );
-        expect(pushSpy).toHaveBeenCalledTimes(1);
-        // Simulate the real browser putting the sentinel on the current
-        // entry after pushState.
-        window.history.replaceState({ askReader: true }, "");
-        replaceSpy.mockClear();
-        expect(backSpy).not.toHaveBeenCalled();
 
-        unmount();
-
-        // Unmount-time cleanup must NOT call history.back() — that was
-        // the root cause of the Clear-Conversation-feels-like-back bug.
-        expect(backSpy).not.toHaveBeenCalled();
-        // Instead it clears the sentinel marker in place.
-        expect(replaceSpy).toHaveBeenCalledWith(null, "");
-    });
-
-    it("strips askReader via replaceState and calls router.push on 'Open full edition'", async () => {
-        const onClose = vi.fn();
-        const source = makeSource({ editionDate: "1991-12-11" });
-        render(<SourceReader source={source} onClose={onClose} />);
-        // Mimic the pushState side-effect so the click handler's
-        // `window.history.state?.askReader` guard passes.
-        window.history.replaceState(
-            { askReader: true, keep: "other" },
-            "",
-            window.location.href,
-        );
-        replaceSpy.mockClear();
-
-        const link = await screen.findByText(/open full edition/i);
+        const link = await screen.findByRole("link", {
+            name: /open full edition/i,
+        });
+        expect(link).toHaveAttribute("href", "/edition/1991-12-11");
         fireEvent.click(link);
 
-        // replaceState called with askReader removed but other keys kept.
-        expect(replaceSpy).toHaveBeenCalledTimes(1);
-        const [replacedState] = replaceSpy.mock.calls[0] as [
-            Record<string, unknown>,
-            string,
-            string,
-        ];
-        expect(replacedState).not.toHaveProperty("askReader");
-        expect(replacedState).toHaveProperty("keep", "other");
+        expect(onClose).toHaveBeenCalledTimes(1);
+        expect(pushState).not.toHaveBeenCalled();
+        expect(replaceState).not.toHaveBeenCalled();
+        expect(back).not.toHaveBeenCalled();
+        pushState.mockRestore();
+        replaceState.mockRestore();
+        back.mockRestore();
+    });
 
-        expect(pushMock).toHaveBeenCalledWith("/edition/1991-12-11");
+    it("does not expose transport errors to readers", async () => {
+        vi.mocked(fetch).mockRejectedValueOnce(new Error("HTTP 500 secret"));
+        render(<SourceReader source={makeSource()} onClose={vi.fn()} />);
+
+        expect(
+            await screen.findByText("Unable to load this article right now."),
+        ).toBeInTheDocument();
+        expect(screen.queryByText(/HTTP 500 secret/)).not.toBeInTheDocument();
+    });
+
+    it("numbers a complete source photo strip from image one", async () => {
+        render(
+            <SourceReader
+                source={makeSource({
+                    imageUrls: ["/source-photo.webp"],
+                    imageCaptions: [null],
+                })}
+                onClose={vi.fn()}
+            />,
+        );
+
+        expect(
+            await screen.findByRole("button", {
+                name: "Expand Test Article — image 1",
+            }),
+        ).toBeInTheDocument();
     });
 });

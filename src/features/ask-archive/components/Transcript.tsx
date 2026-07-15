@@ -9,10 +9,11 @@ interface TranscriptProps {
     turns: TurnData[];
     isHydrating: boolean;
     expiredBanner: boolean;
+    suggestionDate?: string;
     /**
-     * When the transcript is empty and not hydrating, this tells us
-     * what to render: "cleared" shows a muted pill, "new" shows the
-     * AskLanding suggestions/lede/stats inline.
+     * When the transcript is empty, this tells us what to render:
+     * "cleared" shows a muted pill, while null/"new" keeps the
+     * AskLanding suggestions/lede/stats inline during restoration.
      */
     emptyReason: EmptyReason;
     onFollowUp: (question: string) => void;
@@ -23,6 +24,7 @@ export const Transcript: React.FC<TranscriptProps> = ({
     turns,
     isHydrating,
     expiredBanner,
+    suggestionDate,
     emptyReason,
     onFollowUp,
     onRetry,
@@ -72,7 +74,7 @@ export const Transcript: React.FC<TranscriptProps> = ({
                     role="status"
                     aria-live="polite"
                 >
-                    Restoring conversation…
+                    Checking for a saved conversation…
                 </p>
             ) : null}
 
@@ -98,8 +100,12 @@ export const Transcript: React.FC<TranscriptProps> = ({
                 current turns. The expired banner above stays visible;
                 the landing renders below it so the user has
                 suggestions to click instead of a void. */}
-            {isEmpty && !isHydrating && emptyReason !== "cleared" ? (
-                <AskLanding onPickQuestion={onFollowUp} />
+            {isEmpty && emptyReason !== "cleared" ? (
+                <AskLanding
+                    onPickQuestion={onFollowUp}
+                    disabled={isHydrating}
+                    suggestionDate={suggestionDate}
+                />
             ) : null}
 
             {turns.map((turn, i) => (

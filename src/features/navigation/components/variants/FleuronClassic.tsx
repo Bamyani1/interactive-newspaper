@@ -4,8 +4,6 @@ import React from "react";
 import { motion } from "framer-motion";
 import type { NavigationSidebarProps } from "../NavigationSidebar";
 
-const LEADERS = "· ".repeat(30);
-
 export const FleuronClassic: React.FC<NavigationSidebarProps> = ({
   sections,
   activeSection,
@@ -37,7 +35,7 @@ export const FleuronClassic: React.FC<NavigationSidebarProps> = ({
                   />
                 )}
                 <span className="nav-fleuron-name">{section.label}</span>
-                <span className="nav-fleuron-leaders">{LEADERS}</span>
+                <span className="nav-fleuron-leaders" aria-hidden="true" />
                 {section.count !== undefined && section.count > 0 && (
                   <span className="nav-fleuron-count">{section.count}</span>
                 )}

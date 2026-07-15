@@ -23,6 +23,7 @@ pnpm-debug.log*
 
 # Testing / coverage
 coverage/
+audit-evidence/full/
 
 # TypeScript
 *.tsbuildinfo
@@ -70,6 +71,9 @@ scripts/dev/data/
 *.json
 !public/top-10-music/*.json
 !scripts/db/locked-editions.json
+!audit-evidence/manifest.json
+!audit-evidence/curated/
+!audit-evidence/curated/**
 !tests/api/rag-golden-questions.json
 # Baseline snapshot for the nightly RAG regression workflow. Must be
 # committed so rag-golden-nightly can compare each run against a stable

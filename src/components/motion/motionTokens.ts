@@ -52,13 +52,6 @@ export const staggerContainer = (stagger = 0.08, delayChildren = 0.05) => ({
   },
 });
 
-/** Crossfade page transition (pure opacity, no y-shift to avoid jarring overlap) */
-export const crossfadeVariants = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { duration: 0.55, ease: EASINGS.smooth } },
-  exit: { opacity: 0, transition: { duration: 0.3, ease: EASINGS.smooth } },
-};
-
 /** Edition swap — pure crossfade, no positional shift */
 export const editionSwapVariants = {
   enter: { opacity: 0 },

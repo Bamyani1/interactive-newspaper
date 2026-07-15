@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useCallback, useRef } from "react";
+import React, { useMemo } from "react";
 
 interface Mote {
   id: number;
@@ -41,23 +41,16 @@ function generateMotes(count: number): Mote[] {
 
 export function CathedralBackground() {
   const motes = useMemo(() => generateMotes(25), []);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    const el = rootRef.current;
-    if (!el) return;
-    el.style.setProperty("--mouse-x", String(e.clientX / window.innerWidth));
-    el.style.setProperty("--mouse-y", String(e.clientY / window.innerHeight));
-  }, []);
 
   return (
-    <div className="cathedral-root" ref={rootRef} onMouseMove={handleMouseMove}>
+    <div className="cathedral-root" aria-hidden="true">
       {/* Layer 1: Stained glass SVG */}
       <div className="cathedral-glass">
         <object
           type="image/svg+xml"
-          data="/shape/stained-glass-animated.svg"
-          aria-label="Stained glass rosette animation"
+          data="/shape/stained-glass-landing.svg"
+          aria-hidden="true"
+          tabIndex={-1}
         />
       </div>
 

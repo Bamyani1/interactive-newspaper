@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { pickDailyQuestion } from "../data/question-pool";
 
 /**
@@ -25,7 +26,7 @@ export const LandingAskTeaser: React.FC = () => {
     return (
         <div className="cinema-ask-teaser-slot">
             {question ? (
-                <a
+                <Link
                     href={`/ask?q=${encodeURIComponent(question)}`}
                     className="cinema-ask-teaser"
                 >
@@ -41,7 +42,7 @@ export const LandingAskTeaser: React.FC = () => {
                     >
                         →
                     </span>
-                </a>
+                </Link>
             ) : null}
         </div>
     );

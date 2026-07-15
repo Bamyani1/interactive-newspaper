@@ -18,9 +18,9 @@ export const EditionMasthead: React.FC<EditionMastheadProps> = ({ editionHeaderD
             </h2>
             <div className="flex flex-wrap justify-between gap-2 border-t border-b border-[var(--color-text-primary)]/30 py-1.5 font-mono text-xs tracking-wider uppercase">
                 {parsed && (
-                    <span className="opacity-60">Vol. {parsed.volume} · No. {parsed.issue}</span>
+                    <span className="text-[var(--color-text-secondary)]">Vol. {parsed.volume} · No. {parsed.issue}</span>
                 )}
-                <span className="opacity-80">{editionHeaderDate}</span>
+                <span className="text-[var(--color-text-secondary)]">{editionHeaderDate}</span>
             </div>
         </div>
     );

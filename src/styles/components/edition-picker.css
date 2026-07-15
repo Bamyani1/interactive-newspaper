@@ -166,6 +166,7 @@
 
 .ep-decade-tab {
     flex: 1;
+    min-height: 44px;
     padding: var(--space-2) var(--space-2);
     background: none;
     border: none;
@@ -227,6 +228,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    min-height: 44px;
     padding: var(--space-2) var(--space-3);
     background: color-mix(in srgb, var(--color-accent) 4%, transparent);
     border: none;
@@ -278,6 +280,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    min-height: 44px;
     gap: var(--space-1);
     width: 100%;
     padding: var(--space-2) 0;
@@ -325,6 +328,13 @@
     }
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .ep-container--open,
+    .ep-loading {
+        animation: none;
+    }
+}
+
 .ep-empty {
     text-align: center;
     padding: var(--space-4) 0;
@@ -367,6 +377,7 @@
 
     .ep-decade-tab {
         font-size: var(--text-xs);
+        min-height: 44px;
         padding: var(--space-1) 2px;
     }
 

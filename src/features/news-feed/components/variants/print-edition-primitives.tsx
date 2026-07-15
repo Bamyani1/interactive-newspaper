@@ -57,7 +57,7 @@ export function DropCap({ text }: { text: string }) {
           lineHeight: 0.8,
           marginRight: "0.08em",
           marginTop: "0.05em",
-          color: "var(--color-accent)",
+          color: "var(--color-accent-text)",
         }}
       >
         {first}
@@ -161,7 +161,7 @@ export function Byline({
           fontWeight: 400,
           textTransform: "uppercase",
           letterSpacing: "0.12em",
-          color: "var(--color-accent)",
+          color: "var(--color-accent-text)",
         }}
       >
         By {byline}
@@ -209,10 +209,12 @@ export function ArticleImage({
 }) {
   return (
     <div style={{ width: width === "full" ? "100%" : `${width}px`, maxWidth, flexShrink: 0, margin: "0 auto" }}>
-      <div
-        className="relative border-3 border-[var(--color-text-primary)] overflow-hidden cursor-pointer"
+      <button
+        type="button"
+        className="relative block w-full border-3 border-[var(--color-text-primary)] overflow-hidden cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
         style={{ width: "100%", aspectRatio: "4/3" }}
         onClick={onClick}
+        aria-label={`Expand photo: ${alt}`}
       >
         <Image
           src={src}
@@ -223,7 +225,7 @@ export function ArticleImage({
           style={{ objectPosition: "center 20%" }}
           priority={priority}
         />
-      </div>
+      </button>
       {caption && (
         <p
           className="mt-1"
@@ -419,10 +421,12 @@ export function PhotoFeature({
       </div>
 
       {/* Right: Image */}
-      <div
-        className="relative flex-shrink-0 border-3 border-[var(--color-text-primary)] overflow-hidden cursor-pointer"
+      <button
+        type="button"
+        className="relative block flex-shrink-0 border-3 border-[var(--color-text-primary)] overflow-hidden cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
         style={{ width: "40%", aspectRatio: "4/3" }}
         onClick={onImageClick}
+        aria-label={`Expand photo: ${alt}`}
       >
         <Image
           src={imageSrc}
@@ -433,8 +437,7 @@ export function PhotoFeature({
           style={{ objectPosition: "center 20%" }}
           priority={priority}
         />
-      </div>
+      </button>
     </div>
   );
 }
-

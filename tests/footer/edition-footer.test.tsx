@@ -43,6 +43,7 @@ describe("EditionFooter", () => {
 
         const button = screen.getByRole("button", { name: "See Next Edition" });
         expect(button).toBeEnabled();
+        expect(button.closest(".site-footer__primary")).not.toBeNull();
 
         fireEvent.click(button);
         expect(onNextEdition).toHaveBeenCalledTimes(1);

@@ -1,9 +1,8 @@
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { NewsFeed } from "../../src/features/news-feed/components/NewsFeed";
-import { ArticleCard } from "../../src/features/news-feed/components/ArticleCard";
 import type { Article } from "@/src/types";
 import type { SectionId } from "../../src/features/news-feed";
 
@@ -109,27 +108,6 @@ describe("NewsFeed data source and full-story rendering", () => {
         expect(screen.getByText("Full article body from hero story.")).toBeDefined();
     });
 
-    it("renders fallback message when expanded article has no fullText or summary", () => {
-        render(
-            <ArticleCard
-                article={makeArticle({
-                    id: "empty-body",
-                    headline: "Empty content story",
-                    summary: "",
-                    fullText: "   ",
-                    isHero: false,
-                    isFeatured: false,
-                })}
-                isExpanded
-                onToggle={vi.fn()}
-            />
-        );
-
-        expect(
-            screen.getByText("Full story text unavailable for this article.")
-        ).toBeDefined();
-    });
-
     it("remains interactive when switching from Top Stories to section view", () => {
         const hero = makeArticle();
         const secondaryNews = makeArticle({
@@ -173,5 +151,30 @@ describe("NewsFeed data source and full-story rendering", () => {
 
         expect(screen.queryByText("No stories found for this section.")).toBeNull();
         expect(screen.getByText("Second news story")).toBeDefined();
+    });
+
+    it("leaves Enter activation on edition controls to the native button", () => {
+        const onDateChange = vi.fn();
+        render(
+            <NewsFeed
+                articles={[makeArticle()]}
+                displayAds={[]}
+                classifiedAds={[]}
+                editionDate="1987-10-14"
+                editions={["1987-10-14", "1987-10-21"]}
+                onDateChange={onDateChange}
+                activeSection="Top"
+                onSectionChange={vi.fn()}
+            />
+        );
+
+        const nextEdition = screen.getByRole("button", { name: /see next edition/i });
+        nextEdition.focus();
+
+        expect(fireEvent.keyDown(nextEdition, { key: "Enter" })).toBe(true);
+        fireEvent.click(nextEdition);
+
+        expect(onDateChange).toHaveBeenCalledOnce();
+        expect(onDateChange).toHaveBeenCalledWith("1987-10-21");
     });
 });

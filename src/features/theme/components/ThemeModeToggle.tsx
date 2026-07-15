@@ -1,33 +1,8 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useState } from "react";
+import React from "react";
 import { Sun, Moon } from "lucide-react";
-
-const STORAGE_KEY = "transcript-mode";
-
-// Kept in sync with ThemeModeManager defaults.
-const DEFAULT_LIGHT_TOKENS: Record<string, string> = {
-    "--owu-red": "#B80D3E",
-    "--owu-black": "#1B1917",
-    "--owu-charcoal": "#3A3834",
-    "--owu-white": "#FBF8F1",
-};
-
-const DEFAULT_DARK_TOKENS: Record<string, string> = {
-    "--owu-red": "#B80D3E",
-    "--owu-black": "#1B1917",
-    "--owu-charcoal": "#3A3834",
-    "--owu-white": "#FBF8F1",
-};
-
-type ThemeMode = "dark" | "light";
-
-function applyBrandTokens(tokens: Record<string, string>) {
-    const root = document.documentElement;
-    for (const [prop, value] of Object.entries(tokens)) {
-        root.style.setProperty(prop, value);
-    }
-}
+import { THEME_STORAGE_KEY, type ThemeMode } from "../lib/theme";
 
 export interface ThemeModeToggleProps {
     /** When true, show only sun/moon icon (e.g. for header). */
@@ -35,43 +10,33 @@ export interface ThemeModeToggleProps {
 }
 
 export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = false }) => {
-    // Start "dark" on both server and client to avoid hydration mismatch.
-    const [mode, setMode] = useState<ThemeMode>("dark");
-
-    useEffect(() => {
-        const stored = window.localStorage.getItem(STORAGE_KEY);
-        if (stored === "light") setMode("light"); // eslint-disable-line react-hooks/set-state-in-effect
-    }, []);
-
-    useLayoutEffect(() => {
-        document.body.dataset.mode = mode;
-        applyBrandTokens(mode === "light" ? DEFAULT_LIGHT_TOKENS : DEFAULT_DARK_TOKENS);
-    }, [mode]);
-
     const handleToggle = () => {
-        const next: ThemeMode = mode === "dark" ? "light" : "dark";
-        setMode(next);
-        document.body.dataset.mode = next;
-        window.localStorage.setItem(STORAGE_KEY, next);
-        applyBrandTokens(next === "light" ? DEFAULT_LIGHT_TOKENS : DEFAULT_DARK_TOKENS);
+        const root = document.documentElement;
+        const next: ThemeMode = root.dataset.mode === "dark" ? "light" : "dark";
+        root.dataset.mode = next;
+        try {
+            window.localStorage.setItem(THEME_STORAGE_KEY, next);
+        } catch {
+            // The selected mode still applies for this page when storage is unavailable.
+        }
     };
-
-    const label = mode === "dark" ? "Switch to light mode" : "Switch to dark mode";
 
     if (iconOnly) {
         return (
             <button
                 type="button"
                 onClick={handleToggle}
-                className="flex items-center justify-center min-w-[40px] min-h-[40px] sm:min-w-[44px] sm:min-h-[44px] rounded-sm hover:bg-accent/8 hover:text-[var(--color-text-primary)] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-                aria-label={label}
-                aria-pressed={mode === "light"}
+                className="flex size-11 shrink-0 items-center justify-center rounded-sm hover:bg-accent/8 hover:text-[var(--color-text-primary)] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                aria-label="Toggle color theme"
             >
-                {mode === "dark" ? (
-                    <Sun className="w-4 h-4 opacity-80" aria-hidden />
-                ) : (
-                    <Moon className="w-4 h-4 opacity-80" aria-hidden />
-                )}
+                <Sun
+                    className="theme-mode-toggle__light-action w-4 h-4 opacity-80"
+                    aria-hidden
+                />
+                <Moon
+                    className="theme-mode-toggle__dark-action w-4 h-4 opacity-80"
+                    aria-hidden
+                />
             </button>
         );
     }
@@ -81,9 +46,10 @@ export const ThemeModeToggle: React.FC<ThemeModeToggleProps> = ({ iconOnly = fal
             type="button"
             onClick={handleToggle}
             className="hover:text-[var(--color-text-primary)] transition-colors"
-            aria-pressed={mode === "light"}
+            aria-label="Toggle color theme"
         >
-            {mode === "dark" ? "Light Mode" : "Dark Mode"}
+            <span className="theme-mode-toggle__light-action">Light Mode</span>
+            <span className="theme-mode-toggle__dark-action">Dark Mode</span>
         </button>
     );
 };

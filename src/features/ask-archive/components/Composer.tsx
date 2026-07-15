@@ -10,7 +10,7 @@ interface ComposerProps {
      * Bump to request a focus+clear of the composer (used after a turn
      * completes so the user can type the next question immediately).
      */
-    focusSignal?: number;
+    focusSignal?: string | number;
 }
 
 const MAX_ROWS = 8;
@@ -26,6 +26,15 @@ export const Composer: React.FC<ComposerProps> = ({
     const resize = useCallback(() => {
         const el = textareaRef.current;
         if (!el) return;
+        // The CSS rows/min-height contract is already the correct one-line
+        // geometry. Measuring an empty textarea after mount includes its
+        // padding in scrollHeight and made the composer grow by ~25px during
+        // first hydration on mobile.
+        if (!el.value) {
+            el.style.height = "";
+            el.style.overflowY = "hidden";
+            return;
+        }
         el.style.height = "auto";
         const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
         const maxHeight = lineHeight * MAX_ROWS;

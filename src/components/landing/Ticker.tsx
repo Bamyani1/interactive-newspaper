@@ -18,96 +18,149 @@ interface TickerProps {
  */
 export function useTickerAnimation() {
     useEffect(() => {
-        // Select all tickers on the page
-        const tickers = Array.from(document.querySelectorAll<HTMLElement>('.cinema-ticker'));
-        const cleanup: Array<() => void> = [];
-        const animations: Animation[] = [];
-        const rafMap = new WeakMap<Animation, number>();
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+        let disposeAnimations = () => {};
+        let resizeFrame = 0;
+        let disposed = false;
 
-        const tweenPlaybackRate = (anim: Animation, to: number, dur = 220) => {
-            const from = anim.playbackRate || 1;
-            const start = performance.now();
-            const step = (now: number) => {
-                const t = Math.min((now - start) / dur, 1);
-                anim.playbackRate = from + (to - from) * t;
-                if (t < 1) {
-                    const raf = requestAnimationFrame(step);
-                    rafMap.set(anim, raf);
-                }
-            };
+        const setupAnimations = () => {
+            disposeAnimations();
 
-            const prev = rafMap.get(anim);
-            if (prev) cancelAnimationFrame(prev);
-            const raf = requestAnimationFrame(step);
-            rafMap.set(anim, raf);
-        };
-
-        tickers.forEach((ticker) => {
-            const track = ticker.querySelector<HTMLElement>('.cinema-ticker-track');
-            if (!track || typeof track.animate !== 'function') return;
-
-            // Disable CSS animation; drive with WAAPI for smooth playbackRate changes
-            track.style.animation = 'none';
-            track.style.willChange = 'transform';
-
-            const animation = track.animate(
-                [
-                    { transform: 'translateX(0)' },
-                    { transform: 'translateX(-50%)' },
-                ],
-                {
-                    duration: 90000,
-                    iterations: Infinity,
-                    easing: 'linear',
-                    direction: track.classList.contains('cinema-ticker-reverse') ? 'reverse' : 'normal',
-                }
+            const cleanup: Array<() => void> = [];
+            const animations: Animation[] = [];
+            const rafMap = new WeakMap<Animation, number>();
+            const tickers = Array.from(
+                document.querySelectorAll<HTMLElement>(".cinema-ticker"),
             );
 
-            animations.push(animation);
+            if (reducedMotion.matches) {
+                tickers.forEach((ticker) => {
+                    const track = ticker.querySelector<HTMLElement>(".cinema-ticker-track");
+                    if (!track) return;
+                    track.style.transform = "none";
+                    track.style.willChange = "auto";
+                });
+                disposeAnimations = () => {};
+                return;
+            }
 
-            const handleEnter = () => tweenPlaybackRate(animation, 0.5);
-            const handleLeave = () => tweenPlaybackRate(animation, 1);
+            const tweenPlaybackRate = (animation: Animation, to: number, duration = 220) => {
+                const from = animation.playbackRate || 1;
+                const start = performance.now();
+                const step = (now: number) => {
+                    const progress = Math.min((now - start) / duration, 1);
+                    animation.playbackRate = from + (to - from) * progress;
+                    if (progress < 1) {
+                        rafMap.set(animation, requestAnimationFrame(step));
+                    }
+                };
 
-            ticker.addEventListener('mouseenter', handleEnter);
-            ticker.addEventListener('mouseleave', handleLeave);
+                const previousFrame = rafMap.get(animation);
+                if (previousFrame) cancelAnimationFrame(previousFrame);
+                rafMap.set(animation, requestAnimationFrame(step));
+            };
 
-            cleanup.push(() => {
-                ticker.removeEventListener('mouseenter', handleEnter);
-                ticker.removeEventListener('mouseleave', handleLeave);
-                const prev = rafMap.get(animation);
-                if (prev) cancelAnimationFrame(prev);
-                animation.cancel();
+            tickers.forEach((ticker) => {
+                const track = ticker.querySelector<HTMLElement>(".cinema-ticker-track");
+                const sequence = ticker.querySelector<HTMLElement>(".cinema-ticker-sequence");
+                if (!track || !sequence || typeof track.animate !== "function") return;
+
+                const distance = sequence.getBoundingClientRect().width;
+                if (distance <= 0) return;
+
+                track.style.transform = "";
+                track.style.willChange = "transform";
+
+                const animation = track.animate(
+                    [
+                        { transform: "translateX(0)" },
+                        { transform: `translateX(-${distance}px)` },
+                    ],
+                    {
+                        duration: 90_000,
+                        iterations: Infinity,
+                        easing: "linear",
+                        direction: track.classList.contains("cinema-ticker-reverse")
+                            ? "reverse"
+                            : "normal",
+                    },
+                );
+                animations.push(animation);
+
+                const handleEnter = () => tweenPlaybackRate(animation, 0.5);
+                const handleLeave = () => tweenPlaybackRate(animation, 1);
+                ticker.addEventListener("mouseenter", handleEnter);
+                ticker.addEventListener("mouseleave", handleLeave);
+
+                cleanup.push(() => {
+                    ticker.removeEventListener("mouseenter", handleEnter);
+                    ticker.removeEventListener("mouseleave", handleLeave);
+                    const previousFrame = rafMap.get(animation);
+                    if (previousFrame) cancelAnimationFrame(previousFrame);
+                    animation.cancel();
+                    track.style.willChange = "";
+                });
             });
+
+            const cta = document.querySelector<HTMLElement>(".cinema-btn");
+            if (cta) {
+                const halt = () => animations.forEach((animation) => tweenPlaybackRate(animation, 0, 160));
+                const resume = () => animations.forEach((animation) => tweenPlaybackRate(animation, 1, 240));
+                cta.addEventListener("mouseenter", halt);
+                cta.addEventListener("mouseleave", resume);
+                cleanup.push(() => {
+                    cta.removeEventListener("mouseenter", halt);
+                    cta.removeEventListener("mouseleave", resume);
+                });
+            }
+
+            disposeAnimations = () => cleanup.forEach((cleanupAnimation) => cleanupAnimation());
+        };
+
+        const scheduleSetup = () => {
+            if (resizeFrame) cancelAnimationFrame(resizeFrame);
+            resizeFrame = requestAnimationFrame(setupAnimations);
+        };
+
+        reducedMotion.addEventListener("change", scheduleSetup);
+        window.addEventListener("resize", scheduleSetup);
+        void (document.fonts?.ready ?? Promise.resolve()).then(() => {
+            if (!disposed) setupAnimations();
         });
 
-        // Halt both tickers when hovering the CTA
-        const cta = document.querySelector<HTMLElement>('.cinema-btn');
-        if (cta) {
-            const halt = () => animations.forEach((anim) => tweenPlaybackRate(anim, 0, 160));
-            const resume = () => animations.forEach((anim) => tweenPlaybackRate(anim, 1, 240));
-
-            cta.addEventListener('mouseenter', halt);
-            cta.addEventListener('mouseleave', resume);
-            cleanup.push(() => {
-                cta.removeEventListener('mouseenter', halt);
-                cta.removeEventListener('mouseleave', resume);
-            });
-        }
-
-        return () => cleanup.forEach((fn) => fn());
-    }, []); // Run once on mount
+        return () => {
+            disposed = true;
+            reducedMotion.removeEventListener("change", scheduleSetup);
+            window.removeEventListener("resize", scheduleSetup);
+            if (resizeFrame) cancelAnimationFrame(resizeFrame);
+            disposeAnimations();
+        };
+    }, []);
 }
 
 export function Ticker({ items, reverse = false }: TickerProps) {
     return (
-        <div className={`cinema-ticker ${reverse ? 'cinema-ticker-bottom' : 'cinema-ticker-top'}`}>
-            <div className={`cinema-ticker-track ${reverse ? 'cinema-ticker-reverse' : ''}`}>
-                {items.map((item, i) => (
-                    <div key={`${reverse ? 'bottom' : 'top'}-${i}`} className="cinema-ticker-item">
-                        {item.text}
-                        <span className="cinema-ticker-year">{item.year}</span>
-                    </div>
-                ))}
+        <div
+            className={`cinema-ticker ${reverse ? "cinema-ticker-bottom" : "cinema-ticker-top"}`}
+            aria-hidden={reverse || undefined}
+        >
+            <div className={`cinema-ticker-track ${reverse ? "cinema-ticker-reverse" : ""}`}>
+                <div className="cinema-ticker-sequence" role="list" aria-label="Ohio Wesleyan milestones">
+                    {items.map((item, index) => (
+                        <div key={`primary-${index}`} className="cinema-ticker-item" role="listitem">
+                            {item.text}
+                            <span className="cinema-ticker-year">{item.year}</span>
+                        </div>
+                    ))}
+                </div>
+                <div className="cinema-ticker-sequence" aria-hidden="true">
+                    {items.map((item, index) => (
+                        <div key={`duplicate-${index}`} className="cinema-ticker-item">
+                            {item.text}
+                            <span className="cinema-ticker-year">{item.year}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );
