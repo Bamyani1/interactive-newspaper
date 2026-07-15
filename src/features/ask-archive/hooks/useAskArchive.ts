@@ -317,6 +317,41 @@ export function useAskArchive(): UseAskArchiveReturn {
                     expired?: boolean;
                 };
                 if (cancelled) return;
+                // Session aged out server-side. Honor "Starting fresh":
+                // drop the dead thread from the local archive, mint a new
+                // session id, and hydrate into an empty transcript so the
+                // banner sits above the landing suggestions — nothing from
+                // the expired conversation lingers in the sidebar.
+                if (json.expired) {
+                    if (interactionRevisionRef.current !== restoreRevision) {
+                        // The user already interacted during the fetch;
+                        // don't stomp their fresh state or their session.
+                        dispatch({
+                            type: "HYDRATE",
+                            turns: [],
+                            expired: false,
+                            preserveCurrentState: true,
+                        });
+                        return;
+                    }
+                    const remaining = removeFromArchive(sessionId);
+                    try {
+                        window.localStorage.removeItem(SESSION_STORAGE_KEY);
+                    } catch {
+                        // storage disabled — the ref update below still applies
+                    }
+                    sessionIdRef.current = null;
+                    const fresh = readOrCreateSessionId();
+                    sessionIdRef.current = fresh;
+                    dispatch({
+                        type: "HYDRATE",
+                        turns: [],
+                        expired: true,
+                        threads: summariesFrom(remaining),
+                        activeThreadId: fresh,
+                    });
+                    return;
+                }
                 // The session API doesn't persist mode/confidence/meta, but
                 // localStorage does. When a local turn aligns with a
                 // server turn (same position + same question), recover
