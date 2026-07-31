@@ -1,271 +1,481 @@
-"""Application-layer runtime for content triage (rescue misclassified articles)."""
+"""Targeted final type/category review (legacy ``triage`` import retained)."""
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import tempfile
 import time
+from collections import defaultdict
+from collections.abc import Callable
+from typing import Any
 
-from ..config.paths import PUBLIC_EDITIONS_DIR
-from ..config.prompts_loader import MODELS
-from ..contracts.content_models import ContentTriageResponse
-from ..recognition.rescue_prompts import SAFETY_OFF, TRIAGE_SYSTEM_PROMPT, TRIAGE_USER_TEMPLATE
-from ..shared.console import status, substep, success, error, info, file_written
+from ..config.model_calls import build_generation_config, model_name
+from ..contracts.content_models import ContentReviewResponse
+from ..recognition.rescue_prompts import TRIAGE_SYSTEM_PROMPT, TRIAGE_USER_TEMPLATE
+from ..shared.console import error, file_written, info, status, substep, warning
 from ..shared.retry import gemini_generate_with_retry
+from ..shared.text import normalize_whitespace
 
 
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff")
+_REVIEW_CONFIDENCE = 0.90
+_CATEGORY_FALLBACK_FLAGS = (
+    "category_fallback",
+    "category_fallback_used",
+)
+_VISUAL_KIND_CONFLICT_FLAGS = (
+    "visual_kind_conflict",
+    "visual_classification_conflict",
+    "visual_type_conflict",
+)
+_UNRESOLVED_STATE_FIELDS = (
+    "state",
+    "status",
+    "review_state",
+    "classification_state",
+    "visual_state",
+    "visual_type",
+    "visual_kind",
+    "attachment_state",
+    "disposition",
+)
+TelemetryHook = Callable[[dict[str, Any]], None]
 
 
 def _is_image_file(body: str) -> bool:
-    """Check if an other_content body is an image filename rather than text."""
     return body.startswith("images/") or body.lower().endswith(_IMAGE_EXTENSIONS)
 
 
-def triage_edition(edition_path: str, client, force: bool = False) -> tuple[bool, int, float]:
-    """Triage content for a single edition. Returns (performed, tokens, elapsed_s)."""
+def _flag_is_set(item: dict, fields: tuple[str, ...]) -> bool:
+    return any(item.get(field) is True for field in fields)
+
+
+def _has_explicit_unresolved_state(item: dict) -> bool:
+    """Recognize only explicit machine state, never prose containing the word."""
+    if item.get("unresolved") is True:
+        return True
+    if any(
+        isinstance(item.get(field), str)
+        and item[field].strip().casefold() == "unresolved"
+        for field in _UNRESOLVED_STATE_FIELDS
+    ):
+        return True
+    states = item.get("unresolved_states")
+    return isinstance(states, list) and bool(states)
+
+
+def _candidate_reasons(
+    item_type: str,
+    item: dict,
+    *,
+    exact_cross_array_duplicate: bool,
+) -> list[str]:
+    """Return only the locked deterministic final-review triggers."""
+    reasons: list[str] = []
+    body = str(item.get("body") or "").strip()
+    if item_type == "article":
+        if _flag_is_set(item, _CATEGORY_FALLBACK_FLAGS):
+            reasons.append("category_fallback")
+        if not str(item.get("headline") or "").strip():
+            reasons.append("blank_article_headline")
+        if not body:
+            reasons.append("blank_article_body")
+    elif item_type == "ad":
+        business_name = str(item.get("business_name") or "").strip()
+        if not business_name and not body:
+            reasons.append("blank_ad_business_and_body")
+
+    if exact_cross_array_duplicate:
+        reasons.append("exact_cross_array_duplicate_text")
+    if _flag_is_set(item, _VISUAL_KIND_CONFLICT_FLAGS):
+        reasons.append("visual_kind_conflict")
+    if _has_explicit_unresolved_state(item):
+        reasons.append("explicit_unresolved_state")
+    return reasons
+
+
+def _exact_cross_array_duplicate_keys(
+    collections: tuple[tuple[str, list], ...],
+) -> set[str]:
+    """Find non-empty body text present in at least two different arrays."""
+    types_by_text: dict[str, set[str]] = defaultdict(set)
+    for item_type, items in collections:
+        for item in items:
+            body = str(item.get("body") or "")
+            key = normalize_whitespace(body)
+            if key and not _is_image_file(key):
+                types_by_text[key].add(item_type)
+    return {text for text, item_types in types_by_text.items() if len(item_types) >= 2}
+
+
+def _build_candidates(
+    edition: dict,
+    review_hints: dict[str, dict[str, Any]] | None = None,
+) -> tuple[list[dict], dict[str, tuple[str, int]]]:
+    candidates: list[dict] = []
+    item_map: dict[str, tuple[str, int]] = {}
+    collections = (
+        ("article", edition.get("articles", [])),
+        ("ad", edition.get("ads", [])),
+        ("other", edition.get("other_content", [])),
+    )
+    review_hints = review_hints or {}
+    duplicate_keys = _exact_cross_array_duplicate_keys(collections)
+    for item_type, items in collections:
+        for index, item in enumerate(items):
+            item_id = f"{item_type}-{index}"
+            review_item = {**item, **review_hints.get(item_id, {})}
+            body_key = normalize_whitespace(str(review_item.get("body") or ""))
+            reasons = _candidate_reasons(
+                item_type,
+                review_item,
+                exact_cross_array_duplicate=body_key in duplicate_keys,
+            )
+            if not reasons:
+                continue
+            item_map[item_id] = (item_type, index)
+            candidates.append(
+                {
+                    "item_id": item_id,
+                    "current_type": item_type,
+                    "current_category": item.get("category", "") if item_type == "article" else "",
+                    "reasons": reasons,
+                    "headline_or_name": item.get("headline") or item.get("business_name") or item.get("title") or "",
+                    "author": item.get("author", "") if item_type == "article" else "",
+                    "body": item.get("body", ""),
+                    "has_images": bool(item.get("image_files")) or _is_image_file(str(item.get("body") or "")),
+                }
+            )
+    return candidates, item_map
+
+
+def _token_counts(usage: object | None) -> dict[str, int]:
+    return {
+        "prompt_tokens": int(getattr(usage, "prompt_token_count", 0) or 0),
+        "candidates_tokens": int(getattr(usage, "candidates_token_count", 0) or 0),
+        "thoughts_tokens": int(getattr(usage, "thoughts_token_count", 0) or 0),
+        "tool_use_prompt_tokens": int(
+            getattr(usage, "tool_use_prompt_token_count", 0) or 0
+        ),
+        "cached_content_tokens": int(
+            getattr(usage, "cached_content_token_count", 0) or 0
+        ),
+        "total_tokens": int(getattr(usage, "total_token_count", 0) or 0),
+    }
+
+
+def _emit_telemetry(
+    telemetry_hook: TelemetryHook | None,
+    *,
+    status_value: str,
+    elapsed_seconds: float,
+    item_count: int,
+    usage: object | None = None,
+    error_message: str = "",
+) -> None:
+    if telemetry_hook is None:
+        return
+    event = {
+        "stage": "content_triage",
+        "model": model_name("content_triage"),
+        "status": status_value,
+        "call_index": 1,
+        "call_count": 1,
+        "item_count": item_count,
+        "elapsed_seconds": elapsed_seconds,
+        "tokens": _token_counts(usage),
+        "error": error_message,
+    }
     try:
-        with open(edition_path, "r", encoding="utf-8") as f:
-            edition = json.load(f)
-    except json.JSONDecodeError as e:
-        error(f"Malformed JSON in {edition_path}: {e}")
+        telemetry_hook(event)
+    except Exception as exc:
+        warning(f"Final-review telemetry hook failed: {exc}")
+
+
+def _review_response_complete(response, candidate_ids: list[str]) -> bool:
+    parsed = getattr(response, "parsed", None)
+    if not isinstance(parsed, ContentReviewResponse):
+        return False
+    returned = [decision.item_id for decision in parsed.decisions]
+    return len(returned) == len(candidate_ids) and set(returned) == set(candidate_ids)
+
+
+def _article_from(
+    item_type: str,
+    item: dict,
+    category: str | None,
+    source_pages: list[str],
+) -> dict:
+    if item_type == "article":
+        result = dict(item)
+        if category:
+            result["category"] = category
+        return result
+    if item_type == "ad":
+        return {
+            "headline": item.get("business_name", ""),
+            "author": "",
+            "writer_position": "",
+            "category": category or "News",
+            "body": item.get("body", ""),
+            "images": [],
+            "image_files": list(item.get("image_files", [])),
+            "continues_on": "",
+            "continued_from": "",
+            "source_pages": source_pages,
+        }
+
+    body = str(item.get("body") or "")
+    is_image = _is_image_file(body)
+    title = item.get("title", "")
+    return {
+        "headline": title,
+        "author": "",
+        "writer_position": "",
+        "category": category or "News",
+        "body": title if is_image else body,
+        "images": [{"caption": title, "position": ""}] if is_image and title else [],
+        "image_files": [body] if is_image else [],
+        "continues_on": "",
+        "continued_from": "",
+        "source_pages": source_pages,
+    }
+
+
+def _ad_from(item_type: str, item: dict) -> dict:
+    if item_type == "ad":
+        return dict(item)
+    if item_type == "article":
+        return {
+            "business_name": item.get("headline", ""),
+            "body": item.get("body", ""),
+            "image_files": list(item.get("image_files", [])),
+        }
+    body = str(item.get("body") or "")
+    return {
+        "business_name": item.get("title", ""),
+        "body": "" if _is_image_file(body) else body,
+        "image_files": [body] if _is_image_file(body) else [],
+    }
+
+
+def _other_from(item_type: str, item: dict) -> list[dict]:
+    if item_type == "other":
+        return [dict(item)]
+    title = item.get("headline") if item_type == "article" else item.get("business_name")
+    body = str(item.get("body") or "")
+    output = [{"title": title or "", "body": body or title or ""}]
+    for image_file in item.get("image_files", []):
+        output.append({"title": title or "", "body": image_file})
+    return output
+
+
+def _fallback_enriched_ad(raw_ad: dict) -> dict:
+    return {
+        "business_name": raw_ad.get("business_name", ""),
+        "body": raw_ad.get("body", ""),
+        "image_files": list(raw_ad.get("image_files", [])),
+        "category": "Other",
+        "ad_type": "display",
+        "display_text": "",
+        "phone": "",
+        "address": "",
+        "price": "",
+    }
+
+
+def _apply_review(
+    edition: dict,
+    item_map: dict[str, tuple[str, int]],
+    result: ContentReviewResponse,
+    review_hints: dict[str, dict[str, Any]] | None = None,
+) -> tuple[int, int]:
+    articles = edition.get("articles", [])
+    ads = edition.get("ads", [])
+    others = edition.get("other_content", [])
+    original = {"article": articles, "ad": ads, "other": others}
+
+    accepted = {
+        decision.item_id: decision
+        for decision in result.decisions
+        if decision.confidence >= _REVIEW_CONFIDENCE
+    }
+    removed = {"article": set(), "ad": set(), "other": set()}
+    appended = {"article": [], "ad": [], "other": []}
+    review_hints = review_hints or {}
+    changed = 0
+    category_changes = 0
+
+    for item_id, decision in accepted.items():
+        source_type, index = item_map[item_id]
+        item = original[source_type][index]
+        if decision.target_type == source_type:
+            if source_type == "article" and decision.category and decision.category != item.get("category"):
+                item["category"] = decision.category
+                category_changes += 1
+            continue
+
+        source_pages = list(
+            item.get("source_pages")
+            or review_hints.get(item_id, {}).get("source_pages")
+            or []
+        )
+        if decision.target_type == "article" and not source_pages:
+            warning(
+                f"Final review abstained on {item_id}: no preserved source page evidence"
+            )
+            continue
+
+        removed[source_type].add(index)
+        if decision.target_type == "article":
+            appended["article"].append(
+                _article_from(source_type, item, decision.category, source_pages)
+            )
+        elif decision.target_type == "ad":
+            appended["ad"].append(_ad_from(source_type, item))
+        else:
+            appended["other"].extend(_other_from(source_type, item))
+        changed += 1
+
+    edition["articles"] = [item for i, item in enumerate(articles) if i not in removed["article"]] + appended["article"]
+    edition["ads"] = [item for i, item in enumerate(ads) if i not in removed["ad"]] + appended["ad"]
+    edition["other_content"] = [item for i, item in enumerate(others) if i not in removed["other"]] + appended["other"]
+
+    if "enriched_ads" in edition:
+        existing = edition.get("enriched_ads", [])
+        if len(existing) == len(ads):
+            kept = [item for i, item in enumerate(existing) if i not in removed["ad"]]
+            kept.extend(_fallback_enriched_ad(item) for item in appended["ad"])
+            edition["enriched_ads"] = kept
+        else:
+            # Never preserve a positionally misaligned enriched array.
+            edition.pop("enriched_ads", None)
+
+    return changed, category_changes
+
+
+def triage_edition(
+    edition_path: str,
+    client,
+    force: bool = False,
+    telemetry_hook: TelemetryHook | None = None,
+    review_hints: dict[str, dict[str, Any]] | None = None,
+) -> tuple[bool, int, float]:
+    """Run targeted final review; retain the legacy callable name."""
+    try:
+        with open(edition_path, "r", encoding="utf-8") as file:
+            edition = json.load(file)
+    except json.JSONDecodeError as exc:
+        error(f"Malformed JSON in {edition_path}: {exc}")
         return False, 0, 0.0
 
     edition_date = edition.get("edition_date", os.path.basename(os.path.dirname(edition_path)))
+    del force
 
-    if not force and edition.get("content_triaged"):
-        info(f"{edition_date}: Already triaged, skipping")
+    candidates, item_map = _build_candidates(edition, review_hints)
+    if not candidates:
+        info(f"{edition_date}: No deterministic final-review candidates")
         return False, 0, 0.0
 
-    articles = edition.get("articles", [])
-    other_content = edition.get("other_content", [])
-
-    # Build suspect articles list: short/empty body
-    suspect_items = []
-    suspect_indices = []
-    for i, art in enumerate(articles):
-        body = (art.get("body") or "").strip()
-        if len(body) < 100:
-            suspect_items.append({
-                "index": len(suspect_items),
-                "original_index": i,
-                "headline": art.get("headline", "")[:120],
-                "body": body[:200],
-                "has_image": bool(art.get("image_files")),
-                "category": art.get("category", ""),
-            })
-            suspect_indices.append(i)
-
-    # Build promotable other_content list
-    promotable_items = []
-    promotable_indices = []
-    for i, oc in enumerate(other_content):
-        body = oc.get("body", "")
-        title = oc.get("title", "")
-        if len(body) >= 100 or _is_image_file(body):
-            promotable_items.append({
-                "index": len(promotable_items),
-                "original_index": i,
-                "title": title[:120],
-                "body": body[:500] if not _is_image_file(body) else f"[IMAGE FILE: {body}]",
-                "is_image_file": _is_image_file(body),
-            })
-            promotable_indices.append(i)
-
-    if not suspect_items and not promotable_items:
-        info(f"{edition_date}: Nothing to triage (no suspects, no promotable other_content)")
-        return False, 0, 0.0
-
-    status(f"{edition_date}: Triaging {len(suspect_items)} suspect articles + {len(promotable_items)} other_content items...")
-
-    # Build headline context
-    headlines = [{"index": i, "headline": art.get("headline", "")[:80]} for i, art in enumerate(articles)]
-
+    status(f"{edition_date}: Reviewing {len(candidates)} deterministic candidates...")
+    headlines = [
+        {"index": index, "headline": article.get("headline", "")}
+        for index, article in enumerate(edition.get("articles", []))
+    ]
     user_message = TRIAGE_USER_TEMPLATE.format(
-        suspect_json=json.dumps(suspect_items, indent=2) if suspect_items else "[]",
-        other_json=json.dumps(promotable_items, indent=2) if promotable_items else "[]",
+        suspect_json=json.dumps(candidates, indent=2),
+        other_json="[]",
         headlines_json=json.dumps(headlines, indent=2),
     )
-
-    from google.genai import types
-
-    model_cfg = MODELS["content_triage"]
-    thinking = types.ThinkingConfig(thinking_level=model_cfg["thinking"]) if model_cfg.get("thinking") else None
-    call_start = time.time()
-    response = gemini_generate_with_retry(
-        client,
-        model=model_cfg["name"],
-        contents=[user_message],
-        config=types.GenerateContentConfig(
-            system_instruction=TRIAGE_SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            response_schema=ContentTriageResponse,
-            safety_settings=SAFETY_OFF,
-            max_output_tokens=16384,
-            **({"thinking_config": thinking} if thinking else {}),
-        ),
+    generation_config = build_generation_config(
+        "content_triage",
+        system_instruction=TRIAGE_SYSTEM_PROMPT,
+        response_mime_type="application/json",
+        response_schema=ContentReviewResponse,
+        max_output_tokens=16384,
     )
-    call_elapsed = time.time() - call_start
+    candidate_ids = [candidate["item_id"] for candidate in candidates]
 
-    usage = response.usage_metadata
-    total_tokens = usage.total_token_count if usage else 0
-    if usage:
-        substep(f"Tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out | Time: {call_elapsed:.1f}s")
+    def validator(response) -> bool:
+        return _review_response_complete(response, candidate_ids)
 
-    if not response.parsed:
-        error("Triage response was empty or blocked")
-        return False, total_tokens, call_elapsed
-
-    result: ContentTriageResponse = response.parsed
-
-    # Apply suspect article decisions, tracking any out-of-bounds index drops
-    # so operators can see how much Gemini work was lost. Previously dropped
-    # silently with no counter or log entry. See docs/issues/0010.
-    dropped_oob: list[tuple[str, int, int]] = []
-    demote_indices = set()
-    for decision in result.suspect_articles:
-        if decision.decision == "demote":
-            if 0 <= decision.index < len(suspect_indices):
-                demote_indices.add(suspect_indices[decision.index])
-            else:
-                dropped_oob.append(("demote", decision.index, len(suspect_indices)))
-
-    # Apply other_content decisions
-    promote_indices = set()
-    promoted_articles = []
-    for decision in result.other_content:
-        if decision.decision == "promote":
-            if not (0 <= decision.index < len(promotable_indices)):
-                dropped_oob.append(("promote", decision.index, len(promotable_indices)))
-                continue
-            oc_idx = promotable_indices[decision.index]
-            oc = other_content[oc_idx]
-            promote_indices.add(oc_idx)
-
-            body = oc.get("body", "")
-            title = oc.get("title", "")
-            headline = decision.headline or title
-
-            if _is_image_file(body):
-                promoted_articles.append({
-                    "headline": headline,
-                    "author": "",
-                    "writer_position": "",
-                    "category": decision.category,
-                    "body": title,
-                    "images": [{"caption": title, "position": ""}],
-                    "image_files": [body],
-                    "continues_on": "",
-                    "continued_from": "",
-                    "source_pages": [],
-                    "triage_promoted": True,
-                })
-            else:
-                promoted_articles.append({
-                    "headline": headline,
-                    "author": "",
-                    "writer_position": "",
-                    "category": decision.category,
-                    "body": body,
-                    "images": [],
-                    "image_files": [],
-                    "continues_on": "",
-                    "continued_from": "",
-                    "source_pages": [],
-                    "triage_promoted": True,
-                })
-
-    if dropped_oob:
-        from ..shared.console import warning as _warning
-        _warning(
-            f"content_rescue: dropped {len(dropped_oob)} out-of-bounds triage "
-            f"decisions (first 5: {dropped_oob[:5]})"
+    call_start = time.time()
+    try:
+        response = gemini_generate_with_retry(
+            client,
+            model=model_name("content_triage"),
+            contents=[user_message],
+            config=generation_config,
+            stage="content_triage",
+            response_validator=validator,
+            max_schema_retries=1,
         )
+    except Exception as exc:
+        elapsed = time.time() - call_start
+        _emit_telemetry(
+            telemetry_hook,
+            status_value="error",
+            elapsed_seconds=elapsed,
+            item_count=len(candidates),
+            error_message=str(exc),
+        )
+        error(f"Final review failed; keeping all current classifications: {exc}")
+        return False, 0, elapsed
 
-    # Build new articles list (remove demoted, add promoted)
-    demoted_to_other = []
-    new_articles = []
-    for i, art in enumerate(articles):
-        if i in demote_indices:
-            # Preserve image reference when demoting
-            image_files = art.get("image_files", [])
-            headline = art.get("headline", "")
-            body_text = art.get("body", "").strip()
-            demoted_to_other.append({
-                "title": headline,
-                "body": image_files[0] if image_files else body_text or headline,
-            })
-        else:
-            new_articles.append(art)
+    elapsed = time.time() - call_start
+    usage = getattr(response, "usage_metadata", None)
+    total_tokens = getattr(usage, "total_token_count", 0) or 0 if usage else 0
+    if usage:
+        substep(
+            f"Review tokens: {getattr(usage, 'prompt_token_count', 0) or 0} in, "
+            f"{getattr(usage, 'candidates_token_count', 0) or 0} out | Time: {elapsed:.1f}s"
+        )
+    if not validator(response):
+        _emit_telemetry(
+            telemetry_hook,
+            status_value="error",
+            elapsed_seconds=elapsed,
+            item_count=len(candidates),
+            usage=usage,
+            error_message="structured response incomplete",
+        )
+        error("Final review contract remained incomplete; keeping all current classifications")
+        return False, total_tokens, elapsed
 
-    new_articles.extend(promoted_articles)
+    _emit_telemetry(
+        telemetry_hook,
+        status_value="success",
+        elapsed_seconds=elapsed,
+        item_count=len(candidates),
+        usage=usage,
+    )
 
-    # Build new other_content list (remove promoted, add demoted)
-    new_other = [oc for i, oc in enumerate(other_content) if i not in promote_indices]
-    new_other.extend(demoted_to_other)
+    changed, category_changes = _apply_review(
+        edition,
+        item_map,
+        response.parsed,
+        review_hints,
+    )
 
-    edition["articles"] = new_articles
-    edition["other_content"] = new_other
-    edition["content_triaged"] = True
-
-    # Atomic write. Explicit prefix avoids collisions when two processes
-    # touch the same edition directory concurrently (e.g. rerunning a failed
-    # edition while another run started). See docs/issues/0020.
-    tmp_fd, tmp_path = tempfile.mkstemp(
-        dir=os.path.dirname(edition_path), prefix="rescue_", suffix=".json"
+    descriptor, temporary_path = tempfile.mkstemp(
+        dir=os.path.dirname(edition_path), prefix="review_", suffix=".json"
     )
     try:
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-            json.dump(edition, f, indent=2)
-        os.replace(tmp_path, edition_path)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            json.dump(edition, file, indent=2)
+        os.replace(temporary_path, edition_path)
     except BaseException:
-        os.unlink(tmp_path)
+        os.unlink(temporary_path)
         raise
 
-    substep(f"Demoted {len(demote_indices)} ghost articles, promoted {len(promoted_articles)} from other_content")
+    substep(f"Final review: {changed} type changes, {category_changes} category changes")
     file_written("Edition", edition_path)
-    return True, total_tokens, call_elapsed
+    return True, total_tokens, elapsed
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Triage content in edition.json files")
-    parser.add_argument("--date", help="Triage a specific edition by date (e.g. 2000-04-05)")
-    parser.add_argument("--force", action="store_true", help="Re-triage already triaged editions")
-    args = parser.parse_args(argv)
-
-    from google import genai
-
-    client = genai.Client()
-    editions_dir = str(PUBLIC_EDITIONS_DIR)
-
-    total_tokens = 0
-    total_time = 0.0
-
-    if args.date:
-        edition_path = os.path.join(editions_dir, args.date, "edition.json")
-        if not os.path.exists(edition_path):
-            error(f"Edition not found: {edition_path}")
-            return 1
-        _performed, tokens, elapsed = triage_edition(edition_path, client, force=args.force)
-        total_tokens += tokens
-        total_time += elapsed
-    else:
-        triaged_count = 0
-        for entry in sorted(os.listdir(editions_dir)):
-            edition_path = os.path.join(editions_dir, entry, "edition.json")
-            if os.path.isfile(edition_path):
-                performed, tokens, elapsed = triage_edition(edition_path, client, force=args.force)
-                total_tokens += tokens
-                total_time += elapsed
-                if performed:
-                    triaged_count += 1
-
-        success(f"Done: {triaged_count} edition(s) triaged")
-
-    info(f"Total: {total_tokens} tokens, {total_time:.1f}s")
-    return 0
-
-
-__all__ = ["main", "triage_edition"]
+__all__ = [
+    "_build_candidates",
+    "_review_response_complete",
+    "triage_edition",
+]

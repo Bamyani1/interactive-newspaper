@@ -7,35 +7,49 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 
 
+def crop_regions(
+    image: Image.Image,
+    regions: list[tuple[int, int, int, int]],
+    padding_frac: float = 0.10,
+) -> dict[int, Image.Image]:
+    """Return padded source-quality crops without writing evidence artifacts."""
+    width, height = image.size
+    crops: dict[int, Image.Image] = {}
+    for index, (y_min, x_min, y_max, x_max) in enumerate(regions):
+        pad_y = int((y_max - y_min) * padding_frac)
+        pad_x = int((x_max - x_min) * padding_frac)
+        crops[index] = image.crop(
+            (
+                max(0, x_min - pad_x),
+                max(0, y_min - pad_y),
+                min(width, x_max + pad_x),
+                min(height, y_max + pad_y),
+            )
+        )
+    return crops
+
+
 def crop_and_save_images(
     image: Image.Image,
     regions: list[tuple[int, int, int, int]],
     output_dir: str,
     page_stem: str,
-    padding_frac: float = 0.02,
+    padding_frac: float = 0.10,
     quality: int = 95,
 ) -> dict[int, str]:
-    """Crop detected image regions and save as JPEG files."""
+    """Crop detected regions from the source-quality color page.
+
+    The 10% evidence margin is part of the visual-call contract.  Public asset
+    optimization happens later, after only referenced crops are known.
+    """
     if not regions:
         return {}
 
     img_dir = os.path.join(output_dir, "images")
     os.makedirs(img_dir, exist_ok=True)
 
-    width, height = image.size
     saved = {}
-
-    for i, (y_min, x_min, y_max, x_max) in enumerate(regions):
-        pad_y = int((y_max - y_min) * padding_frac)
-        pad_x = int((x_max - x_min) * padding_frac)
-        crop_box = (
-            max(0, x_min - pad_x),
-            max(0, y_min - pad_y),
-            min(width, x_max + pad_x),
-            min(height, y_max + pad_y),
-        )
-
-        cropped = image.crop(crop_box)
+    for i, cropped in crop_regions(image, regions, padding_frac).items():
         filename = f"{page_stem}_img{i+1}.jpg"
         filepath = os.path.join(img_dir, filename)
         cropped.save(filepath, "JPEG", quality=quality)
@@ -87,4 +101,4 @@ def draw_region_annotations(
     return annotated
 
 
-__all__ = ["crop_and_save_images", "draw_region_annotations"]
+__all__ = ["crop_and_save_images", "crop_regions", "draw_region_annotations"]

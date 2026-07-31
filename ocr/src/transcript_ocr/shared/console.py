@@ -56,8 +56,6 @@ def banner(
     edition_date: str,
     page_count: int,
     output_path: str,
-    run_id: str = "",
-    ocr_output: str = "",
 ) -> None:
     """Print a startup banner with edition configuration."""
     lines = [
@@ -65,10 +63,6 @@ def banner(
         f"  Pages:       {page_count}",
         f"  Output:      {output_path}",
     ]
-    if run_id:
-        lines.append(f"  Run ID:      {run_id}")
-    if ocr_output:
-        lines.append(f"  OCR Output:  {ocr_output}")
     _console.print(
         Panel("\n".join(lines), title="The Transcript Archive \u2014 OCR Pipeline", border_style="cyan")
     )
@@ -179,8 +173,6 @@ def print_summary_table(report: PipelineReport) -> None:
     kv.add_column("Value")
 
     kv.add_row("Edition", report.edition_date)
-    if report.run_id:
-        kv.add_row("Run ID", report.run_id)
     mins, secs = divmod(report.total_time_seconds, 60)
     kv.add_row("Total time", f"{int(mins)}m {secs:.0f}s" if mins else f"{secs:.1f}s")
     kv.add_row("Pages", f"{report.pages_processed}/{report.pages_attempted} processed")
@@ -222,8 +214,6 @@ def print_page_table(page_diagnostics: list[PageDiagnostics]) -> None:
             ok_count += 1
 
         total_tok = pd.gemini_tokens.total_tokens
-        for ct in pd.chunk_tokens:
-            total_tok += ct.total_tokens
 
         total_arts += pd.final_article_count
         total_ads += pd.final_ad_count
@@ -276,10 +266,8 @@ def print_merge_summary(merge_pass: MergePassDiagnostics | None) -> None:
         f"{mp.tokens.prompt_tokens:,} / {mp.tokens.candidates_tokens:,}",
     )
     table.add_row("Time", f"{mp.time_seconds:.1f}s")
-    if mp.category_conflicts or mp.image_orphans_dropped or mp.empty_articles_removed:
+    if mp.image_orphans_dropped or mp.empty_articles_removed:
         parts: list[str] = []
-        if mp.category_conflicts:
-            parts.append(f"{mp.category_conflicts} category conflicts")
         if mp.image_orphans_dropped:
             parts.append(f"{mp.image_orphans_dropped} orphan captions")
         if mp.empty_articles_removed:

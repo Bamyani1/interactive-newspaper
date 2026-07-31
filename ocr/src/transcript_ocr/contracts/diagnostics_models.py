@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 
 
 @dataclass
@@ -26,17 +25,25 @@ class StageTimer:
 class TokenUsage:
     prompt_tokens: int = 0
     candidates_tokens: int = 0
+    thoughts_tokens: int = 0
+    tool_use_prompt_tokens: int = 0
+    cached_content_tokens: int = 0
     total_tokens: int = 0
 
 
 @dataclass
 class CVRegionInfo:
+    detector: str = "doclayout"
     total_components_found: int = 0
     filtered_by_class: int = 0
     filtered_by_area: int = 0
     filtered_by_aspect_ratio: int = 0
     regions_kept: int = 0
     bounding_boxes: list[tuple[int, int, int, int]] = field(default_factory=list)
+    american_stories_regions: int = 0
+    american_stories_boxes: list[tuple[int, int, int, int]] = field(default_factory=list)
+    doclayout_table_regions: int = 0
+    doclayout_table_boxes: list[tuple[int, int, int, int]] = field(default_factory=list)
 
 
 @dataclass
@@ -44,11 +51,6 @@ class DeduplicationInfo:
     articles_before: int = 0
     articles_after: int = 0
     overlapping_pairs_merged: int = 0
-
-
-@dataclass
-class PostprocessingInfo:
-    ad_reclassifications: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -63,7 +65,6 @@ class ImageMatchingInfo:
 class VisualMatchingInfo:
     attempted: bool = False
     succeeded: bool = False
-    classification_tokens: TokenUsage = field(default_factory=TokenUsage)
     tokens: TokenUsage = field(default_factory=TokenUsage)
     assignments_returned: int = 0
     valid_article_matches: int = 0
@@ -72,7 +73,6 @@ class VisualMatchingInfo:
     rejected_not_image: int = 0
     rejected_text_ad: int = 0
     invalid_assignments: int = 0
-    fallback_to_spatial: bool = False
 
 
 @dataclass
@@ -84,11 +84,7 @@ class PageDiagnostics:
     docai_mean_confidence: float = 0.0
     cv_info: CVRegionInfo = field(default_factory=CVRegionInfo)
     gemini_tokens: TokenUsage = field(default_factory=TokenUsage)
-    chunked_fallback_used: bool = False
-    chunk_tokens: list[TokenUsage] = field(default_factory=list)
-    chunk_failures: list[str] = field(default_factory=list)
     dedup_info: DeduplicationInfo = field(default_factory=DeduplicationInfo)
-    postprocessing: PostprocessingInfo = field(default_factory=PostprocessingInfo)
     image_matching: ImageMatchingInfo = field(default_factory=ImageMatchingInfo)
     visual_matching: VisualMatchingInfo = field(default_factory=VisualMatchingInfo)
     images_saved: int = 0
@@ -108,11 +104,8 @@ class MergePassDiagnostics:
     singleton_groups: int = 0
     multi_article_groups: int = 0
     duplicate_warnings: list[str] = field(default_factory=list)
-    unreferenced_articles: int = 0
-    category_conflicts: int = 0
     image_orphans_dropped: int = 0
     empty_articles_removed: int = 0
-    low_confidence_rejections: int = 0
     tokens: TokenUsage = field(default_factory=TokenUsage)
     time_seconds: float = 0.0
     error: str = ""
@@ -122,15 +115,6 @@ class MergePassDiagnostics:
 @dataclass
 class PipelineReport:
     edition_date: str = ""
-    run_id: str = ""
-    run_root: str = ""
-    input_edition_dir: str = ""
-    output_edition_dir: str = ""
-    git_commit_hash: str = ""
-    run_manifest_path: str = ""
-    issue_report_path: str = ""
-    start_time: str = ""
-    end_time: str = ""
     pages_attempted: int = 0
     pages_processed: int = 0
     page_diagnostics: list[PageDiagnostics] = field(default_factory=list)
@@ -140,18 +124,12 @@ class PipelineReport:
     total_time_seconds: float = 0.0
 
     def finalize(self) -> None:
-        self.end_time = datetime.now(timezone.utc).isoformat()
         prompt = 0
         cand = 0
         for pd in self.page_diagnostics:
             prompt += pd.gemini_tokens.prompt_tokens or 0
             cand += pd.gemini_tokens.candidates_tokens or 0
-            for ct in pd.chunk_tokens:
-                prompt += ct.prompt_tokens or 0
-                cand += ct.candidates_tokens or 0
             if pd.visual_matching.attempted:
-                prompt += pd.visual_matching.classification_tokens.prompt_tokens or 0
-                cand += pd.visual_matching.classification_tokens.candidates_tokens or 0
                 prompt += pd.visual_matching.tokens.prompt_tokens or 0
                 cand += pd.visual_matching.tokens.candidates_tokens or 0
         if self.merge_pass:
@@ -175,7 +153,6 @@ __all__ = [
     "MergePassDiagnostics",
     "PageDiagnostics",
     "PipelineReport",
-    "PostprocessingInfo",
     "StageTimer",
     "TokenUsage",
     "VisualMatchingInfo",

@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
-from .content_models import EnrichedAd, EnrichedAdsResponse
+from .content_models import (
+    AdEnrichmentDelta,
+    AdEnrichmentDeltasResponse,
+    EnrichedAd,
+)
 
-__all__ = ["EnrichedAd", "EnrichedAdsResponse"]
+__all__ = [
+    "AdEnrichmentDelta",
+    "AdEnrichmentDeltasResponse",
+    "EnrichedAd",
+]

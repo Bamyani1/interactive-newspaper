@@ -28,9 +28,3 @@ def test_convert_scans_defaults_to_package_runtime():
     proc = _run(sys.executable, "ocr/convert_scans.py", "--help")
     assert proc.returncode == 0
     assert "usage: convert_scans.py" in proc.stdout
-
-
-def test_enrich_ads_defaults_to_package_runtime():
-    proc = _run(sys.executable, "ocr/enrich_ads.py", "--help")
-    assert proc.returncode == 0
-    assert "usage: enrich_ads.py" in proc.stdout

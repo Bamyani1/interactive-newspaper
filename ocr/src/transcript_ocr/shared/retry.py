@@ -1,61 +1,138 @@
-"""Retry helpers for Gemini API calls."""
+"""Bounded Gemini request, deadline, rate-limit, and retry helpers."""
 
 from __future__ import annotations
 
-import os
-import time
+import email.utils
 import logging
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+import os
+import random
+import threading
+import time
+from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
+from datetime import datetime, timezone
+from typing import Any, Iterator
 
 from google import genai
 from google.genai import types
 
+from ..config.model_calls import STAGE_TIMEOUT_SECONDS
 from .console import warning as _console_warning
-from ..config.prompts_loader import MODELS
 
 logger = logging.getLogger(__name__)
 
-# Transient HTTP status codes worth retrying
-_RETRYABLE_STATUS_CODES = {429, 500, 503}
+_RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+_RETRYABLE_EXCEPTION_NAMES = {
+    "ConnectError",
+    "ConnectTimeout",
+    "DeadlineExceeded",
+    "InternalServerError",
+    "PoolTimeout",
+    "ReadError",
+    "ReadTimeout",
+    "RemoteProtocolError",
+    "ResourceExhausted",
+    "ServiceUnavailable",
+    "TooManyRequests",
+    "TransportError",
+    "WriteTimeout",
+}
+_MAX_ATTEMPTS = 3
+_MAX_SCHEMA_RETRIES = 1
+_BASE_DELAY_S = 2.0
+_CALL_SPACING_S = float(os.getenv("GEMINI_CALL_SPACING_S", "0.5"))
 
-_MAX_RETRIES = 4
-_BASE_DELAY_S = 2  # exponential: 2s, 4s, 8s, 16s, 32s
-_REQUEST_TIMEOUT_S = int(os.getenv("GEMINI_REQUEST_TIMEOUT_S", "120"))
-_CALL_SPACING_S = float(os.getenv("GEMINI_CALL_SPACING_S", "0.5"))  # min seconds between calls
-_RETRY_MODEL = MODELS["merge_fallback"]["name"]  # fallback model for retry attempts
+_rate_lock = threading.Lock()
+_last_call_started_at = 0.0
+FailureObserver = Callable[[dict[str, Any]], None]
+_failure_observer: ContextVar[FailureObserver | None] = ContextVar(
+    "gemini_failure_observer",
+    default=None,
+)
 
 
-def _generate_content_with_timeout(
+class GeminiResponseError(RuntimeError):
+    """Raised when Gemini completes but never returns the required contract."""
+
+
+@contextmanager
+def observe_gemini_failures(observer: FailureObserver) -> Iterator[None]:
+    """Attach metadata-only retry diagnostics to the current execution context."""
+    token = _failure_observer.set(observer)
+    try:
+        yield
+    finally:
+        _failure_observer.reset(token)
+
+
+def _usage_metadata(response: object) -> dict[str, int]:
+    usage = getattr(response, "usage_metadata", None)
+    return {
+        "prompt_tokens": int(getattr(usage, "prompt_token_count", 0) or 0),
+        "candidates_tokens": int(
+            getattr(usage, "candidates_token_count", 0) or 0
+        ),
+        "thoughts_tokens": int(getattr(usage, "thoughts_token_count", 0) or 0),
+        "tool_use_prompt_tokens": int(
+            getattr(usage, "tool_use_prompt_token_count", 0) or 0
+        ),
+        "cached_content_tokens": int(
+            getattr(usage, "cached_content_token_count", 0) or 0
+        ),
+        "total_tokens": int(getattr(usage, "total_token_count", 0) or 0),
+    }
+
+
+def _emit_failure(event: dict[str, Any]) -> None:
+    observer = _failure_observer.get()
+    if observer is None:
+        return
+    try:
+        observer(event)
+    except Exception as exc:
+        logger.warning("Gemini failure observer failed: %s", exc)
+
+
+def _wait_for_global_call_slot() -> None:
+    """Serialize request starts across workers without serializing responses."""
+    global _last_call_started_at
+    if _CALL_SPACING_S <= 0:
+        return
+    with _rate_lock:
+        now = time.monotonic()
+        remaining = _CALL_SPACING_S - (now - _last_call_started_at)
+        if remaining > 0:
+            time.sleep(remaining)
+        _last_call_started_at = time.monotonic()
+
+
+def _config_with_deadline(
+    config: types.GenerateContentConfig,
+    timeout_seconds: int,
+) -> types.GenerateContentConfig:
+    """Apply an SDK/HTTP deadline; do not use a thread that keeps running."""
+    return config.model_copy(
+        update={
+            "http_options": types.HttpOptions(timeout=timeout_seconds * 1000),
+        }
+    )
+
+
+def _generate_content(
     client: genai.Client,
     *,
     model: str,
     contents: list,
     config: types.GenerateContentConfig,
+    timeout_seconds: int,
 ) -> genai.types.GenerateContentResponse:
-    """Call Gemini with an optional timeout guard.
-
-    Set GEMINI_REQUEST_TIMEOUT_S=0 to disable timeout enforcement.
-    """
-    if _REQUEST_TIMEOUT_S <= 0:
-        return client.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config,
-        )
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            client.models.generate_content,
-            model=model,
-            contents=contents,
-            config=config,
-        )
-        try:
-            return future.result(timeout=_REQUEST_TIMEOUT_S)
-        except FuturesTimeoutError as exc:
-            raise TimeoutError(
-                f"Gemini call timed out after {_REQUEST_TIMEOUT_S}s"
-            ) from exc
+    _wait_for_global_call_slot()
+    return client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=_config_with_deadline(config, timeout_seconds),
+    )
 
 
 def gemini_generate_with_retry(
@@ -64,66 +141,201 @@ def gemini_generate_with_retry(
     model: str,
     contents: list,
     config: types.GenerateContentConfig,
+    stage: str = "page_structuring",
+    response_validator: Callable[[genai.types.GenerateContentResponse], bool] | None = None,
+    schema_retry_instruction: (
+        Callable[[genai.types.GenerateContentResponse], str] | None
+    ) = None,
+    max_schema_retries: int = _MAX_SCHEMA_RETRIES,
 ) -> genai.types.GenerateContentResponse:
-    """Wrapper around client.models.generate_content() with exponential backoff.
+    """Generate with one shared three-attempt budget.
 
-    Retries up to 3 times on transient errors (429, 500, 503).
-    Re-raises after final failure.
+    Transient transport failures and contract-correction retries consume the
+    same budget.  At most one completed but invalid response is retried.  The
+    requested model and complete generation config are preserved on every
+    attempt; there is no fallback model.
     """
-    last_exc: Exception | None = None
+    timeout_seconds = STAGE_TIMEOUT_SECONDS.get(stage, 240)
+    schema_retries = 0
+    last_response: genai.types.GenerateContentResponse | None = None
+    attempt_contents = contents
 
-    for attempt in range(_MAX_RETRIES + 1):
-        if _CALL_SPACING_S > 0:
-            time.sleep(_CALL_SPACING_S)
-        # Use Pro model on 2nd and 3rd retry attempts
-        attempt_model = _RETRY_MODEL if attempt > 0 else model
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        attempt_started = time.monotonic()
         try:
-            return _generate_content_with_timeout(
+            response = _generate_content(
                 client,
-                model=attempt_model,
-                contents=contents,
+                model=model,
+                contents=attempt_contents,
                 config=config,
+                timeout_seconds=timeout_seconds,
             )
         except Exception as exc:
-            # Check if this is a retryable API error
-            if _is_retryable(exc) and attempt < _MAX_RETRIES:
-                delay = _BASE_DELAY_S * (2 ** attempt)
-                _console_warning(f"Gemini API error ({exc}), retrying with {_RETRY_MODEL} in {delay}s (attempt {attempt + 1}/{_MAX_RETRIES})")
-                time.sleep(delay)
-                last_exc = exc
-                continue
-            raise
+            _emit_failure(
+                {
+                    "stage": stage,
+                    "model": model,
+                    "attempt": attempt,
+                    "status": "transport_error",
+                    "status_code": _status_code(exc),
+                    "finish_reason": "",
+                    "latency_ms": round(
+                        (time.monotonic() - attempt_started) * 1000
+                    ),
+                    "tokens": {},
+                    "error": str(exc),
+                }
+            )
+            if not _is_retryable(exc) or attempt >= _MAX_ATTEMPTS:
+                raise
+            delay = _retry_delay_seconds(exc, attempt)
+            _console_warning(
+                f"Gemini {stage} transient error ({exc}); retrying the same "
+                f"model/config in {delay:.1f}s (attempt {attempt + 1}/{_MAX_ATTEMPTS})"
+            )
+            time.sleep(delay)
+            continue
 
-    # Should not reach here, but just in case
-    raise last_exc  # type: ignore[misc]
+        last_response = response
+        if response_validator is None or response_validator(response):
+            return response
+
+        failure_reason = _response_failure_reason(response)
+        _emit_failure(
+            {
+                "stage": stage,
+                "model": model,
+                "attempt": attempt,
+                "status": "schema_error",
+                "status_code": None,
+                "finish_reason": failure_reason,
+                "latency_ms": round((time.monotonic() - attempt_started) * 1000),
+                "tokens": _usage_metadata(response),
+                "error": "structured response validation failed",
+            }
+        )
+
+        if schema_retries >= max_schema_retries or attempt >= _MAX_ATTEMPTS:
+            return response
+
+        schema_retries += 1
+        if schema_retry_instruction is not None:
+            instruction = schema_retry_instruction(response).strip()
+            if instruction:
+                attempt_contents = [
+                    *contents,
+                    (
+                        "CORRECTION REQUIRED: The previous response violated the "
+                        f"output contract: {instruction} Return a complete corrected "
+                        "response for the original request."
+                    ),
+                ]
+        _console_warning(
+            f"Gemini {stage} returned an invalid structured response "
+            f"({failure_reason}); retrying the same "
+            f"model/config (attempt {attempt + 1}/{_MAX_ATTEMPTS})"
+        )
+
+    if last_response is not None:
+        return last_response
+    raise RuntimeError(f"Gemini {stage} exhausted its request attempts")
+
+
+def _status_code(exc: Exception) -> int | None:
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if callable(code):
+        code = code()
+    if hasattr(code, "value"):
+        code = code.value
+    try:
+        return int(code) if code is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_retryable(exc: Exception) -> bool:
-    """Check if an exception represents a transient, retryable Gemini API error."""
-    if isinstance(exc, TimeoutError):
+    """Return whether a transport/API failure may be attempted again."""
+    if isinstance(exc, (TimeoutError, ConnectionError)):
         return True
-    # google-genai wraps API errors in google.api_core.exceptions classes
-    # that have a `code` or `grpc_status_code` attribute.
-    # Also handle raw HTTP errors with a status_code attribute.
-    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    code = _status_code(exc)
     if code is not None:
+        return code in _RETRYABLE_STATUS_CODES
+    if type(exc).__name__ in _RETRYABLE_EXCEPTION_NAMES:
+        return True
+    text = str(exc).lower()
+    return any(
+        term in text
+        for term in (
+            "429",
+            "500",
+            "502",
+            "503",
+            "504",
+            "deadline exceeded",
+            "timed out",
+            "rate limit",
+            "resource exhausted",
+            "connection reset",
+            "server disconnected",
+            "temporarily unavailable",
+        )
+    )
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None) or getattr(exc, "headers", None)
+    if not headers:
+        return None
+    value = headers.get("retry-after") or headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
         try:
-            return int(code) in _RETRYABLE_STATUS_CODES
-        except (ValueError, TypeError):
-            pass
-
-    # google.api_core.exceptions.ServiceUnavailable, TooManyRequests, InternalServerError
-    exc_type_name = type(exc).__name__
-    retryable_names = {"TooManyRequests", "ResourceExhausted", "ServiceUnavailable", "InternalServerError"}
-    if exc_type_name in retryable_names:
-        return True
-
-    # Check the string representation as a last resort
-    exc_str = str(exc).lower()
-    if any(term in exc_str for term in ["429", "500", "503", "rate limit", "resource exhausted", "server disconnected"]):
-        return True
-
-    return False
+            target = email.utils.parsedate_to_datetime(str(value))
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=timezone.utc)
+            return max(0.0, (target - datetime.now(timezone.utc)).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            return None
 
 
-__all__ = ["gemini_generate_with_retry"]
+def _retry_delay_seconds(exc: Exception, attempt: int) -> float:
+    retry_after = _retry_after_seconds(exc)
+    if retry_after is not None:
+        return retry_after
+    ceiling = _BASE_DELAY_S * (2 ** (attempt - 1))
+    return random.uniform(0.0, ceiling)
+
+
+def _response_failure_reason(response: object) -> str:
+    """Return finish/block detail without persisting raw response text."""
+    prompt_feedback = getattr(response, "prompt_feedback", None)
+    block_reason = getattr(prompt_feedback, "block_reason", None)
+    if block_reason:
+        return f"block_reason={block_reason}"
+    candidates = getattr(response, "candidates", None) or []
+    reasons = [getattr(candidate, "finish_reason", None) for candidate in candidates]
+    reasons = [str(reason) for reason in reasons if reason]
+    return f"finish_reason={','.join(reasons)}" if reasons else "parsed output missing"
+
+
+def require_parsed(response: genai.types.GenerateContentResponse, *, stage: str):
+    """Return parsed content or raise a sanitized stage failure."""
+    parsed = getattr(response, "parsed", None)
+    if parsed is None:
+        raise GeminiResponseError(
+            f"Gemini {stage} response invalid after retries: "
+            f"{_response_failure_reason(response)}"
+        )
+    return parsed
+
+
+__all__ = [
+    "GeminiResponseError",
+    "gemini_generate_with_retry",
+    "observe_gemini_failures",
+    "require_parsed",
+]

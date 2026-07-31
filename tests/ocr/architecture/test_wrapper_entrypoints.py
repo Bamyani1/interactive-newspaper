@@ -24,10 +24,3 @@ def test_convert_scans_wrapper_help():
     assert proc.returncode == 0
     assert "Process newspaper scans into structured OCR output." in proc.stdout
 
-
-def test_enrich_ads_wrapper_help():
-    proc = _run(sys.executable, "ocr/enrich_ads.py", "--help")
-    assert proc.returncode == 0
-    assert "Enrich ads in edition.json files" in proc.stdout
-
-

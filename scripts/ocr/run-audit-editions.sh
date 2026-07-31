@@ -1,53 +1,33 @@
 #!/usr/bin/env bash
-# OCR Pipeline Audit — Run two editions end-to-end
-# Input A: 1988-10-12 (8 pages) | Input B: 1992-05-01 (16 pages)
-#
-# Usage: bash scripts/ocr/run-audit-editions.sh
-# Run from the project root directory.
-
 set -euo pipefail
-cd "$(dirname "$0")/../.."
 
-echo "═══════════════════════════════════════════════════"
-echo "  OCR PIPELINE AUDIT — Processing 2 editions"
-echo "═══════════════════════════════════════════════════"
-echo ""
+# Small production-path audit. Results are printed only to stdout.
 
-# ── Input A: 1988-10-12 (8 pages) ──────────────────────
-echo "▶ INPUT A: 1988-10-12 (8 pages)"
-echo "  Start: $(date)"
-START_A=$(date +%s)
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd -P)"
+PROCESS_SCRIPT="$ROOT_DIR/scripts/ocr/process-edition.sh"
+INPUTS=(
+  "$ROOT_DIR/ocr/inbox/1988-10-12"
+  "$ROOT_DIR/ocr/inbox/1992-05-01"
+)
 
-bash scripts/ocr/process-edition.sh ocr/inbox/1988-10-12
-RC_A=$?
+START_SECONDS=$SECONDS
+FAILURES=0
 
-END_A=$(date +%s)
-ELAPSED_A=$((END_A - START_A))
-echo "  Finished Input A in ${ELAPSED_A}s (exit code: ${RC_A})"
-echo ""
+echo "OCR pipeline audit: ${#INPUTS[@]} editions"
+for input in "${INPUTS[@]}"; do
+  label="$(basename "$input")"
+  item_start=$SECONDS
+  exit_code=0
+  bash "$PROCESS_SCRIPT" "$input" || exit_code=$?
+  item_elapsed=$((SECONDS - item_start))
+  if [[ $exit_code -eq 0 ]]; then
+    echo "$label completed in ${item_elapsed}s"
+  else
+    FAILURES=$((FAILURES + 1))
+    echo "$label failed with exit $exit_code after ${item_elapsed}s"
+  fi
+done
 
-# ── Input B: 1992-05-01 (16 pages) ─────────────────────
-echo "▶ INPUT B: 1992-05-01 (16 pages)"
-echo "  Start: $(date)"
-START_B=$(date +%s)
-
-bash scripts/ocr/process-edition.sh ocr/inbox/1992-05-01
-RC_B=$?
-
-END_B=$(date +%s)
-ELAPSED_B=$((END_B - START_B))
-echo "  Finished Input B in ${ELAPSED_B}s (exit code: ${RC_B})"
-echo ""
-
-# ── Summary ─────────────────────────────────────────────
-echo "═══════════════════════════════════════════════════"
-echo "  AUDIT RUN COMPLETE"
-echo "  Input A (1988-10-12): ${ELAPSED_A}s — exit ${RC_A}"
-echo "  Input B (1992-05-01): ${ELAPSED_B}s — exit ${RC_B}"
-echo ""
-echo "  Outputs:"
-echo "    public/editions/1988-10-12/edition.json"
-echo "    public/editions/1992-05-01/edition.json"
-echo "    ocr/runs/1988-10-12/"
-echo "    ocr/runs/1992-05-01/"
-echo "═══════════════════════════════════════════════════"
+TOTAL_ELAPSED=$((SECONDS - START_SECONDS))
+echo "Audit complete in ${TOTAL_ELAPSED}s with $FAILURES failure(s)."
+[[ $FAILURES -eq 0 ]]

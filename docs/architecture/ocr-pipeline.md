@@ -1,600 +1,427 @@
-# OCR Pipeline
+# OCR Pipeline Architecture
 
-> Deep-dive on the Python pipeline that turns newspaper scans into `edition.json`.
-> Audience: contributors extending, debugging, or reviewing the pipeline.
+This document describes the production OCR path that converts a newspaper
+edition into the current public `edition.json` contract. The reviewed and
+locked decision record is
+[`ocr-pipeline-implementation-plan.md`](ocr-pipeline-implementation-plan.md).
+The RAG pipeline is outside this scope and remains unchanged.
 
-**See also**: [data-model.md](data-model.md) for how `edition.json` becomes DB rows, and [rag-pipeline.md](rag-pipeline.md) for how those rows get queried.
+## System boundary
 
-## Table of contents
+Input is an edition directory whose name contains `YYYY-MM-DD`. An IIIF
+manifest is authoritative when present; otherwise the pipeline creates a
+non-authoritative synthetic inventory from naturally sorted local images.
+Production downloads persist `source-manifest.json`, so the manifest canvas
+count—not the number of downloaded files—is normally the edition denominator.
 
-- [What the pipeline does](#what-the-pipeline-does)
-- [Quickstart — process one edition](#quickstart--process-one-edition)
-- [Seven-phase flow](#seven-phase-flow)
-- [Layer architecture](#layer-architecture)
-- [Data contracts](#data-contracts)
-- [Stage walkthrough](#stage-walkthrough)
-- [LLM integration](#llm-integration)
-- [Failure modes](#failure-modes)
-- [Diagnostics & observability](#diagnostics--observability)
-- [Cost & rate controls](#cost--rate-controls)
-- [Local dev workflow](#local-dev-workflow)
-- [Testing](#testing)
-- [Architecture invariants (CI-enforced)](#architecture-invariants-ci-enforced)
-- [Gotchas](#gotchas)
+Output is a validated candidate containing articles, ads, other content,
+publication information, provenance, and referenced image assets. The Python
+orchestrator never writes directly over the current public edition. The shell
+publisher owns asset upload, the final validation, and atomic promotion.
 
----
+```text
+IIIF manifest + page scans
+          |
+          v
+manifest inventory -> lossless source conversion -> per-page image branches
+          |                                      /                 \
+          |                         grayscale OCR derivative   color source master
+          |                                   |                     |
+          |                             Document AI        hybrid visual detector
+          |                                   \                     /
+          |                                    Gemini page structuring
+          |                                             |
+          v                                             v
+canvas state accounting <----------------------- visual dispositions
+          |
+          v
+edition grouping -> all-boundary seam review -> enrichment -> final review
+          |
+          v
+validate -> optimize/upload referenced assets -> validate -> atomic promotion
+```
 
-## What the pipeline does
+## Manifest accounting and publication gate
 
-One invocation runs one newspaper edition. Input: a directory of numbered TIF/JPG scans for a single issue. Output: `public/editions/<YYYY-MM-DD>/edition.json` — a structured document containing articles, ads, other content, and publication metadata, plus extracted image crops.
+Every expected canvas reaches exactly one terminal state:
 
-The pipeline is **not** pure OCR. Raw character recognition is one of seven phases. The harder work is structuring — deciding which paragraphs form an article, which images belong to which article, and which article fragments across pages are continuations of the same story.
+| State | Meaning | Counts toward 70% |
+|---|---|---|
+| `passed_content` | Structured historical text is present | yes |
+| `passed_visual` | No historical text, but a retained visual is present | yes |
+| `confirmed_blank` | Successful cloud processing found neither content nor a retained visual | yes |
+| `failed` | Missing download, conversion failure, or unrecovered cloud/schema failure | no |
 
-Two LLMs are used side-by-side: **Google Cloud Document AI** (deterministic character-level extraction) and **Gemini** (semantic structuring, merging, enrichment). DocAI is authoritative for text; Gemini is never asked to re-read characters it could hallucinate.
+The publication ratio is:
 
----
+```text
+(passed_content + passed_visual + confirmed_blank) / manifest_canvas_count
+```
 
-## Quickstart — process one edition
+The candidate may continue when the ratio is at least `0.70`. A blank-looking
+pixel histogram produces only a warning; it never skips cloud processing or
+turns an API failure into `confirmed_blank`. Missing pages consume their canvas
+state but do not erase the content extracted from surviving pages.
+
+## Transaction and ownership
+
+`application.edition_pipeline.process_edition()` builds one candidate under the
+root supplied by the caller. `scripts/ocr/process-edition.sh` creates that root
+on the same filesystem as `public/editions/`, holds an edition-specific lock,
+and performs the transaction:
+
+1. Build the isolated OCR candidate.
+2. Structurally validate `edition.json` and every referenced local image.
+3. Optimize and upload only referenced assets.
+4. Prune failed image references while retaining text-bearing records.
+5. Validate the modified candidate again.
+6. Move the prior public edition into a temporary rollback directory.
+7. Rename the candidate to the public path.
+8. Validate the public result and delete the rollback directory.
+
+If promotion fails, the wrapper restores the previous public edition. Database
+seeding is a separate opt-in operation after promotion. A publication repair
+can re-run upload or seeding only from an already validated public artifact;
+there is no OCR-stage resume mode.
+
+## Ingestion and image branches
+
+### Download and inventory
+
+`scripts/iiif/download.py` supports IIIF Presentation 2 and common Presentation
+3 shapes. It records every canvas, preserves missing-download outcomes, assigns
+a four-digit canvas prefix, verifies each image, and renames a `.part` file only
+after successful decode. `ingestion.manifest.discover_page_inventory()` rejects
+duplicate local files for one canvas, unnumbered files in manifest mode, and
+extra files that do not map to a canvas.
+
+### TIFF conversion
+
+`preprocessing.image_converter` decodes every frame in every TIFF. Each frame is
+written to PNG staging, reopened, and checked for matching dimensions, decoded
+sample shape and type, exact pixel values, and palette appearance where
+applicable. The TIFF is deleted only after all committed frames pass a second
+verification. A bad TIFF fails only its mapped canvas; other canvases continue.
+
+### Source master and OCR derivative
+
+`preprocessing.image_preprocessor` creates two explicit run-scoped files:
+
+- **Source master:** native-resolution, EXIF-normalized color; transparency is
+  composited on white. Detection and all public crops use this branch.
+- **OCR derivative:** lossless 8-bit grayscale. Document AI and Gemini page
+  structuring use this branch.
+
+Deskew uses a fixed projection-profile search from `-2.0` to `+2.0` degrees in
+`0.1`-degree increments. It rotates only when the best absolute angle is at
+least `0.2` degrees. A best score at either boundary is considered unreliable
+and leaves the page unrotated. Applied rotations use bicubic resampling, canvas
+expansion, and white fill.
+
+No stage applies resize, upscale, contrast enhancement, sharpening, CLAHE,
+morphology, binarization, or automatic border crop to the OCR derivative.
+Document AI transport only encodes those pixels as lossless PNG.
+
+## Document AI
+
+`recognition.docai_provider.extract_page_text()` calls Enterprise OCR using:
+
+- `GOOGLE_CLOUD_PROJECT`
+- `DOCUMENT_AI_PROCESSOR_ID`
+- `DOCUMENT_AI_LOCATION`
+- `/processorVersions/stable`
+
+It returns raw text, paragraph anchors, token confidence, and low-confidence
+words. Empty text is a valid response because a page can be visual-only or
+blank. Continuation-marker regex extraction is disabled: raw printed markers
+remain in the transcript, while semantic continuation decisions belong to the
+page-structuring and grouping contracts.
+
+Document AI has three total attempts for transient failures. Permanent client
+errors surface immediately. A failed final attempt marks the canvas `failed`.
+
+## Local visual detection
+
+The locked detector is `hybrid`:
+
+1. The American Stories ONNX newspaper-layout checkpoint proposes photograph
+   and cartoon/advertisement regions from the color source master.
+2. DocLayout-YOLO proposes table regions.
+3. A table is added only when it does not overlap an American Stories region at
+   or above the fixed IoU threshold.
+
+The American Stories model runs at 1280 square input, confidence `0.1`, and
+class-agnostic NMS IoU `0.1`. Shared region policy rejects boxes below 15,000
+pixels, above 80% of page area, or outside the `0.25` to `4.0` aspect-ratio
+range. Detector source, class, confidence, and bounds remain available in the
+run's in-memory diagnostics.
+
+Hosted execution requires an explicit `OCR_DETECTOR_LICENSES_ACCEPTED=true`
+acknowledgement because American Stories and DocLayout have separate deployment
+license obligations. The detector route is fixed; environment overrides cannot
+bypass American Stories or its DocLayout table fallback.
+
+## Gemini request policy
+
+All OCR Gemini clients are created in `config.google_clients` with Vertex AI,
+ADC, project `GOOGLE_CLOUD_PROJECT`, location `global`, API `v1`, and SDK-level
+automatic retries set to one attempt so the pipeline owns retry behavior.
+
+Stage settings live in `ocr/src/prompts.json` and are normalized by
+`config.model_calls`:
+
+| Stage | Model | Thinking | Max output | Timeout | Media |
+|---|---|---|---:|---:|---|
+| Page structuring | `gemini-3.5-flash-lite` | `HIGH` | 65,536 | 240 s | OCR page `ULTRA_HIGH` |
+| Visual assignment | `gemini-3.5-flash-lite` | `MEDIUM` | 65,536 | 180 s | annotated page and crops `ULTRA_HIGH` |
+| Article grouping | `gemini-3.6-flash` | `MEDIUM` | 65,536 | 240 s | none |
+| Seam review | `gemini-3.6-flash` | `MEDIUM` | 65,536 | 240 s | none |
+| Ad enrichment | `gemini-3.5-flash-lite` | `MINIMAL` | 65,536 | 120 s | none |
+| Final content review | `gemini-3.5-flash-lite` | `MEDIUM` | 16,384 | 120 s | none |
+
+Every request uses:
+
+- one candidate;
+- seed `0`;
+- `include_thoughts=false`;
+- safety thresholds `OFF` for the configured harm categories;
+- typed JSON response contracts where applicable;
+- no `temperature`, `topP`, `topK`, or thinking-budget override.
+
+`shared.retry.gemini_generate_with_retry()` owns a single three-attempt budget.
+Transient transport failures and the one allowed invalid-schema correction
+consume the same budget. Retries preserve the exact model, thinking level,
+media resolution, prompt, and response schema. There is no fallback model.
+Request starts are globally spaced by 0.5 seconds by default; responses may
+still overlap across page workers.
+
+## Page structuring and historical text
+
+`recognition.page_extractor` sends the Document AI paragraphs and the grayscale
+page to Gemini 3.5 Flash-Lite. The transcript is the text source of truth; the
+image supplies layout, reading order, and printed-caption placement.
+
+The output `PageContent` contains `articles`, `ads`, `other_content`,
+`page_number`, and `publication_info`. Article categories are restricted to:
+
+- `Campus News`
+- `News`
+- `Sports`
+- `Arts & Entertainment`
+- `Opinion`
+
+An invalid or unsupported category becomes `News`. Historical content permits
+only whitespace/line-wrap normalization and conservative obvious line-end
+dehyphenation. Leading `By` is removed from the author field; a printed writer
+position stays separate. The pipeline does not modernize capitalization,
+summarize, infer missing authors or titles, or use local price/phone regexes to
+decide article versus ad.
+
+Deduplication is deliberately narrow:
+
+- only consecutive exactly equal normalized paragraphs are removed inside a
+  body;
+- exact duplicate page records require both normalized headline and body;
+- edition-level article deduplication also requires an exact normalized
+  headline-and-body pair;
+- repeated sentences and non-adjacent repeated text are preserved.
+
+Publication information is combined in page order with exact duplicate values
+removed.
+
+## Visual assignment and captions
+
+`application.page_pipeline.structure_and_link_page()` creates 10%-padded clean
+crops and an annotated full source page. `image_linking.visual_matcher` sends
+the full page plus at most 40 requested region crops per call; the full page is
+repeated when multiple batches are necessary. Every image part is
+`ULTRA_HIGH`.
+
+For every global region ID, Gemini returns two independent decisions:
+
+- visual kind: photograph, illustration, table/chart/map, logo, typographic
+  display ad, plain text, scanner/decorative artifact, or unresolved;
+- attachment: article, ad, standalone, or reject.
+
+Each batch must return exactly one valid disposition per requested ID. The one
+schema-correction retry handles missing, duplicate, out-of-range, or invalid
+assignments. Exhaustion converts the affected batch to unresolved standalone
+evidence; geometric proximity never makes a semantic attachment.
+
+The model cannot generate archival captions. Page structuring creates slots
+only from printed caption text in the OCR transcript, and visual assignment may
+associate a region with one of those slots. Unused printed caption text remains
+in `other_content`, so a detector miss cannot silently delete it.
+
+An ad attachment below 40,000 pixels is deterministically changed to
+`rejected_small_ad_visual`; this prevents dots or tiny artifacts from becoming
+public ad images. Other retained crops are attached to an article, attached to
+an ad, or preserved as standalone content.
+
+## Article grouping and seam review
+
+`merging.llm_merge.merge_edition_articles()` is lossless by construction.
+
+### Grouping call
+
+Each available article fragment gets an immutable run-local ID. One
+edition-level Gemini 3.6 Flash call receives every fragment with page,
+headline/byline fields, structured continuation fields, first and last two
+sentence-like units, and bounded raw head/tail fallbacks. It must return a
+complete partition of all IDs, including singleton groups, in merge order. It
+does not return rewritten text or metadata.
+
+Python validates exact coverage, uniqueness, known IDs, and the presence of a
+structured continuation role for every edge in a multi-fragment group. Printed
+folio digits remain evidence for Gemini rather than a Python veto because the
+source newspaper can misprint them. Python does not use punctuation,
+capitalization, body-similarity, or continuation regexes to preselect calls or
+make semantic grouping decisions. An invalid partition becomes all singletons.
+
+### Seam call
+
+Every adjacent boundary in every accepted multi-fragment group is included in
+one edition-level Gemini 3.6 Flash request, regardless of punctuation or
+capitalization. A three-piece article contributes two boundary records, but not
+two API calls. Each boundary returns:
+
+- `KEEP`: join the unchanged fragments with a paragraph break;
+- `REPAIR`: replace only a local left suffix and right prefix;
+- `UNRESOLVED`: preserve the default paragraph-break join without guessing.
+
+Repair anchors must match the source edge uniquely at 90% or greater normalized
+word similarity. The replacement must also remain at least 90% similar and
+preserve protected names, numbers, dates, prices, and phone-number tokens. A
+missing, duplicate, or unsafe boundary decision makes only that merge group
+fall back to its original source fragments. Accepted groups mechanically keep
+the earliest non-empty metadata and preserve every body, image, and source page.
+
+## Ad enrichment and final review
+
+Ad enrichment uses Gemini 3.5 Flash-Lite once per edition, split only when the
+edition has more than 50 ads. The model returns deltas keyed by stable ad IDs.
+`business_name`, source body, and image files are copied from the original ad
+and cannot be rewritten. Phone, address, and price must be found in that ad's
+source text; unsupported values are cleared. An unsupported generated display
+summary is also cleared. Any failed or incomplete batch leaves all raw ads
+unchanged.
+
+The final review does not inspect every item. Deterministic code selects only:
+
+- category-fallback flags;
+- exact text duplicated across content arrays;
+- blank article headline/body shapes;
+- blank ad business/body shapes;
+- visual-kind conflicts;
+- explicit unresolved classification states.
+
+Gemini 3.5 Flash-Lite may change only item type or article category, and a
+decision is applied only at confidence `>= 0.90`. It cannot rewrite text,
+names, metadata, source pages, captions, or image associations. Schedules and
+standings remain other content unless the supplied evidence shows authored
+journalism. Failure or an incomplete response is an abstention.
+
+## Candidate validation and assets
+
+`export.validation` checks, among other invariants:
+
+- matching edition date and required arrays;
+- valid article categories and source pages;
+- aligned `images` and `image_files` arrays;
+- safe, existing referenced paths;
+- one-to-one alignment of raw and enriched ads;
+- immutable enriched-ad source fields;
+- valid continuation fields and control characters;
+- no exact duplicate long articles.
+
+`scripts/db/upload-images.mjs` keeps only referenced images. It encodes WebP
+without enlargement, caps the long edge at 2,000 pixels, tries quality 85, 80,
+and 75, and then reduces dimensions by 10% to a 1,400-pixel floor when needed.
+Each asset must be below 500 KiB. The public edition warns above 15 MiB and
+fails above 25 MiB. SHA-256 of the final WebP bytes determines both
+`images/<hash>.webp` and `ocr-assets/<hash>.webp` in R2.
+
+Missing or unencodable images are pruned from aligned references before the
+second validation. An image-only standalone record is removed when its asset
+fails; printed text is retained even when its visual reference is lost.
+
+R2 cleanup is separate from edition publication. `scripts/db/gc-r2-assets.mjs`
+reads every current `asset-manifest.json`, tracks globally unreferenced object
+hashes in the private `ocr-assets-gc/unreferenced.json` state object, and
+deletes them only after they have remained unreferenced for a grace period of
+at least 30 days. Object modification time is not treated as the start of the
+unreferenced period. It is a dry run unless `--apply` is supplied.
+
+## Durable artifacts and observability
+
+The durable artifacts are limited to:
+
+```text
+public/editions/<date>/edition.json
+public/editions/<date>/provenance.json
+public/editions/<date>/asset-manifest.json
+public/editions/<date>/images/<sha256>.webp
+ocr/logs/failures.jsonl
+```
+
+`provenance.json` records the source manifest reference, per-canvas terminal
+state and source hash, Google Cloud project/location/API mode, Document AI
+`stable`, and model routing.
+
+The append-only failure log contains sanitized metadata fields such as edition,
+canvas/page, stage, attempt, model/config ID, finish reason, latency, token
+categories, estimated cost, and a bounded error string. It contains no prompt,
+OCR transcript, image, raw model response, or absolute local path.
+
+Snapshot, raw-response, issue-report, and run-comparison helpers have been
+removed. Run-owned source masters, OCR derivatives, annotated pages, crops,
+candidates, and rollback directories are cleaned up after success or failure.
+
+Gemini cost accounting uses global standard rates:
+
+| Model | Input / 1M tokens | Output / 1M tokens |
+|---|---:|---:|
+| `gemini-3.5-flash-lite` | $0.30 | $2.50 |
+| `gemini-3.6-flash` | $1.50 | $7.50 |
+
+`toolUsePromptTokenCount` is input; `thoughtsTokenCount` is output. Cached-token
+fields remain separate in telemetry.
+
+## Code map
+
+| Area | Main modules |
+|---|---|
+| Transaction orchestration | `application/edition_pipeline.py`, `scripts/ocr/process-edition.sh` |
+| IIIF inventory/download | `ingestion/manifest.py`, `ingestion/download.py`, `scripts/iiif/download.py` |
+| Source preparation | `preprocessing/image_converter.py`, `image_preprocessor.py`, `skew.py` |
+| OCR and page structuring | `recognition/docai_provider.py`, `recognition/page_extractor.py` |
+| Visual detection | `detection/visual_provider.py`, `american_stories_provider.py`, `hybrid_provider.py`, `yolo_provider.py` |
+| Visual assignment | `image_linking/visual_matcher.py`, `assignment_applier.py`, `cropper.py` |
+| Grouping and seams | `merging/llm_merge.py`, `merging/merge_sanitizer.py` |
+| Enrichment and review | `application/ad_enrichment.py`, `application/content_rescue.py` |
+| Validation and provenance | `export/validation.py`, `export/provenance.py`, `export/edition_writer.py` |
+| Retry, telemetry, cost | `shared/retry.py`, `diagnostics/failure_log.py`, `diagnostics/costing.py` |
+
+The package dependency direction is enforced by AST tests: application code may
+orchestrate domain modules, while contracts, shared primitives, and config stay
+below domain layers.
+
+## Verification
+
+The OCR tests live under `tests/ocr/`:
 
 ```bash
-# 1. Drop scans in an inbox dir named YYYY-MM-DD
-mv ~/Downloads/1960-01-13 ocr/inbox/
-
-# 2. Process
-scripts/ocr/process-edition.sh ocr/inbox/1960-01-13
-
-# 3. Inspect output
-jq '.articles | length' public/editions/1960-01-13/edition.json
-open   public/editions/1960-01-13/edition.json
+python3 -m pytest -q tests/ocr
 ```
 
-Required env vars are sourced from `.env.local` by the wrapper. See [Local dev workflow](#local-dev-workflow) for the full flag surface.
-
----
-
-## Seven-phase flow
-
-```
-Phase 0   TIF → PNG conversion                preprocessing.image_converter
-Phase 1a  Per-page preprocessing              preprocessing.image_preprocessor
-Phase 1b  Layout detection (figures)          detection.yolo_provider
-Phase 1c  DocAI text extraction               recognition.docai_provider          parallel pages
-Phase 2   Gemini page structuring             recognition.page_extractor          parallel pages
-Phase 3   Cross-page merging                  merging.llm_merge                   edition-level
-Phase 4   Ad enrichment                       application.ad_enrichment           edition-level
-Phase 5   Content triage                      application.content_rescue          edition-level
-Phase 6   Write edition.json + diagnostics    export.edition_writer + diagnostics edition-level
-```
-
-Phases 1a/1b/1c all execute per-page in the same `ThreadPoolExecutor` pass before Phase 2 starts. The orchestrator is `application/edition_pipeline.py :: process_edition()`. Phases 1 and 2 use `ThreadPoolExecutor(max_workers=workers)`; all other phases are sequential. `workers` comes from `--workers N` or `OCR_WORKERS` env var (default 1).
-
----
-
-## Layer architecture
-
-The pipeline is organized into ten domain layers plus three infrastructure layers. The dependency rule is strict and **CI-enforced**:
-
-```
-application  →  { recognition | preprocessing | detection | merging |
-                  postprocessing | image_linking | export | diagnostics | ingestion }
-                                   ↓
-                              { contracts | shared | config }
-```
-
-No lower layer may import from `application`. `contracts` and `shared` may not import from any domain layer. Enforced by `tests/ocr/architecture/test_import_rules.py` using AST-level static analysis — no imports are executed, so violations are caught before they can fail a runtime dep check.
-
-### `application/` — orchestration only
-
-| Module | Purpose |
-|---|---|
-| `edition_pipeline.py` | Seven-phase orchestrator; owns `ThreadPoolExecutor`, `PipelineReport`, phase gates |
-| `page_pipeline.py` | Two-phase page entrypoints: `extract_page_docai()` and `structure_and_link_page()` |
-| `ad_enrichment.py` | Phase 4 runtime: reads/writes `edition.json`, calls Gemini for ad enrichment |
-| `content_rescue.py` | Phase 5 runtime: content triage, demote/promote decisions |
-
-### `recognition/` — text extraction
-
-| Module | Purpose |
-|---|---|
-| `docai_provider.py` | Document AI client; `extract_page_text()` → `DocAIResult` |
-| `page_extractor.py` | `process_page_with_docai()` — Gemini call + dedup + postprocess |
-| `prompts.py`, `ad_prompts.py`, `rescue_prompts.py` | Prompt constants (loaded from `ocr/src/prompts.json`) |
-
-### `ingestion/` — file discovery
-
-| Module | Purpose |
-|---|---|
-| `discovery.py` | `discover_page_images()` — glob + sort page images after Phase 0 |
-| `pathing.py` | Edition-directory path helpers |
-
-### `preprocessing/` — image prep
-
-| Module | Purpose |
-|---|---|
-| `image_converter.py` | Phase 0: TIF → grayscale PNG |
-| `image_preprocessor.py` | `preprocess_image()`: EXIF, grayscale, deskew, contrast, unsharp mask |
-| `skew.py` | `_detect_skew_angle()` — horizontal projection variance sweep |
-
-### `detection/` — layout detection
-
-| Module | Purpose |
-|---|---|
-| `yolo_provider.py` | DocLayout-YOLO loader (lazy singleton, thread-locked); `detect_image_regions()` |
-| `region_filters.py` | `dedupe_overlapping_regions()` (IoU-based NMS); `should_keep_region()` |
-
-### `merging/` — cross-page article stitching
-
-| Module | Purpose |
-|---|---|
-| `llm_merge.py` | `merge_edition_articles()` — Gemini-assisted merge orchestration |
-| `continuation.py` | Regex-based continuation marker parsing |
-| `boundary_cleanup.py` | Truncated-word joining + duplicate-sentence removal at seams |
-| `deterministic_merge.py` | Exact-marker pre-merge pass (runs before LLM) |
-| `merge_sanitizer.py` | `_reconcile_image_alignment`, `_choose_merged_category`, seam guards |
-
-### `postprocessing/` — per-page cleanup
-
-| Module | Purpose |
-|---|---|
-| `ad_reclassification.py` | `postprocess_page_content()` — regex signal counting to demote ad-like articles |
-| `deduplication.py` | Sentence-overlap dedup within a page |
-| `byline_cleanup.py` | Normalize bylines, split author/position |
-| `null_sanitizer.py` | Clear literal `"null"`/`"none"` strings from Pydantic fields |
-
-### `image_linking/` — image-to-article assignment
-
-| Module | Purpose |
-|---|---|
-| `visual_matcher.py` | Gemini classifies annotated region crops → `ImageRegionAssignments` |
-| `spatial_matcher.py` | Geometric fallback when visual matching fails |
-| `assignment_applier.py` | Maps Gemini response indices to PageContent lists |
-| `cropper.py` | PIL crops; draws numbered red rectangles on annotated variants |
-
-### `export/` — artifact writing
-
-| Module | Purpose |
-|---|---|
-| `edition_writer.py` | `finalize_and_write_edition_json()`; final sanitize pass |
-| `artifact_writer.py` | `write_diagnostics_json()`, `write_issue_reports()` |
-| `markdown_writer.py` | Per-page `.md` files and edition summary |
-
-### `diagnostics/` — observability
-
-| Module | Purpose |
-|---|---|
-| `snapshots.py` | `save_snapshot()` — idempotent JSON dumps of any stage |
-| `issue_report.py` | Post-run automated issue detection |
-| `run_manifest.py` | SHA256 of inputs + git commit provenance |
-
-### `contracts/` — shapes only
-
-Pydantic models and dataclasses. Zero domain imports. Content models (`content_models.py`) define the shapes of everything that flows between layers and the final `edition.json`. Diagnostics models (`diagnostics_models.py`) define observability shapes.
-
-### `shared/` — primitives
-
-| Module | Purpose |
-|---|---|
-| `retry.py` | `gemini_generate_with_retry()` — retry with backoff + model fallback |
-| `console.py` | Rich-based terminal output helpers |
-| `text.py` | `normalize_whitespace`, `split_sentences`, `normalize_for_compare` |
-| `timing.py`, `filesystem.py` | Generic helpers |
-
----
-
-## Data contracts
-
-All contracts are Pydantic or dataclasses in `ocr/src/transcript_ocr/contracts/`.
-
-### Content flow
-
-```
-         Phase 2                        Phase 3                          Phase 6
-PageContent  ────────►  EditionContent  ────────►  edition.json (+enriched_ads,
-                                                       +content_triaged)
- ├ articles[]                 ├ articles[] (MergedArticle)
- ├ ads[]                      ├ ads[]
- ├ other_content[]            └ other_content[]
- └ publication_info
-```
-
-### `PageContent` (output of one page through Phase 2)
-
-- `articles: list[Article]`
-- `ads: list[Ad]`
-- `other_content: list[OtherContent]`
-- `page_number: str`, `publication_info: str`
-
-### `Article` fields
-
-| Field | Type | Notes |
-|---|---|---|
-| `headline` | `str` | required, default `""` |
-| `author` | `str` | may include section tag, e.g. `"By Name, Sports"` |
-| `writer_position` | `str` | role line if present |
-| `category` | `Literal[...]` | one of five fixed values, default `"Campus News"` |
-| `body` | `str` | raw paragraph text |
-| `images` | `list[ArticleImage]` | each has `caption`, `position` |
-| `image_files` | `list[str]` | filenames; **must stay aligned with `images`** |
-| `continues_on`, `continued_from` | `str` | normalized; `"?"` means uncertain |
-
-The `images` ↔ `image_files` alignment invariant is important: same length, same order. Mismatches are flagged as `issue_report.json` entries by `diagnostics/issue_report.py`.
-
-### `MergedArticle` (output of Phase 3)
-
-Extends `Article` with `source_pages: list[str]`. `body` becomes optional for singleton groups.
-
-### Structured-output schemas (LLM response shapes)
-
-These are Pydantic models passed as `response_schema` to Gemini:
-
-- `MergeDecisions` → `list[MergeInstruction]` — which article ids to join, plus the merged headline/author
-- `ImageRegionAssignments` → `list[ImageRegionAssignment]` — region number → (content_type, content_index, caption)
-- `ContentTriageResponse` → suspect-article decisions and other-content decisions
-- `EnrichedAdsResponse` → `list[EnrichedAd]` — adds `category`, `ad_type`, `display_text`, `phone`, `address`, `price`
-
-### Final `edition.json`
-
-```jsonc
-{
-  "edition_date": "1960-01-13",
-  "publication_info": "The Ohio Wesleyan Transcript ...",
-  "articles":      [ /* MergedArticle */ ],
-  "ads":           [ /* Ad */ ],
-  "other_content": [ /* OtherContent */ ],
-  "enriched_ads":  [ /* EnrichedAd — added by Phase 4 */ ],
-  "content_triaged": true                  // added by Phase 5
-}
-```
-
-Written by `export/edition_writer.py :: finalize_and_write_edition_json()`. `enriched_ads` is appended in-place by Phase 4 via atomic tempfile rename; `content_triaged: true` is appended similarly by Phase 5.
-
----
-
-## Stage walkthrough
-
-### Phase 0 — TIF → PNG
-
-`preprocessing/image_converter.py :: convert_edition_images()`. Globs `*.tif`/`*.tiff`, converts each to grayscale PNG via PIL, deletes the original. Raises `RuntimeError` if any TIF remains after conversion (sanity guard against silent partial conversion). JPGs pass through untouched.
-
-Then `ingestion/discovery.py :: discover_page_images()` globs all remaining image extensions and returns them sorted. Sort order relies on zero-padded filename prefixes like `0001_Page 1.png`.
-
-### Phase 1a — Preprocessing (per page)
-
-`preprocessing/image_preprocessor.py :: preprocess_image()`:
-
-1. `ImageOps.exif_transpose` — respect EXIF rotation
-2. Convert to grayscale
-3. `_detect_skew_angle()` — horizontal projection variance over ±5° in 0.1° steps on a downsampled binary copy. Only rotates if `abs(angle) >= 0.1`.
-4. `ImageEnhance.Contrast(1.5)`
-5. `UnsharpMask(radius=1.0, percent=50, threshold=3)`
-
-`check_page_quality()` runs first: blank detection (>95% of pixels within 10 of median → skip), low resolution (<500px → warn), inverted scan (median <64 → warn).
-
-### Phase 1b — Region detection (per page)
-
-`detection/yolo_provider.py :: detect_image_regions()`. DocLayout-YOLO model `doclayout_yolo_docstructbench_imgsz1024.pt`, lazy-loaded and thread-locked (the model is not thread-safe).
-
-- Inference at `imgsz=1024`, `conf=0.3`, `iou=0.3`
-- Filter to class `figure` only (`YOLO_FIGURE_CLASSES = {"figure"}`)
-- Area filter: `>= 15_000 px`, `<= 0.80 * page_area`
-- Aspect ratio filter: `0.25 – 4.0`
-- IoU-based NMS (`dedupe_overlapping_regions`, threshold 0.5)
-
-Returns `list[tuple[y1, x1, y2, x2]]`.
-
-### Phase 1c — DocAI text extraction (per page)
-
-`recognition/docai_provider.py :: extract_page_text()`. Image is further prepared by `_prepare_image_for_docai()`:
-
-1. CLAHE (`clipLimit=3.5`, `tileGridSize=8×8`)
-2. Morphological opening with a 2×2 kernel
-3. Border crop: Otsu threshold → bounding rect → 20 px margin
-4. PNG encode; abort with `DocAIError` if encoded bytes exceed `DOCAI_MAX_BYTES = 18 MB`
-
-Then call Google Cloud Document AI Layout Parser. Requires `GOOGLE_CLOUD_PROJECT` and `DOCUMENT_AI_PROCESSOR_ID`. Has its own retry loop independent of `shared/retry.py`: `max_retries=3` means 4 total attempts with delays 2s, 4s, 8s, 16s (`delay = 2 * (2 ** attempt)`), only for HTTP 429/500/503. HTTP 400 errors are treated as permanent and surface immediately as `DocAIError`.
-
-Parses paragraph segments, extracts continuation markers via six regex patterns (`docai_provider.py` line ~39–46), extracts per-token confidence, computes `mean_confidence`.
-
-### Phase 2 — Gemini page structuring (per page)
-
-`recognition/page_extractor.py :: process_page_with_docai()`. Builds the prompt by injecting DocAI paragraphs into `DOCAI_SYSTEM_PROMPT`, sends the preprocessed PIL image as PNG bytes. Model: `gemini-3-flash-preview` with `thinking="high"`. `response_schema=PageContent` forces structured output.
-
-After parsing:
-1. `_sanitize_null_strings()` — clear literal `"null"`/`"none"` artifacts
-2. `deduplicate_articles()` — sentence-overlap dedup
-3. `postprocess_page_content()` — ad reclassification
-
-**RECITATION handling**: if Gemini's content filter blocks the response with a `RECITATION` finish reason, the code retries by moving the OCR text from `system_instruction` to `user contents`. This is a documented SDK behavior: text in system instructions that is reproduced verbatim triggers the filter. Moving to user contents signals "data to process" rather than "text to recite."
-
-Then `structure_and_link_page()` crops each YOLO region, calls `image_linking/visual_matcher.py :: match_images_visual()` for Gemini-based image assignment, or falls back to `image_linking/spatial_matcher.py :: match_images_to_articles()` (pure geometry).
-
-### Phase 3 — Cross-page merging
-
-`merging/llm_merge.py :: merge_edition_articles()`. The most algorithmically involved stage.
-
-1. Collect all article dicts across pages: headline, author, body, continuation info, source page label.
-2. `_deterministic_merge()` — exact-marker pairs are merged without the LLM.
-3. Analyze dangling tails (body ends without terminal punctuation) and dangling heads (body starts lowercase or with connective words). If there are no candidates, **skip the LLM call entirely** and emit `MergeDecisions(groups=[])`.
-4. Otherwise call Gemini Pro (`gemini-3.1-pro-preview`, `thinking="high"`) with `response_schema=MergeDecisions`.
-5. On unparseable response, dump the raw blob to `snapshots/merge_raw_response.txt` and retry once with Flash (`gemini-3-flash-preview`).
-6. Validate: article ids must be in-range and appear in exactly one group. Any article not referenced gets a singleton group appended.
-7. For each multi-article group:
-   - `_strip_continuation_markers()` — remove "(see p. 3)" / "(continued from p. 1)" regex patterns
-   - `_validate_merge_seam()` — one-shot LLM call to repair torn sentences at the join
-   - `_best_body()` — drop near-identical body segments (ratio > 0.7)
-   - `clean_merge_boundary()` — mechanical cleanup per paragraph pair
-
-**Confidence gate**: groups with `confidence < MERGE_MIN_CONFIDENCE` (default `0.5`, overridable) are split back into singletons. Setting `MERGE_MIN_CONFIDENCE=1.0` effectively disables LLM merges, leaving only the deterministic pre-merge.
-
-### Phase 4 — Ad enrichment
-
-`application/ad_enrichment.py :: enrich_edition()`. Reads `edition.json`, calls Gemini with `ENRICHMENT_SYSTEM_PROMPT` + `ENRICHMENT_USER_TEMPLATE`, receives `EnrichedAdsResponse`. Appends `enriched_ads` to the JSON via `tempfile.mkstemp()` + `os.replace()` — atomic on POSIX.
-
-Non-fatal: any exception is caught and logged with `[cause=gemini_5xx_or_quota]` tagging for operator visibility; the edition keeps its un-enriched `ads`.
-
-### Phase 5 — Content triage
-
-`application/content_rescue.py :: triage_edition()`. Demotes "ghost" articles (matching ad-like patterns) and promotes real journalism trapped in `other_content`. Uses `TRIAGE_SYSTEM_PROMPT` + `TRIAGE_USER_TEMPLATE`. Atomic tempfile write, appends `content_triaged: true`.
-
-Also non-fatal.
-
-### Phase 6 — Write artifacts
-
-1. `align_existing_image_files()` — drop any image paths that no longer exist on disk
-2. `_sanitize_merged_articles()` — final null-string + whitespace pass
-3. `json.dump(payload, indent=2)` → `public/editions/<date>/edition.json`
-4. `write_diagnostics_json()` → `ocr/runs/<date>/diagnostics.json`
-5. `_build_issue_report()` + `_write_issue_report_files()` → `issue_report.json` + `issue_report.md`
-
----
-
-## LLM integration
-
-All Gemini calls go through `shared/retry.py :: gemini_generate_with_retry()`.
-
-Model and thinking levels live in `ocr/src/prompts.json`:
-
-| Role | Model | Thinking |
-|---|---|---|
-| `page_structuring` | `gemini-3-flash-preview` | `high` |
-| `image_matching` | `gemini-3-flash-preview` | — |
-| `merge` | `gemini-3.1-pro-preview` | `high` |
-| `merge_fallback` | `gemini-3-flash-preview` | — |
-| `seam_repair` | `gemini-3-flash-preview` | `high` |
-| `ad_enrichment` | `gemini-3-flash-preview` | — |
-| `content_triage` | `gemini-3-flash-preview` | — |
-
-All calls use `response_mime_type="application/json"` with a typed `response_schema`, except seam repair which returns either free text or the literal string `"VALID"`.
-
-### Retry policy
-
-Defined in `shared/retry.py`:
-
-| Constant | Value | Meaning |
-|---|---|---|
-| `_MAX_RETRIES` | 4 | Up to 5 total attempts |
-| `_BASE_DELAY_S` | 2 | 2s, 4s, 8s, 16s exponential |
-| `_CALL_SPACING_S` | 0.5 | Applied before **every** call including attempt 0 (env-overridable) |
-| `_REQUEST_TIMEOUT_S` | 120 | Per-call timeout (env-overridable) |
-| `_RETRY_MODEL` | `merge_fallback` | **On any retry, the model is switched** |
-
-The retry-model swap is a subtle behavior: **any retry** (not just the last) uses `gemini-3-flash-preview` even if the original call was for `gemini-3.1-pro-preview`. This degrades output quality but avoids repeated rate-limit hits against the Pro quota. If a Pro merge fails on attempt 1, all subsequent attempts 2–5 run on Flash.
-
-**Retryable conditions**: transient network/quota errors — HTTP 429/500/503, typed SDK transient errors, and timeouts. HTTP 400 surfaces immediately.
-
-Per-call timeout is enforced by wrapping the call in a single-worker `ThreadPoolExecutor` future with a 120s `.result(timeout=...)`. A long Gemini hang cannot block the whole run beyond this budget.
-
----
-
-## Failure modes
-
-There is no shared exception hierarchy. `DocAIError` (subclass of `Exception`, at `docai_provider.py:23`) is the only domain-specific exception; everything else propagates as generic `Exception` and is caught at phase-level try/except blocks.
-
-| Phase | Error class | Handling | If you see this in production |
-|---|---|---|---|
-| 0 | `RuntimeError` | Not caught — aborts whole run | TIF conversion failed; usually disk-full or corrupt scan. Check `ocr/inbox/<date>/` |
-| 1 (DocAI) | `DocAIError` | Caught per-page; logged to `PageDiagnostics.error`; page skipped. If **all** pages fail Phase 1, pipeline writes diagnostics and returns early | Check DocAI quota and `GOOGLE_CLOUD_PROJECT`; review `snapshots/docai_pageN.json` |
-| 1 (general) | `Exception` | Same as `DocAIError` — per-page skip | Check `issue_report.md` for the page-specific message |
-| 2 (Gemini) | `Exception` | Caught per-page; `structure_and_link_page()` returns `None`; page silently skipped | Check Gemini quota; inspect `raw_gemini_pageN.json` |
-| 3 (merge) | `TimeoutError` | Warning, returns `None`, pipeline falls back to unmerged articles | Lower `--workers`, check Pro quota, inspect `merge_raw_response.txt` |
-| 3 (merge) | `Exception` | Same as TimeoutError | Review `merge_decisions.json` if present |
-| 4 (enrich) | `Exception` | Non-fatal; edition keeps un-enriched `ads`; logged with cause tag | Re-run just Phase 4: `python ocr/enrich_ads.py <date>` |
-| 5 (triage) | `Exception` | Non-fatal; edition keeps untriaged content | Inspect logs for `[cause=...]` tag |
-| 6 (write) | `Exception` | Propagates — write failure is fatal | Check disk space on `public/editions/` |
-
-Errors surface through three channels:
-
-1. **`PageDiagnostics.error`** — triggers an `ISSUE-NNN` entry with `root_cause_type="bug"` in `issue_report.json`.
-2. **`MergePassDiagnostics.error`** — similarly flagged.
-3. **`warning()` / `error()` console output** via Rich.
-
-The shell wrapper `scripts/ocr/process-edition.sh` checks the Python exit code: OCR exit 0 is required, else the wrapper itself exits 10. The Python process does **not** exit with non-zero on partial failures — page skips and failed enrichment are "successful" from the shell's view.
-
----
-
-## Diagnostics & observability
-
-All files written to `ocr/runs/<edition_date>/` (or `ocr/runs/<edition_date>/runs/<run_id>/` when `--run-id` is given).
-
-| Artifact | Written by | Contents |
-|---|---|---|
-| `run_manifest.json` | `diagnostics/run_manifest.py` | `run_id`, `edition_date`, `git_commit_hash`, per-input `{path, size, sha256}` |
-| `snapshots/<name>.json` | `diagnostics/snapshots.py` | Intermediate stage dumps — one per page per stage + edition-level |
-| `diagnostics.json` | `export/artifact_writer.py` | Full serialized `PipelineReport`: all page diagnostics, merge pass, token totals, elapsed time |
-| `issue_report.json` / `.md` | `diagnostics/issue_report.py` | Post-run automated checks: per-page errors, category collapse, continuation marker loss, empty articles, image alignment mismatches, merge pass error |
-| `summary.md` | `export/markdown_writer.py` | Human-readable edition summary |
-| `pipeline-summary.json` | shell wrapper `on_exit` trap | Stage-level status + elapsed + counts |
-
-Snapshot names (one per page, `N` is page number):
-- `docai_pageN.json` — DocAI result
-- `raw_gemini_pageN.json` — Gemini structuring raw response
-- `post_dedup_pageN.json`, `post_process_pageN.json` — after postprocessing
-- `image_matching_pageN.json`, `post_images_pageN.json` — after image assignment
-
-Edition-level snapshots: `pre_merge_articles.json`, `merge_decisions.json`, `post_merge_edition.json`, `merge_raw_response.txt` (only on LLM parse failure).
-
----
-
-## Cost & rate controls
-
-The OCR pipeline has **no daily budget kill switch**. That mechanism lives on the RAG side only (`src/lib/cost-tracker.ts` + `ai_spend_counter` table, `$0.50/day` hard stop for `/api/ask`).
-
-Token usage on the OCR side is tracked purely for observability. `PipelineReport.finalize()` sums `total_prompt_tokens` and `total_candidates_tokens` across all page diagnostics and the merge pass. These land in `diagnostics.json` and `pipeline-summary.json`. **They do not affect control flow** and are never persisted to the DB.
-
-The only per-run rate controls are at the call level:
-
-- `GEMINI_CALL_SPACING_S` — default 0.5s between every Gemini call (env-overridable)
-- Exponential backoff retry on HTTP 429
-
-If you run a large batch with default settings against cold quotas, you will hit 429s and lose wall-clock time to backoff, but no guardrail will stop you from running a $20 job accidentally. This is an intentional tradeoff — batch OCR is infrequent and interactive.
-
----
-
-## Local dev workflow
-
-### `process-edition.sh` — single edition
-
-```bash
-scripts/ocr/process-edition.sh ocr/inbox/1960-01-13 [--run-id baseline] [--from-stage N]
-```
-
-The wrapper:
-
-1. Sources `.env.local`
-2. Validates `GOOGLE_API_KEY` (hard-fail), `DATABASE_URL` (hard-fail at stage 4)
-3. Activates `ocr/.venv/` (hard-fail if absent)
-4. Creates `ocr/runs/<date>/` log directory
-
-Then runs four stages, each gated by exit code:
-
-| Stage | Command | Exit code on failure |
-|---|---|---|
-| 1 — OCR | `python ocr/convert_scans.py <path> --workers N` | `10` |
-| 2 — Image cleanup | `node scripts/cleanup-images.mjs --apply --date <date>` | `20` |
-| 3 — R2 upload | `node scripts/db/upload-images.mjs --date <date>` | `30` (skipped if R2 creds absent) |
-| 4 — DB seed | `OCR_MIN_TEXT_LENGTH=0 npm run db:seed -- --date <date>` | `40` |
-
-An `on_exit` trap writes `pipeline-summary.json` regardless of exit code. On success, the edition directory is moved from `ocr/inbox/` to `ocr/done/` (unless `--keep-source`).
-
-### Required env vars
-
-| Var | Purpose | Required? |
-|---|---|---|
-| `GOOGLE_API_KEY` | Gemini | **yes** |
-| `DATABASE_URL` | Neon, for stage 4 | **yes** at stage 4 |
-| `GOOGLE_CLOUD_PROJECT` | DocAI | **yes** |
-| `DOCUMENT_AI_PROCESSOR_ID` | DocAI | **yes** |
-| `DOCUMENT_AI_LOCATION` | DocAI | no (default `us`) |
-| `R2_ACCOUNT_ID`, `R2_BUCKET_NAME` | R2 upload | no (stage 3 skipped) |
-| `OCR_WORKERS` | Parallel workers for Phase 1+2 | no (default 1) |
-| `GEMINI_REQUEST_TIMEOUT_S` | Per-call timeout | no (default 120) |
-| `GEMINI_CALL_SPACING_S` | Gap between calls | no (default 0.5) |
-| `MERGE_MIN_CONFIDENCE` | Merge gate threshold | no (default 0.5) |
-
-### `process-unprocessed.sh` — batch
-
-Discovers subdirectories in `ocr/inbox/`. Sequential mode iterates serially; `--parallel N` uses `xargs -P N` to run N concurrent `process-edition.sh` processes with per-edition result files, then aggregates into `ocr/runs/batch-<timestamp>.json`.
-
----
-
-## Testing
-
-All tests under `tests/ocr/`. Run with:
-
-```bash
-python -m pytest tests/ocr/ -x
-```
-
-The venv is auto-activated by the shell wrappers; for a manual pytest invocation, source `ocr/.venv/bin/activate` first.
-
-### Architecture tests (`tests/ocr/architecture/`)
-
-Purely static, no heavy imports.
-
-- `test_import_rules.py` — uses `ast.parse` to enforce the import layering rules. Covers:
-  - `contracts` cannot import any domain layer
-  - `shared` cannot import any domain layer
-  - Stage modules cannot import `application`
-  - `evaluation` cannot import `application`
-  - `docai_provider` cannot import `google.genai`, `page_extractor`, or `shared.retry` (enforces DocAI/Gemini separation)
-  - Wrapper files `ocr/convert_scans.py` and `ocr/enrich_ads.py` must import their respective `cli.*` module
-- `test_wrapper_entrypoints.py` — subprocess `--help` smoke tests
-- `test_runtime_cutover.py` — verifies default usage strings
-
-### Behavior tests
-
-| File | Target |
-|---|---|
-| `test_failure_paths_static.py` | monkeypatch-based integration: visual→spatial fallback; DocAI failure cleanup |
-| `test_continuation.py` | `_extract_continuation_info`, `_strip_continuation_markers` — garbled OCR, bidirectional cases |
-| `test_boundary_cleanup.py` | `clean_merge_boundary` — truncated words, duplicate sentences, edge cases |
-| `test_byline_cleanup.py` | byline normalization and author/position splitting |
-| `test_merging.py` | `_validate_merge_seam` with `unittest.mock.patch` on the Gemini call |
-| `test_docai_provider.py`, `test_prepare_image_for_docai.py` | DocAI unit tests |
-| `test_null_sanitizer.py`, `test_region_filters.py`, `test_artifact_schema_contracts.py`, `test_best_body.py`, `test_page_quality.py`, `test_image_converter.py`, `test_merge_helpers.py` | Targeted helper coverage |
-
-### Golden regression
-
-The gold edition lives at `gold/1960-01-13/gold-edition.json`. The scorer is `ocr/src/transcript_ocr/evaluation/gold_score.py`.
-
-To run:
-
-```bash
-# 1. OCR the edition
-scripts/ocr/process-edition.sh ocr/inbox/1960-01-13 --run-id baseline
-
-# 2. Score
-python ocr/src/transcript_ocr/evaluation/gold_score.py \
-  --gold-dir gold/1960-01-13/ \
-  --run-dir  ocr/runs/1960-01-13/runs/baseline/
-```
-
-The scorer computes word-level edit distance (WER, missing-word rate, extra-word rate) per page and in aggregate. Note: the scorer expects `page*.reference.txt` files in the gold directory. Only `gold-edition.json` and images are checked in — reference transcripts are created per-run as needed.
-
----
-
-## Architecture invariants (CI-enforced)
-
-`.github/workflows/ocr-architecture.yml` runs on every PR and push.
-
-**Job 1 — Import boundaries**: `pytest -q tests/ocr/architecture/`. AST-based, no imports executed.
-
-**Job 2 — Script target validation**: inline Python checks that these five paths exist and haven't been silently moved:
-
-- `ocr/convert_scans.py`
-- `ocr/enrich_ads.py`
-- `scripts/dev/compare_runs.py`
-- `scripts/ocr/process-edition.sh`
-- `scripts/ocr/process-unprocessed.sh`
-
-Any refactor that moves these files without updating the wrapper will fail CI before it ever hits runtime.
-
----
-
-## Gotchas
-
-- **Retry model swap**. On any retry attempt, `gemini_generate_with_retry` switches to `_RETRY_MODEL` (currently `gemini-3-flash-preview`) regardless of the caller's original request. A failed `gemini-3.1-pro-preview` merge will retry on Flash with different quality characteristics.
-- **Layered fallback at merge**. The retry system switches to Flash on transient errors. In addition, `llm_merge.py` has an explicit inner fallback that retries with `merge_fallback` specifically when `response.parsed` is falsy. These can stack: up to 5 attempts × 2 fallback layers.
-- **ThreadPoolExecutor in both Phase 1 and 2**. With `workers > 1`, DocAI and Gemini structuring run concurrently. The YOLO model uses a `threading.Lock()` because the model is not thread-safe; YOLO inference is serialized even inside a parallel worker pool.
-- **Memory pressure**. Preprocessed PIL images accumulate in a `docai_results` dict across Phase 1, then cleared after Phase 2. A 12-page edition at ~8MP/page is roughly 96 MB held simultaneously with `workers=1`. Scale accordingly with higher worker counts.
-- **DocAI 18 MB cap**. `_prepare_image_for_docai()` raises `DocAIError` if the encoded PNG exceeds 18 MB. DocAI's real limit is 20 MB; the 2 MB buffer is a margin of safety. High-resolution grayscale scans can hit this.
-- **Atomic JSON writes**. Phases 4 and 5 both use `tempfile.mkstemp()` + `os.replace()` with distinctive prefixes (`ads_`, `rescue_`) to prevent file-name collisions if two processes run against the same edition concurrently.
-- **RECITATION retry**. Gemini's content filter blocks verbatim reproduction of text in system instructions. The page-structuring stage retries with the OCR text moved from `system_instruction` to user contents. Know this before adding new system-instruction text.
-- **`"?"` continuation semantics**. Both `_extract_continuation_info()` and the DocAI path normalize non-numeric page references ("back page", "next page") to `"?"`. The LLM merge prompt explicitly says `"?"` means uncertain — only merge if body content confirms. This prevents false positives on ambiguous markers.
-- **`MERGE_MIN_CONFIDENCE` disables merge**. Setting the env var to `1.0` keeps only the deterministic pre-merge pass and skips LLM groups entirely. Useful for debugging bad merges.
-- **No reference transcripts in repo**. `gold/1960-01-13/` ships only `gold-edition.json` and images. Per-page `page*.reference.txt` files must be produced by an operator before the scorer can run.
-- **Run manifest timing**. The manifest is computed *after* Phase 0 converts TIFs to PNGs. The SHA256 values cover the final PNGs, not the original TIFs. If you need to audit the original TIFs for a run, keep them outside the pipeline.
-
----
-
-## Start here
-
-If you're new to the pipeline and need to make a change, read these five files in order:
-
-1. `scripts/ocr/process-edition.sh` — the end-to-end shell wrapper
-2. `ocr/src/transcript_ocr/application/edition_pipeline.py` — phase orchestrator
-3. `ocr/src/transcript_ocr/contracts/content_models.py` — the data shapes that flow between phases
-4. `ocr/src/transcript_ocr/shared/retry.py` — the Gemini retry + model-fallback policy every LLM caller depends on
-5. `ocr/src/prompts.json` — model assignments and prompt text
-
-Then consult `.github/workflows/ocr-architecture.yml` for the CI invariants before refactoring any layer.
+They cover exact model/thinking/media routing, shared retry ceilings, token cost
+classification, manifest state accounting, pixel preservation, deskew policy,
+Document AI behavior, hybrid detector routing, complete visual disposition,
+group partition validation, all-boundary seam batching, repair-anchor safety,
+lossless fallbacks, asset constraints, shell promotion invariants, and the
+no-debug-artifact rule.
+
+Live ADC smoke tests and frozen-gold scoring are separate because they incur
+cloud cost. The February 21, 1990 twelve-page gold candidate is the primary
+calibration reference; detector evaluation must use the same hybrid mode as the
+hosted path.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+from dataclasses import dataclass
 
 import numpy as np
 from PIL import Image
@@ -16,17 +17,27 @@ from ..config.constants import (
     MIN_ASPECT_RATIO,
     MIN_REGION_AREA_PIXELS,
     YOLO_CONF_THRESHOLD,
-    YOLO_FIGURE_CLASSES,
     YOLO_NMS_IOU_THRESHOLD,
+    YOLO_TABLE_CLASSES,
 )
 from ..config.paths import MODELS_DIR
-from ..contracts.diagnostics_models import CVRegionInfo, PageDiagnostics, StageTimer
 from ..shared.console import status as console_status, info
 from .region_filters import dedupe_overlapping_regions
+from .models import RegionProposal
 
 _YOLO_MODEL_PATH = str(MODELS_DIR / "doclayout_yolo_docstructbench_imgsz1024.pt")
 _yolo_model: YOLOv10 | None = None
 _yolo_lock = threading.Lock()
+
+
+@dataclass
+class DocLayoutDetection:
+    total_detections: int
+    filtered_by_class: int
+    filtered_by_area: int
+    filtered_by_aspect: int
+    regions: list[tuple[int, int, int, int]]
+    proposals: list[RegionProposal] | None = None
 
 
 def _get_yolo_model() -> YOLOv10:
@@ -52,13 +63,11 @@ def get_yolo_model(settings: object | None = None) -> YOLOv10:
     return _get_yolo_model()
 
 
-def detect_image_regions(
+def detect_doclayout_regions(
     image: Image.Image,
-    diag: PageDiagnostics | None = None,
-) -> list[tuple[int, int, int, int]]:
-    """Detect photo/illustration regions using DocLayout-YOLO."""
-    timer = StageTimer().start()
-
+    accepted_classes: set[str],
+) -> DocLayoutDetection:
+    """Run DocLayout-YOLO and retain only the requested layout classes."""
     model = _get_yolo_model()
     with _yolo_lock:
         results = model.predict(
@@ -72,6 +81,7 @@ def detect_image_regions(
 
     total_detections = len(result.boxes)
     candidates = []
+    candidate_classes: dict[tuple[int, int, int, int], tuple[str, float]] = {}
     filtered_by_class = 0
     filtered_by_area = 0
     filtered_by_aspect = 0
@@ -88,7 +98,7 @@ def detect_image_regions(
 
         for box, conf, cls in zip(boxes, confs, classes):
             class_name = result.names[cls]
-            if class_name not in YOLO_FIGURE_CLASSES:
+            if class_name not in accepted_classes:
                 filtered_by_class += 1
                 continue
 
@@ -98,7 +108,10 @@ def detect_image_regions(
             region_area = region_width * region_height
             pct_of_page = (region_area / page_area) * 100
 
-            info(f"YOLO detected figure: {region_width}x{region_height} ({pct_of_page:.1f}% of page, conf={conf:.2f})")
+            info(
+                f"DocLayout-YOLO detected {class_name}: {region_width}x{region_height} "
+                f"({pct_of_page:.1f}% of page, conf={conf:.2f})"
+            )
 
             if region_area < MIN_REGION_AREA_PIXELS or region_area > max_region_area:
                 reason = "too small" if region_area < MIN_REGION_AREA_PIXELS else f"too large (>{MAX_REGION_AREA_PERCENT*100:.0f}%)"
@@ -112,23 +125,43 @@ def detect_image_regions(
                 filtered_by_aspect += 1
                 continue
 
-            info(f"  ✅ KEPT")
-            candidates.append((int(y1), int(x1), int(y2), int(x2), float(conf)))
+            info("  ✅ KEPT")
+            candidate = (int(y1), int(x1), int(y2), int(x2), float(conf))
+            candidates.append(candidate)
+            region_key = candidate[:4]
+            if float(conf) >= candidate_classes.get(region_key, ("", -1.0))[1]:
+                candidate_classes[region_key] = (class_name, float(conf))
 
     regions = dedupe_overlapping_regions(candidates, iou_threshold=0.5)
-
-    if diag is not None:
-        diag.cv_info = CVRegionInfo(
-            total_components_found=total_detections,
-            filtered_by_class=filtered_by_class,
-            filtered_by_area=filtered_by_area,
-            filtered_by_aspect_ratio=filtered_by_aspect,
-            regions_kept=len(regions),
-            bounding_boxes=list(regions),
+    proposals = [
+        RegionProposal(
+            bounds=region,
+            detector="doclayout_yolo",
+            class_name=candidate_classes[region][0],
+            confidence=candidate_classes[region][1],
         )
-        diag.timings["cv"] = timer.stop()
+        for region in regions
+    ]
 
-    return regions
+    return DocLayoutDetection(
+        total_detections=total_detections,
+        filtered_by_class=filtered_by_class,
+        filtered_by_area=filtered_by_area,
+        filtered_by_aspect=filtered_by_aspect,
+        regions=regions,
+        proposals=proposals,
+    )
 
 
-__all__ = ["_get_yolo_model", "detect_image_regions", "get_yolo_model"]
+def detect_table_regions(image: Image.Image) -> DocLayoutDetection:
+    """Detect table regions for the hybrid detector's conservative fallback."""
+    return detect_doclayout_regions(image, YOLO_TABLE_CLASSES)
+
+
+__all__ = [
+    "DocLayoutDetection",
+    "_get_yolo_model",
+    "detect_doclayout_regions",
+    "detect_table_regions",
+    "get_yolo_model",
+]

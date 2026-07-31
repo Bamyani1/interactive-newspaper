@@ -138,7 +138,6 @@ def test_docai_provider_does_not_import_gemini_or_page_extractor():
 def test_top_level_wrappers_import_cli_only():
     wrapper_to_expected = {
         OCR_ROOT / "convert_scans.py": "transcript_ocr.cli.convert_scans",
-        OCR_ROOT / "enrich_ads.py": "transcript_ocr.cli.enrich_ads",
     }
     for path, expected in wrapper_to_expected.items():
         imports = _imports_from(path)

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import glob
 import os
 import re
 
 from ..config.constants import IMAGE_EXTENSIONS
+from .manifest import discover_page_inventory
 
 
 def extract_edition_date(folder_path: str) -> str:
@@ -16,12 +16,12 @@ def extract_edition_date(folder_path: str) -> str:
     return match.group(1) if match else basename.strip()
 
 
-def discover_page_images(edition_dir: str) -> list[str]:
-    return sorted(
-        f
-        for f in glob.glob(os.path.join(edition_dir, "*"))
-        if os.path.splitext(f)[1].lower() in IMAGE_EXTENSIONS
-    )
+def discover_page_images(
+    edition_dir: str,
+    manifest_path: str | None = None,
+) -> list[str]:
+    """Return local pages in manifest canvas order when a manifest exists."""
+    return discover_page_inventory(edition_dir, manifest_path).local_paths
 
 
 __all__ = ["IMAGE_EXTENSIONS", "discover_page_images", "extract_edition_date"]
