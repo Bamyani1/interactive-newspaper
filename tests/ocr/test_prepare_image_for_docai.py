@@ -1,4 +1,4 @@
-"""Unit tests for _prepare_image_for_docai() preprocessing pipeline."""
+"""Unit tests for lossless Document AI PNG transport."""
 
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ OCR_SRC = ROOT / "ocr" / "src"
 if str(OCR_SRC) not in sys.path:
     sys.path.insert(0, str(OCR_SRC))
 
-from transcript_ocr.recognition.docai_provider import DocAIError, _prepare_image_for_docai
+from transcript_ocr.recognition.docai_provider import (  # noqa: E402
+    DocAIError,
+    _prepare_image_for_docai,
+)
 
 
 def _make_clean_image(width: int = 300, height: int = 400) -> Image.Image:
@@ -24,19 +27,6 @@ def _make_clean_image(width: int = 300, height: int = 400) -> Image.Image:
     arr = np.full((height, width), 240, dtype=np.uint8)
     # Simulate text region in center
     arr[50:350, 30:270] = 50
-    return Image.fromarray(arr, mode="L")
-
-
-def _make_noisy_image(width: int = 300, height: int = 400, noise_density: float = 0.05) -> Image.Image:
-    """Create a grayscale image with salt-and-pepper noise."""
-    rng = np.random.default_rng(42)
-    arr = np.full((height, width), 200, dtype=np.uint8)
-    # Add salt noise (bright speckles on medium background)
-    salt_mask = rng.random((height, width)) < noise_density
-    arr[salt_mask] = 255
-    # Add pepper noise (dark speckles)
-    pepper_mask = rng.random((height, width)) < noise_density
-    arr[pepper_mask] = 0
     return Image.fromarray(arr, mode="L")
 
 
@@ -76,83 +66,43 @@ def test_output_is_grayscale():
     assert decoded.mode == "L", f"Expected mode 'L', got '{decoded.mode}'"
 
 
-def test_output_is_not_binary():
-    """Output should not be binarized (pixel values should span a range, not just 0/255)."""
+def test_output_pixels_are_exactly_preserved():
+    """PNG transport must not enhance, denoise, binarize, or otherwise edit pixels."""
     image = _make_clean_image()
     png_bytes = _prepare_image_for_docai(image)
 
     decoded = Image.open(io.BytesIO(png_bytes))
-    arr = np.array(decoded)
-    unique_values = np.unique(arr)
-    assert len(unique_values) > 2, (
-        "Output should be grayscale (many values), not binary (only 0 and 255)"
-    )
+    np.testing.assert_array_equal(np.asarray(decoded), np.asarray(image.convert("L")))
 
 
 # ---------------------------------------------------------------------------
-# CLAHE effect
+# No enhancement or denoising
 # ---------------------------------------------------------------------------
 
-def test_clahe_increases_local_contrast():
-    """
-    CLAHE should increase variance in locally uniform regions.
-    We test this by checking that output pixel variance >= input pixel variance.
-    """
-    # Create image with very low contrast (uniform gray with tiny variation)
+def test_low_contrast_pixels_remain_unchanged():
+    """Low-contrast historical ink is not changed by CLAHE or other enhancement."""
     arr = np.full((200, 200), 128, dtype=np.uint8)
-    arr[50:150, 50:150] = 130  # tiny difference
+    arr[50:150, 50:150] = 130
     image = Image.fromarray(arr, mode="L")
 
     png_bytes = _prepare_image_for_docai(image)
-    decoded = Image.open(io.BytesIO(png_bytes))
-    out_arr = np.array(decoded)
-
-    input_std = arr.std()
-    output_std = out_arr.std()
-    # CLAHE should increase contrast (larger standard deviation)
-    assert output_std >= input_std, (
-        f"Expected CLAHE to increase contrast: input_std={input_std:.2f}, output_std={output_std:.2f}"
-    )
+    decoded = np.asarray(Image.open(io.BytesIO(png_bytes)))
+    np.testing.assert_array_equal(decoded, arr)
 
 
 # ---------------------------------------------------------------------------
-# Morphological noise removal
+# Geometry preservation
 # ---------------------------------------------------------------------------
 
-def test_morphological_noise_reduction():
-    """Salt/pepper noise should be reduced in the output."""
-    noisy = _make_noisy_image(noise_density=0.08)
-    png_bytes = _prepare_image_for_docai(noisy)
-    decoded = Image.open(io.BytesIO(png_bytes))
-
-    noisy_arr = np.array(noisy)
-    clean_arr = np.array(decoded)
-
-    # Count extreme pixel values (noise indicator)
-    noisy_extremes = np.sum((noisy_arr == 0) | (noisy_arr == 255))
-    clean_extremes = np.sum((clean_arr == 0) | (clean_arr == 255))
-
-    assert clean_extremes <= noisy_extremes, (
-        f"Expected noise reduction: noisy_extremes={noisy_extremes}, clean_extremes={clean_extremes}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Border crop
-# ---------------------------------------------------------------------------
-
-def test_border_crop_removes_scanner_edges():
-    """Image with black scanner borders should be cropped smaller than input."""
+def test_scanner_edges_and_dimensions_are_preserved():
+    """Scanner edges remain evidence; Document AI transport never crops them."""
     bordered = _make_bordered_image(width=400, height=500, border=40)
-    original_size = bordered.size  # (400, 500)
 
     png_bytes = _prepare_image_for_docai(bordered)
     decoded = Image.open(io.BytesIO(png_bytes))
-    cropped_size = decoded.size
 
-    # Cropped image should be smaller in both dimensions
-    assert cropped_size[0] < original_size[0], "Width should be reduced after border crop"
-    assert cropped_size[1] < original_size[1], "Height should be reduced after border crop"
+    assert decoded.size == bordered.size
+    np.testing.assert_array_equal(np.asarray(decoded), np.asarray(bordered))
 
 
 # ---------------------------------------------------------------------------

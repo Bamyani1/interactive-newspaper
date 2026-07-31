@@ -2,19 +2,17 @@
 
 import os
 
-from .prompts_loader import MODELS
-
-GEMINI_PAGE_MODEL = MODELS["image_matching"]["name"]
-GEMINI_STRUCTURING_MODEL = MODELS["page_structuring"]["name"]
-GEMINI_MERGE_MODEL = MODELS["merge"]["name"]
-GEMINI_AD_ENRICHMENT_MODEL = MODELS["ad_enrichment"]["name"]
-
-# Back-compat alias while modules migrate.
-GEMINI_MODEL = GEMINI_PAGE_MODEL
-
 YOLO_CONF_THRESHOLD = 0.3
 YOLO_NMS_IOU_THRESHOLD = 0.3
-YOLO_FIGURE_CLASSES = {"figure"}
+YOLO_TABLE_CLASSES = {"table"}
+
+AMERICAN_STORIES_INPUT_SIZE = 1280
+# The frozen 1990 gold page 5 Mickey illustration scores 0.022.  At 0.02 the
+# complete 12-page edition adds only that region and one reviewable candidate.
+AMERICAN_STORIES_CONF_THRESHOLD = 0.02
+AMERICAN_STORIES_NMS_IOU_THRESHOLD = 0.1
+AMERICAN_STORIES_VISUAL_CLASS_IDS = {2, 8}  # cartoon/ad, photograph
+HYBRID_FALLBACK_IOU_THRESHOLD = 0.1
 
 MIN_REGION_AREA_PIXELS = 15000
 MAX_REGION_AREA_PERCENT = 0.80
@@ -28,5 +26,3 @@ TIF_EXTENSIONS = (".tif", ".tiff")
 
 DOCAI_CONFIDENCE_THRESHOLD = float(os.getenv("DOCAI_CONFIDENCE_THRESHOLD", "0.8"))
 DOCAI_MAX_BYTES = 18 * 1024 * 1024  # 18MB — buffer under Document AI's 20MB hard limit
-DOCAI_CLAHE_CLIP_LIMIT = 3.5        # CLAHE clip limit; higher = more contrast, more noise risk
-DOCAI_CLAHE_TILE_SIZE = (8, 8)      # CLAHE grid tile size

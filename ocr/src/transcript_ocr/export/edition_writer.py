@@ -50,14 +50,24 @@ def finalize_and_write_edition_json(
         **merged.model_dump(),
     }
     os.makedirs(os.path.dirname(os.path.abspath(edition_json_path)), exist_ok=True)
-    with open(edition_json_path, "w", encoding="utf-8") as f:
+    partial = edition_json_path + ".part"
+    with open(partial, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(partial, edition_json_path)
 
 
 def write_edition_json(path: str, payload: dict) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    partial = path + ".part"
+    with open(partial, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(partial, path)
 
 
 __all__ = ["align_existing_image_files", "finalize_and_write_edition_json", "write_edition_json"]

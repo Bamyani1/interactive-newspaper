@@ -11,11 +11,11 @@ OCR_SRC = ROOT / "ocr" / "src"
 if str(OCR_SRC) not in sys.path:
     sys.path.insert(0, str(OCR_SRC))
 
-from transcript_ocr.detection.yolo_provider import detect_image_regions
+from transcript_ocr.detection.yolo_provider import detect_doclayout_regions
 
 
 def test_detect_image_regions_initializes_counters_outside_branch():
-    source = inspect.getsource(detect_image_regions)
+    source = inspect.getsource(detect_doclayout_regions)
     anchor = source.index("total_detections = len(result.boxes)")
     section = source[anchor : anchor + 700]
     assert "filtered_by_class = 0" in section

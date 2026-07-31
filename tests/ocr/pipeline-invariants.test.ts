@@ -91,7 +91,6 @@ for (const date of editionDirs) {
       const knownEmpty = new Set(KNOWN_EMPTY_ARTICLES[date] ?? []);
       for (const [i, article] of edition.articles.entries()) {
         if (knownEmpty.has(i)) continue; // legacy
-        if (article.triage_promoted === true) continue; // rescued via content_rescue.py
         expect(
           (article.source_pages || []).length,
           `Article ${i} "${(article.headline || "").slice(0, 50)}" has no source_pages`,

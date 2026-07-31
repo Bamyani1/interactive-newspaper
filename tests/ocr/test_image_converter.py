@@ -11,9 +11,14 @@ OCR_SRC = ROOT / "ocr" / "src"
 if str(OCR_SRC) not in sys.path:
     sys.path.insert(0, str(OCR_SRC))
 
+import numpy as np
+import pytest
 from PIL import Image
 
-from transcript_ocr.preprocessing.image_converter import convert_edition_images
+from transcript_ocr.preprocessing.image_converter import (
+    LosslessConversionError,
+    convert_edition_images,
+)
 
 
 def _make_tif(directory: str, name: str, width: int = 1000, height: int = 1500) -> str:
@@ -64,19 +69,30 @@ def test_deletes_original_tif(tmp_path):
     assert not os.path.exists(tif_path)
 
 
-def test_idempotent_skips_and_deletes_tif(tmp_path):
-    """If PNG already exists, conversion is skipped but TIF is still deleted."""
+def test_mismatched_existing_png_keeps_tif(tmp_path):
+    """An unrelated existing PNG must never authorize source deletion."""
     tif_path = _make_tif(str(tmp_path), "Page 01.tif")
 
     # Pre-create a PNG (simulates prior conversion)
     png_path = str(tmp_path / "Page 01.png")
     Image.new("L", (1000, 1500), color=128).save(png_path, format="PNG")
 
+    with pytest.raises(LosslessConversionError, match="does not match"):
+        convert_edition_images(str(tmp_path))
+
+    assert os.path.exists(png_path)
+    assert os.path.exists(tif_path)
+
+
+def test_matching_existing_png_is_verified_before_tif_delete(tmp_path):
+    tif_path = _make_tif(str(tmp_path), "Page 01.tif")
+    with Image.open(tif_path) as source:
+        source.save(tmp_path / "Page 01.png", format="PNG")
+
     count = convert_edition_images(str(tmp_path))
 
-    assert count == 0  # No new conversion
-    assert os.path.exists(png_path)  # PNG untouched
-    assert not os.path.exists(tif_path)  # TIF deleted
+    assert count == 0
+    assert not os.path.exists(tif_path)
 
 
 def test_returns_zero_when_no_tifs(tmp_path):
@@ -111,15 +127,61 @@ def test_multiple_tifs_converted(tmp_path):
     assert tifs == []
 
 
-def test_rgba_tif_converted_to_grayscale(tmp_path):
-    """RGBA TIF should be converted to grayscale PNG."""
+def test_rgba_tif_preserves_source_pixels(tmp_path):
+    """Source-master conversion must not discard color or alpha."""
     path = str(tmp_path / "Page 01.tif")
     Image.new("RGBA", (1000, 1500), color=(128, 64, 32, 255)).save(path, format="TIFF")
 
     convert_edition_images(str(tmp_path))
 
     img = Image.open(str(tmp_path / "Page 01.png"))
-    assert img.mode == "L"
+    assert img.mode == "RGBA"
+    assert img.getpixel((0, 0)) == (128, 64, 32, 255)
+
+
+def test_rgb_pixels_are_identical_after_conversion(tmp_path):
+    source_path = tmp_path / "Page 01.tif"
+    pixels = np.arange(12 * 8 * 3, dtype=np.uint8).reshape((8, 12, 3))
+    Image.fromarray(pixels, mode="RGB").save(source_path, format="TIFF")
+
+    convert_edition_images(str(tmp_path))
+
+    with Image.open(tmp_path / "Page 01.png") as converted:
+        assert converted.mode == "RGB"
+        assert np.array_equal(np.asarray(converted), pixels)
+
+
+def test_converts_every_multiframe_tiff_page(tmp_path):
+    source_path = tmp_path / "0001_Page 1.tif"
+    frames = [
+        Image.new("L", (20, 30), color=20),
+        Image.new("L", (20, 30), color=120),
+        Image.new("L", (20, 30), color=220),
+    ]
+    frames[0].save(source_path, save_all=True, append_images=frames[1:], format="TIFF")
+
+    count = convert_edition_images(str(tmp_path))
+
+    assert count == 1
+    assert not source_path.exists()
+    for index, expected in enumerate((20, 120, 220), start=1):
+        output = tmp_path / f"0001_Page 1_frame_{index:04d}.png"
+        assert output.exists()
+        with Image.open(output) as image:
+            assert image.getpixel((0, 0)) == expected
+
+
+def test_failed_lossless_encoding_keeps_source_and_cleans_parts(tmp_path):
+    source_path = tmp_path / "Page 01.tif"
+    Image.new("CMYK", (20, 30), color=(10, 20, 30, 40)).save(
+        source_path, format="TIFF"
+    )
+
+    with pytest.raises(LosslessConversionError):
+        convert_edition_images(str(tmp_path))
+
+    assert source_path.exists()
+    assert list(tmp_path.glob("*.part")) == []
 
 
 def test_skips_jpg_files(tmp_path):

@@ -18,7 +18,8 @@
     "db:embed": "node --import tsx scripts/db/embed.mjs",
     "db:embed:force": "node --import tsx scripts/db/embed.mjs --force",
     "test:invariants": "vitest run tests/ocr/pipeline-invariants.test.ts",
-    "images:upload": "node scripts/db/upload-images.mjs"
+    "images:upload": "node scripts/db/upload-images.mjs",
+    "images:gc": "node scripts/db/gc-r2-assets.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1030.0",
