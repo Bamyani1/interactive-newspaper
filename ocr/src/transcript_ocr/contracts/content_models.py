@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
 ARTICLE_CATEGORIES = (
     "Campus News",
@@ -28,20 +35,34 @@ AD_ENRICHMENT_CATEGORIES = (
 )
 
 
-class ArticleImage(BaseModel):
+class ContractModel(BaseModel):
+    """Strict base for every model-facing OCR response contract."""
+
+    model_config = ConfigDict(extra="forbid")
+    _source_pages_internal: list[str] = PrivateAttr(default_factory=list)
+    _review_unresolved: bool = PrivateAttr(default=False)
+    _visual_kind_conflict: bool = PrivateAttr(default=False)
+
+
+class _FallbackCategory(str):
+    """Internal marker that serializes exactly like its public string value."""
+
+
+class ArticleImage(ContractModel):
     caption: str
     position: str = ""
 
 
-class Article(BaseModel):
+class Article(ContractModel):
     headline: str = Field(
         description="Primary headline only — the main title in large/bold type. Exclude subheadlines, deck text, and kickers.",
     )
     author: str = ""
     writer_position: str = ""
-    category: Literal["Campus News", "News", "Sports", "Arts & Entertainment", "Opinion"] = Field(
-        default="Campus News",
+    category: str = Field(
+        default="News",
         description="Must be exactly one of: Campus News, News, Sports, Arts & Entertainment, Opinion",
+        json_schema_extra={"enum": list(ARTICLE_CATEGORIES)},
     )
     continues_on: str = Field(
         default="",
@@ -52,39 +73,54 @@ class Article(BaseModel):
         description="Page number (digits only) where this article continues from. Empty string if none.",
     )
     body: str
-    images: list[ArticleImage] = []
-    image_files: list[str] = []
+    images: list[ArticleImage] = Field(default_factory=list)
+    image_files: list[str] = Field(default_factory=list)
+    _category_fallback_used: bool = PrivateAttr(default=False)
+
+    @field_validator("category", mode="after")
+    @classmethod
+    def _fallback_invalid_category(cls, value):
+        return value if value in ARTICLE_CATEGORIES else _FallbackCategory("News")
+
+    @model_validator(mode="after")
+    def _remember_category_fallback(self):
+        self._category_fallback_used = (
+            "category" not in self.model_fields_set
+            or isinstance(self.category, _FallbackCategory)
+        )
+        return self
 
 
-class OtherContent(BaseModel):
+class OtherContent(ContractModel):
     title: str = ""
     body: str
 
 
-class Ad(BaseModel):
+class Ad(ContractModel):
     business_name: str
     body: str
-    image_files: list[str] = []
+    image_files: list[str] = Field(default_factory=list)
 
 
-class PageContent(BaseModel):
+class PageContent(ContractModel):
     articles: list[Article]
-    other_content: list[OtherContent] = []
-    ads: list[Ad] = []
+    other_content: list[OtherContent] = Field(default_factory=list)
+    ads: list[Ad] = Field(default_factory=list)
     page_number: str = ""
     publication_info: str = ""
 
 
-class MergedArticle(BaseModel):
+class MergedArticle(ContractModel):
     headline: str = Field(
         default="",
         description="Primary headline only — the main title in large/bold type. Exclude subheadlines, deck text, and kickers.",
     )
     author: str = ""
     writer_position: str = ""
-    category: Literal["Campus News", "News", "Sports", "Arts & Entertainment", "Opinion"] = Field(
-        default="Campus News",
+    category: str = Field(
+        default="News",
         description="Must be exactly one of: Campus News, News, Sports, Arts & Entertainment, Opinion",
+        json_schema_extra={"enum": list(ARTICLE_CATEGORIES)},
     )
     continues_on: str = Field(
         default="",
@@ -95,76 +131,102 @@ class MergedArticle(BaseModel):
         description="Page number (digits only) where this article continues from. Empty string if none.",
     )
     body: str = ""
-    images: list[ArticleImage] = []
-    image_files: list[str] = []
-    source_pages: list[str] = []
+    images: list[ArticleImage] = Field(default_factory=list)
+    image_files: list[str] = Field(default_factory=list)
+    source_pages: list[str] = Field(default_factory=list)
+    _category_fallback_used: bool = PrivateAttr(default=False)
+
+    @field_validator("category", mode="after")
+    @classmethod
+    def _fallback_invalid_category(cls, value):
+        return value if value in ARTICLE_CATEGORIES else _FallbackCategory("News")
+
+    @model_validator(mode="after")
+    def _remember_category_fallback(self):
+        self._category_fallback_used = (
+            "category" not in self.model_fields_set
+            or isinstance(self.category, _FallbackCategory)
+        )
+        return self
 
 
-class EditionContent(BaseModel):
+class EditionContent(ContractModel):
     articles: list[MergedArticle]
-    ads: list[Ad] = []
-    other_content: list[OtherContent] = []
+    ads: list[Ad] = Field(default_factory=list)
+    other_content: list[OtherContent] = Field(default_factory=list)
 
 
-class MergeInstruction(BaseModel):
-    article_ids: list[int]
-    merged_headline: str
-    merged_author: str = ""
-    merged_writer_position: str = ""
-    confidence: float = Field(default=1.0, description="0.0-1.0 confidence in this grouping decision")
-
-
-class MergeDecisions(BaseModel):
-    groups: list[MergeInstruction]
-
-
-class ImageRegionAssignment(BaseModel):
+class ImageRegionAssignment(ContractModel):
     region_number: int
-    content_type: Literal["article", "ad", "standalone", "text_ad", "not_image"] = Field(
-        description="Type of content in this region: article photo, ad image, standalone image, text-only ad, or scanner noise/artifact",
+    visual_type: Literal[
+        "photograph",
+        "illustration",
+        "table_chart_map",
+        "logo",
+        "typographic_display_ad",
+        "plain_text",
+        "scanner_decorative_artifact",
+        "unresolved",
+    ] = Field(
+        description="What is visibly present, independent of its archive attachment",
+    )
+    attachment: Literal["article", "ad", "standalone", "reject"] = Field(
+        description="Which archive item owns this region, or reject/standalone",
     )
     content_index: int = Field(
         default=-1,
-        description="0-based index into the article or ad list. Use -1 for standalone, text_ad, or not_image.",
+        description="0-based article/ad index; -1 for standalone or reject",
     )
-    caption: str = Field(
-        default="",
-        description="Brief description of what the image shows. Leave empty for text_ad and not_image.",
+    caption_slot: int = Field(
+        default=-1,
+        description="Page-local printed-caption slot, or -1 when none matches",
     )
+    rejection_reason: Literal[
+        "plain_text",
+        "scanner_decorative_artifact",
+        "rejected_small_ad_visual",
+    ] | None = None
+
+    # Compatibility properties for the current assignment applier.  They are
+    # deliberately absent from the model schema, so Gemini cannot generate a
+    # caption or collapse visual type and attachment back into one decision.
+    @property
+    def content_type(self) -> str:
+        if self.attachment != "reject":
+            return self.attachment
+        return "text_ad" if self.visual_type == "plain_text" else "not_image"
+
+    @property
+    def caption(self) -> str:
+        return ""
 
 
-class ImageRegionAssignments(BaseModel):
+class ImageRegionAssignments(ContractModel):
     assignments: list[ImageRegionAssignment]
 
 
-class SuspectArticleDecision(BaseModel):
-    index: int = Field(description="0-based index into the suspect articles list")
-    decision: Literal["keep", "demote"] = Field(
-        description="'keep' = real article, stays. 'demote' = not a real article, move to other_content.",
-    )
+class ContentReviewDecision(ContractModel):
+    item_id: str = Field(description="Exact candidate ID supplied by the caller")
+    target_type: Literal["article", "ad", "other"]
+    category: Literal[
+        "Campus News", "News", "Sports", "Arts & Entertainment", "Opinion",
+    ] | None = None
+    confidence: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _category_only_for_articles(self):
+        if self.target_type == "article" and self.category is None:
+            raise ValueError("article review decisions require a category")
+        if self.target_type != "article" and self.category is not None:
+            raise ValueError("non-article review decisions must not include a category")
+        return self
 
 
-class OtherContentDecision(BaseModel):
-    index: int = Field(description="0-based index into the other content list")
-    decision: Literal["promote", "keep"] = Field(
-        description="'promote' = real article, move to articles. 'keep' = stays in other_content.",
-    )
-    headline: str = Field(
-        default="",
-        description="For promoted items: a clean headline. Empty for 'keep'.",
-    )
-    category: Literal["Campus News", "News", "Sports", "Arts & Entertainment", "Opinion"] = Field(
-        default="Campus News",
-        description="For promoted items: article category. Ignored for 'keep'.",
-    )
+class ContentReviewResponse(ContractModel):
+    decisions: list[ContentReviewDecision]
 
 
-class ContentTriageResponse(BaseModel):
-    suspect_articles: list[SuspectArticleDecision]
-    other_content: list[OtherContentDecision]
-
-
-class EnrichedAd(BaseModel):
+class EnrichedAd(ContractModel):
     business_name: str
     body: str
     image_files: list[str]
@@ -184,8 +246,21 @@ class EnrichedAd(BaseModel):
     price: str = ""
 
 
-class EnrichedAdsResponse(BaseModel):
-    enriched_ads: list[EnrichedAd]
+class AdEnrichmentDelta(ContractModel):
+    ad_id: str = Field(description="Exact stable ID supplied by the caller")
+    category: Literal[
+        "Food & Drink", "Entertainment", "Services", "Retail",
+        "Greek Life", "Jobs", "Housing", "Education", "Events", "Other",
+    ]
+    ad_type: Literal["display", "classified"]
+    display_text: str = ""
+    phone: str = ""
+    address: str = ""
+    price: str = ""
+
+
+class AdEnrichmentDeltasResponse(ContractModel):
+    ads: list[AdEnrichmentDelta]
 
 
 __all__ = [
@@ -194,17 +269,15 @@ __all__ = [
     "Ad",
     "Article",
     "ArticleImage",
-    "ContentTriageResponse",
+    "AdEnrichmentDelta",
+    "AdEnrichmentDeltasResponse",
+    "ContentReviewDecision",
+    "ContentReviewResponse",
     "EditionContent",
     "EnrichedAd",
-    "EnrichedAdsResponse",
     "ImageRegionAssignment",
     "ImageRegionAssignments",
-    "MergeDecisions",
-    "MergeInstruction",
     "MergedArticle",
     "OtherContent",
-    "OtherContentDecision",
     "PageContent",
-    "SuspectArticleDecision",
 ]

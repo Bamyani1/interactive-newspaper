@@ -13,7 +13,6 @@ if str(OCR_SRC) not in sys.path:
 from transcript_ocr.postprocessing.byline_cleanup import (
     _dedup_byline_from_body,
     _normalize_byline,
-    _split_author_position,
 )
 
 
@@ -34,35 +33,6 @@ def test_normalize_empty():
 
 def test_normalize_no_by_prefix():
     assert _normalize_byline("John Smith") == "John Smith"
-
-
-# --- _split_author_position ---
-
-
-def test_split_transcript_columnist():
-    """Existing pattern from real data: 'Jerry Sell Transcript Columnist'."""
-    name, pos = _split_author_position("Jerry Sell Transcript Columnist")
-    assert pos  # Should extract a position
-    assert name  # Should extract a name
-
-
-def test_split_no_position():
-    name, pos = _split_author_position("Jane Doe")
-    assert name == "Jane Doe"
-    assert pos == ""
-
-
-def test_split_empty():
-    name, pos = _split_author_position("")
-    assert name == ""
-    assert pos == ""
-
-
-def test_split_comma_separated():
-    """'Jay Wuebbold, Sports Editor' — comma-separated."""
-    name, pos = _split_author_position("Jay Wuebbold, Sports Editor")
-    assert "Sports Editor" in pos
-    assert "Jay" in name
 
 
 # --- _dedup_byline_from_body ---

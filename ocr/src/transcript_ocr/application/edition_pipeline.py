@@ -1,392 +1,577 @@
-"""Edition-level pipeline entrypoints.
+"""Manifest-accounted OCR edition pipeline.
 
-Seven-phase pipeline:
-  Phase 0: TIF → PNG conversion (lossless, runs first)
-  Phase 1: DocAI extraction (all pages, fail-fast)
-  Phase 2: Gemini structuring (all pages, uses DocAI text)
-  Phase 3: Cross-page merge
-  Phase 4: Ad enrichment
-  Phase 5: Content triage (rescue misclassified articles)
-  Phase 6: Summary + diagnostics
+This module builds a validated candidate only.  R2 upload and the atomic public
+directory swap are owned by ``scripts/ocr/process-edition.sh``.
 """
 
 from __future__ import annotations
 
+import copy
+import json
 import os
+import shutil
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from ..contracts.content_models import EditionContent, MergedArticle
-from ..contracts.diagnostics_models import PageDiagnostics, PipelineReport
-from ..diagnostics.run_manifest import _get_git_commit_hash
-from ..diagnostics.snapshots import save_snapshot
-from ..export.artifact_writer import write_diagnostics_json, write_issue_reports
-from ..export.edition_writer import align_existing_image_files, finalize_and_write_edition_json
-from ..export.markdown_writer import edition_to_markdown
-from ..ingestion.discovery import discover_page_images, extract_edition_date
-from ..preprocessing.image_converter import convert_edition_images
-from ..config.paths import REPO_ROOT
+from ..config.prompts_loader import MODELS
+from ..contracts.content_models import (
+    EditionContent,
+    MergedArticle,
+    PageContent,
+)
+from ..contracts.diagnostics_models import PageDiagnostics, PipelineReport, TokenUsage
+from ..contracts.page_state import PageOutcome, PageState, may_publish, publication_ratio
+from ..diagnostics.costing import estimate_gemini_cost
+from ..diagnostics.failure_log import append_failure
+from ..export.edition_writer import align_existing_image_files, finalize_and_write_edition_json, write_edition_json
+from ..export.provenance import write_provenance
+from ..export.validation import validate_candidate_file
+from ..ingestion.discovery import extract_edition_date
+from ..ingestion.manifest import EditionPageInventory, PageExpectation, discover_page_inventory
 from ..ingestion.pathing import RunPaths
 from ..merging.llm_merge import merge_edition_articles
-from ..recognition.docai_provider import DocAIError
-from ..shared.console import banner, stage, substep, success, warning, error, file_written, page_progress, print_summary_table
+from ..preprocessing.image_converter import convert_edition_images_tolerant
+from ..shared.console import banner, error, stage, success, warning
+from ..shared.retry import observe_gemini_failures
+from ..shared.text import normalize_whitespace
 from .ad_enrichment import enrich_edition
 from .content_rescue import triage_edition
 from .page_pipeline import extract_page_docai, structure_and_link_page
 
 
-def _is_gemini_transient(exc: BaseException) -> bool:
-    """Return True if `exc` looks like a transient Gemini 5xx / quota failure.
+class EditionPipelineError(RuntimeError):
+    """Fatal candidate outcome that must prevent public promotion."""
 
-    Used by the broad `except` blocks in Phases 4 and 5 to tag warning
-    messages so operators can distinguish transient outages from genuine
-    config or schema errors in logs, without narrowing the except itself
-    (which would start failing editions that currently tolerate these).
-    """
-    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-    if code is not None:
-        try:
-            code_int = int(code)
-            if code_int in {429, 500, 502, 503, 504}:
-                return True
-        except (ValueError, TypeError):
-            pass
-    exc_str = str(exc).lower()
-    return any(
-        term in exc_str
-        for term in (
-            "503",
-            "502",
-            "504",
-            "unavailable",
-            "resource exhausted",
-            "resource_exhausted",
-            "quota",
-            "rate limit",
-            "deadline exceeded",
-            "deadline_exceeded",
+
+@dataclass(frozen=True)
+class EditionRunResult:
+    edition_date: str
+    edition_json_path: str
+    manifest_canvas_count: int
+    pass_ratio: float
+    outcomes: tuple[PageOutcome, ...]
+    estimated_gemini_cost_usd: float
+
+
+def _log_failure(edition: str, stage_name: str, exc: BaseException | str, **metadata) -> None:
+    try:
+        append_failure(edition=edition, stage=stage_name, error=exc, **metadata)
+    except Exception as log_exc:
+        warning(f"Could not append failure metadata: {log_exc}")
+
+
+def _page_state(content: PageContent) -> PageState:
+    visual_paths = [
+        path
+        for article in content.articles
+        for path in article.image_files
+    ] + [path for ad in content.ads for path in ad.image_files]
+    visual_paths.extend(
+        item.body for item in content.other_content if (item.body or "").startswith("images/")
+    )
+    has_historical_text = bool(
+        content.articles
+        or content.ads
+        or content.publication_info.strip()
+        or any(
+            (item.title or "").strip()
+            or ((item.body or "").strip() and not (item.body or "").startswith("images/"))
+            for item in content.other_content
         )
     )
+    if has_historical_text:
+        return PageState.PASSED_CONTENT
+    if visual_paths:
+        return PageState.PASSED_VISUAL
+    return PageState.CONFIRMED_BLANK
+
+
+def _unmerged_edition(page_results: list[tuple[str, PageContent]]) -> EditionContent:
+    articles: list[MergedArticle] = []
+    ads = []
+    other = []
+    for source_filename, page in page_results:
+        page_label = str(page.page_number or source_filename)
+        for article in page.articles:
+            merged_article = MergedArticle(
+                headline=article.headline,
+                author=article.author,
+                writer_position=article.writer_position,
+                category=article.category,
+                continues_on=article.continues_on,
+                continued_from=article.continued_from,
+                body=article.body,
+                images=list(article.images),
+                image_files=list(article.image_files),
+                source_pages=[page_label],
+            )
+            merged_article._category_fallback_used = article._category_fallback_used
+            merged_article._source_pages_internal = [page_label]
+            articles.append(merged_article)
+        ads.extend(page.ads)
+        other.extend(page.other_content)
+    return EditionContent.model_construct(
+        articles=articles,
+        ads=ads,
+        other_content=other,
+    )
+
+
+def _deduplicate_exact_articles(edition: EditionContent) -> None:
+    """Remove only exact normalized headline+body duplicates, preserving evidence."""
+    seen: dict[tuple[str, str], MergedArticle] = {}
+    kept: list[MergedArticle] = []
+    for article in edition.articles:
+        key = (
+            normalize_whitespace(article.headline),
+            normalize_whitespace(article.body),
+        )
+        previous = seen.get(key)
+        if previous is None:
+            seen[key] = article
+            kept.append(article)
+            continue
+        for page in article.source_pages:
+            if page not in previous.source_pages:
+                previous.source_pages.append(page)
+        for image, image_file in zip(article.images, article.image_files):
+            if image_file not in previous.image_files:
+                previous.image_files.append(image_file)
+                previous.images.append(image)
+        previous._category_fallback_used = (
+            previous._category_fallback_used or article._category_fallback_used
+        )
+        for page in article._source_pages_internal:
+            if page not in previous._source_pages_internal:
+                previous._source_pages_internal.append(page)
+    edition.articles = kept
+
+
+def _build_review_hints(edition: EditionContent) -> dict[str, dict[str, Any]]:
+    """Expose private page-stage evidence to one review call without persisting it."""
+    hints: dict[str, dict[str, Any]] = {}
+    collections = (
+        ("article", edition.articles),
+        ("ad", edition.ads),
+        ("other", edition.other_content),
+    )
+    for item_type, items in collections:
+        for index, item in enumerate(items):
+            item_hints: dict[str, Any] = {}
+            if getattr(item, "_category_fallback_used", False):
+                item_hints["category_fallback_used"] = True
+            if item._review_unresolved:
+                item_hints["classification_state"] = "unresolved"
+            if item._visual_kind_conflict:
+                item_hints["visual_kind_conflict"] = True
+            source_pages = (
+                list(item.source_pages)
+                if item_type == "article"
+                else list(item._source_pages_internal)
+            )
+            if source_pages:
+                item_hints["source_pages"] = source_pages
+            if item_hints:
+                hints[f"{item_type}-{index}"] = item_hints
+    return hints
+
+
+def _publication_info(page_results: list[tuple[str, PageContent]]) -> str:
+    """Keep the front-page identity and most complete masthead, not page furniture."""
+    values: list[str] = []
+    for _filename, page in page_results:
+        value = page.publication_info.strip()
+        if value and value not in values:
+            values.append(value)
+    if not values:
+        return ""
+    first = values[0]
+    longest = max(values, key=len)
+    if longest == first or normalize_whitespace(first) in normalize_whitespace(longest):
+        return longest
+    return f"{first}\n\n{longest}"
+
+
+def _usage_from_event(event: dict[str, Any]) -> TokenUsage:
+    tokens = event.get("tokens") or {}
+    return TokenUsage(
+        prompt_tokens=int(tokens.get("prompt_tokens", 0) or 0),
+        candidates_tokens=int(tokens.get("candidates_tokens", 0) or 0),
+        thoughts_tokens=int(tokens.get("thoughts_tokens", 0) or 0),
+        tool_use_prompt_tokens=int(tokens.get("tool_use_prompt_tokens", 0) or 0),
+        cached_content_tokens=int(tokens.get("cached_content_tokens", 0) or 0),
+        total_tokens=int(tokens.get("total_tokens", 0) or 0),
+    )
+
+
+def _estimate_report_cost(
+    report: PipelineReport,
+    extra_model_events: list[dict[str, Any]] | None = None,
+) -> float:
+    total = 0.0
+    for page in report.page_diagnostics:
+        total += estimate_gemini_cost("gemini-3.5-flash-lite", page.gemini_tokens).usd
+        if page.visual_matching.attempted:
+            total += estimate_gemini_cost(
+                "gemini-3.5-flash-lite", page.visual_matching.tokens
+            ).usd
+    if report.merge_pass is not None:
+        total += estimate_gemini_cost("gemini-3.6-flash", report.merge_pass.tokens).usd
+    for event in extra_model_events or []:
+        total += estimate_gemini_cost(
+            str(event["model"]),
+            _usage_from_event(event),
+        ).usd
+    return total
+
+
+def _safe_remove_new_candidate(candidate: Path, output_root: Path) -> None:
+    try:
+        candidate.resolve().relative_to(output_root.resolve())
+    except ValueError:
+        return
+    if candidate != output_root and candidate.exists():
+        shutil.rmtree(candidate)
 
 
 def process_edition(
     settings: Any,
     client: Any,
     paths: RunPaths,
-    run_id: str = "",
     workers: int = 1,
-) -> None:
-    """Process all pages in an edition directory using the five-phase pipeline."""
+) -> EditionRunResult:
+    """Process every available canvas and return a promotable candidate."""
     del settings
     workers = workers or int(os.getenv("OCR_WORKERS", "1"))
-    edition_dir = paths.edition_dir
-    output_dir = paths.public_output_root
-    ocr_output_dir = paths.ocr_output_root
+    workers = max(1, workers)
+    edition_dir = Path(paths.edition_dir).resolve()
+    output_root = Path(paths.public_output_root).resolve()
+    edition_date = extract_edition_date(str(edition_dir))
+    candidate = output_root / edition_date
+    if candidate.exists():
+        raise EditionPipelineError(f"candidate already exists: {candidate}")
+    candidate.mkdir(parents=True, exist_ok=True)
 
-    edition_date = extract_edition_date(edition_dir)
-    resolved_run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    pipeline_start = time.time()
-    edition_output = os.path.join(output_dir, edition_date)
-    os.makedirs(edition_output, exist_ok=True)
-    output_edition_abs = os.path.abspath(edition_output)
-
-    report = PipelineReport(
-        edition_date=edition_date,
-        run_id=resolved_run_id,
-        input_edition_dir=os.path.abspath(edition_dir),
-        output_edition_dir=output_edition_abs,
-        git_commit_hash=_get_git_commit_hash(str(REPO_ROOT)),
-        start_time=datetime.now(timezone.utc).isoformat(),
-    )
-
-    # ── Phase 0: Convert TIF scans to optimized PNG ──────────
-    convert_edition_images(edition_dir)
-
-    image_files = discover_page_images(edition_dir)
-    if not image_files:
-        warning(f"No images found in {edition_dir}")
-        return
-
-    report.pages_attempted = len(image_files)
-
-    edition_ocr_output = None
-    if ocr_output_dir:
-        if run_id:
-            edition_ocr_output = os.path.join(ocr_output_dir, edition_date, "runs", resolved_run_id)
-        else:
-            edition_ocr_output = os.path.join(ocr_output_dir, edition_date)
-        os.makedirs(edition_ocr_output, exist_ok=True)
-        report.run_root = os.path.abspath(edition_ocr_output)
+    owned_work: tempfile.TemporaryDirectory[str] | None = None
+    if paths.work_root:
+        work_root = Path(paths.work_root).resolve()
+        work_root.mkdir(parents=True, exist_ok=True)
     else:
-        report.run_root = output_edition_abs
+        work_parent = edition_dir.parent / ".ocr-work"
+        work_parent.mkdir(parents=True, exist_ok=True)
+        owned_work = tempfile.TemporaryDirectory(prefix=f"{edition_date}.", dir=work_parent)
+        work_root = Path(owned_work.name)
 
-    snapshots_dir = None
-    if edition_ocr_output:
-        snapshots_dir = os.path.join(edition_ocr_output, "snapshots")
-        os.makedirs(snapshots_dir, exist_ok=True)
-        file_written("Snapshots", snapshots_dir)
+    started = time.time()
+    report = PipelineReport(edition_date=edition_date, pages_attempted=0)
+    extra_model_events: list[dict[str, Any]] = []
 
-    if report.run_root:
-        from ..diagnostics.run_manifest import _write_run_manifest
+    def record_model_event(event: dict[str, Any]) -> None:
+        if event.get("status") == "success":
+            extra_model_events.append(copy.deepcopy(event))
 
-        report.run_manifest_path = _write_run_manifest(report.run_root, edition_dir, image_files, report)
-        file_written("Run manifest", report.run_manifest_path)
-
-    banner(edition_date, len(image_files), output_edition_abs, resolved_run_id, edition_ocr_output or "")
-
-    # ── Phase 1: DocAI extraction (all pages, fail-fast) ──────────
-    stage("DocAI extraction", 1, 6)
-
-    docai_results: dict[str, tuple] = {}  # img_path -> (docai_result, preprocessed_image, regions)
-    page_diag_map: dict[str, PageDiagnostics] = {}
-
-    def _run_phase1_page(img: str) -> tuple[str, PageDiagnostics, tuple | None]:
-        """Worker function for Phase 1 — returns (img, diag, extraction_result_or_None)."""
-        page_diag = PageDiagnostics()
-        result = extract_page_docai(
-            img, diag=page_diag, snapshots_dir=snapshots_dir,
-        )
-        # extract_page_docai returns (None, None, []) for skipped pages (quality check)
-        if result[0] is None:
-            return img, page_diag, None
-        return img, page_diag, result
-
-    with page_progress(len(image_files)) as progress:
-        task_id = progress.add_task("DocAI extraction", total=len(image_files))
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_run_phase1_page, img): img for img in image_files}
-            for future in as_completed(futures):
-                img = futures[future]
-                try:
-                    _, page_diag, result = future.result()
-                    page_diag_map[img] = page_diag
-                    if result is not None:
-                        docai_results[img] = result
-                except DocAIError as exc:
-                    page_diag = PageDiagnostics()
-                    page_diag.error = str(exc)
-                    page_diag_map[img] = page_diag
-                    error(f"DocAI failed on {os.path.basename(img)}: {exc} — skipping page")
-                except Exception as exc:
-                    page_diag = PageDiagnostics()
-                    page_diag.error = str(exc)
-                    page_diag_map[img] = page_diag
-                    error(f"Phase 1 failed on {os.path.basename(img)}: {exc} — skipping page")
-                progress.advance(task_id)
-
-    phase1_succeeded = len(docai_results)
-    phase1_failed = len(image_files) - phase1_succeeded
-    if phase1_failed > 0:
-        warning(f"Phase 1: {phase1_failed}/{len(image_files)} pages failed — continuing with {phase1_succeeded} pages")
-    if phase1_succeeded == 0:
-        error("All pages failed in Phase 1 — aborting edition")
-        report.page_diagnostics.extend(page_diag_map.values())
-        report.total_time_seconds = time.time() - pipeline_start
-        report.finalize()
-        _write_diagnostics_and_issues(report, edition_ocr_output, edition_output, snapshots_dir, "")
-        return
-
-    success(f"Phase 1 done: {phase1_succeeded}/{len(image_files)} pages extracted via DocAI")
-
-    # ── Phase 2: Gemini structuring (all pages) ───────────────────
-    stage("Gemini structuring", 2, 6)
-
-    page_results: list[tuple[str, Any]] = []
-
-    # Only process pages that succeeded in Phase 1
-    phase2_images = [img for img in image_files if img in docai_results]
-
-    def _run_phase2_page(img: str) -> tuple[str, PageDiagnostics, Any]:
-        """Worker function for Phase 2 — returns (img, diag, result)."""
-        docai_result, preprocessed_image, regions = docai_results[img]
-        page_diag = page_diag_map[img]
-        result = structure_and_link_page(
-            client, img, docai_result, preprocessed_image, regions,
-            edition_output, diag=page_diag, ocr_output_dir=edition_ocr_output,
-            snapshots_dir=snapshots_dir,
-        )
-        return img, page_diag, result
-
-    with page_progress(len(phase2_images)) as progress:
-        task_id = progress.add_task("Gemini structuring", total=len(phase2_images))
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_run_phase2_page, img): img for img in phase2_images}
-            collected: list[tuple[str, PageDiagnostics, Any]] = []
-            for future in as_completed(futures):
-                img, page_diag, result = future.result()
-                collected.append((img, page_diag, result))
-                progress.advance(task_id)
-
-    # Include diagnostics for pages that were skipped/failed in Phase 1
-    for img in image_files:
-        if img not in docai_results and img in page_diag_map:
-            report.page_diagnostics.append(page_diag_map[img])
-
-    # Restore page ordering (sorted by filename) for deterministic merge
-    collected.sort(key=lambda t: t[0])
-    for img, page_diag, result in collected:
-        report.page_diagnostics.append(page_diag)
-        if result is not None:
-            page_results.append((os.path.basename(img), result))
-
-    report.pages_processed = len(page_results)
-    success(f"Phase 2 done: {len(page_results)}/{len(image_files)} pages structured")
-
-    # Free preprocessed images — Phase 3+ only needs article text
-    docai_results.clear()
-
-    # ── Phase 3: Cross-page merge ─────────────────────────────────
-    edition_json_path = os.path.join(edition_output, "edition.json")
-    if page_results:
-        stage("Cross-page merge", 3, 6)
-        substep(f"Merging articles across pages for {edition_date}...")
-        merged = merge_edition_articles(client, page_results, report=report, snapshots_dir=snapshots_dir)
-        save_snapshot(snapshots_dir, "post_merge_edition.json", merged)
-        if not merged:
-            warning("Merge failed — falling back to unmerged edition.")
-            all_articles = []
-            all_ads = []
-            all_other = []
-            for source_filename, pc in page_results:
-                page_label = pc.page_number or source_filename
-                for art in pc.articles:
-                    all_articles.append(
-                        MergedArticle(
-                            headline=art.headline,
-                            author=art.author,
-                            writer_position=art.writer_position,
-                            category=art.category,
-                            continues_on=art.continues_on,
-                            continued_from=art.continued_from,
-                            body=art.body,
-                            images=list(art.images),
-                            image_files=list(art.image_files),
-                            source_pages=[str(page_label)],
-                        )
-                    )
-                all_ads.extend(pc.ads)
-                all_other.extend(pc.other_content)
-            merged = EditionContent(articles=all_articles, ads=all_ads, other_content=all_other)
-            substep(f"{len(merged.articles)} unmerged articles")
-
-        # ── Drop articles linked to failed pages ──
-        failed_pages = set()
-        for pd in report.page_diagnostics:
-            if pd.error and pd.final_article_count == 0 and pd.final_ad_count == 0:
-                # page_number may be empty if page failed before Gemini assigned it
-                pg = pd.page_number or ""
-                if not pg and pd.filename:
-                    from .page_pipeline import _extract_page_number_from_filename
-                    pg = _extract_page_number_from_filename(pd.filename) or ""
-                if pg:
-                    failed_pages.add(str(pg))
-
-        if failed_pages and merged:
-            before = len(merged.articles)
-            merged.articles = [
-                a for a in merged.articles
-                if not (
-                    a.continues_on in failed_pages
-                    or a.continued_from in failed_pages
-                    or any(p in failed_pages for p in a.source_pages)
-                )
-            ]
-            dropped = before - len(merged.articles)
-            if dropped:
-                warning(f"Dropped {dropped} articles linked to failed pages {sorted(failed_pages)}")
-
-        if merged:
-            md = edition_to_markdown(edition_date, merged)
-            merged_dir = edition_ocr_output if edition_ocr_output else output_dir
-            merged_path = os.path.join(merged_dir, "summary.md")
-            with open(merged_path, "w", encoding="utf-8") as f:
-                f.write(md)
-            substep(f"{len(merged.articles)} articles -> {merged_path}")
-
-            pub_info = ""
-            for _, pc in page_results:
-                if pc.publication_info:
-                    pub_info = pc.publication_info
-                    break
-
-            align_existing_image_files(edition_output, merged)
-            finalize_and_write_edition_json(
-                edition_json_path,
+    def attempt_failure_observer(canvas: int | None = None, page: str = ""):
+        def record(event: dict[str, Any]) -> None:
+            model = str(event.get("model") or "")
+            token_event = {"model": model, "tokens": event.get("tokens") or {}}
+            usage = _usage_from_event(token_event)
+            if (
+                usage.prompt_tokens
+                or usage.tool_use_prompt_tokens
+                or usage.candidates_tokens
+                or usage.thoughts_tokens
+            ):
+                extra_model_events.append(token_event)
+            estimated = estimate_gemini_cost(model, usage).usd if model else None
+            _log_failure(
                 edition_date,
-                pub_info,
-                merged,
-                merge_diag=report.merge_pass,
+                str(event.get("stage") or "gemini"),
+                str(event.get("error") or "Gemini attempt failed"),
+                canvas=canvas,
+                page=page,
+                attempt=event.get("attempt"),
+                model=model,
+                config_id=f"{event.get('stage', 'gemini')}-v1",
+                status=str(event.get("status") or "failed"),
+                finish_reason=str(event.get("finish_reason") or ""),
+                latency_ms=event.get("latency_ms"),
+                tokens=event.get("tokens") or {},
+                estimated_cost_usd=estimated,
             )
-            file_written("Edition JSON", edition_json_path)
 
-    # ── Phase 4: Ad enrichment ────────────────────────────────────
-    if os.path.isfile(edition_json_path):
-        stage("Ad enrichment", 4, 6)
-        substep(f"Enriching ads for {edition_date}...")
+        return record
+    outcomes_by_canvas: dict[int, PageOutcome] = {}
+    page_results_by_canvas: dict[int, tuple[str, PageContent]] = {}
+    succeeded = False
+    try:
+        conversion_failures = convert_edition_images_tolerant(str(edition_dir))
+        inventory: EditionPageInventory = discover_page_inventory(
+            edition_dir, paths.manifest_path
+        )
+        expected = inventory.expected_pages
+        report.pages_attempted = expected
+        if expected <= 0:
+            raise EditionPipelineError("edition has no manifest canvases or local pages")
+        if not inventory.authoritative:
+            warning("No IIIF manifest found; treating each discovered page as a synthetic canvas")
+
+        banner(edition_date, expected, str(candidate))
+        for page in inventory.pages:
+            if page.local_path is None:
+                reason = "manifest canvas has no downloaded image"
+                outcomes_by_canvas[page.index] = PageOutcome(page.index, PageState.FAILED, reason=reason)
+                _log_failure(edition_date, "download", reason, canvas=page.index, page=str(page.index))
+            elif Path(page.local_path).name in conversion_failures:
+                reason = conversion_failures[Path(page.local_path).name]
+                outcomes_by_canvas[page.index] = PageOutcome(
+                    page.index, PageState.FAILED, Path(page.local_path).name, reason
+                )
+                _log_failure(edition_date, "conversion", reason, canvas=page.index, page=str(page.index))
+
+        available = [
+            page
+            for page in inventory.pages
+            if page.local_path is not None and page.index not in outcomes_by_canvas
+        ]
+        stage("Document AI + source visual detection", 1, 5)
+        extracted: dict[int, tuple] = {}
+        diagnostics: dict[int, PageDiagnostics] = {}
+
+        def extract_one(page: PageExpectation):
+            diag = PageDiagnostics(filename=Path(page.local_path or "").name)
+            page_work = work_root / f"canvas-{page.index:04d}"
+            page_work.mkdir(parents=True, exist_ok=True)
+            result = extract_page_docai(
+                page.local_path or "",
+                diag=diag,
+                work_dir=str(page_work),
+            )
+            return page.index, diag, result
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(extract_one, page): page for page in available}
+            for future in as_completed(futures):
+                page = futures[future]
+                try:
+                    canvas, diag, result = future.result()
+                    diagnostics[canvas] = diag
+                    extracted[canvas] = result
+                except Exception as exc:
+                    diag = PageDiagnostics(filename=Path(page.local_path or "").name, error=str(exc))
+                    diagnostics[page.index] = diag
+                    outcomes_by_canvas[page.index] = PageOutcome(
+                        page.index, PageState.FAILED, diag.filename, str(exc)
+                    )
+                    _log_failure(
+                        edition_date,
+                        "document_ai_or_detection",
+                        exc,
+                        canvas=page.index,
+                        page=str(page.index),
+                        model="document-ai-enterprise-ocr+hybrid-layout",
+                        config_id="processorVersions/stable",
+                    )
+
+        stage("Gemini page structuring + visual assignment", 2, 5)
+
+        def structure_one(page: PageExpectation):
+            docai, ocr_image, regions, source_image = extracted[page.index]
+            diag = diagnostics[page.index]
+            with observe_gemini_failures(
+                attempt_failure_observer(page.index, str(page.index))
+            ):
+                content = structure_and_link_page(
+                    client,
+                    page.local_path or "",
+                    docai,
+                    ocr_image,
+                    regions,
+                    str(candidate),
+                    diag=diag,
+                    source_image=source_image,
+                )
+            return page.index, diag, content
+
+        structured_pages = [page for page in available if page.index in extracted]
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(structure_one, page): page for page in structured_pages}
+            for future in as_completed(futures):
+                page = futures[future]
+                try:
+                    canvas, diag, content = future.result()
+                except Exception as exc:
+                    diag = diagnostics[page.index]
+                    diag.error = str(exc)
+                    content = None
+                    canvas = page.index
+                if content is None:
+                    reason = diag.error or "page structuring returned no valid contract"
+                    outcomes_by_canvas[canvas] = PageOutcome(
+                        canvas, PageState.FAILED, diag.filename, reason
+                    )
+                    _log_failure(
+                        edition_date,
+                        "page_structuring_or_visual",
+                        reason,
+                        canvas=canvas,
+                        page=str(canvas),
+                        model="gemini-3.5-flash-lite",
+                        config_id="page-visual-v1",
+                    )
+                    continue
+                if not str(content.page_number or "").isdigit():
+                    content.page_number = str(canvas)
+                source_page = str(canvas)
+                for item in [*content.articles, *content.ads, *content.other_content]:
+                    item._source_pages_internal = [source_page]
+                state = _page_state(content)
+                outcomes_by_canvas[canvas] = PageOutcome(
+                    canvas, state, diag.filename, ""
+                )
+                page_results_by_canvas[canvas] = (diag.filename, content)
+
+        for page in inventory.pages:
+            if page.index not in outcomes_by_canvas:
+                reason = "canvas did not reach a terminal state"
+                outcomes_by_canvas[page.index] = PageOutcome(
+                    page.index,
+                    PageState.FAILED,
+                    Path(page.local_path or "").name,
+                    reason,
+                )
+                _log_failure(edition_date, "page_state", reason, canvas=page.index, page=str(page.index))
+
+        outcomes = [outcomes_by_canvas[index] for index in sorted(outcomes_by_canvas)]
+        ratio = publication_ratio(outcomes, expected)
+        report.pages_processed = sum(outcome.state != PageState.FAILED for outcome in outcomes)
+        report.page_diagnostics = [diagnostics[index] for index in sorted(diagnostics)]
+        if not may_publish(outcomes, expected):
+            raise EditionPipelineError(
+                f"only {report.pages_processed}/{expected} manifest canvases passed ({ratio:.1%}); 70% required"
+            )
+
+        page_results = [page_results_by_canvas[index] for index in sorted(page_results_by_canvas)]
+        stage("Edition article grouping + seam review", 3, 5)
         try:
-            performed, tokens, elapsed = enrich_edition(edition_json_path, client)
-            if performed:
-                substep(f"Ad enrichment: {tokens} tokens, {elapsed:.1f}s")
-            else:
-                substep("Ad enrichment: skipped (already enriched or no ads)")
+            with observe_gemini_failures(attempt_failure_observer()):
+                merged = merge_edition_articles(
+                    client,
+                    page_results,
+                    report=report,
+                )
         except Exception as exc:
-            # Kept intentionally broad — narrowing it would start failing
-            # editions that currently complete under transient Gemini hiccups.
-            # We add a cause tag for Gemini 5xx / quota so operators can
-            # distinguish "bad day" from "bad config" in logs without losing
-            # the tolerant behavior. See docs/issues/0011.
-            warning(
-                f"Ad enrichment failed (non-fatal): {exc}"
-                + (" [cause=gemini_5xx_or_quota]" if _is_gemini_transient(exc) else "")
+            warning(f"Edition merge stage failed; preserving source fragments: {exc}")
+            _log_failure(
+                edition_date,
+                "article_grouping_or_seam",
+                exc,
+                model="gemini-3.6-flash",
+                config_id="merge-seam-v1",
             )
+            merged = None
+        if merged is None:
+            merged = _unmerged_edition(page_results)
+        _deduplicate_exact_articles(merged)
+        align_existing_image_files(str(candidate), merged)
 
-    # ── Phase 5: Content triage ────────────────────────────────────
-    if os.path.isfile(edition_json_path):
-        stage("Content triage", 5, 6)
-        substep(f"Triaging content for {edition_date}...")
+        edition_json_path = candidate / "edition.json"
+        finalize_and_write_edition_json(
+            str(edition_json_path),
+            edition_date,
+            _publication_info(page_results),
+            merged,
+            merge_diag=report.merge_pass,
+        )
+        review_hints = _build_review_hints(merged)
+        validate_candidate_file(edition_json_path, expected_date=edition_date)
+
+        stage("Ad enrichment + targeted final review", 4, 5)
+        before_enrichment = copy.deepcopy(
+            json.loads(edition_json_path.read_text(encoding="utf-8"))
+        )
         try:
-            performed, tokens, elapsed = triage_edition(edition_json_path, client)
-            if performed:
-                substep(f"Content triage: {tokens} tokens, {elapsed:.1f}s")
-            else:
-                substep("Content triage: skipped (already triaged or nothing to triage)")
+            with observe_gemini_failures(attempt_failure_observer()):
+                enrich_edition(
+                    str(edition_json_path),
+                    client,
+                    telemetry_hook=record_model_event,
+                )
+            validate_candidate_file(edition_json_path, expected_date=edition_date)
         except Exception as exc:
-            # See Phase 4 comment above — same reasoning, same tolerant policy.
-            warning(
-                f"Content triage failed (non-fatal): {exc}"
-                + (" [cause=gemini_5xx_or_quota]" if _is_gemini_transient(exc) else "")
-            )
+            warning(f"Discarding failed or invalid enrichment result: {exc}")
+            write_edition_json(str(edition_json_path), before_enrichment)
+            _log_failure(edition_date, "ad_enrichment", exc, model="gemini-3.5-flash-lite")
 
-    # ── Phase 6: Summary + diagnostics ────────────────────────────
-    report.total_time_seconds = time.time() - pipeline_start
-    report.finalize()
+        before_review = copy.deepcopy(
+            json.loads(edition_json_path.read_text(encoding="utf-8"))
+        )
+        try:
+            with observe_gemini_failures(attempt_failure_observer()):
+                triage_edition(
+                    str(edition_json_path),
+                    client,
+                    review_hints=review_hints,
+                    telemetry_hook=record_model_event,
+                )
+            validate_candidate_file(edition_json_path, expected_date=edition_date)
+        except Exception as exc:
+            warning(f"Discarding failed or invalid final-review result: {exc}")
+            write_edition_json(str(edition_json_path), before_review)
+            _log_failure(edition_date, "final_content_review", exc, model="gemini-3.5-flash-lite")
 
-    _write_diagnostics_and_issues(report, edition_ocr_output, edition_output, snapshots_dir, edition_json_path)
+        validate_candidate_file(edition_json_path, expected_date=edition_date)
+        report.total_time_seconds = time.time() - started
+        report.finalize()
+        estimated_cost = _estimate_report_cost(report, extra_model_events)
+        write_provenance(
+            candidate / "provenance.json",
+            edition_date=edition_date,
+            edition_dir=edition_dir,
+            manifest_path=inventory.manifest_path,
+            outcomes=outcomes,
+            project=os.getenv("GOOGLE_CLOUD_PROJECT", ""),
+            location="global",
+            model_routes=MODELS,
+        )
+        stage("Candidate summary", 5, 5)
+        success(
+            f"{report.pages_processed}/{expected} canvases passed ({ratio:.1%}); "
+            f"estimated Gemini cost captured so far: ${estimated_cost:.4f}"
+        )
+        succeeded = True
+        return EditionRunResult(
+            edition_date=edition_date,
+            edition_json_path=str(edition_json_path),
+            manifest_canvas_count=expected,
+            pass_ratio=ratio,
+            outcomes=tuple(outcomes),
+            estimated_gemini_cost_usd=estimated_cost,
+        )
+    except Exception as exc:
+        error(str(exc))
+        _log_failure(edition_date, "edition", exc)
+        if isinstance(exc, EditionPipelineError):
+            raise
+        raise EditionPipelineError(str(exc)) from exc
+    finally:
+        if owned_work is not None:
+            owned_work.cleanup()
+            try:
+                owned_work_path = Path(owned_work.name).parent
+                owned_work_path.rmdir()
+            except OSError:
+                pass
+        if not succeeded:
+            _safe_remove_new_candidate(candidate, output_root)
 
-    stage("Summary", 6, 6)
-    print_summary_table(report)
 
-
-def _write_diagnostics_and_issues(
-    report: PipelineReport,
-    edition_ocr_output: str | None,
-    edition_output: str,
-    snapshots_dir: str | None,
-    edition_json_path: str,
-) -> None:
-    """Write issue reports and diagnostics JSON (shared by normal and abort paths)."""
-    issue_root = report.run_root or (edition_ocr_output if edition_ocr_output else edition_output)
-    issue_json_path, issue_md_path = write_issue_reports(issue_root, report, snapshots_dir, edition_json_path)
-    report.issue_report_path = issue_json_path
-    file_written("Issue report", issue_json_path)
-    file_written("Issue report markdown", issue_md_path)
-
-    diag_dir = edition_ocr_output if edition_ocr_output else edition_output
-    diag_path = os.path.join(diag_dir, "diagnostics.json")
-    write_diagnostics_json(diag_path, report)
-    file_written("Diagnostics", diag_path)
-
-
-__all__ = ["RunPaths", "process_edition"]
+__all__ = [
+    "EditionPipelineError",
+    "EditionRunResult",
+    "RunPaths",
+    "process_edition",
+]

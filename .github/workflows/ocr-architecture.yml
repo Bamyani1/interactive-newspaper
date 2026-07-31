@@ -37,7 +37,9 @@ jobs:
           root = Path('.')
           required = [
               root / 'ocr' / 'convert_scans.py',
-              root / 'ocr' / 'enrich_ads.py',
+              root / 'ocr' / 'log_failure.py',
+              root / 'ocr' / 'score_gold.py',
+              root / 'ocr' / 'validate_candidate.py',
               root / 'scripts' / 'dev' / 'compare_runs.py',
               root / 'scripts' / 'ocr' / 'process-edition.sh',
               root / 'scripts' / 'ocr' / 'process-unprocessed.sh',

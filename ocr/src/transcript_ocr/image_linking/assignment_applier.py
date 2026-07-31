@@ -18,6 +18,12 @@ def _apply_visual_assignments(
     region_to_ad: dict[int, int] = {}
     unmatched: list[int] = []
     captions: dict[int, str] = {}
+    printed_caption_slots = [
+        image.caption
+        for article in page_content.articles
+        for image in article.images
+        if (image.caption or "").strip()
+    ]
     seen_regions: set[int] = set()
     invalid_count = 0
 
@@ -42,29 +48,26 @@ def _apply_visual_assignments(
             continue
         seen_regions.add(ri)
 
-        if assignment.content_type == "not_image":
-            info(f"Region {rn} rejected as not a real image")
+        if assignment.attachment == "reject":
+            info(f"Region {rn} rejected: {assignment.rejection_reason}")
             if diag is not None:
-                diag.visual_matching.rejected_not_image += 1
+                if assignment.rejection_reason == "plain_text":
+                    diag.visual_matching.rejected_text_ad += 1
+                else:
+                    diag.visual_matching.rejected_not_image += 1
             continue
 
-        if assignment.content_type == "text_ad":
-            info(f"Region {rn} rejected as text-only ad (no visual content)")
-            if diag is not None:
-                diag.visual_matching.rejected_text_ad += 1
-            continue
+        if 0 <= assignment.caption_slot < len(printed_caption_slots):
+            captions[ri] = printed_caption_slots[assignment.caption_slot]
 
-        if assignment.caption:
-            captions[ri] = assignment.caption
-
-        if assignment.content_type == "article":
+        if assignment.attachment == "article":
             if 0 <= assignment.content_index < num_articles:
                 region_to_article[ri] = assignment.content_index
             else:
                 warning(f"Region {rn} article index {assignment.content_index} out of range (0-{num_articles - 1})")
                 invalid_count += 1
                 unmatched.append(ri)
-        elif assignment.content_type == "ad":
+        elif assignment.attachment == "ad":
             if 0 <= assignment.content_index < num_ads:
                 region_to_ad[ri] = assignment.content_index
             else:

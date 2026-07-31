@@ -69,6 +69,7 @@ scripts/dev/data/
 
 # Google Cloud / API Credentials
 *.json
+!ocr/src/prompts.json
 !public/top-10-music/*.json
 !scripts/db/locked-editions.json
 !audit-evidence/manifest.json
@@ -117,6 +118,7 @@ __pycache__/
 
 # OCR run artifacts and diagnostics
 ocr/runs/
+ocr/logs/
 
 # OCR scan staging (large TIFFs)
 ocr/inbox/
@@ -141,6 +143,7 @@ public/editions/*/
 
 # Gold reference data — lives locally + in DB/R2, not in git
 gold/
+gold-candidates/
 
 # Project docs — kept local only, with exceptions for notes referenced from source
 CLAUDE.md

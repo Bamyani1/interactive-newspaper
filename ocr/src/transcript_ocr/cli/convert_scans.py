@@ -5,9 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import time
-from datetime import datetime, timezone
-from typing import Any
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -23,110 +20,106 @@ def _build_parser() -> argparse.ArgumentParser:
         "If omitted, process all directories in ocr/inbox/.",
     )
     parser.add_argument(
-        "--run-id",
-        default="",
-        help="Optional run identifier used for reproducible artifact directories.",
-    )
-    parser.add_argument(
         "--workers",
         type=int,
         default=0,
         help="Number of concurrent worker threads for page processing (default: OCR_WORKERS env or 1).",
     )
-    return parser
-
-
-def _process_single_file(client: Any, path: str, run_id: str) -> None:
-    """Process a single image file through Phase 1 + Phase 2 (no merge)."""
-    from ..config.paths import OCR_RUNS_DIR, REPO_ROOT
-    from ..contracts.diagnostics_models import PageDiagnostics, PipelineReport
-    from ..diagnostics.run_manifest import _get_git_commit_hash
-    from ..recognition.docai_provider import DocAIError
-    from ..shared.console import status, error, file_written, print_summary_table
-    from ..application.page_pipeline import extract_page_docai, structure_and_link_page
-
-    status(f"Processing single file: {path}")
-    pipeline_start = time.time()
-    single_run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    single_ocr_dir = os.path.join(str(OCR_RUNS_DIR), "single-file", "runs", single_run_id)
-    os.makedirs(single_ocr_dir, exist_ok=True)
-
-    output_dir = str(OCR_RUNS_DIR)
-
-    report = PipelineReport(
-        edition_date="single-file",
-        run_id=single_run_id,
-        run_root=os.path.abspath(single_ocr_dir),
-        input_edition_dir=os.path.abspath(path),
-        output_edition_dir=os.path.abspath(output_dir),
-        git_commit_hash=_get_git_commit_hash(str(REPO_ROOT)),
-        start_time=datetime.now(timezone.utc).isoformat(),
-        pages_attempted=1,
+    parser.add_argument(
+        "--manifest",
+        default="",
+        help="Optional IIIF manifest path for a single edition directory. "
+        "When omitted, manifest.json/source-manifest.json is discovered automatically.",
     )
-    page_diag = PageDiagnostics()
-    try:
-        docai_result, preprocessed_image, regions = extract_page_docai(
-            path, diag=page_diag, snapshots_dir=None,
-        )
-    except (DocAIError, Exception) as exc:
-        error(f"Extraction failed: {exc}")
-        page_diag.error = str(exc)
-        result = None
-    else:
-        result = structure_and_link_page(
-            client, path, docai_result, preprocessed_image, regions,
-            output_dir, diag=page_diag, ocr_output_dir=single_ocr_dir,
-        )
-    report.page_diagnostics.append(page_diag)
-    report.pages_processed = 1 if result is not None else 0
-    report.total_time_seconds = time.time() - pipeline_start
-    report.finalize()
-
-    diag_path = os.path.join(single_ocr_dir, "diagnostics.json")
-    with open(diag_path, "w", encoding="utf-8") as f:
-        f.write(report.to_json())
-    file_written("Diagnostics", diag_path)
-    print_summary_table(report)
+    parser.add_argument(
+        "--output-root",
+        default="",
+        help="Edition-candidate root. The caller promotes this directory atomically.",
+    )
+    parser.add_argument(
+        "--work-root",
+        default="",
+        help="Run-owned temporary root for source masters and OCR derivatives.",
+    )
+    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run convert_scans CLI."""
     cli = _build_parser().parse_args(argv)
 
-    from ..config.paths import OCR_ROOT, OCR_RUNS_DIR, PUBLIC_EDITIONS_DIR
+    from ..config.paths import OCR_ROOT
+    from ..ingestion.manifest import discover_page_inventory
     from ..ingestion.pathing import RunPaths
-    from ..shared.console import status, error, success
-    from ..application.edition_pipeline import process_edition
+    from ..shared.console import status, error, success, warning
+    from ..application.edition_pipeline import EditionPipelineError, process_edition
 
-    output_dir = str(PUBLIC_EDITIONS_DIR)
-    os.makedirs(output_dir, exist_ok=True)
-    ocr_output_dir = str(OCR_RUNS_DIR)
-    os.makedirs(ocr_output_dir, exist_ok=True)
+    output_dir = os.path.abspath(cli.output_root) if cli.output_root else ""
 
-    from google import genai  # lazy: avoid import failure when google-genai not installed
+    from ..config.google_clients import create_genai_client
 
-    client = genai.Client()
+    client = create_genai_client()
     path = cli.path
+
+    def _inventory_for(directory: str, explicit_manifest: str = ""):
+        inventory = discover_page_inventory(
+            directory,
+            explicit_manifest or None,
+        )
+        if inventory.authoritative:
+            status(
+                f"Manifest inventory: {inventory.found_pages}/"
+                f"{inventory.expected_pages} page images present"
+            )
+            if inventory.missing_page_indexes:
+                warning(
+                    "Missing manifest pages: "
+                    + ", ".join(str(index) for index in inventory.missing_page_indexes)
+                )
+        else:
+            warning(
+                "No IIIF manifest found; page count is limited to discovered files"
+            )
+        return inventory
 
     if path:
         if os.path.isfile(path):
-            _process_single_file(client, path, cli.run_id)
+            error("Single-file OCR was removed because it cannot satisfy manifest accounting; place the page in an edition directory")
+            return 1
         elif os.path.isdir(path):
-            process_edition(
-                settings=None,
-                client=client,
-                paths=RunPaths(
-                    edition_dir=path,
-                    public_output_root=output_dir,
-                    ocr_output_root=ocr_output_dir,
-                ),
-                run_id=cli.run_id,
-                workers=cli.workers,
-            )
+            if not output_dir:
+                error("--output-root is required; use scripts/ocr/process-edition.sh for transactional publication")
+                return 1
+            try:
+                inventory = _inventory_for(path, cli.manifest)
+            except (OSError, ValueError) as exc:
+                error(f"Invalid edition inventory: {exc}")
+                return 1
+            try:
+                process_edition(
+                    settings=None,
+                    client=client,
+                    paths=RunPaths(
+                        edition_dir=path,
+                        public_output_root=output_dir,
+                        manifest_path=inventory.manifest_path,
+                        work_root=os.path.abspath(cli.work_root) if cli.work_root else None,
+                    ),
+                    workers=cli.workers,
+                )
+            except EditionPipelineError as exc:
+                error(str(exc))
+                return 1
         else:
             error(f"Path not found: {path}")
             return 1
     else:
+        if not output_dir:
+            error("--output-root is required; use scripts/ocr/process-unprocessed.sh for transactional publication")
+            return 1
+        if cli.manifest:
+            error("--manifest requires a single edition directory path")
+            return 1
         editions_root = os.path.join(str(OCR_ROOT), "inbox")
         if not os.path.isdir(editions_root):
             error(f"Scans directory not found: {editions_root}")
@@ -141,18 +134,32 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         status(f"Found {len(edition_dirs)} edition(s) to process.")
+        failures = 0
         for edition_dir in edition_dirs:
-            process_edition(
-                settings=None,
-                client=client,
-                paths=RunPaths(
-                    edition_dir=os.path.join(editions_root, edition_dir),
-                    public_output_root=output_dir,
-                    ocr_output_root=ocr_output_dir,
-                ),
-                run_id=cli.run_id,
-                workers=cli.workers,
-            )
+            edition_path = os.path.join(editions_root, edition_dir)
+            try:
+                inventory = _inventory_for(edition_path)
+            except (OSError, ValueError) as exc:
+                error(f"Invalid edition inventory for {edition_dir}: {exc}")
+                continue
+            try:
+                process_edition(
+                    settings=None,
+                    client=client,
+                    paths=RunPaths(
+                        edition_dir=edition_path,
+                        public_output_root=output_dir,
+                        manifest_path=inventory.manifest_path,
+                        work_root=os.path.abspath(cli.work_root) if cli.work_root else None,
+                    ),
+                    workers=cli.workers,
+                )
+            except EditionPipelineError as exc:
+                error(f"{edition_dir}: {exc}")
+                failures += 1
+
+        if failures:
+            return 1
 
     success("All done.")
     return 0

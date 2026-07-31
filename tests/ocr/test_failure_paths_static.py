@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,14 +13,18 @@ OCR_SRC = ROOT / "ocr" / "src"
 if str(OCR_SRC) not in sys.path:
     sys.path.insert(0, str(OCR_SRC))
 
-from transcript_ocr.application.edition_pipeline import process_edition
-from transcript_ocr.application.page_pipeline import structure_and_link_page
-from transcript_ocr.contracts.content_models import Article, PageContent
-from transcript_ocr.contracts.diagnostics_models import PageDiagnostics
-from transcript_ocr.ingestion.pathing import RunPaths
+from transcript_ocr.application.edition_pipeline import (  # noqa: E402
+    EditionPipelineError,
+    process_edition,
+)
+from transcript_ocr.application.page_pipeline import structure_and_link_page  # noqa: E402
+from transcript_ocr.contracts.content_models import Article, PageContent  # noqa: E402
+from transcript_ocr.contracts.diagnostics_models import PageDiagnostics  # noqa: E402
+from transcript_ocr.image_linking.visual_matcher import _unresolved_assignments  # noqa: E402
+from transcript_ocr.ingestion.pathing import RunPaths  # noqa: E402
 
 
-def test_visual_match_failure_falls_back_to_spatial(tmp_path, monkeypatch):
+def test_visual_match_failure_preserves_unresolved_region_without_spatial_fallback(tmp_path, monkeypatch):
     img_path = tmp_path / "Page 02.jpg"
     Image.new("L", (300, 300), color=255).save(img_path)
 
@@ -42,12 +46,10 @@ def test_visual_match_failure_falls_back_to_spatial(tmp_path, monkeypatch):
         "transcript_ocr.application.page_pipeline.crop_and_save_images",
         lambda *a, **k: {0: "images/Page 02_img1.jpg"},
     )
-    monkeypatch.setattr("transcript_ocr.application.page_pipeline.match_images_visual", lambda *a, **k: None)
     monkeypatch.setattr(
-        "transcript_ocr.application.page_pipeline.match_images_to_articles",
-        lambda *a, **k: ({0: 0}, []),
+        "transcript_ocr.application.page_pipeline.match_images_visual",
+        lambda *a, **k: _unresolved_assignments(1),
     )
-    monkeypatch.setattr("transcript_ocr.application.page_pipeline.page_content_to_markdown", lambda *a, **k: "# ok\n")
 
     diag = PageDiagnostics()
     out_dir = tmp_path / "public"
@@ -58,7 +60,6 @@ def test_visual_match_failure_falls_back_to_spatial(tmp_path, monkeypatch):
     class _FakeDocAI:
         raw_text = "test"
         mean_confidence = 0.95
-        continuation_markers = []
         low_confidence_words = []
         paragraphs = []
 
@@ -70,43 +71,59 @@ def test_visual_match_failure_falls_back_to_spatial(tmp_path, monkeypatch):
         regions,
         str(out_dir),
         diag=diag,
-        ocr_output_dir=str(tmp_path / "ocr"),
     )
 
     assert result is not None
-    assert diag.visual_matching.fallback_to_spatial is True
-    assert result.articles[0].image_files == ["images/Page 02_img1.jpg"]
+    assert not (OCR_SRC / "transcript_ocr" / "image_linking" / "spatial_matcher.py").exists()
+    assert result.articles[0].image_files == []
+    assert result.other_content[-1].body == "images/Page 02_img1.jpg"
 
 
-def test_docai_failure_aborts_and_writes_diagnostics(tmp_path, monkeypatch):
-    """When DocAI fails on any page, the edition aborts and writes diagnostics."""
+def test_docai_failure_below_threshold_aborts_without_debug_artifacts(tmp_path, monkeypatch):
+    """A failed edition is cleaned up and retained only in the metadata log."""
     edition_dir = tmp_path / "ocr" / "scans" / "1970-01-01"
     edition_dir.mkdir(parents=True, exist_ok=True)
     from PIL import Image
     Image.new("L", (100, 100), color=128).save(str(edition_dir / "Page 01.png"), format="PNG")
 
     public_root = tmp_path / "public" / "editions"
-    ocr_root = tmp_path / "ocr" / "output"
     public_root.mkdir(parents=True, exist_ok=True)
-    ocr_root.mkdir(parents=True, exist_ok=True)
 
     from transcript_ocr.recognition.docai_provider import DocAIError
 
-    def _fail_extract_docai(_img, diag=None, snapshots_dir=None):
+    def _fail_extract_docai(_img, diag=None, work_dir=None):
         raise DocAIError("synthetic failure")
 
     monkeypatch.setattr("transcript_ocr.application.edition_pipeline.extract_page_docai", _fail_extract_docai)
+    monkeypatch.setattr("transcript_ocr.application.edition_pipeline._log_failure", lambda *a, **k: None)
 
     paths = RunPaths(
         edition_dir=str(edition_dir),
         public_output_root=str(public_root),
-        ocr_output_root=str(ocr_root),
+        work_root=str(tmp_path / "work"),
     )
-    process_edition(settings=None, client=object(), paths=paths, run_id="")
+    with pytest.raises(EditionPipelineError, match="70% required"):
+        process_edition(settings=None, client=object(), paths=paths)
 
-    run_dir = ocr_root / "1970-01-01"
-    diag_path = run_dir / "diagnostics.json"
-    issue_path = run_dir / "issue_report.json"
+    assert not (public_root / "1970-01-01").exists()
 
-    assert diag_path.exists()
-    assert issue_path.exists()
+
+def test_existing_candidate_directory_is_never_reused(tmp_path):
+    """Even an incomplete prior candidate must not be overwritten in place."""
+    edition_dir = tmp_path / "ocr" / "scans" / "1970-01-01"
+    edition_dir.mkdir(parents=True)
+    public_root = tmp_path / "candidate-root"
+    existing = public_root / "1970-01-01"
+    existing.mkdir(parents=True)
+    sentinel = existing / "partial.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    paths = RunPaths(
+        edition_dir=str(edition_dir),
+        public_output_root=str(public_root),
+        work_root=str(tmp_path / "work"),
+    )
+    with pytest.raises(EditionPipelineError, match="candidate already exists"):
+        process_edition(settings=None, client=object(), paths=paths)
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"

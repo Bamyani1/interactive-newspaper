@@ -5,20 +5,19 @@ This package contains all OCR pipeline logic, organized by domain.
 ## Package structure
 
 ```
-config/         — Settings, environment, path constants
+config/         — Model, client, environment, and path configuration
 contracts/      — Data models (content, diagnostics, ads)
-cli/            — CLI entry points (convert_scans, enrich_ads, compare_runs)
+cli/            — Candidate build, validation, failure-log, and gold-score entry points
 application/    — Pipeline orchestration (edition_pipeline, page_pipeline, ad_enrichment)
 ingestion/      — File discovery, path resolution
 preprocessing/  — Image normalization, skew correction
-detection/      — YOLO region detection
+detection/      — American Stories plus DocLayout table detection
 recognition/    — DocAI & Gemini text extraction, prompts
-postprocessing/ — Text deduplication, byline cleanup, ad reclassification
-merging/        — Cross-page article merging (deterministic + LLM)
-image_linking/  — Visual/spatial image-to-article matching
-export/         — JSON/markdown writers
-diagnostics/    — Reporting, snapshots, run manifests
-evaluation/     — Run comparison & gold scoring
+postprocessing/ — Text deduplication, byline cleanup, and page normalization
+merging/        — Model-decided grouping and batched seam review
+image_linking/  — Model-decided visual disposition (no spatial fallback)
+export/         — Candidate validation, atomic JSON, and provenance
+diagnostics/    — In-memory metrics and the metadata-only failure log
 shared/         — Console utilities, retry helpers
 ```
 
@@ -27,12 +26,14 @@ shared/         — Console utilities, retry helpers
 ```
 ocr/convert_scans.py  (thin wrapper, adds src/ to sys.path)
   → cli/convert_scans.py::main()  (single arg parse, canonical paths)
-    → application/edition_pipeline.py::process_edition()  (5-phase core)
+    → application/edition_pipeline.py::process_edition()  (validated candidate)
+      → scripts/ocr/process-edition.sh  (upload + atomic promotion)
 ```
 
 ## Rules
 
-- Keep external CLI behavior and output contracts stable while refactoring internals.
+- Keep the public edition schema stable.
+- Do not add raw responses, prompts, OCR text, snapshots, or per-run artifacts.
 - New modules should be added under the matching domain directory.
 - Avoid cross-layer imports that violate architecture tests in `tests/ocr/architecture/`.
 - All path constants are defined in `config/paths.py` — do not compute OCR_ROOT locally.

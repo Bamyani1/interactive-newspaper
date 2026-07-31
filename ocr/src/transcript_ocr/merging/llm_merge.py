@@ -1,39 +1,91 @@
-"""LLM-assisted cross-page article merge orchestration."""
+"""LLM-assisted, lossless cross-page article grouping and seam review."""
 
 from __future__ import annotations
 
-import os
+import hashlib
+import json
 import re
-from collections import defaultdict
-from difflib import SequenceMatcher as SM
+import unicodedata
+from collections import Counter
+from typing import Literal
 
 from google.genai import types
+from pydantic import BaseModel, ConfigDict, Field
 
-from ..config.prompts_loader import MODELS, PROMPTS
+from ..config.model_calls import build_generation_config, model_name
 from ..contracts.content_models import (
-    ArticleImage,
     EditionContent,
-    MergeDecisions,
-    MergeInstruction,
     MergedArticle,
-    OtherContent,
     PageContent,
 )
 from ..contracts.diagnostics_models import MergePassDiagnostics, PipelineReport, StageTimer, TokenUsage
-from ..diagnostics.snapshots import save_snapshot
-from ..postprocessing.byline_cleanup import _dedup_byline_from_body, _extract_byline_from_body, _normalize_byline, _split_author_position
 from ..postprocessing.deduplication import _deduplicate_ads, _deduplicate_other_content
-from ..recognition.prompts import MERGE_SYSTEM_PROMPT, MERGE_USER_TEMPLATE, SAFETY_OFF
+from ..shared.console import info, substep, warning
 from ..shared.retry import gemini_generate_with_retry
-from ..shared.console import substep, warning, error, info
-from .boundary_cleanup import clean_merge_boundary
-from .continuation import _extract_continuation_info, _strip_continuation_markers
-from .deterministic_merge import _deterministic_merge
-from .merge_sanitizer import (
-    _choose_merged_category,
-    _reconcile_image_alignment,
-    _strip_trailing_captions,
-)
+from ..shared.text import split_sentences
+
+
+_LOCKED_MERGE_MODEL = "gemini-3.6-flash"
+_ANCHOR_SIMILARITY_MIN = 0.90
+_RAW_CONTEXT_CHARS = 600
+_SENTENCE_CONTEXT_CHARS = 800
+
+_GROUPING_SYSTEM_PROMPT = """You decide which OCR-extracted newspaper article fragments are continuations of the same article and identify source reprints.
+
+Return a complete partition of every supplied fragment_id. Each fragment_id must occur exactly once. Put fragments that belong to one cross-page article in one group, in exact reading order. Keep unrelated or uncertain fragments as singleton groups.
+
+Every adjacent pair in a multi-fragment group must have a structured continuation signal: the left fragment has continues_on, the right fragment has continued_from, or both. Printed folio references are useful evidence but can be wrong in the source newspaper; do not require their digits to equal the supplied scan/canvas labels. Use the continuation signals, headlines, bylines, and compact boundary context together to decide the actual route. Text similarity alone is never sufficient for a continuation.
+
+Separately, source_duplicate_groups may identify the same substantially complete source article printed more than once, even under a different accidental headline or with an inserted display pull quote. Each duplicate group must contain at least two IDs that remain singleton continuation groups. Do not use this for related coverage, follow-ups, summaries, or articles that merely share a topic. Python will independently require at least 90% ordered word similarity before accepting the decision.
+
+Python has not pre-merged or semantically ranked any pair. Do not return article text, rewritten text, headlines, authors, metadata, confidence scores, or explanations; return immutable fragment IDs only."""
+
+_SEAM_SYSTEM_PROMPT = """Review every supplied boundary between fragments that have already been grouped as one newspaper article. Every boundary must receive exactly one result, even if punctuation makes it look clean.
+
+Actions:
+- KEEP: the default exact join (two newlines between the unchanged fragments) is correct. Return no anchors or replacement text.
+- REPAIR: only the local cross-page seam needs repair. Copy an unambiguous suffix anchor from the left fragment and an unambiguous prefix anchor from the right fragment, using at least six words when available. replacement_text must replace only those two anchors and must preserve source wording and order except for the smallest necessary seam fix.
+- UNRESOLVED: the context is insufficient for a safe local repair. Preserve the default exact join without guessing, and return no anchors or replacement text.
+
+Never rewrite the surrounding article. Never invent, remove, or alter names, numbers, dates, prices, or phone numbers. Return every boundary_id exactly once."""
+
+
+class MergeGroupDecision(BaseModel):
+    """One ordered article group returned by the edition-level grouping call."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fragment_ids: list[str] = Field(min_length=1)
+
+
+class EditionGroupingResponse(BaseModel):
+    """Complete partition of all immutable edition fragment IDs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    groups: list[MergeGroupDecision]
+    source_duplicate_groups: list[list[str]] = Field(default_factory=list)
+
+
+class SeamBoundaryDecision(BaseModel):
+    """A localized decision for one adjacent boundary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    boundary_id: str
+    action: Literal["KEEP", "REPAIR", "UNRESOLVED"]
+    left_anchor_text: str = ""
+    right_anchor_text: str = ""
+    replacement_text: str = ""
+    reason_code: str = ""
+
+
+class EditionSeamResponse(BaseModel):
+    """All boundary decisions returned by the single seam-review call."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    boundaries: list[SeamBoundaryDecision]
 
 
 def _finalize_merge_diagnostics(
@@ -48,130 +100,656 @@ def _finalize_merge_diagnostics(
             report.merge_pass = md
 
 
-def _best_body(bodies: list[str]) -> str:
-    """De-duplicate near-identical bodies, preserving input order."""
-    if len(bodies) <= 1:
-        return bodies[0] if bodies else ""
+def _stable_fragment_id(
+    edition_index: int,
+    source_filename: str,
+    page_label: str,
+    article_index: int,
+    headline: str,
+    body: str,
+) -> str:
+    """Build a compact ID that is stable for an immutable page-stage result."""
+    source = "\x1f".join(
+        (source_filename, page_label, str(article_index), headline or "", body or "")
+    )
+    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()[:12]
+    return f"fragment-{edition_index:04d}-{digest}"
 
-    from difflib import SequenceMatcher
 
-    to_remove: set[int] = set()
-    for i in range(len(bodies)):
-        if i in to_remove:
+def _bounded_sentence(text: str, *, from_end: bool) -> str:
+    if len(text) <= _SENTENCE_CONTEXT_CHARS:
+        return text
+    return text[-_SENTENCE_CONTEXT_CHARS:] if from_end else text[:_SENTENCE_CONTEXT_CHARS]
+
+
+def _compact_context(text: str) -> dict[str, object]:
+    """Return first/last two sentence-like units plus raw OCR fallbacks."""
+    body = (text or "").strip()
+    sentences = split_sentences(body)
+    head = [_bounded_sentence(s, from_end=False) for s in sentences[:2]]
+    tail = [_bounded_sentence(s, from_end=True) for s in sentences[-2:]]
+    return {
+        "head_sentences": head,
+        "tail_sentences": tail,
+        "raw_head": body[:_RAW_CONTEXT_CHARS],
+        "raw_tail": body[-_RAW_CONTEXT_CHARS:],
+    }
+
+
+def _response_as(response, model_type):
+    """Strictly coerce an SDK parsed response (or its JSON text) to a model."""
+    parsed = getattr(response, "parsed", None)
+    if isinstance(parsed, model_type):
+        return parsed
+    if isinstance(parsed, BaseModel):
+        return model_type.model_validate(parsed.model_dump())
+    if isinstance(parsed, dict):
+        return model_type.model_validate(parsed)
+    raw = getattr(response, "text", None)
+    if isinstance(raw, str) and raw.strip():
+        return model_type.model_validate_json(raw)
+    raise ValueError("Gemini returned no parseable structured response")
+
+
+def _generate_locked_content(
+    client,
+    *,
+    contents: list,
+    response_schema,
+    response_validator=None,
+    schema_retry_instruction=None,
+):
+    """Make one logical request with the locked model and thinking level.
+
+    The shared retry wrapper preserves the requested model and complete config
+    on every transport/schema attempt. Those attempts remain one logical stage
+    call; exhausted failures are handled losslessly by the caller.
+    """
+    stage = "merge" if response_schema is EditionGroupingResponse else "seam_repair"
+    configured_model = model_name(stage)
+    if configured_model != _LOCKED_MERGE_MODEL:
+        raise RuntimeError(
+            f"Locked {stage} model must be {_LOCKED_MERGE_MODEL}, got {configured_model}"
+        )
+    config = build_generation_config(
+        stage,
+        system_instruction=(
+            _GROUPING_SYSTEM_PROMPT
+            if response_schema is EditionGroupingResponse
+            else _SEAM_SYSTEM_PROMPT
+        ),
+        response_mime_type="application/json",
+        response_schema=response_schema,
+        max_output_tokens=65536,
+    )
+    if config.thinking_config is None or config.thinking_config.thinking_level not in (
+        types.ThinkingLevel.MEDIUM,
+        "medium",
+        "MEDIUM",
+    ):
+        raise RuntimeError(f"Locked {stage} thinking level must be MEDIUM")
+    return gemini_generate_with_retry(
+        client,
+        model=configured_model,
+        contents=contents,
+        config=config,
+        stage=stage,
+        response_validator=(
+            response_validator
+            or (lambda response: getattr(response, "parsed", None) is not None)
+        ),
+        schema_retry_instruction=schema_retry_instruction,
+    )
+
+
+def _add_usage(md: MergePassDiagnostics | None, response) -> None:
+    if md is None:
+        return
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return
+    md.tokens.prompt_tokens += getattr(usage, "prompt_token_count", None) or 0
+    md.tokens.candidates_tokens += getattr(usage, "candidates_token_count", None) or 0
+    md.tokens.thoughts_tokens += getattr(usage, "thoughts_token_count", None) or 0
+    md.tokens.tool_use_prompt_tokens += (
+        getattr(usage, "tool_use_prompt_token_count", None) or 0
+    )
+    md.tokens.cached_content_tokens += (
+        getattr(usage, "cached_content_token_count", None) or 0
+    )
+    md.tokens.total_tokens += getattr(usage, "total_token_count", None) or 0
+
+
+def _validate_complete_partition(
+    response: EditionGroupingResponse,
+    fragment_ids: list[str],
+    article_by_id: dict[str, dict],
+) -> list[list[str]]:
+    """Require an exact partition and structured evidence for every merge edge."""
+    expected = set(fragment_ids)
+    seen: list[str] = []
+    groups: list[list[str]] = []
+    for group in response.groups:
+        ids = list(group.fragment_ids)
+        if not ids or len(ids) != len(set(ids)):
+            raise ValueError("group contains no IDs or duplicate IDs")
+        if any(fragment_id not in expected for fragment_id in ids):
+            raise ValueError("group contains an unknown fragment ID")
+        seen.extend(ids)
+        groups.append(ids)
+
+    if len(seen) != len(set(seen)):
+        raise ValueError("fragment ID appears in more than one group")
+    if set(seen) != expected or len(seen) != len(fragment_ids):
+        missing = sorted(expected - set(seen))
+        extra = sorted(set(seen) - expected)
+        raise ValueError(f"partition is incomplete (missing={missing}, extra={extra})")
+    validated_groups: list[list[str]] = []
+    for group in groups:
+        if len(group) == 1:
+            validated_groups.append(group)
             continue
-        for j in range(i + 1, len(bodies)):
-            if j in to_remove:
-                continue
-            ratio = SequenceMatcher(None, bodies[i][:500], bodies[j][:500]).ratio()
-            if ratio > 0.7:
-                if len(bodies[i]) >= len(bodies[j]):
-                    to_remove.add(j)
-                else:
-                    to_remove.add(i)
-                    break
-    unique = [bodies[i] for i in range(len(bodies)) if i not in to_remove]
-    return "\n\n".join(unique)
-
-
-def _validate_merge_seam(client, bodies: list[str]) -> list[str]:
-    """Validate and repair sentence boundaries at merge join points."""
-    if len(bodies) <= 1:
-        return bodies
-
-    repaired = [bodies[0]]
-    for i in range(1, len(bodies)):
-        prev_body = repaired[-1].rstrip()
-        next_body = bodies[i].lstrip()
-
-        if not prev_body or not next_body:
-            repaired.append(bodies[i])
+        invalid_edges = [
+            (left_id, right_id)
+            for left_id, right_id in zip(group, group[1:])
+            if not _has_structured_continuation_edge(
+                article_by_id[left_id],
+                article_by_id[right_id],
+            )
+        ]
+        if invalid_edges:
+            warning(
+                "Rejecting multi-fragment group without structured continuation "
+                f"evidence at edges {invalid_edges}; preserving its fragments"
+            )
+            validated_groups.extend([[fragment_id] for fragment_id in group])
             continue
+        validated_groups.append(group)
+    return validated_groups
 
-        last_char = prev_body[-1]
-        # A merge seam is suspicious if previous body doesn't end with
-        # sentence-ending punctuation — regardless of what case the next
-        # fragment starts with (proper nouns, new paragraphs defeat the
-        # old lowercase-only check)
-        ends_with_terminal = last_char in '.!?"\')\u201d\u2019'
-        looks_broken = not ends_with_terminal
 
-        if looks_broken:
-            tail = prev_body[-400:]
-            head = next_body[:400]
-            try:
-                seam_prompt = PROMPTS["seam_repair"].format(tail=tail, head=head)
-                seam_model_cfg = MODELS["seam_repair"]
-                seam_thinking = types.ThinkingConfig(thinking_level=seam_model_cfg["thinking"]) if seam_model_cfg.get("thinking") else None
-                repair_response = gemini_generate_with_retry(
-                    client,
-                    model=seam_model_cfg["name"],
-                    contents=[seam_prompt],
-                    config=types.GenerateContentConfig(
-                        safety_settings=SAFETY_OFF,
-                        max_output_tokens=65536,
-                        **({"thinking_config": seam_thinking} if seam_thinking else {}),
-                    ),
+def _validated_source_duplicate_groups(
+    response: EditionGroupingResponse,
+    groups: list[list[str]],
+    article_by_id: dict[str, dict],
+) -> list[list[str]]:
+    """Accept only model-selected reprints with strong independent text evidence."""
+    singleton_ids = {group[0] for group in groups if len(group) == 1}
+    claimed: set[str] = set()
+    accepted: list[list[str]] = []
+    for proposed in response.source_duplicate_groups:
+        ids = list(proposed)
+        if len(ids) < 2 or len(ids) != len(set(ids)):
+            continue
+        if any(fragment_id not in singleton_ids or fragment_id in claimed for fragment_id in ids):
+            continue
+        ordered = sorted(ids, key=lambda item: article_by_id[item]["edition_index"])
+        reference = article_by_id[ordered[0]]["body"]
+        if len(_word_tokens(reference)) < 100:
+            continue
+        if any(
+            len(_word_tokens(article_by_id[item]["body"])) < 100
+            or normalized_word_similarity(reference, article_by_id[item]["body"])
+            < _ANCHOR_SIMILARITY_MIN
+            for item in ordered[1:]
+        ):
+            continue
+        accepted.append(ordered)
+        claimed.update(ordered)
+    return accepted
+
+
+def _normalized_page_reference(value: object) -> str:
+    text = str(value or "").strip()
+    if not text or text == "?":
+        return ""
+    if text.isdigit():
+        return str(int(text))
+    match = re.search(r"\d+", text)
+    return str(int(match.group(0))) if match else text.casefold()
+
+
+def _has_structured_continuation_edge(left: dict, right: dict) -> bool:
+    """Require continuation roles while leaving route semantics to Gemini.
+
+    Historic newspapers sometimes print the wrong destination/source folio.
+    Requiring those digits to equal manifest canvas labels would veto a model's
+    otherwise correct, context-supported decision. Python therefore verifies
+    only that the proposed edge has an origin/destination continuation signal;
+    it never creates an edge from body text or similarity alone.
+    """
+    left_target = _normalized_page_reference(
+        left.get("continuation", {}).get("continues_on")
+    )
+    right_source = _normalized_page_reference(
+        right.get("continuation", {}).get("continued_from")
+    )
+    return bool(left_target or right_source)
+
+
+_WORD_RE = re.compile(r"\w+(?:[\u2019'\-]\w+)*", re.UNICODE)
+_MONTHS = {
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept",
+    "oct", "nov", "dec",
+}
+
+
+def _normal_word(token: str) -> str:
+    return unicodedata.normalize("NFKC", token).casefold().replace("\u2019", "'")
+
+
+def _word_tokens(text: str) -> list[str]:
+    return [_normal_word(match.group(0)) for match in _WORD_RE.finditer(text or "")]
+
+
+def normalized_word_similarity(left: str, right: str) -> float:
+    """Token edit similarity used for the locked 90% fidelity threshold."""
+    a = _word_tokens(left)
+    b = _word_tokens(right)
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    previous = list(range(len(b) + 1))
+    for row_index, left_token in enumerate(a, start=1):
+        current = [row_index]
+        for column_index, right_token in enumerate(b, start=1):
+            current.append(
+                min(
+                    current[-1] + 1,
+                    previous[column_index] + 1,
+                    previous[column_index - 1] + (left_token != right_token),
                 )
-                result = (repair_response.text or "").strip()
-                # Defensive: strip any echoed ellipsis markers
-                if result.startswith("..."):
-                    result = result[3:].lstrip()
-                if result.endswith("..."):
-                    result = result[:-3].rstrip()
-                if result and result != "VALID":
-                    prev_prefix = prev_body[:-len(tail)].rstrip() if len(prev_body) > len(tail) else ""
-                    next_suffix = next_body[len(head) :].lstrip() if len(next_body) > len(head) else ""
-                    repaired[-1] = (prev_prefix + "\n\n" + result).strip() if prev_prefix else result
-                    repaired.append(next_suffix if next_suffix else "")
-                    substep(f"Seam repair applied at merge join {i}")
-                    continue
-            except Exception as e:
-                warning(f"Seam validation failed (non-fatal): {e}")
+            )
+        previous = current
+    return 1.0 - (previous[-1] / max(len(a), len(b)))
 
-        repaired.append(bodies[i])
 
-    return [b for b in repaired if b.strip()]
+def _anchored_span(source: str, anchor: str, *, side: Literal["suffix", "prefix"]):
+    """Find one unique >=90% word match anchored to the requested edge."""
+    source_matches = list(_WORD_RE.finditer(source or ""))
+    anchor_words = _word_tokens(anchor)
+    word_count = len(anchor_words)
+    if not source_matches or not anchor_words or word_count > len(source_matches):
+        return None
+    minimum_words = min(6, len(source_matches))
+    if word_count < minimum_words:
+        return None
+
+    source_words = [_normal_word(match.group(0)) for match in source_matches]
+    expected_start = len(source_words) - word_count if side == "suffix" else 0
+    expected_words = source_words[expected_start : expected_start + word_count]
+    score = normalized_word_similarity(" ".join(expected_words), " ".join(anchor_words))
+    if score < _ANCHOR_SIMILARITY_MIN:
+        return None
+
+    qualifying_starts = []
+    for start in range(0, len(source_words) - word_count + 1):
+        candidate = " ".join(source_words[start : start + word_count])
+        if normalized_word_similarity(candidate, " ".join(anchor_words)) >= _ANCHOR_SIMILARITY_MIN:
+            qualifying_starts.append(start)
+    if qualifying_starts != [expected_start]:
+        return None
+
+    if side == "suffix":
+        start_char = source_matches[expected_start].start()
+        end_char = len(source)
+    else:
+        start_char = 0
+        next_word_index = expected_start + word_count
+        end_char = (
+            source_matches[next_word_index].start()
+            if next_word_index < len(source_matches)
+            else len(source)
+        )
+    return start_char, end_char
+
+
+def _protected_tokens(text: str) -> list[str]:
+    """Return immutable names and numeric/date/price/phone tokens in order."""
+    protected = []
+    for match in _WORD_RE.finditer(text or ""):
+        token = match.group(0)
+        normal = _normal_word(token)
+        before = (text or "")[max(0, match.start() - 2) : match.start()]
+        if (
+            any(character.isdigit() for character in token)
+            or any(currency in before for currency in ("$", "\u00a3", "\u20ac"))
+            or normal in _MONTHS
+            or token[:1].isupper()
+            or (len(token) > 1 and token.isupper())
+        ):
+            protected.append(normal)
+    return protected
+
+
+def _validated_repair(
+    left_body: str,
+    right_body: str,
+    decision: SeamBoundaryDecision,
+):
+    """Validate a localized repair and return source spans when safe."""
+    left_span = _anchored_span(left_body, decision.left_anchor_text, side="suffix")
+    right_span = _anchored_span(right_body, decision.right_anchor_text, side="prefix")
+    if left_span is None or right_span is None:
+        return None
+
+    source_text = (
+        left_body[left_span[0] : left_span[1]]
+        + " "
+        + right_body[right_span[0] : right_span[1]]
+    )
+    replacement = decision.replacement_text.strip()
+    if not replacement:
+        return None
+    if normalized_word_similarity(source_text, replacement) < _ANCHOR_SIMILARITY_MIN:
+        return None
+    if _protected_tokens(source_text) != _protected_tokens(replacement):
+        return None
+    return left_span, right_span, replacement
+
+
+def _boundary_id(group_index: int, position: int, left_id: str, right_id: str) -> str:
+    digest = hashlib.sha256(f"{left_id}\x1f{right_id}".encode("utf-8")).hexdigest()[:12]
+    return f"boundary-{group_index:04d}-{position:03d}-{digest}"
+
+
+def _build_boundary_records(
+    groups: list[list[str]],
+    article_by_id: dict[str, dict],
+) -> tuple[list[dict], dict[str, tuple[int, int, str, str]], dict[str, str]]:
+    """Create every adjacent boundary without punctuation or regex gating."""
+    records: list[dict] = []
+    boundary_index: dict[str, tuple[int, int, str, str]] = {}
+    working_bodies: dict[str, str] = {}
+
+    for group_index, group in enumerate(groups):
+        for fragment_id in group:
+            working_bodies[fragment_id] = article_by_id[fragment_id]["body"]
+        if len(group) < 2:
+            continue
+        for position, (left_id, right_id) in enumerate(zip(group, group[1:])):
+            boundary_id = _boundary_id(group_index, position, left_id, right_id)
+            left_body = working_bodies[left_id]
+            right_body = working_bodies[right_id]
+            records.append(
+                {
+                    "boundary_id": boundary_id,
+                    "group_index": group_index,
+                    "position": position,
+                    "left_fragment_id": left_id,
+                    "right_fragment_id": right_id,
+                    "left_page": article_by_id[left_id]["page_label"],
+                    "right_page": article_by_id[right_id]["page_label"],
+                    "left_context": {
+                        "sentences": _compact_context(left_body)["tail_sentences"],
+                        "raw_fallback": left_body[-_RAW_CONTEXT_CHARS:],
+                    },
+                    "right_context": {
+                        "sentences": _compact_context(right_body)["head_sentences"],
+                        "raw_fallback": right_body[:_RAW_CONTEXT_CHARS],
+                    },
+                    "default_join": "\\n\\n",
+                }
+            )
+            boundary_index[boundary_id] = (group_index, position, left_id, right_id)
+    return records, boundary_index, working_bodies
+
+
+def _seam_response_validation_reason(
+    response,
+    boundary_index: dict[str, tuple[int, int, str, str]],
+    working_bodies: dict[str, str],
+) -> str:
+    """Return a sanitized semantic-contract failure for one seam response."""
+    try:
+        parsed = _response_as(response, EditionSeamResponse)
+    except Exception:
+        return "parsed seam output is missing or has the wrong response type."
+
+    expected = set(boundary_index)
+    counts = Counter(decision.boundary_id for decision in parsed.boundaries)
+    returned = set(counts)
+    if returned != expected:
+        return (
+            f"boundary IDs must be exactly {sorted(expected)}; received "
+            f"{sorted(returned)}."
+        )
+    duplicates = sorted(boundary_id for boundary_id, count in counts.items() if count != 1)
+    if duplicates:
+        return f"boundary IDs must occur once; invalid counts for {duplicates}."
+
+    for decision in parsed.boundaries:
+        if decision.action in {"KEEP", "UNRESOLVED"}:
+            if (
+                decision.left_anchor_text
+                or decision.right_anchor_text
+                or decision.replacement_text
+            ):
+                return (
+                    f"boundary {decision.boundary_id} action {decision.action} "
+                    "must return empty anchors and replacement_text."
+                )
+            continue
+        _group, _position, left_id, right_id = boundary_index[decision.boundary_id]
+        if _validated_repair(
+            working_bodies[left_id],
+            working_bodies[right_id],
+            decision,
+        ) is None:
+            return (
+                f"boundary {decision.boundary_id} REPAIR failed the unique-edge "
+                "anchor, 90% ordered-word, or protected-value safety check. "
+                "Return corrected source-faithful anchors/replacement, KEEP, or "
+                "UNRESOLVED."
+            )
+    return ""
+
+
+def _assemble_reviewed_group(
+    group: list[str],
+    group_index: int,
+    decisions_by_id: dict[str, SeamBoundaryDecision],
+    duplicate_decision_ids: set[str],
+    working_bodies: dict[str, str],
+):
+    """Apply a complete seam plan atomically; return None on any unsafe edge."""
+    starts = {fragment_id: 0 for fragment_id in group}
+    ends = {fragment_id: len(working_bodies[fragment_id]) for fragment_id in group}
+    joiners: list[str] = []
+
+    for position, (left_id, right_id) in enumerate(zip(group, group[1:])):
+        boundary_id = _boundary_id(group_index, position, left_id, right_id)
+        decision = decisions_by_id.get(boundary_id)
+        if decision is None or boundary_id in duplicate_decision_ids:
+            return None
+        if decision.action == "UNRESOLVED":
+            if decision.left_anchor_text or decision.right_anchor_text or decision.replacement_text:
+                return None
+            joiners.append("\n\n")
+            continue
+        if decision.action == "KEEP":
+            if decision.left_anchor_text or decision.right_anchor_text or decision.replacement_text:
+                return None
+            joiners.append("\n\n")
+            continue
+
+        repair = _validated_repair(
+            working_bodies[left_id],
+            working_bodies[right_id],
+            decision,
+        )
+        if repair is None:
+            return None
+        left_span, right_span, replacement = repair
+        ends[left_id] = left_span[0]
+        starts[right_id] = right_span[1]
+        joiners.append(replacement)
+
+    for fragment_id in group:
+        if starts[fragment_id] > ends[fragment_id]:
+            return None
+
+    assembled = working_bodies[group[0]][starts[group[0]] : ends[group[0]]].rstrip()
+    for index, fragment_id in enumerate(group[1:]):
+        joiner = joiners[index]
+        fragment = working_bodies[fragment_id][starts[fragment_id] : ends[fragment_id]]
+        if joiner == "\n\n":
+            assembled += joiner + fragment.lstrip()
+        else:
+            if assembled and not assembled.endswith((" ", "\n")):
+                assembled += " "
+            assembled += joiner.strip()
+            if fragment and not fragment.startswith((" ", "\n")):
+                assembled += " "
+            assembled += fragment.lstrip()
+    return assembled.strip()
+
+
+def _singleton(article: dict) -> MergedArticle:
+    """Render an immutable source fragment without stripping or normalization."""
+    merged = MergedArticle(
+        headline=article["headline"],
+        author=article["author"],
+        writer_position=article["writer_position"],
+        category=article["category"],
+        continues_on=article["continuation"].get("continues_on") or "",
+        continued_from=article["continuation"].get("continued_from") or "",
+        body=article["body"],
+        images=list(article["images"]),
+        image_files=list(article["image_files"]),
+        source_pages=[article["page_label"]],
+    )
+    merged._category_fallback_used = bool(article.get("category_fallback_used"))
+    merged._source_pages_internal = [article["page_label"]]
+    return merged
+
+
+def _merged_record(group: list[str], body: str, article_by_id: dict[str, dict]) -> MergedArticle:
+    """Mechanically assemble the earliest nonempty source metadata."""
+    source_articles = [article_by_id[fragment_id] for fragment_id in group]
+
+    def earliest_nonempty(field: str, default: str = "") -> str:
+        for article in source_articles:
+            value = str(article.get(field) or "")
+            if value.strip():
+                return value
+        return default
+
+    source_pages: list[str] = []
+    images = []
+    image_files: list[str] = []
+    for article in source_articles:
+        if article["page_label"] not in source_pages:
+            source_pages.append(article["page_label"])
+        images.extend(list(article["images"]))
+        image_files.extend(list(article["image_files"]))
+
+    # Only continuation edges outside this successfully merged group survive.
+    group_pages = set(source_pages)
+    continued_from = source_articles[0]["continuation"].get("continued_from") or ""
+    tail_continues_on = source_articles[-1]["continuation"].get("continues_on") or ""
+    if continued_from in group_pages:
+        continued_from = ""
+    if tail_continues_on in group_pages:
+        tail_continues_on = ""
+
+    merged = MergedArticle(
+        headline=earliest_nonempty("headline"),
+        author=earliest_nonempty("author"),
+        writer_position=earliest_nonempty("writer_position"),
+        category=earliest_nonempty("category", "News"),
+        continues_on=tail_continues_on,
+        continued_from=continued_from,
+        body=body,
+        images=images,
+        image_files=image_files,
+        source_pages=source_pages,
+    )
+    merged._category_fallback_used = any(
+        bool(article.get("category_fallback_used")) for article in source_articles
+    )
+    merged._source_pages_internal = list(source_pages)
+    return merged
+
+
+def _source_duplicate_record(group: list[str], article_by_id: dict[str, dict]) -> MergedArticle:
+    """Retain the earliest source copy while preserving all page/image evidence."""
+    earliest = _singleton(article_by_id[group[0]])
+    for fragment_id in group[1:]:
+        duplicate = article_by_id[fragment_id]
+        page = duplicate["page_label"]
+        if page not in earliest.source_pages:
+            earliest.source_pages.append(page)
+        if page not in earliest._source_pages_internal:
+            earliest._source_pages_internal.append(page)
+        for image, image_file in zip(duplicate["images"], duplicate["image_files"]):
+            if image_file not in earliest.image_files:
+                earliest.images.append(image)
+                earliest.image_files.append(image_file)
+        earliest._category_fallback_used = (
+            earliest._category_fallback_used
+            or bool(duplicate.get("category_fallback_used"))
+        )
+    return earliest
 
 
 def merge_edition_articles(
     client,
     page_results: list[tuple[str, PageContent]],
     report: PipelineReport | None = None,
-    snapshots_dir: str | None = None,
 ) -> EditionContent | None:
-    """Merge articles across pages for a single edition (decision-only merge)."""
+    """Group all available edition fragments, then review all seams in one batch.
+
+    Missing pages do not globally block this stage: the grouping partition covers
+    every available fragment. Any invalid grouping response falls back to all
+    singletons; any invalid seam falls back atomically for only its merge group.
+    """
     merge_timer = StageTimer().start()
     md = MergePassDiagnostics() if report is not None else None
+    if md is not None:
+        md.tokens = TokenUsage()
 
-    article_data = []
+    article_data: list[dict] = []
     all_ads = []
     all_other = []
-
+    edition_index = 0
     for source_filename, page_content in page_results:
-        page_label = page_content.page_number or source_filename
+        page_label = str(page_content.page_number or source_filename)
         all_ads.extend(page_content.ads)
         all_other.extend(page_content.other_content)
-
-        for article in page_content.articles:
-            fallback_cont = _extract_continuation_info(article.body)
-            cont_info = {
-                "continues_on": article.continues_on or fallback_cont["continues_on"],
-                "continued_from": article.continued_from or fallback_cont["continued_from"],
+        for article_index, article in enumerate(page_content.articles):
+            continuation = {
+                "continues_on": article.continues_on or "",
+                "continued_from": article.continued_from or "",
             }
-
+            fragment_id = _stable_fragment_id(
+                edition_index,
+                source_filename,
+                page_label,
+                article_index,
+                article.headline,
+                article.body,
+            )
             article_data.append(
                 {
+                    "fragment_id": fragment_id,
+                    "edition_index": edition_index,
                     "page_label": page_label,
                     "headline": article.headline,
                     "author": article.author,
                     "writer_position": article.writer_position,
                     "category": article.category,
+                    "category_fallback_used": article._category_fallback_used,
                     "body": article.body,
                     "images": list(article.images),
                     "image_files": list(article.image_files),
-                    "continuation": cont_info,
+                    "continuation": continuation,
                 }
             )
+            edition_index += 1
 
     if not article_data:
         info("No articles found to merge.")
@@ -181,503 +759,184 @@ def merge_edition_articles(
     if md is not None:
         md.articles_before_merge = len(article_data)
 
-    save_snapshot(snapshots_dir, "pre_merge_articles.json", article_data)
-
-    pre_merged = _deterministic_merge(article_data)
-
-    target_pages = set()
-    has_continuations = False
-    for idx, ad in enumerate(article_data):
-        cont_on = ad["continuation"]["continues_on"]
-        if cont_on and cont_on != "?":
-            target_pages.add(cont_on)
-            has_continuations = True
-        elif cont_on == "?":
-            has_continuations = True
-        if ad["continuation"]["continued_from"]:
-            target_pages.add(ad["continuation"]["continued_from"])
-            has_continuations = True
-
-    dangling_tails = set()
-    dangling_heads = set()
-    for idx, ad in enumerate(article_data):
-        body = (ad["body"] or "").strip()
-        if not body or len(body) < 50:
-            continue
-        last_char = body.rstrip()[-1] if body.rstrip() else ""
-        if last_char not in ".!?\"'\u201d\u2019":
-            dangling_tails.add(idx)
-        first_word = body.split()[0] if body.split() else ""
-        if first_word and (
-            first_word[0].islower()
-            or first_word.lower()
-            in (
-                "and",
-                "but",
-                "or",
-                "he",
-                "she",
-                "they",
-                "the",
-                "it",
-                "his",
-                "her",
-                "its",
-                "that",
-                "this",
-                "those",
-                "these",
-            )
-        ):
-            dangling_heads.add(idx)
-
-    for idx in dangling_tails | dangling_heads:
-        ad = article_data[idx]
-        if not ad["continuation"]["continues_on"] and not ad["continuation"]["continued_from"]:
-            if ad["page_label"] not in target_pages:
-                has_continuations = True
-
-    prompt_parts = [MERGE_USER_TEMPLATE]
-    for idx, ad in enumerate(article_data):
-        is_pointer = bool(ad["continuation"]["continues_on"] or ad["continuation"]["continued_from"])
-        is_target = ad["page_label"] in target_pages
-        is_dangling = idx in dangling_tails or idx in dangling_heads
-
-        if is_pointer or is_target or is_dangling:
-            preview = ad["body"][:1200].replace("\n", " ")
-            prompt_parts.append(f"[{idx}] Page {ad['page_label']} | Headline: {ad['headline']}")
-            if ad["author"]:
-                prompt_parts.append(f"     Author: {ad['author']}")
-            if ad["writer_position"]:
-                prompt_parts.append(f"     Position: {ad['writer_position']}")
-            if ad["continuation"]["continues_on"]:
-                prompt_parts.append(f"     Continues on: page {ad['continuation']['continues_on']}")
-            if ad["continuation"]["continued_from"]:
-                prompt_parts.append(f"     Continued from: page {ad['continuation']['continued_from']}")
-            if idx in dangling_tails:
-                prompt_parts.append("     ⚠ Body ends mid-sentence (possible unmarked continuation)")
-            if idx in dangling_heads:
-                prompt_parts.append("     ⚠ Body starts mid-sentence (possible continuation stub)")
-            prompt_parts.append(f"     Preview: {preview}...")
-            prompt_parts.append("")
-
-    if pre_merged:
-        prompt_parts.append("\nPRE-MERGED GROUPS (do not split these):")
-        for group in pre_merged:
-            ids_str = ", ".join(str(i) for i in group)
-            prompt_parts.append(f"  Articles [{ids_str}] — matched by continuation markers")
-        prompt_parts.append("")
-
-    sources_by_target: dict[str, list[int]] = defaultdict(list)
-    stubs_by_source: dict[str, list[int]] = defaultdict(list)
-    wildcard_sources: dict[str, list[int]] = defaultdict(list)
-    for idx, ad in enumerate(article_data):
-        cont_on = ad["continuation"]["continues_on"]
-        if cont_on and cont_on != "?":
-            sources_by_target[cont_on].append(idx)
-        elif cont_on == "?":
-            wildcard_sources[ad["page_label"]].append(idx)
-        cont_from = ad["continuation"]["continued_from"]
-        if cont_from and cont_from != "?":
-            stubs_by_source[cont_from].append(idx)
-
-    suggested_pairs = []
-    paired_src: set[int] = set()
-    paired_stub: set[int] = set()
-
-    def _score_and_pair(src_ids: list[int], stub_ids: list[int]) -> None:
-        """Compute body-similarity scores and greedily pair sources with stubs."""
-        scores = []
-        for src_id in src_ids:
-            src_tail = (article_data[src_id]["body"] or "")[-300:]
-            for stub_id in stub_ids:
-                stub_head = (article_data[stub_id]["body"] or "")[:300]
-                ratio = SM(None, src_tail.lower(), stub_head.lower()).ratio()
-                scores.append((src_id, stub_id, ratio))
-        scores.sort(key=lambda x: -x[2])
-        for src_id, stub_id, ratio in scores:
-            if src_id not in paired_src and stub_id not in paired_stub:
-                suggested_pairs.append((src_id, stub_id, ratio))
-                paired_src.add(src_id)
-                paired_stub.add(stub_id)
-
-    # Pass A: Specific continues_on — match sources on page A continuing to B
-    #         with stubs on page B that have continued_from=A
-    for target_page, source_ids in sources_by_target.items():
-        source_pages = {article_data[s]["page_label"] for s in source_ids}
-        matching_stubs = []
-        for sp in source_pages:
-            for stub_id in stubs_by_source.get(sp, []):
-                if article_data[stub_id]["page_label"] == target_page:
-                    matching_stubs.append(stub_id)
-        if len(source_ids) > 1 and len(matching_stubs) > 1:
-            _score_and_pair(source_ids, matching_stubs)
-
-    # Pass B: Wildcard continues_on=? — match sources on page A
-    #         with stubs that have continued_from=A
-    for source_page, src_ids in wildcard_sources.items():
-        stub_ids = stubs_by_source.get(source_page, [])
-        unpaired_src = [s for s in src_ids if s not in paired_src]
-        unpaired_stubs = [s for s in stub_ids if s not in paired_stub]
-        if unpaired_src and unpaired_stubs:
-            _score_and_pair(unpaired_src, unpaired_stubs)
-
-    if suggested_pairs:
-        prompt_parts.append("\nSUGGESTED PAIRS (based on content similarity — verify before applying):")
-        for src_id, stub_id, ratio in suggested_pairs:
-            src_h = article_data[src_id]["headline"][:60]
-            stub_h = article_data[stub_id]["headline"][:60]
-            prompt_parts.append(f"  [{src_id}] \"{src_h}\" ↔ [{stub_id}] \"{stub_h}\" (similarity: {ratio:.2f})")
-        prompt_parts.append("")
-
-    merge_text = "\n".join(prompt_parts)
-
-    if has_continuations:
-        merge_model_cfg = MODELS["merge"]
-        merge_thinking = types.ThinkingConfig(thinking_level=merge_model_cfg["thinking"]) if merge_model_cfg.get("thinking") else None
+    article_by_id = {article["fragment_id"]: article for article in article_data}
+    fragment_ids = [article["fragment_id"] for article in article_data]
+    groups: list[list[str]]
+    source_duplicate_groups: list[list[str]] = []
+    grouping_failed = False
+    if len(article_data) == 1:
+        groups = [fragment_ids]
+    else:
+        grouping_request = {
+            "schema_version": "edition-grouping-request.v1",
+            "fragments": [
+                {
+                    "fragment_id": article["fragment_id"],
+                    "page": article["page_label"],
+                    "headline": article["headline"],
+                    "author": article["author"],
+                    "writer_position": article["writer_position"],
+                    "continues_on": article["continuation"]["continues_on"],
+                    "continued_from": article["continuation"]["continued_from"],
+                    **_compact_context(article["body"]),
+                }
+                for article in article_data
+            ],
+        }
         try:
-            response = gemini_generate_with_retry(
+            grouping_response = _generate_locked_content(
                 client,
-                model=merge_model_cfg["name"],
-                contents=[merge_text],
-                config=types.GenerateContentConfig(
-                    system_instruction=MERGE_SYSTEM_PROMPT,
-                    response_mime_type="application/json",
-                    response_schema=MergeDecisions,
-                    safety_settings=SAFETY_OFF,
-                    max_output_tokens=65536,
-                    **({"thinking_config": merge_thinking} if merge_thinking else {}),
+                contents=[json.dumps(grouping_request, ensure_ascii=False)],
+                response_schema=EditionGroupingResponse,
+            )
+            parsed_grouping = _response_as(grouping_response, EditionGroupingResponse)
+            _add_usage(md, grouping_response)
+            groups = _validate_complete_partition(parsed_grouping, fragment_ids, article_by_id)
+            source_duplicate_groups = _validated_source_duplicate_groups(
+                parsed_grouping,
+                groups,
+                article_by_id,
+            )
+            substep(f"Grouping call partitioned {len(fragment_ids)} fragments into {len(groups)} groups")
+            if source_duplicate_groups:
+                substep(
+                    f"Grouping call identified {len(source_duplicate_groups)} "
+                    "validated source reprint group(s)"
+                )
+        except Exception as exc:
+            grouping_failed = True
+            groups = [[fragment_id] for fragment_id in fragment_ids]
+            warning(f"Edition grouping failed validation; preserving every source fragment: {exc}")
+            if md is not None:
+                md.error = f"grouping_unresolved — {exc}"
+                md.merge_skipped = True
+
+    # Keep edition ordering stable without changing model-selected order inside a group.
+    groups.sort(key=lambda group: min(article_by_id[fragment_id]["edition_index"] for fragment_id in group))
+    duplicate_by_survivor = {group[0]: group for group in source_duplicate_groups}
+    duplicate_dropped = {
+        fragment_id for group in source_duplicate_groups for fragment_id in group[1:]
+    }
+    boundary_records, boundary_index, working_bodies = _build_boundary_records(groups, article_by_id)
+    decisions_by_id: dict[str, SeamBoundaryDecision] = {}
+    duplicate_decision_ids: set[str] = set()
+    seam_call_failed = False
+
+    if boundary_records and not grouping_failed:
+        seam_request = {
+            "schema_version": "edition-seam-request.v1",
+            "boundaries": boundary_records,
+        }
+        try:
+            seam_response = _generate_locked_content(
+                client,
+                contents=[json.dumps(seam_request, ensure_ascii=False)],
+                response_schema=EditionSeamResponse,
+                response_validator=lambda candidate: not _seam_response_validation_reason(
+                    candidate,
+                    boundary_index,
+                    working_bodies,
+                ),
+                schema_retry_instruction=lambda candidate: (
+                    _seam_response_validation_reason(
+                        candidate,
+                        boundary_index,
+                        working_bodies,
+                    )
                 ),
             )
-
-            usage = response.usage_metadata
-            if usage:
-                substep(f"Merge tokens: {usage.prompt_token_count} in, {usage.candidates_token_count} out")
-            else:
-                substep("Merge tokens: unavailable")
-
-            if md is not None and usage:
-                md.tokens = TokenUsage(
-                    prompt_tokens=usage.prompt_token_count,
-                    candidates_tokens=usage.candidates_token_count,
-                    total_tokens=usage.total_token_count,
-                )
-
-            if not response.parsed:
-                full_raw = response.text or ""
-                raw = full_raw[:500]
-                # Dump the full raw response to the snapshots dir so operators
-                # can post-mortem parse failures — the 500-char console line is
-                # fine for a quick glance but loses the rest of the payload,
-                # which is exactly what you need when Gemini returns truncated
-                # JSON or an unexpected schema. See docs/issues/0012.
-                raw_dump_path = ""
-                if snapshots_dir and full_raw:
-                    try:
-                        os.makedirs(snapshots_dir, exist_ok=True)
-                        raw_dump_path = os.path.join(snapshots_dir, "merge_raw_response.txt")
-                        with open(raw_dump_path, "w", encoding="utf-8") as _f:
-                            _f.write(full_raw)
-                    except OSError:
-                        raw_dump_path = ""
-                warning(
-                    f"Pro merge unparseable (raw: {raw!r}"
-                    + (f", full: {raw_dump_path}" if raw_dump_path else "")
-                    + "), retrying with Flash..."
-                )
-                if md is not None:
-                    md.error = f"Pro merge failed (raw: {raw!r})"
-
-                # Retry with fallback model
-                fallback_cfg = MODELS["merge_fallback"]
-                fallback_thinking = types.ThinkingConfig(thinking_level=fallback_cfg["thinking"]) if fallback_cfg.get("thinking") else None
-                try:
-                    response = gemini_generate_with_retry(
-                        client,
-                        model=fallback_cfg["name"],
-                        contents=[merge_text],
-                        config=types.GenerateContentConfig(
-                            system_instruction=MERGE_SYSTEM_PROMPT,
-                            response_mime_type="application/json",
-                            response_schema=MergeDecisions,
-                            safety_settings=SAFETY_OFF,
-                            max_output_tokens=65536,
-                            **({"thinking_config": fallback_thinking} if fallback_thinking else {}),
-                        ),
-                    )
-                    # Defensive getattr: the Gemini SDK's usage_metadata can be
-                    # a partial object where the outer field is truthy but
-                    # inner counts are None. Direct attribute access on a
-                    # partial object would crash the Flash retry path and
-                    # bury the original Pro error under an AttributeError.
-                    # See docs/issues/0022.
-                    flash_usage = getattr(response, "usage_metadata", None)
-                    if flash_usage is not None:
-                        f_prompt = getattr(flash_usage, "prompt_token_count", None) or 0
-                        f_cand = getattr(flash_usage, "candidates_token_count", None) or 0
-                        f_total = getattr(flash_usage, "total_token_count", None) or 0
-                        substep(f"Flash retry tokens: {f_prompt} in, {f_cand} out")
-                        if md is not None:
-                            md.tokens = TokenUsage(
-                                prompt_tokens=(md.tokens.prompt_tokens if md.tokens else 0) + f_prompt,
-                                candidates_tokens=(md.tokens.candidates_tokens if md.tokens else 0) + f_cand,
-                                total_tokens=(md.tokens.total_tokens if md.tokens else 0) + f_total,
-                            )
-                except Exception as flash_err:
-                    warning(f"Flash retry also failed: {flash_err}")
-
-                if response.parsed:
-                    substep("Flash retry succeeded.")
-                    if md is not None:
-                        md.error = "flash_retry"
-                    decisions = response.parsed
-                else:
-                    warning("Flash retry also unparseable — aborting merge.")
-                    if md is not None:
-                        md.error = "llm_merge_failed"
-                    _finalize_merge_diagnostics(md, merge_timer, report)
-                    return None
-            else:
-                decisions = response.parsed
-
-            decisions: MergeDecisions
-            save_snapshot(snapshots_dir, "merge_decisions.json", decisions)
-        except TimeoutError as e:
-            warning(f"Merge retry budget exhausted ({e}) — emitting unmerged page-level articles.")
+            parsed_seams = _response_as(seam_response, EditionSeamResponse)
+            _add_usage(md, seam_response)
+            counts = Counter(decision.boundary_id for decision in parsed_seams.boundaries)
+            duplicate_decision_ids = {
+                boundary_id for boundary_id, count in counts.items() if count > 1
+            }
+            decisions_by_id = {
+                decision.boundary_id: decision
+                for decision in parsed_seams.boundaries
+                if decision.boundary_id in boundary_index
+            }
+            unknown = sorted(set(counts) - set(boundary_index))
+            if unknown:
+                raise ValueError(f"seam response contains unknown boundary IDs: {unknown}")
+            substep(f"Seam call reviewed {len(boundary_records)} adjacent boundaries")
+        except Exception as exc:
+            seam_call_failed = True
+            warning(f"Edition seam review failed; preserving all affected groups: {exc}")
             if md is not None:
-                md.error = f"merge_retry_exhausted — {e}"
-                md.merge_skipped = True
-            _finalize_merge_diagnostics(md, merge_timer, report)
-            return None
-        except Exception as e:
-            error(f"Merge failed: {e} — aborting merge.")
-            if md is not None:
-                md.error = f"llm_merge_failed — {e}"
-                md.merge_skipped = True
-            _finalize_merge_diagnostics(md, merge_timer, report)
-            return None
-    else:
-        info("No explicit continuations found. Bypassing LLM merge pass.")
-        decisions = MergeDecisions(groups=[])
-        if md is not None:
-            md.tokens = TokenUsage(prompt_tokens=0, candidates_tokens=0, total_tokens=0)
+                md.error = f"seam_review_unresolved — {exc}"
 
-    # Track aggregate OOB / dropped-group counts across all decisions so
-    # operators can see whether Gemini is hallucinating article_ids at a
-    # rate that's degrading merge quality — previously only per-offense
-    # warnings existed with no roll-up. See docs/issues/0021.
-    referenced = set()
-    oob_ids_total: list[int] = []
-    oob_groups_dropped = 0
-    for group in decisions.groups:
-        deduped_ids = []
-        group_had_valid = False
-        for aid in group.article_ids:
-            if not (0 <= aid < len(article_data)):
-                warning(f"Article {aid} out of range (0..{len(article_data)-1}), skipping")
-                oob_ids_total.append(aid)
-                if md is not None:
-                    md.duplicate_warnings.append(f"Article {aid} out of range")
+    merged_articles: list[MergedArticle] = []
+    accepted_multi_groups = 0
+    singleton_count = 0
+    unresolved_groups = 0
+    for group_index, group in enumerate(groups):
+        if len(group) == 1:
+            if group[0] in duplicate_dropped:
                 continue
-            if aid in referenced:
-                warning(f"Article {aid} appears in multiple merge groups, skipping duplicate")
-                if md is not None:
-                    md.duplicate_warnings.append(f"Article {aid} in multiple groups")
-            else:
-                referenced.add(aid)
-                deduped_ids.append(aid)
-                group_had_valid = True
-        group.article_ids = deduped_ids
-        if not group_had_valid and group.article_ids == [] and group.merged_headline:
-            oob_groups_dropped += 1
-
-    if oob_ids_total and md is not None:
-        md.duplicate_warnings.append(
-            f"oob_article_ids_total={len(oob_ids_total)} "
-            f"sample={oob_ids_total[:10]} groups_with_only_oob={oob_groups_dropped}"
-        )
-
-    all_ids = set(range(len(article_data)))
-    missing = all_ids - referenced
-    if md is not None:
-        md.unreferenced_articles = len(missing)
-    for aid in sorted(missing):
-        decisions.groups.append(
-            MergeInstruction(
-                article_ids=[aid],
-                merged_headline=article_data[aid]["headline"],
-                merged_author=article_data[aid]["author"],
-                merged_writer_position=article_data[aid].get("writer_position", ""),
-            )
-        )
-
-    def _safe_page_int(label: str) -> int:
-        match = re.search(r'\d+', label or "")
-        return int(match.group()) if match else 0
-
-    merge_min_confidence = float(os.environ.get("MERGE_MIN_CONFIDENCE", "0.5"))
-    merged_articles = []
-    for group in decisions.groups:
-        valid_ids = [aid for aid in group.article_ids if 0 <= aid < len(article_data)]
-        if not valid_ids:
-            continue
-
-        valid_ids = sorted(valid_ids, key=lambda aid: _safe_page_int(article_data[aid]["page_label"]))
-
-        bodies = []
-        all_images = []
-        all_image_files = []
-        source_pages = []
-        source_categories = []
-        continues_on_values = []
-        continued_from_values = []
-        for aid in valid_ids:
-            ad = article_data[aid]
-            cleaned_body = _strip_continuation_markers(ad["body"])
-            bodies.append(cleaned_body)
-            aligned_images, aligned_files, orphan_captions = _reconcile_image_alignment(
-                list(ad["images"]),
-                list(ad["image_files"]),
-            )
-            all_images.extend(aligned_images)
-            all_image_files.extend(aligned_files)
-            if orphan_captions:
-                if md is not None:
-                    md.image_orphans_dropped += len(orphan_captions)
-                for cap in orphan_captions:
-                    all_other.append(
-                        OtherContent(
-                            title=(ad["headline"] or "Unassociated image caption").strip(),
-                            body=cap,
-                        )
-                    )
-            if ad["page_label"] not in source_pages:
-                source_pages.append(ad["page_label"])
-            source_categories.append(ad.get("category") or "Campus News")
-            cont = ad.get("continuation", {})
-            if (cont.get("continues_on") or "").strip():
-                continues_on_values.append(cont["continues_on"].strip())
-            if (cont.get("continued_from") or "").strip():
-                continued_from_values.append(cont["continued_from"].strip())
-
-        # Confidence filtering: reject low-confidence merges
-        if len(valid_ids) > 1 and group.confidence < merge_min_confidence:
-            warning(f"Rejecting low-confidence merge ({group.confidence:.2f} < {merge_min_confidence}): {group.merged_headline}")
-            if md is not None:
-                md.low_confidence_rejections += 1
-            # Split back into individual articles
-            for aid in valid_ids:
-                ad = article_data[aid]
+            if group[0] in duplicate_by_survivor:
                 merged_articles.append(
-                    MergedArticle(
-                        headline=ad["headline"],
-                        author=_normalize_byline(ad.get("author", "")),
-                        writer_position=ad.get("writer_position", ""),
-                        category=ad.get("category", "Campus News"),
-                        continues_on=ad["continuation"].get("continues_on", ""),
-                        continued_from=ad["continuation"].get("continued_from", ""),
-                        body=_strip_continuation_markers(ad["body"]),
-                        images=list(ad.get("images", [])),
-                        image_files=list(ad.get("image_files", [])),
-                        source_pages=[ad["page_label"]],
+                    _source_duplicate_record(
+                        duplicate_by_survivor[group[0]],
+                        article_by_id,
                     )
                 )
+                singleton_count += 1
+                continue
+            merged_articles.append(_singleton(article_by_id[group[0]]))
+            singleton_count += 1
             continue
 
-        if len(bodies) > 1:
-            bodies = _validate_merge_seam(client, bodies)
-
-        merged_body = _best_body(bodies)
-
-        # Clean up OCR artifacts at merge boundaries (after seam repair joined the text)
-        paragraphs = merged_body.split("\n\n")
-        if len(paragraphs) > 1:
-            cleaned = paragraphs[0]
-            for i in range(1, len(paragraphs)):
-                cleaned = clean_merge_boundary(cleaned, paragraphs[i])
-            merged_body = cleaned
-
-        merged_body, stripped_captions = _strip_trailing_captions(merged_body)
-        for cap in stripped_captions:
-            all_images.append(ArticleImage(caption=cap, position=""))
-
-        merged_author = _normalize_byline(group.merged_author)
-        merged_author, merged_body = _extract_byline_from_body(group.merged_headline, merged_author, merged_body)
-        merged_body = _dedup_byline_from_body(merged_author, merged_body)
-        merged_position = group.merged_writer_position
-        if not merged_position:
-            merged_author, merged_position = _split_author_position(merged_author)
-        if not merged_position:
-            for aid in valid_ids:
-                wp = article_data[aid].get("writer_position", "")
-                if wp:
-                    merged_position = wp
-                    break
-
-        merged_category = _choose_merged_category(source_categories)
-        if md is not None and len(set(c for c in source_categories if c)) > 1:
-            md.category_conflicts += 1
-        merged_continues_on = sorted(set(continues_on_values))[0] if continues_on_values else ""
-        merged_continued_from = sorted(set(continued_from_values))[0] if continued_from_values else ""
-
-        body_stripped = merged_body.strip()
-        is_photo_only = ((len(body_stripped) < 100 and re.match(r"^[A-Z]{3,}", body_stripped)) or (not body_stripped and all_images))
-        if is_photo_only and all_image_files:
-            merged_articles.append(
-                MergedArticle(
-                    headline=group.merged_headline or "",
-                    author="",
-                    category=merged_category,
-                    continues_on=merged_continues_on,
-                    continued_from=merged_continued_from,
-                    body="",
-                    images=all_images,
-                    image_files=all_image_files,
-                    source_pages=source_pages,
-                )
+        assembled = None
+        if not seam_call_failed:
+            assembled = _assemble_reviewed_group(
+                group,
+                group_index,
+                decisions_by_id,
+                duplicate_decision_ids,
+                working_bodies,
             )
-            continue
-        if is_photo_only and not all_image_files:
-            caption_text = "\n\n".join(img.caption.strip() for img in all_images if (img.caption or "").strip())
-            all_other.append(
-                OtherContent(
-                    title=group.merged_headline or "Photo",
-                    body=body_stripped or caption_text,
-                )
-            )
-            if md is not None and not (body_stripped or caption_text):
-                md.empty_articles_removed += 1
+        if assembled is None:
+            unresolved_groups += 1
+            # Grouping has already established that these immutable fragments
+            # are one article. A missing/unsafe seam edit must not undo that
+            # semantic decision. Discard the proposed edit and use the exact,
+            # ordered source bodies with the default paragraph join.
+            assembled = "\n\n".join(working_bodies[fragment_id] for fragment_id in group)
+            merged_articles.append(_merged_record(group, assembled, article_by_id))
+            accepted_multi_groups += 1
             continue
 
-        merged_articles.append(
-            MergedArticle(
-                headline=group.merged_headline,
-                author=merged_author,
-                writer_position=merged_position,
-                category=merged_category,
-                continues_on=merged_continues_on,
-                continued_from=merged_continued_from,
-                body=merged_body,
-                images=all_images,
-                image_files=all_image_files,
-                source_pages=source_pages,
-            )
-        )
+        merged_articles.append(_merged_record(group, assembled, article_by_id))
+        accepted_multi_groups += 1
+
+    if unresolved_groups and md is not None:
+        md.duplicate_warnings.append(f"lossless_unresolved_merge_groups={unresolved_groups}")
+        if not md.error:
+            md.error = f"seam_unresolved_groups={unresolved_groups}"
 
     all_ads = _deduplicate_ads(all_ads)
     all_other = _deduplicate_other_content(all_other)
 
     if md is not None:
         md.articles_after_merge = len(merged_articles)
-        md.singleton_groups = sum(1 for g in decisions.groups if len(g.article_ids) == 1)
-        md.multi_article_groups = sum(1 for g in decisions.groups if len(g.article_ids) > 1)
+        md.singleton_groups = singleton_count
+        md.multi_article_groups = accepted_multi_groups
     _finalize_merge_diagnostics(md, merge_timer, report)
 
-    return EditionContent(
+    return EditionContent.model_construct(
         articles=merged_articles,
         ads=all_ads,
         other_content=all_other,
     )
 
 
-__all__ = ["_best_body", "_validate_merge_seam", "merge_edition_articles"]
+__all__ = [
+    "EditionGroupingResponse",
+    "EditionSeamResponse",
+    "MergeGroupDecision",
+    "SeamBoundaryDecision",
+    "_ANCHOR_SIMILARITY_MIN",
+    "merge_edition_articles",
+    "normalized_word_similarity",
+]
