@@ -1,217 +1,326 @@
-#!/usr/bin/env python3
-"""Score OCR output against page-level gold transcripts."""
+"""Final-only scoring against a frozen schema-compatible gold edition."""
 
 from __future__ import annotations
 
 import argparse
-import glob
 import json
-import os
 import re
-from dataclasses import dataclass
+import unicodedata
+from pathlib import Path
+from typing import Any
+
+_WORD_RE = re.compile(r"\w+(?:[\u2019'\-]\w+)*", re.UNICODE)
+_COLLECTIONS = ("articles", "ads", "other_content")
+_IDENTITY_FIELD = {
+    "articles": "headline",
+    "ads": "business_name",
+    "other_content": "title",
+}
+_STRUCTURED_FIELDS = {
+    "articles": (
+        "headline",
+        "author",
+        "writer_position",
+        "category",
+        "source_pages",
+        "continues_on",
+        "continued_from",
+    ),
+    "ads": ("business_name",),
+    "other_content": ("title",),
+}
 
 
-WORD_RE = re.compile(r"[A-Za-z0-9']+")
+def _normalized_words(text: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKC", text or "").casefold()
+    return [match.group(0) for match in _WORD_RE.finditer(normalized)]
 
 
-def _tokenize(text: str) -> list[str]:
-    return [m.group(0).lower() for m in WORD_RE.finditer(text)]
+def _normalized_exact(text: str) -> str:
+    return " ".join(_normalized_words(text))
 
 
-def _markdown_to_text(md: str) -> str:
-    # Remove images and markdown headings/quote prefixes for scoring text.
-    md = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", md)
-    md = re.sub(r"^#{1,6}\s*", "", md, flags=re.MULTILINE)
-    md = re.sub(r"^>\s*", "", md, flags=re.MULTILINE)
-    md = re.sub(r"[*_`]+", "", md)
-    return md
+def _strict_chars(text: str) -> str:
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n")
 
 
-@dataclass
-class Alignment:
-    substitutions: int
-    deletions: int
-    insertions: int
-
-
-def _align(gold: list[str], pred: list[str]) -> Alignment:
-    m, n = len(gold), len(pred)
-    dp = [[0] * (n + 1) for _ in range(m + 1)]
-    bt = [[""] * (n + 1) for _ in range(m + 1)]
-
-    for i in range(1, m + 1):
-        dp[i][0] = i
-        bt[i][0] = "D"
-    for j in range(1, n + 1):
-        dp[0][j] = j
-        bt[0][j] = "I"
-
-    for i in range(1, m + 1):
-        for j in range(1, n + 1):
-            if gold[i - 1] == pred[j - 1]:
-                dp[i][j] = dp[i - 1][j - 1]
-                bt[i][j] = "M"
-            else:
-                subs = dp[i - 1][j - 1] + 1
-                delete = dp[i - 1][j] + 1
-                insert = dp[i][j - 1] + 1
-                best = min(subs, delete, insert)
-                dp[i][j] = best
-                bt[i][j] = "S" if best == subs else ("D" if best == delete else "I")
-
-    i, j = m, n
-    s = d = ins = 0
-    while i > 0 or j > 0:
-        op = bt[i][j]
-        if op in ("M", "S"):
-            if op == "S":
-                s += 1
-            i -= 1
-            j -= 1
-        elif op == "D":
-            d += 1
-            i -= 1
-        else:
-            ins += 1
-            j -= 1
-
-    return Alignment(substitutions=s, deletions=d, insertions=ins)
-
-
-def _candidate_markdown_for_page(run_dir: str, page: int) -> str:
-    pattern = os.path.join(run_dir, f"*_Page {page}.md")
-    matches = sorted(glob.glob(pattern))
-    if not matches:
-        return ""
-    return matches[0]
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Score OCR output against gold page transcripts")
-    parser.add_argument("--gold-dir", required=True, help="Directory containing page*.reference.txt files")
-    parser.add_argument("--run-dir", required=True, help="OCR run directory (contains per-page markdown files)")
-    parser.add_argument("--output-json", default="", help="Optional output JSON path")
-    parser.add_argument("--output-md", default="", help="Optional output markdown path")
-    args = parser.parse_args()
-
-    gold_files = sorted(glob.glob(os.path.join(args.gold_dir, "page*.reference.txt")))
-    if not gold_files:
-        raise SystemExit(f"No gold reference files found in {args.gold_dir}")
-
-    page_results = []
-    total_gold = 0
-    total_s = total_d = total_i = 0
-
-    for gold_path in gold_files:
-        m = re.search(r"page(\d+)\.reference\.txt$", os.path.basename(gold_path))
-        if not m:
-            continue
-        page = int(m.group(1))
-        with open(gold_path, "r", encoding="utf-8") as f:
-            gold_raw = f.read().strip()
-
-        if not gold_raw or "TODO" in gold_raw.upper():
-            page_results.append({
-                "page": page,
-                "status": "skipped",
-                "reason": "gold reference missing or placeholder",
-                "gold_path": gold_path,
-            })
-            continue
-
-        candidate_path = _candidate_markdown_for_page(args.run_dir, page)
-        if not candidate_path:
-            page_results.append({
-                "page": page,
-                "status": "missing_candidate",
-                "gold_path": gold_path,
-            })
-            continue
-
-        with open(candidate_path, "r", encoding="utf-8") as f:
-            candidate_md = f.read()
-
-        gold_tokens = _tokenize(gold_raw)
-        pred_tokens = _tokenize(_markdown_to_text(candidate_md))
-        alignment = _align(gold_tokens, pred_tokens)
-
-        n = max(1, len(gold_tokens))
-        wer = (alignment.substitutions + alignment.deletions + alignment.insertions) / n
-        missing_rate = alignment.deletions / n
-        extra_rate = alignment.insertions / n
-
-        page_results.append({
-            "page": page,
-            "status": "scored",
-            "gold_path": gold_path,
-            "candidate_path": candidate_path,
-            "gold_words": len(gold_tokens),
-            "pred_words": len(pred_tokens),
-            "substitutions": alignment.substitutions,
-            "deletions": alignment.deletions,
-            "insertions": alignment.insertions,
-            "wer": round(wer, 6),
-            "missing_word_rate": round(missing_rate, 6),
-            "extra_word_rate": round(extra_rate, 6),
-        })
-
-        total_gold += len(gold_tokens)
-        total_s += alignment.substitutions
-        total_d += alignment.deletions
-        total_i += alignment.insertions
-
-    scored_pages = [p for p in page_results if p.get("status") == "scored"]
-    n = max(1, total_gold)
-    aggregate = {
-        "scored_pages": len(scored_pages),
-        "total_gold_words": total_gold,
-        "substitutions": total_s,
-        "deletions": total_d,
-        "insertions": total_i,
-        "wer": round((total_s + total_d + total_i) / n, 6),
-        "missing_word_rate": round(total_d / n, 6),
-        "extra_word_rate": round(total_i / n, 6),
-    }
-
-    report = {
-        "gold_dir": os.path.abspath(args.gold_dir),
-        "run_dir": os.path.abspath(args.run_dir),
-        "aggregate": aggregate,
-        "pages": page_results,
-    }
-
-    output_json = args.output_json or os.path.join(args.run_dir, "gold_score.json")
-    output_md = args.output_md or os.path.join(args.run_dir, "gold_score.md")
-    os.makedirs(os.path.dirname(output_json), exist_ok=True)
-
-    with open(output_json, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
-
-    lines = [
-        "# Gold Scoring Report",
-        "",
-        f"- Run dir: `{report['run_dir']}`",
-        f"- Gold dir: `{report['gold_dir']}`",
-        f"- Scored pages: {aggregate['scored_pages']}",
-        f"- WER: {aggregate['wer']:.6f}",
-        f"- Missing-word rate: {aggregate['missing_word_rate']:.6f}",
-        f"- Extra-word rate: {aggregate['extra_word_rate']:.6f}",
-        "",
-        "## Per Page",
-        "",
-    ]
-    for page in page_results:
-        lines.append(f"- Page {page.get('page')}: {page.get('status')}")
-        if page.get("status") == "scored":
-            lines.append(
-                f"  WER={page['wer']:.6f}, missing={page['missing_word_rate']:.6f}, extra={page['extra_word_rate']:.6f}"
+def _edit_counts(reference: list[str], hypothesis: list[str]) -> dict[str, int]:
+    """Return one deterministic optimal word-edit path in linear memory."""
+    previous = [(index, 0, index, 0) for index in range(len(hypothesis) + 1)]
+    for row, ref_token in enumerate(reference, start=1):
+        current = [(row, row, 0, 0)]
+        for column, hyp_token in enumerate(hypothesis, start=1):
+            if ref_token == hyp_token:
+                current.append(previous[column - 1])
+                continue
+            sub = previous[column - 1]
+            delete = previous[column]
+            insert = current[column - 1]
+            choices = (
+                (sub[0] + 1, sub[1], sub[2], sub[3] + 1, 0),
+                (delete[0] + 1, delete[1] + 1, delete[2], delete[3], 1),
+                (insert[0] + 1, insert[1], insert[2] + 1, insert[3], 2),
             )
-    with open(output_md, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines).rstrip() + "\n")
+            best = min(choices, key=lambda item: (item[0], item[4]))
+            current.append(best[:4])
+        previous = current
+    distance, deletions, insertions, substitutions = previous[-1]
+    return {
+        "distance": distance,
+        "substitutions": substitutions,
+        "deletions": deletions,
+        "insertions": insertions,
+    }
 
-    print(f"Gold score JSON written to {output_json}")
-    print(f"Gold score markdown written to {output_md}")
+
+def _edit_distance(reference: str, hypothesis: str) -> int:
+    """Strict character Levenshtein distance in linear memory."""
+    if len(reference) < len(hypothesis):
+        reference, hypothesis = hypothesis, reference
+    previous = list(range(len(hypothesis) + 1))
+    for row, ref_character in enumerate(reference, start=1):
+        current = [row]
+        for column, hyp_character in enumerate(hypothesis, start=1):
+            current.append(
+                min(
+                    current[-1] + 1,
+                    previous[column] + 1,
+                    previous[column - 1] + (ref_character != hyp_character),
+                )
+            )
+        previous = current
+    return previous[-1]
+
+
+def _exact_pairs(gold_items: list[dict], candidate_items: list[dict], collection: str):
+    identity = _IDENTITY_FIELD[collection]
+    gold_by_fingerprint: dict[tuple[str, str], list[int]] = {}
+    candidate_by_fingerprint: dict[tuple[str, str], list[int]] = {}
+    for index, item in enumerate(gold_items):
+        key = (_normalized_exact(item.get(identity, "")), _normalized_exact(item.get("body", "")))
+        gold_by_fingerprint.setdefault(key, []).append(index)
+    for index, item in enumerate(candidate_items):
+        key = (_normalized_exact(item.get(identity, "")), _normalized_exact(item.get("body", "")))
+        candidate_by_fingerprint.setdefault(key, []).append(index)
+    pairs = []
+    for key in sorted(set(gold_by_fingerprint) & set(candidate_by_fingerprint)):
+        pairs.extend(zip(gold_by_fingerprint[key], candidate_by_fingerprint[key]))
+    return [(int(gold_index), int(candidate_index)) for gold_index, candidate_index in pairs]
+
+
+def _manual_pairs(
+    mapping: dict[str, Any],
+    collection: str,
+    gold_count: int,
+    candidate_count: int,
+) -> list[tuple[int, int]]:
+    pairs: list[tuple[int, int]] = []
+    for entry in mapping.get(collection, []):
+        if isinstance(entry, dict):
+            pair = (int(entry["gold"]), int(entry["candidate"]))
+        else:
+            pair = (int(entry[0]), int(entry[1]))
+        pairs.append(pair)
+    if len({gold for gold, _ in pairs}) != len(pairs):
+        raise ValueError(f"duplicate gold index in {collection} mapping")
+    if len({candidate for _, candidate in pairs}) != len(pairs):
+        raise ValueError(f"duplicate candidate index in {collection} mapping")
+    if any(gold < 0 or gold >= gold_count for gold, _ in pairs):
+        raise ValueError(f"out-of-range gold index in {collection} mapping")
+    if any(candidate < 0 or candidate >= candidate_count for _, candidate in pairs):
+        raise ValueError(f"out-of-range candidate index in {collection} mapping")
+    return pairs
+
+
+def _rate(numerator: int, denominator: int) -> float:
+    return round(numerator / denominator, 6) if denominator else 1.0
+
+
+def _collection_score(
+    gold_items: list[dict],
+    candidate_items: list[dict],
+    collection: str,
+    pairs: list[tuple[int, int]],
+) -> dict[str, Any]:
+    matched_gold = {gold for gold, _ in pairs}
+    matched_candidate = {candidate for _, candidate in pairs}
+    precision = _rate(len(pairs), len(candidate_items))
+    recall = _rate(len(pairs), len(gold_items))
+    f1 = round(2 * precision * recall / (precision + recall), 6) if precision + recall else 0.0
+
+    word_totals = {"reference_words": 0, "substitutions": 0, "deletions": 0, "insertions": 0}
+    character_reference = 0
+    character_errors = 0
+    field_totals = {
+        field: {"matches": 0, "compared": len(pairs)}
+        for field in _STRUCTURED_FIELDS[collection]
+    }
+    pair_details = []
+    for gold_index, candidate_index in pairs:
+        gold = gold_items[gold_index]
+        candidate = candidate_items[candidate_index]
+        gold_words = _normalized_words(str(gold.get("body") or ""))
+        candidate_words = _normalized_words(str(candidate.get("body") or ""))
+        edits = _edit_counts(gold_words, candidate_words)
+        word_totals["reference_words"] += len(gold_words)
+        for field in ("substitutions", "deletions", "insertions"):
+            word_totals[field] += edits[field]
+        gold_characters = _strict_chars(str(gold.get("body") or ""))
+        candidate_characters = _strict_chars(str(candidate.get("body") or ""))
+        character_reference += len(gold_characters)
+        character_errors += _edit_distance(gold_characters, candidate_characters)
+        exact_fields = {}
+        for field in _STRUCTURED_FIELDS[collection]:
+            exact = gold.get(field, "") == candidate.get(field, "")
+            exact_fields[field] = exact
+            field_totals[field]["matches"] += int(exact)
+        pair_details.append(
+            {
+                "gold_index": gold_index,
+                "candidate_index": candidate_index,
+                "gold_label": gold.get(_IDENTITY_FIELD[collection], ""),
+                "candidate_label": candidate.get(_IDENTITY_FIELD[collection], ""),
+                "word_edits": edits,
+                "exact_fields": exact_fields,
+            }
+        )
+
+    word_errors = sum(word_totals[field] for field in ("substitutions", "deletions", "insertions"))
+    word_totals["wer"] = _rate(word_errors, word_totals["reference_words"])
+    word_totals["missing_word_rate"] = _rate(word_totals["deletions"], word_totals["reference_words"])
+    word_totals["extra_word_rate"] = _rate(word_totals["insertions"], word_totals["reference_words"])
+    for totals in field_totals.values():
+        totals["accuracy"] = _rate(totals["matches"], totals["compared"])
+
+    return {
+        "gold_count": len(gold_items),
+        "candidate_count": len(candidate_items),
+        "matched_count": len(pairs),
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "word_fidelity": word_totals,
+        "character_fidelity": {
+            "reference_characters": character_reference,
+            "errors": character_errors,
+            "cer": _rate(character_errors, character_reference),
+        },
+        "structured_fields": field_totals,
+        "unmatched_gold": [
+            {"index": index, "label": item.get(_IDENTITY_FIELD[collection], "")}
+            for index, item in enumerate(gold_items)
+            if index not in matched_gold
+        ],
+        "unmatched_candidate": [
+            {"index": index, "label": item.get(_IDENTITY_FIELD[collection], "")}
+            for index, item in enumerate(candidate_items)
+            if index not in matched_candidate
+        ],
+        "pairs": pair_details,
+    }
+
+
+def score_editions(
+    gold: dict[str, Any],
+    candidate: dict[str, Any],
+    mapping: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Score final artifacts; fuzzy matching is never used implicitly."""
+    if gold.get("edition_date") != candidate.get("edition_date"):
+        raise ValueError("gold and candidate edition dates differ")
+    mapping_method = "manual_reviewed_indices" if mapping is not None else "exact_normalized_fingerprint"
+    collections = {}
+    for collection in _COLLECTIONS:
+        gold_items = list(gold.get(collection) or [])
+        candidate_items = list(candidate.get(collection) or [])
+        pairs = (
+            _manual_pairs(mapping or {}, collection, len(gold_items), len(candidate_items))
+            if mapping is not None
+            else _exact_pairs(gold_items, candidate_items, collection)
+        )
+        collections[collection] = _collection_score(
+            gold_items, candidate_items, collection, pairs
+        )
+
+    return {
+        "schema_version": 1,
+        "edition_date": gold.get("edition_date"),
+        "mapping_method": mapping_method,
+        "mapping_warning": (
+            "Indices must have been manually reviewed against source scans."
+            if mapping is not None
+            else "Only exact normalized identity+body matches are scored; unmatched items are not fuzzily paired."
+        ),
+        "publication_info_exact": gold.get("publication_info", "")
+        == candidate.get("publication_info", ""),
+        "visual_file_counts": {
+            "gold": sum(
+                len(item.get("image_files") or [])
+                for collection in _COLLECTIONS[:2]
+                for item in gold.get(collection, [])
+            ),
+            "candidate": sum(
+                len(item.get("image_files") or [])
+                for collection in _COLLECTIONS[:2]
+                for item in candidate.get(collection, [])
+            ),
+        },
+        "collections": collections,
+    }
+
+
+def _markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# Frozen Gold Comparison",
+        "",
+        f"- Edition: `{report['edition_date']}`",
+        f"- Mapping: `{report['mapping_method']}`",
+        f"- Publication metadata exact: `{report['publication_info_exact']}`",
+        "",
+        "| Collection | Gold | Candidate | Matched | Precision | Recall | F1 | WER | CER |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for name in _COLLECTIONS:
+        score = report["collections"][name]
+        lines.append(
+            f"| {name} | {score['gold_count']} | {score['candidate_count']} | "
+            f"{score['matched_count']} | {score['precision']:.3f} | "
+            f"{score['recall']:.3f} | {score['f1']:.3f} | "
+            f"{score['word_fidelity']['wer']:.3f} | "
+            f"{score['character_fidelity']['cer']:.3f} |"
+        )
+    lines.extend(["", report["mapping_warning"], ""])
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Compare one final candidate edition.json with frozen gold"
+    )
+    parser.add_argument("--gold-edition", required=True)
+    parser.add_argument("--candidate-edition", required=True)
+    parser.add_argument("--mapping-json")
+    parser.add_argument("--output-json")
+    parser.add_argument("--output-md")
+    args = parser.parse_args(argv)
+
+    gold = json.loads(Path(args.gold_edition).read_text(encoding="utf-8"))
+    candidate = json.loads(Path(args.candidate_edition).read_text(encoding="utf-8"))
+    mapping = (
+        json.loads(Path(args.mapping_json).read_text(encoding="utf-8"))
+        if args.mapping_json
+        else None
+    )
+    report = score_editions(gold, candidate, mapping)
+    encoded = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
+    if args.output_json:
+        Path(args.output_json).write_text(encoded, encoding="utf-8")
+    else:
+        print(encoded, end="")
+    if args.output_md:
+        Path(args.output_md).write_text(_markdown(report), encoding="utf-8")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

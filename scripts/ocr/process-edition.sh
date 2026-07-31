@@ -1,438 +1,398 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-# ── process-edition.sh ──────────────────────────────────────────
-# Processes a single newspaper edition through the full pipeline:
-#   OCR (with ad enrichment) → image cleanup → R2 upload → DB seed (with embedding)
+# Transactional OCR publication for one newspaper edition.
 #
-# Usage:
-#   scripts/ocr/process-edition.sh <path-to-edition-scan-dir> [options]
+# Normal:
+#   scripts/ocr/process-edition.sh <ocr/inbox/edition-dir> [--workers N] [--seed]
 #
-# Options:
-#   --run-id <id>             Custom run identifier for versioning
-#   --keep-source             Don't move scan dir to ocr/done/ after processing
-#   --cleanup-date YYYY-MM-DD Override the cleanup date (defaults to edition date)
-#   --workers N               Number of OCR workers
-#   --from-stage N            Resume from stage N (1=OCR, 2=cleanup, 3=upload, 4=seed)
-#
-# Example:
-#   scripts/ocr/process-edition.sh "ocr/inbox/1970-01-14 ..." --run-id baseline-1970-01-14
-#   scripts/ocr/process-edition.sh "ocr/inbox/1970-01-14 ..." --from-stage 4  # re-seed only
-#
-# The scan directory must contain numbered TIF files (e.g., 0001_Page 1.tif).
-# On success, the directory is moved to ocr/done/.
-#
-# Exit codes: 0=success, 10=OCR failed, 20=cleanup failed, 30=upload failed, 40=seed failed
-# ────────────────────────────────────────────────────────────────
+# Explicit repair operations (validated public editions only):
+#   scripts/ocr/process-edition.sh --repair-upload YYYY-MM-DD
+#   scripts/ocr/process-edition.sh --repair-seed YYYY-MM-DD
 
-ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$ROOT_DIR"
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd -P)"
+OCR_ROOT="$ROOT_DIR/ocr"
+INBOX_ROOT="$OCR_ROOT/inbox"
+PUBLIC_ROOT="$ROOT_DIR/public/editions"
+STAGING_PARENT="$PUBLIC_ROOT/.staging"
+ROLLBACK_PARENT="$PUBLIC_ROOT/.rollback"
+LOCK_PARENT="$PUBLIC_ROOT/.locks"
+WORK_PARENT="$OCR_ROOT/.work"
 
-# ── Args ────────────────────────────────────────────────────────
-
+MODE="normal"
 EDITION_PATH=""
-RUN_ID=""
-KEEP_SOURCE=false
-CLEANUP_DATE=""
+DATE=""
 WORKERS=""
-FROM_STAGE=1
+SEED_AFTER_PUBLISH=false
+
+CANDIDATE_ROOT=""
+CANDIDATE_EDITION=""
+WORK_ROOT=""
+LOCK_DIR=""
+ASSET_LOCK_DIR="$LOCK_PARENT/assets.lock"
+ASSET_LOCK_HELD=false
+ROLLBACK_CONTAINER=""
+SOURCE_ABS=""
+INPUT_CLEANUP_ARMED=false
+FAILURE_STAGE="preflight"
+FAILURE_REASON=""
+START_SECONDS=$SECONDS
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/ocr/process-edition.sh <edition-dir> [--workers N] [--seed]
+  scripts/ocr/process-edition.sh --repair-upload YYYY-MM-DD
+  scripts/ocr/process-edition.sh --repair-seed YYYY-MM-DD
+EOF
+}
+
+fail() {
+  local exit_code="$1"
+  local stage="$2"
+  local reason="$3"
+  FAILURE_STAGE="$stage"
+  FAILURE_REASON="$reason"
+  echo "ERROR: $reason" >&2
+  exit "$exit_code"
+}
+
+is_path_below() {
+  local child="$1"
+  local parent="$2"
+  [[ -n "$child" && -n "$parent" && "$child" != "$parent" && "$child" == "$parent"/* ]]
+}
+
+safe_remove_tree() {
+  local target="$1"
+  local required_parent="$2"
+  if [[ -z "$target" || ! -e "$target" ]]; then
+    return 0
+  fi
+  if ! is_path_below "$target" "$required_parent"; then
+    echo "WARNING: refusing cleanup outside $required_parent: $target" >&2
+    return 1
+  fi
+  rm -rf -- "$target"
+}
+
+log_failure_metadata() {
+  local status="$1"
+  local reason="$2"
+  if [[ -z "$DATE" || ! -f "$OCR_ROOT/log_failure.py" ]]; then
+    return 0
+  fi
+  python3 "$OCR_ROOT/log_failure.py" \
+    --edition "$DATE" \
+    --stage "$FAILURE_STAGE" \
+    --status "$status" \
+    --error "$reason" >/dev/null 2>&1 || true
+}
+
+restore_rollback_if_needed() {
+  local final_edition="$PUBLIC_ROOT/$DATE"
+  local saved_edition="${ROLLBACK_CONTAINER:+$ROLLBACK_CONTAINER/edition}"
+  if [[ -z "$ROLLBACK_CONTAINER" || ( ! -e "$saved_edition" && ! -L "$saved_edition" ) ]]; then
+    return 0
+  fi
+  if [[ -e "$final_edition" ]]; then
+    echo "WARNING: rollback retained at $saved_edition because public target exists" >&2
+    return 1
+  fi
+  if mv -- "$saved_edition" "$final_edition"; then
+    safe_remove_tree "$ROLLBACK_CONTAINER" "$ROLLBACK_PARENT" || true
+    ROLLBACK_CONTAINER=""
+    return 0
+  fi
+  echo "WARNING: automatic rollback restoration failed; preserved $saved_edition" >&2
+  return 1
+}
+
+on_exit() {
+  local exit_code=$?
+  trap - EXIT INT TERM HUP
+  set +e
+
+  if [[ $exit_code -ne 0 ]]; then
+    restore_rollback_if_needed || true
+    log_failure_metadata "failed" "${FAILURE_REASON:-process exited with status $exit_code}"
+  fi
+
+  safe_remove_tree "$CANDIDATE_ROOT" "$STAGING_PARENT" || true
+  safe_remove_tree "$WORK_ROOT" "$WORK_PARENT" || true
+
+  if [[ "$INPUT_CLEANUP_ARMED" == "true" ]] && is_path_below "$SOURCE_ABS" "$INBOX_ROOT"; then
+    safe_remove_tree "$SOURCE_ABS" "$INBOX_ROOT" || true
+  fi
+
+  if [[ -n "$LOCK_DIR" && -d "$LOCK_DIR" ]]; then
+    rmdir -- "$LOCK_DIR" 2>/dev/null || true
+  fi
+  if [[ "$ASSET_LOCK_HELD" == "true" && -d "$ASSET_LOCK_DIR" ]]; then
+    rmdir -- "$ASSET_LOCK_DIR" 2>/dev/null || true
+  fi
+  exit "$exit_code"
+}
+
+trap on_exit EXIT
+trap 'FAILURE_STAGE="signal"; FAILURE_REASON="process interrupted"; exit 130' INT TERM HUP
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --run-id)
-      RUN_ID="${2:-}"
-      if [[ -z "$RUN_ID" ]]; then
-        echo "ERROR: --run-id requires a value"
-        exit 1
-      fi
+    --workers)
+      [[ $# -ge 2 ]] || fail 2 "arguments" "--workers requires a positive integer"
+      WORKERS="$2"
       shift 2
       ;;
-    --keep-source)
-      KEEP_SOURCE=true
+    --seed)
+      SEED_AFTER_PUBLISH=true
       shift
       ;;
-    --cleanup-date)
-      CLEANUP_DATE="${2:-}"
-      if [[ -z "$CLEANUP_DATE" ]]; then
-        echo "ERROR: --cleanup-date requires a YYYY-MM-DD value"
-        exit 1
-      fi
+    --repair-upload)
+      [[ $# -ge 2 ]] || fail 2 "arguments" "--repair-upload requires YYYY-MM-DD"
+      [[ "$MODE" == "normal" && -z "$EDITION_PATH" ]] || fail 2 "arguments" "repair modes are mutually exclusive"
+      MODE="repair-upload"
+      DATE="$2"
       shift 2
       ;;
-    --workers)
-      WORKERS="${2:-}"
-      if [[ -z "$WORKERS" ]]; then
-        echo "ERROR: --workers requires a number"
-        exit 1
-      fi
-      shift 2
-      ;;
-    --from-stage)
-      FROM_STAGE="${2:-}"
-      if [[ -z "$FROM_STAGE" ]]; then
-        echo "ERROR: --from-stage requires a stage number (1-4)"
-        exit 1
-      fi
-      if ! [[ "$FROM_STAGE" =~ ^[1-4]$ ]]; then
-        echo "ERROR: --from-stage must be 1, 2, 3, or 4"
-        exit 1
-      fi
+    --repair-seed)
+      [[ $# -ge 2 ]] || fail 2 "arguments" "--repair-seed requires YYYY-MM-DD"
+      [[ "$MODE" == "normal" && -z "$EDITION_PATH" ]] || fail 2 "arguments" "repair modes are mutually exclusive"
+      MODE="repair-seed"
+      DATE="$2"
       shift 2
       ;;
     -*)
-      echo "ERROR: Unknown option: $1"
-      echo "Usage: scripts/ocr/process-edition.sh <path> [--run-id <id>] [--keep-source] [--cleanup-date YYYY-MM-DD] [--workers N] [--from-stage N]"
-      exit 1
+      usage >&2
+      fail 2 "arguments" "unknown option: $1"
       ;;
     *)
-      if [[ -n "$EDITION_PATH" ]]; then
-        echo "ERROR: Multiple edition paths provided: '$EDITION_PATH' and '$1'"
-        exit 1
-      fi
+      [[ "$MODE" == "normal" ]] || fail 2 "arguments" "repair mode does not accept an edition directory"
+      [[ -z "$EDITION_PATH" ]] || fail 2 "arguments" "multiple edition directories supplied"
       EDITION_PATH="$1"
       shift
       ;;
   esac
 done
 
-if [[ -z "$EDITION_PATH" ]]; then
-  echo "Usage: scripts/ocr/process-edition.sh <path> [--run-id <id>] [--keep-source] [--cleanup-date YYYY-MM-DD] [--workers N] [--from-stage N]"
-  exit 1
+if [[ -n "$WORKERS" && ! "$WORKERS" =~ ^[1-9][0-9]*$ ]]; then
+  fail 2 "arguments" "--workers must be a positive integer"
+fi
+if [[ "$MODE" != "normal" && "$SEED_AFTER_PUBLISH" == "true" ]]; then
+  fail 2 "arguments" "--seed is only valid with a normal OCR run"
 fi
 
-# When resuming from stage 2+, the scan directory may already be in ocr/done/
-if [[ "$FROM_STAGE" -eq 1 && ! -d "$EDITION_PATH" ]]; then
-  echo "ERROR: Directory not found: $EDITION_PATH"
-  exit 1
+if [[ "$MODE" == "normal" ]]; then
+  [[ -n "$EDITION_PATH" ]] || { usage >&2; fail 2 "arguments" "edition directory is required"; }
+  [[ -d "$EDITION_PATH" ]] || fail 2 "preflight" "edition directory not found: $EDITION_PATH"
+  SOURCE_ABS="$(cd "$EDITION_PATH" && pwd -P)"
+  INPUT_CLEANUP_ARMED=true
+  source_name="$(basename "$SOURCE_ABS")"
+  if [[ "$source_name" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
+    DATE="${BASH_REMATCH[1]}"
+  else
+    fail 2 "preflight" "edition directory name must contain YYYY-MM-DD"
+  fi
+else
+  [[ "$DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail 2 "arguments" "repair date must be YYYY-MM-DD"
 fi
 
-# Extract YYYY-MM-DD date from directory name
-DATE=$(echo "$(basename "$EDITION_PATH")" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
-if [[ -z "$DATE" ]]; then
-  echo "ERROR: Could not extract date from directory name: $(basename "$EDITION_PATH")"
-  exit 1
-fi
-
-echo "════════════════════════════════════════════════════════════════"
-echo "Processing edition: $DATE"
-echo "Source: $EDITION_PATH"
-if [[ -n "$RUN_ID" ]]; then
-  echo "Run ID: $RUN_ID"
-fi
-if [[ "$FROM_STAGE" -gt 1 ]]; then
-  echo "Resuming from stage $FROM_STAGE (stages 1-$((FROM_STAGE - 1)) skipped)"
-fi
-echo "════════════════════════════════════════════════════════════════"
-
-# ── Environment ─────────────────────────────────────────────────
-
+# Load simple KEY=VALUE entries without evaluating shell code.
 if [[ -f "$ROOT_DIR/.env.local" ]]; then
-  while IFS='=' read -r key value; do
-    # Skip comments and blank lines
-    [[ -z "$key" || "$key" =~ ^# ]] && continue
-    # Strip surrounding quotes if present
-    value="${value%\"}"
-    value="${value#\"}"
-    value="${value%\'}"
-    value="${value#\'}"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key//[[:space:]]/}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    value="${value%\"}"; value="${value#\"}"
+    value="${value%\'}"; value="${value#\'}"
     export "$key=$value"
   done < "$ROOT_DIR/.env.local"
 fi
 
-if [[ -z "${GOOGLE_API_KEY:-}" ]]; then
-  echo "ERROR: GOOGLE_API_KEY not set. Add it to .env.local or export it."
-  exit 1
+export GOOGLE_GENAI_USE_VERTEXAI=true
+export GOOGLE_CLOUD_LOCATION=global
+export OCR_ENVIRONMENT=production
+
+if [[ "$MODE" == "normal" || "$MODE" == "repair-seed" ]]; then
+  [[ -n "${GOOGLE_CLOUD_PROJECT:-}" ]] || fail 2 "preflight" "GOOGLE_CLOUD_PROJECT is required for Vertex AI ADC"
+fi
+if [[ "$MODE" == "normal" ]]; then
+  [[ -n "${DOCUMENT_AI_PROCESSOR_ID:-}" ]] || fail 2 "preflight" "DOCUMENT_AI_PROCESSOR_ID is required for OCR"
+  [[ -n "${DOCUMENT_AI_LOCATION:-}" ]] || fail 2 "preflight" "DOCUMENT_AI_LOCATION is required for OCR"
+  detector_licenses="${OCR_DETECTOR_LICENSES_ACCEPTED:-}"
+  case "$detector_licenses" in
+    1|true|TRUE|True) ;;
+    *) fail 2 "preflight" "OCR_DETECTOR_LICENSES_ACCEPTED=true is required for hosted OCR" ;;
+  esac
+fi
+if [[ "$SEED_AFTER_PUBLISH" == "true" || "$MODE" == "repair-seed" ]]; then
+  [[ -n "${DATABASE_URL:-}" ]] || fail 2 "preflight" "DATABASE_URL is required only for database seeding"
 fi
 
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  echo "ERROR: DATABASE_URL not set. Add it to .env.local or export it."
-  exit 1
-fi
-
-# Activate Python venv
-if [[ -f "$ROOT_DIR/ocr/.venv/bin/activate" ]]; then
-  source "$ROOT_DIR/ocr/.venv/bin/activate"
+if [[ -f "$OCR_ROOT/.venv/bin/activate" ]]; then
+  # shellcheck disable=SC1091
+  source "$OCR_ROOT/.venv/bin/activate"
 else
-  echo "ERROR: Python venv not found at ocr/.venv/"
-  exit 1
+  fail 2 "preflight" "Python environment not found at ocr/.venv"
 fi
 
-# ── Logging & paths ────────────────────────────────────────────
-
-if [[ -n "$RUN_ID" ]]; then
-  LOG_DIR="$ROOT_DIR/ocr/runs/$DATE/runs/$RUN_ID"
-else
-  LOG_DIR="$ROOT_DIR/ocr/runs/$DATE"
-fi
-mkdir -p "$LOG_DIR"
-
-if [[ -z "$CLEANUP_DATE" ]]; then
-  CLEANUP_DATE="$DATE"
+mkdir -p "$PUBLIC_ROOT" "$STAGING_PARENT" "$ROLLBACK_PARENT" "$LOCK_PARENT" "$WORK_PARENT"
+LOCK_DIR="$LOCK_PARENT/$DATE.lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  LOCK_DIR=""
+  # A competing process may be reading this same source; never remove it here.
+  INPUT_CLEANUP_ARMED=false
+  fail 75 "lock" "edition $DATE is already being processed"
 fi
 
-PUBLIC_ROOT="$ROOT_DIR/public/editions"
-EDITION_JSON="$PUBLIC_ROOT/$DATE/edition.json"
-
-# ── Timing & summary infrastructure ───────────────────────────
-
-PIPELINE_START=$(date +%s)
-FAILED_STAGE=""
-
-# Stage timing — defaults so the trap always has valid values
-S1_STATUS="skipped"; S1_ELAPSED=0
-S2_STATUS="skipped"; S2_ELAPSED=0
-S3_STATUS="skipped"; S3_ELAPSED=0
-S4_STATUS="skipped"; S4_ELAPSED=0
-
-on_exit() {
-  local exit_code=$?
-
-  # Guard: skip summary if we exited before key variables were set
-  if [[ -z "${LOG_DIR:-}" || -z "${DATE:-}" ]]; then
-    return
-  fi
-
-  local pipeline_end
-  pipeline_end=$(date +%s)
-  local total=$(( pipeline_end - ${PIPELINE_START:-$pipeline_end} ))
-
-  # Best-effort article/ad counts
-  local art=0 ads=0
-  if [[ -f "${EDITION_JSON:-}" ]]; then
-    art=$(python -c "
-import json
-with open('${EDITION_JSON}') as f:
-    print(len(json.load(f).get('articles',[])))
-" 2>/dev/null) || art=0
-    ads=$(python -c "
-import json
-with open('${EDITION_JSON}') as f:
-    print(len(json.load(f).get('ads',[])))
-" 2>/dev/null) || ads=0
-  fi
-
-  python -c "
-import json
-stages = [
-    {'name':'ocr',     'status':'${S1_STATUS:-skipped}', 'elapsed_seconds':${S1_ELAPSED:-0}},
-    {'name':'cleanup', 'status':'${S2_STATUS:-skipped}', 'elapsed_seconds':${S2_ELAPSED:-0}},
-    {'name':'upload',  'status':'${S3_STATUS:-skipped}', 'elapsed_seconds':${S3_ELAPSED:-0}},
-    {'name':'seed',    'status':'${S4_STATUS:-skipped}', 'elapsed_seconds':${S4_ELAPSED:-0}},
-]
-report = {
-    'date': '${DATE}',
-    'success': ${exit_code} == 0,
-    'failed_stage': '${FAILED_STAGE:-}' or None,
-    'exit_code': ${exit_code},
-    'stages': stages,
-    'total_seconds': ${total},
-    'article_count': ${art},
-    'ad_count': ${ads},
-}
-with open('${LOG_DIR}/pipeline-summary.json', 'w') as f:
-    json.dump(report, f, indent=2)
-" 2>/dev/null || true
-}
-trap on_exit EXIT
-
-# Validate edition.json exists (used when resuming from stage 2+)
-validate_edition_json() {
-  if [[ ! -f "$EDITION_JSON" ]]; then
-    echo "ERROR: --from-stage $FROM_STAGE requires edition.json at $EDITION_JSON"
-    echo "       Run from stage 1 first to generate it."
-    exit 1
-  fi
-  ARTICLE_COUNT=$(python -c "
-import json
-with open('$EDITION_JSON') as f:
-    print(len(json.load(f).get('articles',[])))
-")
-  if [[ "$ARTICLE_COUNT" -lt 1 ]]; then
-    echo "ERROR: edition.json has no articles"
-    exit 1
-  fi
-  echo "  ✓ edition.json validated: $ARTICLE_COUNT articles"
+validate_edition_dir() {
+  local edition_dir="$1"
+  [[ -f "$edition_dir/edition.json" ]] || return 1
+  python "$OCR_ROOT/validate_candidate.py" "$edition_dir/edition.json" --date "$DATE"
 }
 
-# ── Stage 1: OCR (includes ad enrichment) ─────────────────────
+make_candidate_root() {
+  CANDIDATE_ROOT="$(mktemp -d "$STAGING_PARENT/$DATE.XXXXXX")"
+  CANDIDATE_EDITION="$CANDIDATE_ROOT/$DATE"
+}
 
-if [[ "$FROM_STAGE" -le 1 ]]; then
-  echo ""
-  echo "── Stage 1/4: OCR extraction + ad enrichment ────────────────"
-  S1_START=$(date +%s)
-  S1_STATUS="failed"
+promote_candidate() {
+  local final_edition="$PUBLIC_ROOT/$DATE"
+  local saved_edition=""
+  FAILURE_STAGE="promotion"
 
-  OCR_CMD=(python "$ROOT_DIR/ocr/convert_scans.py" "$EDITION_PATH")
-  if [[ -n "$RUN_ID" ]]; then
-    OCR_CMD+=(--run-id "$RUN_ID")
+  validate_edition_dir "$CANDIDATE_EDITION" || return 1
+  ROLLBACK_CONTAINER="$(mktemp -d "$ROLLBACK_PARENT/$DATE.XXXXXX")"
+  saved_edition="$ROLLBACK_CONTAINER/edition"
+
+  if [[ -e "$final_edition" || -L "$final_edition" ]]; then
+    mv -- "$final_edition" "$saved_edition" || return 1
   fi
-  if [[ -n "$WORKERS" ]]; then
-    OCR_CMD+=(--workers "$WORKERS")
-  fi
-
-  set +e
-  "${OCR_CMD[@]}" 2>&1 | tee "$LOG_DIR/ocr.log"
-  OCR_EXIT=${PIPESTATUS[0]}
-  set -e
-
-  S1_ELAPSED=$(( $(date +%s) - S1_START ))
-
-  if [[ $OCR_EXIT -ne 0 ]]; then
-    echo "FAILED: OCR exited with code $OCR_EXIT"
-    FAILED_STAGE="ocr"; exit 10
-  fi
-
-  # Validate OCR output
-  if [[ ! -f "$EDITION_JSON" ]]; then
-    echo "FAILED: edition.json not created at $EDITION_JSON"
-    FAILED_STAGE="ocr"; exit 10
-  fi
-
-  ARTICLE_COUNT=$(python -c "
-import json
-with open('$EDITION_JSON') as f:
-    print(len(json.load(f).get('articles',[])))
-")
-
-  if [[ "$ARTICLE_COUNT" -lt 1 ]]; then
-    echo "FAILED: No articles found in edition.json"
-    FAILED_STAGE="ocr"; exit 10
-  fi
-
-  S1_STATUS="success"
-  echo "  ✓ OCR complete: $ARTICLE_COUNT articles extracted (${S1_ELAPSED}s)"
-else
-  echo ""
-  echo "── Stage 1/4: OCR skipped (--from-stage $FROM_STAGE) ───────────"
-  validate_edition_json
-fi
-
-# ── Stage 2: Image cleanup ─────────────────────────────────────
-
-if [[ "$FROM_STAGE" -le 2 ]]; then
-  echo ""
-  echo "── Stage 2/4: Image cleanup ───────────────────────────────"
-  S2_START=$(date +%s)
-  S2_STATUS="failed"
-
-  set +e
-  node "$ROOT_DIR/scripts/cleanup-images.mjs" \
-    --apply \
-    --date "$CLEANUP_DATE" \
-    --editions-dir "$PUBLIC_ROOT" \
-    --report-path "$LOG_DIR/cleanup-report.json" \
-    2>&1 | tee "$LOG_DIR/cleanup-images.log"
-  CLEANUP_EXIT=${PIPESTATUS[0]}
-  set -e
-
-  S2_ELAPSED=$(( $(date +%s) - S2_START ))
-
-  if [[ $CLEANUP_EXIT -ne 0 ]]; then
-    echo "FAILED: Image cleanup exited with code $CLEANUP_EXIT"
-    FAILED_STAGE="cleanup"; exit 20
-  fi
-
-  S2_STATUS="success"
-  echo "  ✓ Image cleanup applied (${S2_ELAPSED}s)"
-else
-  echo ""
-  echo "── Stage 2/4: Image cleanup skipped (--from-stage $FROM_STAGE) ─"
-fi
-
-# ── Stage 3: Upload images to R2 ──────────────────────────────
-
-if [[ "$FROM_STAGE" -le 3 ]]; then
-  echo ""
-  echo "── Stage 3/4: Upload images to R2 ────────────────────────"
-  if [[ -n "${R2_ACCOUNT_ID:-}" && -n "${R2_BUCKET_NAME:-}" ]]; then
-    S3_START=$(date +%s)
-    S3_STATUS="failed"
-
-    set +e
-    node "$ROOT_DIR/scripts/db/upload-images.mjs" \
-      --date "$DATE" \
-      --editions-dir "$PUBLIC_ROOT" \
-      2>&1 | tee "$LOG_DIR/upload-images.log"
-    UPLOAD_EXIT=${PIPESTATUS[0]}
-    set -e
-
-    S3_ELAPSED=$(( $(date +%s) - S3_START ))
-
-    if [[ $UPLOAD_EXIT -ne 0 ]]; then
-      echo "FAILED: Image upload exited with code $UPLOAD_EXIT"
-      FAILED_STAGE="upload"; exit 30
+  if ! mv -- "$CANDIDATE_EDITION" "$final_edition"; then
+    if [[ -e "$saved_edition" || -L "$saved_edition" ]]; then
+      mv -- "$saved_edition" "$final_edition" || true
     fi
-
-    S3_STATUS="success"
-    echo "  ✓ Images uploaded to R2 (${S3_ELAPSED}s)"
-  else
-    S3_STATUS="skipped"
-    echo "  ⊘ Skipped (R2 credentials not configured)"
+    return 1
   fi
-else
-  echo ""
-  echo "── Stage 3/4: R2 upload skipped (--from-stage $FROM_STAGE) ─────"
-fi
 
-# ── Stage 4: Database seed + embed ─────────────────────────────
-
-echo ""
-echo "── Stage 4/4: Database seed ───────────────────────────────"
-S4_START=$(date +%s)
-S4_STATUS="failed"
-
-set +e
-OCR_MIN_TEXT_LENGTH=0 npm run db:seed -- \
-  --date "$DATE" \
-  --editions-dir "$PUBLIC_ROOT" \
-  --summary-path "$LOG_DIR/seed-summary.json" \
-  2>&1 | tee "$LOG_DIR/seed.log"
-SEED_EXIT=${PIPESTATUS[0]}
-set -e
-
-S4_ELAPSED=$(( $(date +%s) - S4_START ))
-
-if [[ $SEED_EXIT -ne 0 ]]; then
-  echo "FAILED: Database seed exited with code $SEED_EXIT"
-  FAILED_STAGE="seed"; exit 40
-fi
-
-S4_STATUS="success"
-echo "  ✓ Database seeded (${S4_ELAPSED}s)"
-
-# ── Move to processed ──────────────────────────────────────────
-
-PROCESSED_DIR="$ROOT_DIR/ocr/done"
-mkdir -p "$PROCESSED_DIR"
-if [[ "$KEEP_SOURCE" == "false" ]]; then
-  if [[ -d "$EDITION_PATH" ]]; then
-    mv "$EDITION_PATH" "$PROCESSED_DIR/" || echo "Warning: Could not move scan directory"
-  elif [[ "$FROM_STAGE" -gt 1 ]]; then
-    echo "Info: Scan directory not present (already moved on prior run)"
+  if ! validate_edition_dir "$final_edition"; then
+    mkdir -p "$(dirname "$CANDIDATE_EDITION")"
+    mv -- "$final_edition" "$CANDIDATE_EDITION" || true
+    if [[ -e "$saved_edition" || -L "$saved_edition" ]]; then
+      mv -- "$saved_edition" "$final_edition" || true
+    fi
+    return 1
   fi
-elif [[ "$KEEP_SOURCE" == "true" ]]; then
-  echo "Info: --keep-source enabled; leaving scans in place"
+
+  safe_remove_tree "$ROLLBACK_CONTAINER" "$ROLLBACK_PARENT" || return 1
+  ROLLBACK_CONTAINER=""
+  return 0
+}
+
+run_upload() {
+  local editions_root="$1"
+  node "$ROOT_DIR/scripts/db/upload-images.mjs" \
+    --date "$DATE" \
+    --editions-dir "$editions_root"
+}
+
+acquire_asset_lock() {
+  if ! mkdir "$ASSET_LOCK_DIR" 2>/dev/null; then
+    fail 75 "asset-lock" "asset publication or R2 garbage collection is already active"
+  fi
+  ASSET_LOCK_HELD=true
+}
+
+release_asset_lock() {
+  if [[ "$ASSET_LOCK_HELD" == "true" ]]; then
+    rmdir -- "$ASSET_LOCK_DIR" || return 1
+    ASSET_LOCK_HELD=false
+  fi
+}
+
+run_seed() {
+  OCR_MIN_TEXT_LENGTH=0 npm run db:seed -- \
+    --date "$DATE" \
+    --editions-dir "$PUBLIC_ROOT"
+}
+
+if [[ "$MODE" == "repair-seed" ]]; then
+  FAILURE_STAGE="repair-validation"
+  validate_edition_dir "$PUBLIC_ROOT/$DATE" || fail 20 "$FAILURE_STAGE" "public edition failed structural validation"
+  FAILURE_STAGE="seed"
+  run_seed || fail 50 "$FAILURE_STAGE" "database seed failed"
+  echo "Edition $DATE database seed repaired successfully."
+  exit 0
 fi
 
-# ── Summary ────────────────────────────────────────────────────
+if [[ "$MODE" == "repair-upload" ]]; then
+  FAILURE_STAGE="repair-validation"
+  validate_edition_dir "$PUBLIC_ROOT/$DATE" || fail 20 "$FAILURE_STAGE" "public edition failed structural validation"
+  make_candidate_root
+  cp -R -- "$PUBLIC_ROOT/$DATE" "$CANDIDATE_EDITION"
+  acquire_asset_lock
+  FAILURE_STAGE="upload"
+  run_upload "$CANDIDATE_ROOT" || fail 30 "$FAILURE_STAGE" "asset upload repair failed"
+  FAILURE_STAGE="post-upload-validation"
+  validate_edition_dir "$CANDIDATE_EDITION" || fail 20 "$FAILURE_STAGE" "repaired candidate failed structural validation"
+  promote_candidate || fail 40 "promotion" "atomic public replacement failed"
+  release_asset_lock || fail 75 "asset-lock" "could not release asset publication lock"
+  echo "Edition $DATE asset upload repaired and published successfully."
+  exit 0
+fi
 
-TOTAL_ELAPSED=$(( $(date +%s) - PIPELINE_START ))
-AD_COUNT=$(python -c "
+make_candidate_root
+WORK_ROOT="$(mktemp -d "$WORK_PARENT/$DATE.XXXXXX")"
+
+echo "Processing edition $DATE"
+echo "Source: $SOURCE_ABS"
+
+OCR_COMMAND=(
+  python "$OCR_ROOT/convert_scans.py"
+  "$SOURCE_ABS"
+  --output-root "$CANDIDATE_ROOT"
+  --work-root "$WORK_ROOT"
+)
+if [[ -n "$WORKERS" ]]; then
+  OCR_COMMAND+=(--workers "$WORKERS")
+fi
+
+FAILURE_STAGE="ocr"
+if ! "${OCR_COMMAND[@]}"; then
+  fail 10 "$FAILURE_STAGE" "OCR extraction failed"
+fi
+
+FAILURE_STAGE="candidate-validation"
+validate_edition_dir "$CANDIDATE_EDITION" || fail 20 "$FAILURE_STAGE" "OCR candidate failed structural validation"
+
+acquire_asset_lock
+FAILURE_STAGE="upload"
+run_upload "$CANDIDATE_ROOT" || fail 30 "$FAILURE_STAGE" "asset optimization or upload failed"
+
+FAILURE_STAGE="post-upload-validation"
+validate_edition_dir "$CANDIDATE_EDITION" || fail 20 "$FAILURE_STAGE" "uploaded candidate failed structural validation"
+
+promote_candidate || fail 40 "promotion" "atomic public replacement failed"
+release_asset_lock || fail 75 "asset-lock" "could not release asset publication lock"
+
+if [[ "$SEED_AFTER_PUBLISH" == "true" ]]; then
+  FAILURE_STAGE="seed"
+  run_seed || fail 50 "$FAILURE_STAGE" "database seed failed after publication"
+fi
+
+read -r ARTICLE_COUNT AD_COUNT < <(
+  python - "$PUBLIC_ROOT/$DATE/edition.json" <<'PY'
 import json
-with open('$EDITION_JSON') as f:
-    print(len(json.load(f).get('ads',[])))
-")
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    edition = json.load(handle)
+print(len(edition.get("articles", [])), len(edition.get("ads", [])))
+PY
+)
 
-echo ""
-echo "════════════════════════════════════════════════════════════════"
-echo "✓ Edition $DATE processed successfully (${TOTAL_ELAPSED}s total)"
-echo "  Articles: $ARTICLE_COUNT  |  Ads: $AD_COUNT"
-echo "  Stages:  OCR ${S1_ELAPSED}s  |  Cleanup ${S2_ELAPSED}s  |  Upload ${S3_ELAPSED}s  |  Seed ${S4_ELAPSED}s"
-if [[ "$KEEP_SOURCE" == "false" && -d "$PROCESSED_DIR/$(basename "$EDITION_PATH")" ]]; then
-  echo "  Scan moved to: ocr/done/"
-elif [[ "$KEEP_SOURCE" == "true" ]]; then
-  echo "  Scan preserved in source path"
-fi
-echo "  Logs: $LOG_DIR/"
-echo "  Summary: $LOG_DIR/pipeline-summary.json"
-echo "════════════════════════════════════════════════════════════════"
+ELAPSED=$((SECONDS - START_SECONDS))
+echo "Edition $DATE published successfully in ${ELAPSED}s."
+echo "Articles: $ARTICLE_COUNT | Ads: $AD_COUNT | Seeded: $SEED_AFTER_PUBLISH"

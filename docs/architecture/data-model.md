@@ -329,7 +329,6 @@ TypeScript mirror: `src/types/index.ts:147-155` (`OcrEdition`).
 | `enriched_ads` | `EnrichedAd[]` | no | added by Phase 4; adapter prefers this over `ads` |
 | `categories` | `string[]` | no | parallel to `articles[]`; optional classification override; adapter checks it before falling back to `article.category` then heuristics |
 | `other_content` | `{title, body}[]` | no | triage rejects — not written to DB |
-| `content_triaged` | `boolean` | no | added by Phase 5 |
 
 ### `MergedArticle` per item
 
@@ -338,14 +337,14 @@ TypeScript mirror: `src/types/index.ts:147-155` (`OcrEdition`).
 | `headline` | `string` | yes (default `""`) | primary title only |
 | `author` | `string` | no (default `""`) | may include section tag |
 | `writer_position` | `string` | no (default `""`) | role line if present |
-| `category` | `Literal[...]` | yes (default `"Campus News"`) | one of five fixed values |
+| `category` | `Literal[...]` | yes (default `"News"`) | one of five fixed values |
 | `body` | `string` | yes (default `""`) | raw paragraph text |
 | `images` | `ArticleImage[]` | no | each has `caption`, `position` |
 | `image_files` | `string[]` | no | filenames; adapter filters to valid extensions |
 | `source_pages` | `string[]` | no | used to compute `page` and `page_count` |
 | `continues_on`, `continued_from` | `string` | no | normalized; `"?"` means uncertain |
 
-Invariant: `images.length === image_files.length` with matching order. Mismatches are flagged in `issue_report.json`.
+Invariant: `images.length === image_files.length` with matching order. A mismatch fails candidate validation before publication.
 
 ### `EnrichedAd`
 

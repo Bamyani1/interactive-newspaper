@@ -1,193 +1,123 @@
-"""Deduplication helpers for OCR page content."""
+"""Conservative, evidence-preserving OCR deduplication."""
 
 from __future__ import annotations
 
 from ..contracts.content_models import Ad, Article, OtherContent, PageContent
 from ..contracts.diagnostics_models import DeduplicationInfo, PageDiagnostics, StageTimer
-from ..shared.text import normalize_whitespace, split_sentences
-
-
-def _sentence_overlap(sents_a: list[str], sents_b: list[str]) -> float:
-    """Return the fraction of shared sentences (relative to smaller set)."""
-    if not sents_a or not sents_b:
-        return 0.0
-    set_a = set(normalize_whitespace(s) for s in sents_a)
-    set_b = set(normalize_whitespace(s) for s in sents_b)
-    overlap = len(set_a & set_b)
-    return overlap / min(len(set_a), len(set_b))
+from ..shared.text import normalize_whitespace
 
 
 def _dedup_article_body(body: str) -> str:
-    """Remove consecutive duplicate sentences and duplicate paragraphs."""
-    paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
+    """Remove only consecutive exactly-equal normalized paragraphs.
 
-    cleaned_paragraphs = []
-    for para in paragraphs:
-        sentences = split_sentences(para)
-        deduped = []
-        for sent in sentences:
-            if not deduped or normalize_whitespace(sent) != normalize_whitespace(deduped[-1]):
-                deduped.append(sent)
-        cleaned_paragraphs.append(" ".join(deduped))
-
-    seen = set()
-    unique_paragraphs = []
-    for para in cleaned_paragraphs:
-        key = normalize_whitespace(para)
-        if key not in seen:
-            seen.add(key)
-            unique_paragraphs.append(para)
-
-    return "\n\n".join(unique_paragraphs)
+    Repeated sentences and non-consecutive refrains can be legitimate newspaper
+    text, so they are deliberately preserved.
+    """
+    paragraphs = [part.strip() for part in (body or "").split("\n\n") if part.strip()]
+    kept: list[str] = []
+    previous = ""
+    for paragraph in paragraphs:
+        key = normalize_whitespace(paragraph)
+        if not kept or key != previous:
+            kept.append(paragraph)
+        previous = key
+    return "\n\n".join(kept)
 
 
 def deduplicate_articles(
     page_content: PageContent,
     diag: PageDiagnostics | None = None,
 ) -> PageContent:
-    """Remove duplicate article text and overlapping duplicate articles."""
+    """Clean bodies and remove only exact duplicate headline+body records."""
     timer = StageTimer().start()
-    articles_before = len(page_content.articles)
-
-    articles = []
+    before = len(page_content.articles)
+    seen: dict[tuple[str, str], Article] = {}
+    articles: list[Article] = []
     for article in page_content.articles:
         cleaned_body = _dedup_article_body(article.body)
-        articles.append(
-            Article(
-                headline=article.headline,
-                author=article.author,
-                writer_position=article.writer_position,
-                category=article.category,
-                continues_on=article.continues_on,
-                continued_from=article.continued_from,
-                body=cleaned_body,
-                images=article.images,
-                image_files=article.image_files,
-            )
+        key = (
+            normalize_whitespace(article.headline),
+            normalize_whitespace(cleaned_body),
         )
-
-    merged = []
-    used = set()
-    for i, art_a in enumerate(articles):
-        if i in used:
+        retained = seen.get(key)
+        if retained is not None:
+            existing_captions = {
+                (image.caption, image.position) for image in retained.images
+            }
+            for image in article.images:
+                image_key = (image.caption, image.position)
+                if image_key not in existing_captions:
+                    retained.images.append(image)
+                    existing_captions.add(image_key)
+            for index, image_file in enumerate(article.image_files):
+                if image_file in retained.image_files:
+                    continue
+                retained.image_files.append(image_file)
+                if index < len(article.images):
+                    retained.images.append(article.images[index])
+            retained._category_fallback_used = (
+                retained._category_fallback_used
+                or article._category_fallback_used
+            )
             continue
-        best = art_a
-        sents_best = split_sentences(best.body)
-        for j in range(i + 1, len(articles)):
-            if j in used:
-                continue
-            sents_j = split_sentences(articles[j].body)
-            if _sentence_overlap(sents_best, sents_j) > 0.6:
-                used.add(j)
-                if not best.headline and articles[j].headline:
-                    best = articles[j]
-                    sents_best = sents_j
-                elif len(articles[j].body) > len(best.body):
-                    best = Article(
-                        headline=best.headline or articles[j].headline,
-                        author=best.author or articles[j].author,
-                        writer_position=best.writer_position or articles[j].writer_position,
-                        category=best.category,
-                        continues_on=best.continues_on or articles[j].continues_on,
-                        continued_from=best.continued_from or articles[j].continued_from,
-                        body=articles[j].body,
-                        images=best.images + articles[j].images,
-                        image_files=best.image_files + articles[j].image_files,
-                    )
-                    sents_best = split_sentences(best.body)
-        merged.append(best)
+        cleaned = article.model_copy(update={"body": cleaned_body})
+        seen[key] = cleaned
+        articles.append(cleaned)
 
     if diag is not None:
         diag.dedup_info = DeduplicationInfo(
-            articles_before=articles_before,
-            articles_after=len(merged),
-            overlapping_pairs_merged=len(used),
+            articles_before=before,
+            articles_after=len(articles),
+            overlapping_pairs_merged=before - len(articles),
         )
         diag.timings["dedup"] = timer.stop()
 
-    return PageContent(
-        articles=merged,
-        other_content=page_content.other_content,
-        ads=page_content.ads,
-        page_number=page_content.page_number,
-        publication_info=page_content.publication_info,
-    )
+    return page_content.model_copy(update={"articles": articles})
 
 
 def _deduplicate_ads(ads: list[Ad]) -> list[Ad]:
-    """Remove duplicate ads by comparing business_name + body overlap."""
-    if not ads:
-        return ads
-    merged = []
-    used = set()
-    for i, ad_a in enumerate(ads):
-        if i in used:
+    seen: dict[tuple[str, str], Ad] = {}
+    result: list[Ad] = []
+    for ad in ads:
+        key = (normalize_whitespace(ad.business_name), normalize_whitespace(ad.body))
+        retained = seen.get(key)
+        if retained is None:
+            seen[key] = ad
+            result.append(ad)
             continue
-        best = ad_a
-        name_a = normalize_whitespace(ad_a.business_name).lower()
-        sents_best = split_sentences(best.body)
-        for j in range(i + 1, len(ads)):
-            if j in used:
-                continue
-            name_b = normalize_whitespace(ads[j].business_name).lower()
-            if name_a != name_b:
-                from difflib import SequenceMatcher
-
-                if SequenceMatcher(None, name_a, name_b).ratio() < 0.8:
-                    continue
-            sents_j = split_sentences(ads[j].body)
-            if _sentence_overlap(sents_best, sents_j) > 0.6:
-                used.add(j)
-                combined_images = list(best.image_files) + list(ads[j].image_files)
-                if len(ads[j].body) > len(best.body):
-                    best = Ad(
-                        business_name=best.business_name,
-                        body=ads[j].body,
-                        image_files=combined_images,
-                    )
-                else:
-                    best = Ad(
-                        business_name=best.business_name,
-                        body=best.body,
-                        image_files=combined_images,
-                    )
-                sents_best = split_sentences(best.body)
-        merged.append(best)
-    return merged
+        retained._review_unresolved = retained._review_unresolved or ad._review_unresolved
+        retained._visual_kind_conflict = (
+            retained._visual_kind_conflict or ad._visual_kind_conflict
+        )
+        for page in ad._source_pages_internal:
+            if page not in retained._source_pages_internal:
+                retained._source_pages_internal.append(page)
+    return result
 
 
 def _deduplicate_other_content(others: list[OtherContent]) -> list[OtherContent]:
-    """Remove duplicate other_content by comparing title + body overlap."""
-    if not others:
-        return others
-    merged = []
-    used = set()
-    for i, oc_a in enumerate(others):
-        if i in used:
+    seen: dict[tuple[str, str], OtherContent] = {}
+    result: list[OtherContent] = []
+    for item in others:
+        key = (normalize_whitespace(item.title), normalize_whitespace(item.body))
+        retained = seen.get(key)
+        if retained is None:
+            seen[key] = item
+            result.append(item)
             continue
-        best = oc_a
-        title_a = normalize_whitespace(oc_a.title).lower()
-        sents_best = split_sentences(best.body)
-        for j in range(i + 1, len(others)):
-            if j in used:
-                continue
-            title_b = normalize_whitespace(others[j].title).lower()
-            if title_a != title_b:
-                continue
-            sents_j = split_sentences(others[j].body)
-            if _sentence_overlap(sents_best, sents_j) > 0.6:
-                used.add(j)
-                if len(others[j].body) > len(best.body):
-                    best = OtherContent(title=best.title, body=others[j].body)
-                sents_best = split_sentences(best.body)
-        merged.append(best)
-    return merged
+        retained._review_unresolved = retained._review_unresolved or item._review_unresolved
+        retained._visual_kind_conflict = (
+            retained._visual_kind_conflict or item._visual_kind_conflict
+        )
+        for page in item._source_pages_internal:
+            if page not in retained._source_pages_internal:
+                retained._source_pages_internal.append(page)
+    return result
 
 
 __all__ = [
     "_dedup_article_body",
     "_deduplicate_ads",
     "_deduplicate_other_content",
-    "_sentence_overlap",
     "deduplicate_articles",
 ]

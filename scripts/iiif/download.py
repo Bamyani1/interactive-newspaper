@@ -10,11 +10,13 @@ Usage:
     python scripts/iiif/download.py --batch manifests/new_manifests.txt --output-root ocr/inbox
 """
 
+import json
 import os
 import re
 import sys
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import requests
 
@@ -182,19 +184,40 @@ def build_download_tasks(manifest, output_dir):
     canvases = extract_canvases(manifest)
     for index, canvas in enumerate(canvases, start=1):
         image_service_url = extract_image_service_url(canvas)
-        if not image_service_url:
-            continue
         canvas_label = extract_canvas_label(canvas, str(index))
         filename_base = build_filename_base(index, canvas_label)
-        tasks.append((image_service_url, output_dir, filename_base))
+        tasks.append(
+            {
+                "index": index,
+                "canvas_id": canvas.get("@id") or canvas.get("id") or "",
+                "label": canvas_label,
+                "width": canvas.get("width"),
+                "height": canvas.get("height"),
+                "image_service_url": image_service_url or "",
+                "output_dir": output_dir,
+                "filename_base": filename_base,
+            }
+        )
     return tasks
 
 
 def download_image(task):
-    image_base_url, output_dir, filename_base = task
+    image_base_url = task["image_service_url"]
+    output_dir = task["output_dir"]
+    filename_base = task["filename_base"]
+
+    result = {**task, "successful": False, "filename": "", "error": ""}
+
+    if not image_base_url:
+        result["error"] = "missing_image_service"
+        return result
 
     if image_exists(output_dir, filename_base):
-        return True
+        for ext in IMAGE_EXTENSIONS:
+            candidate = os.path.join(output_dir, f"{filename_base}{ext}")
+            if os.path.exists(candidate):
+                result.update(successful=True, filename=os.path.basename(candidate))
+                return result
 
     for suffix, ext in IMAGE_FORMATS:
         url = f"{image_base_url}/{suffix}"
@@ -208,14 +231,71 @@ def download_image(task):
                 continue
 
             output_path = os.path.join(output_dir, f"{filename_base}{ext}")
-            with open(output_path, "wb") as handle:
+            partial_path = output_path + ".part"
+            with open(partial_path, "wb") as handle:
                 for chunk in response.iter_content(chunk_size=8192):
-                    handle.write(chunk)
-            return True
-        except Exception:
+                    if chunk:
+                        handle.write(chunk)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+            # Reject HTML/error bodies with an image content-type and reject
+            # truncated files before the atomic rename.
+            from PIL import Image
+
+            with Image.open(partial_path) as image:
+                image.verify()
+            os.replace(partial_path, output_path)
+            result.update(successful=True, filename=os.path.basename(output_path))
+            return result
+        except Exception as exc:
+            partial_path = os.path.join(output_dir, f"{filename_base}{ext}.part")
+            if os.path.exists(partial_path):
+                os.unlink(partial_path)
+            result["error"] = type(exc).__name__
             continue
 
-    return False
+    if not result["error"]:
+        result["error"] = "no_supported_derivative"
+    return result
+
+
+def _write_source_metadata(output_dir, manifest_url, manifest, results):
+    """Persist the manifest denominator and per-canvas acquisition outcome."""
+    payload = {
+        "schema_version": 1,
+        "manifest_url": manifest_url,
+        "manifest_id": manifest.get("@id") or manifest.get("id") or manifest_url,
+        "label": extract_manifest_label(manifest),
+        "date": extract_manifest_date(manifest),
+        "canvas_count": len(results),
+        "canvases": [
+            {
+                "index": item["index"],
+                "id": item["canvas_id"],
+                "label": item["label"],
+                "width": item["width"],
+                "height": item["height"],
+                "image_service_url": item["image_service_url"],
+                "filename": item["filename"],
+                "downloaded": item["successful"],
+                "error": item["error"],
+            }
+            for item in results
+        ],
+    }
+    target = Path(output_dir) / ".iiif-source.json"
+    partial = target.with_suffix(target.suffix + ".part")
+    partial.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    os.replace(partial, target)
+
+    # The pipeline reads the original IIIF canvas list as the authoritative
+    # denominator.  This input-side copy is run-owned and is removed with the
+    # downloaded edition after successful/fatal processing.
+    manifest_target = Path(output_dir) / "source-manifest.json"
+    manifest_partial = manifest_target.with_suffix(manifest_target.suffix + ".part")
+    manifest_partial.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    os.replace(manifest_partial, manifest_target)
 
 
 def download_manifest(
@@ -261,15 +341,22 @@ def download_manifest(
 
     tasks = build_download_tasks(manifest, output_dir)
     total_images = len(tasks)
-    print(f"Found {total_images} pages/images.")
+    print(f"Found {total_images} manifest canvases.")
 
-    if total_images and all(image_exists(output_dir, filename_base) for _, _, filename_base in tasks):
+    if total_images and all(
+        (not task["image_service_url"])
+        or image_exists(output_dir, task["filename_base"])
+        for task in tasks
+    ):
         print("All images already present. Skipping download.")
+        results = [download_image(task) for task in tasks]
+        _write_source_metadata(output_dir, manifest_url, manifest, results)
+        successful = sum(bool(item["successful"]) for item in results)
         return {
             "manifest_url": manifest_url,
             "manifest": manifest,
-            "successful": total_images,
-            "failed": 0,
+            "successful": successful,
+            "failed": total_images - successful,
             "output_dir": output_dir,
             "skipped_complete": True,
             "total_images": total_images,
@@ -287,11 +374,16 @@ def download_manifest(
         if show_progress and tqdm:
             results = tqdm(results, total=total_images, unit="img")
 
+        collected = []
         for result in results:
-            if result:
+            collected.append(result)
+            if result["successful"]:
                 successful += 1
             else:
                 failed += 1
+
+    collected.sort(key=lambda item: item["index"])
+    _write_source_metadata(output_dir, manifest_url, manifest, collected)
 
     return {
         "manifest_url": manifest_url,

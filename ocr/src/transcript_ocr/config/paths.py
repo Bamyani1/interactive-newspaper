@@ -11,6 +11,5 @@ from pathlib import Path
 OCR_ROOT = Path(__file__).resolve().parents[3]  # ocr/
 REPO_ROOT = OCR_ROOT.parent  # project root
 PUBLIC_EDITIONS_DIR = REPO_ROOT / "public" / "editions"
-OCR_RUNS_DIR = OCR_ROOT / "runs"
 INBOX_DIR = OCR_ROOT / "inbox"
 MODELS_DIR = OCR_ROOT / "models"

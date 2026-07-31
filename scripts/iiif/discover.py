@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Discover available editions per decade from the CONTENTdm collection.
 
-Scans public/editions/ (processed), ocr/inbox/ (pending), and ocr/done/
-(completed) to find already-known editions, then queries the ContentDM API
+Scans public/editions/ (processed) and ocr/inbox/ (pending) to find
+already-known editions, then queries the ContentDM API
 for new ones. Outputs selected manifest URLs to manifests/new_manifests.txt.
 
 Usage:
@@ -41,15 +41,6 @@ if os.path.exists(inbox_dir):
         m = DATE_RE.search(name)
         if m and os.path.isdir(os.path.join(inbox_dir, name)):
             EXISTING_DATES.add(m.group(1))
-
-# Completed editions in ocr/done/
-done_dir = os.path.join(ROOT_DIR, "ocr", "done")
-if os.path.exists(done_dir):
-    for name in os.listdir(done_dir):
-        m = DATE_RE.search(name)
-        if m and os.path.isdir(os.path.join(done_dir, name)):
-            EXISTING_DATES.add(m.group(1))
-
 
 def fetch_all_items_for_decade(decade_start):
     """Fetch all items from the collection for a specific decade."""
@@ -103,7 +94,7 @@ def filter_decade_records(records, decade_start):
 
 def main():
     print(f"Already known: {len(EXISTING_DATES)} editions")
-    print(f"  (from public/editions/, ocr/inbox/, ocr/done/)")
+    print("  (from public/editions/ and ocr/inbox/)")
     print()
 
     all_new_manifests = []
@@ -165,7 +156,7 @@ def main():
     print(f"\n{'=' * 60}")
     print(f"TOTAL: {len(all_new_manifests)} new manifest URLs -> {output_file}")
     print(f"{'=' * 60}")
-    print(f"\nTo download, run:")
+    print("\nTo download, run:")
     print(f"  python scripts/iiif/download.py --batch {output_file}")
 
 
