@@ -105,13 +105,27 @@ export async function addConversationTurn(
                   ANSWER_TRUNCATE_CHARS - TRUNCATION_MARKER.length,
               ) + TRUNCATION_MARKER
             : answer;
+    const cutoffIso = new Date(Date.now() - TTL_MS).toISOString();
     try {
-        await sql`
-            INSERT INTO ask_session_turns
-              (session_id, question, answer, cited_article_ids)
-            VALUES
-              (${sessionId}, ${question}, ${stored}, ${citedArticleIds})
-        `;
+        await sql.transaction([
+            sql`
+                INSERT INTO ask_session_turns
+                  (session_id, question, answer, cited_article_ids)
+                VALUES
+                  (${sessionId}, ${question}, ${stored}, ${citedArticleIds})
+            `,
+            sql`DELETE FROM ask_session_turns WHERE created_at < ${cutoffIso}`,
+            sql`
+                DELETE FROM ask_session_turns
+                WHERE session_id = ${sessionId}
+                  AND id NOT IN (
+                    SELECT id FROM ask_session_turns
+                    WHERE session_id = ${sessionId}
+                    ORDER BY created_at DESC
+                    LIMIT ${MAX_TURNS}
+                  )
+            `,
+        ]);
     } catch (err) {
         console.warn(
             JSON.stringify({

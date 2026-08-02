@@ -12,18 +12,26 @@
  * caller. That way a transient DB outage doesn't escalate into a
  * user-facing RAG failure.
  *
- * Token prices are approximate — gemini-3-flash-preview has no final
- * public price yet. Tune PRICE_PER_MTOKEN as Google publishes rates.
+ * Prices are standard global online-request rates. Reasoning tokens are
+ * billed as output and tool-use prompt tokens as input.
  */
 
 import { neon } from "@neondatabase/serverless";
-import type { GenerateContentResponseUsageMetadata } from "@google/genai";
+import type {
+    EmbedContentResponse,
+    GenerateContentResponseUsageMetadata,
+} from "@google/genai";
+import {
+    RAG_EMBEDDING_MODEL,
+    RAG_GENERATION_MODEL,
+} from "@/src/lib/rag-model-config";
 
-// USD per 1,000,000 tokens. Conservative estimates.
+// USD per 1,000,000 tokens for standard online requests at global.
 const PRICE_PER_MTOKEN: Record<string, { input: number; output: number }> = {
-    "gemini-3-flash-preview": { input: 0.1, output: 0.4 },
-    "gemini-embedding-2-preview": { input: 0.025, output: 0 },
+    [RAG_GENERATION_MODEL]: { input: 0.3, output: 2.5 },
+    [RAG_EMBEDDING_MODEL]: { input: 0.2, output: 0 },
 };
+const GEMINI_EMBEDDING_2_IMAGE_USD = 0.00012;
 
 let DAILY_BUDGET_USD = 0.5;
 
@@ -61,11 +69,42 @@ export function computeCostUsd(
     if (!usage) return 0;
     const price = PRICE_PER_MTOKEN[model];
     if (!price) return 0;
-    const inputTokens = usage.promptTokenCount ?? 0;
-    const outputTokens = usage.candidatesTokenCount ?? 0;
+    const inputTokens =
+        (usage.promptTokenCount ?? 0) + (usage.toolUsePromptTokenCount ?? 0);
+    const outputTokens =
+        (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
     return (
         (inputTokens * price.input + outputTokens * price.output) / 1_000_000
     );
+}
+
+export function embeddingTokenCount(response: EmbedContentResponse): number {
+    const exact = response.embeddings?.reduce(
+        (sum, embedding) => sum + (embedding.statistics?.tokenCount ?? 0),
+        0,
+    );
+    if (exact && exact > 0) return exact;
+
+    // Vertex exposes billable characters even when per-item token statistics
+    // are absent. The fallback is explicitly an estimate and is only used for
+    // the local spend guard/telemetry, never billing reconciliation.
+    const billableChars = response.metadata?.billableCharacterCount ?? 0;
+    return Math.ceil(billableChars / 4);
+}
+
+export function computeEmbeddingCostUsd(
+    model: string,
+    response: EmbedContentResponse,
+    options: { imageCount?: number } = {},
+): number {
+    const price = PRICE_PER_MTOKEN[model];
+    if (!price) return 0;
+    const textCost = (embeddingTokenCount(response) * price.input) / 1_000_000;
+    const imageCost =
+        model === RAG_EMBEDDING_MODEL
+            ? (options.imageCount ?? 0) * GEMINI_EMBEDDING_2_IMAGE_USD
+            : 0;
+    return textCost + imageCost;
 }
 
 /**
@@ -146,7 +185,56 @@ export async function recordUsage(
             requestId: context.requestId,
             model,
             promptTokens: usage?.promptTokenCount ?? 0,
+            toolUsePromptTokens: usage?.toolUsePromptTokenCount ?? 0,
             candidatesTokens: usage?.candidatesTokenCount ?? 0,
+            thoughtsTokens: usage?.thoughtsTokenCount ?? 0,
+            costUsd: cost,
+        }),
+    );
+}
+
+export async function recordEmbeddingUsage(
+    model: string,
+    response: EmbedContentResponse,
+    context: { requestId?: string; op: string; imageCount?: number },
+): Promise<void> {
+    const tokens = embeddingTokenCount(response);
+    const cost = computeEmbeddingCostUsd(model, response, {
+        imageCount: context.imageCount,
+    });
+    if (cost === 0) return;
+    const sql = getSql();
+    if (sql) {
+        const day = today();
+        try {
+            await sql`
+                INSERT INTO ai_spend_counter (day, spent_usd)
+                VALUES (${day}, ${cost})
+                ON CONFLICT (day) DO UPDATE
+                  SET spent_usd = ai_spend_counter.spent_usd + ${cost}
+            `;
+        } catch (err) {
+            console.warn(
+                JSON.stringify({
+                    level: "warn",
+                    module: "cost-tracker",
+                    op: "recordEmbeddingUsage",
+                    msg: "embedding usage write failed",
+                    err: err instanceof Error ? err.message : String(err),
+                }),
+            );
+        }
+    }
+
+    console.warn(
+        JSON.stringify({
+            level: "info",
+            module: "cost-tracker",
+            op: context.op,
+            requestId: context.requestId,
+            model,
+            inputTokens: tokens,
+            imageCount: context.imageCount ?? 0,
             costUsd: cost,
         }),
     );

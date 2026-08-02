@@ -1,312 +1,245 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { executeTool } from "@/src/lib/agent-tools";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/src/lib/embeddings", () => ({
-    embedQuery: vi.fn(),
-}));
+const { fetchArticleForRagMock, queryEditionsMock, searchAndRankArchiveMock } =
+  vi.hoisted(() => ({
+    fetchArticleForRagMock: vi.fn(),
+    queryEditionsMock: vi.fn(),
+    searchAndRankArchiveMock: vi.fn(),
+  }));
 
 vi.mock("@/src/lib/db", () => ({
-    hybridSearch: vi.fn(),
-    queryEditions: vi.fn(),
+  fetchArticleForRag: fetchArticleForRagMock,
+  queryEditions: queryEditionsMock,
+}));
+vi.mock("@/src/lib/retrieval", () => ({
+  searchAndRankArchive: searchAndRankArchiveMock,
 }));
 
-const mockSqlResult = vi.fn();
-const mockSqlTagFn = vi.fn((..._args: unknown[]) => mockSqlResult());
+import { executeTool } from "@/src/lib/agent-tools";
 
-vi.mock("@neondatabase/serverless", () => ({
-    neon: vi.fn(() => mockSqlTagFn),
-}));
-
-import { embedQuery } from "@/src/lib/embeddings";
-import { hybridSearch, queryEditions } from "@/src/lib/db";
+const article = {
+  id: "1965-03-15-4",
+  headline: "Test Headline",
+  editionDate: "1965-03-15",
+  category: "News",
+  summary: "Test summary",
+  bodyPlain: "Full article body",
+  matchedPassages: ["The exact relevant paragraph."],
+  imageUrls: [],
+  imageCaptions: [],
+  distance: 0.2,
+  source: "both" as const,
+  byline: null,
+  relevanceScore: 8,
+};
 
 describe("agent-tools", () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        process.env.DATABASE_URL = "postgres://test";
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchAndRankArchiveMock.mockResolvedValue({
+      articles: [article],
+      candidates: 12,
+      method: "hybrid",
+      mode: "text",
+      retrievalTimeMs: 25,
     });
+  });
 
-    describe("executeTool dispatch", () => {
-        it("returns error for unknown tool name", async () => {
-            const result = await executeTool("nonexistent_tool", {});
-            expect(result).toEqual({ error: "Unknown tool: nonexistent_tool" });
-        });
-
-        it("catches exceptions and returns error object", async () => {
-            (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-                new Error("Network failure"),
-            );
-            const result = await executeTool("search_archive", { query: "test" });
-            expect(result).toEqual({ error: "Network failure" });
-        });
+  it("rejects unknown tools", async () => {
+    await expect(executeTool("unknown", {})).resolves.toEqual({
+      error: "Unknown tool: unknown",
     });
+  });
 
-    describe("search_archive", () => {
-        const mockEmbedding = [0.1, 0.2, 0.3];
-        const mockArticle = {
-            id: "1965-03-15-4",
-            headline: "Test Headline",
-            editionDate: "1965-03-15",
-            category: "News",
-            summary: "Test summary",
-            bodyPlain: "Full article body text here for testing excerpt truncation",
-            imageUrls: [],
-            imageCaptions: [],
-            distance: 0.5,
-            source: "both" as const,
-            byline: null,
-        };
+  it("runs the canonical search pipeline with validated filters", async () => {
+    const controller = new AbortController();
+    const result = await executeTool(
+      "search_archive",
+      {
+        query: "football 1960s",
+        startDate: "1960-01-01",
+        endDate: "1969-12-31",
+        category: "Sports",
+        limit: 5,
+      },
+      { signal: controller.signal, requestId: "req-1" },
+    );
 
-        beforeEach(() => {
-            (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(mockEmbedding);
-            (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
-        });
-
-        it("calls embedQuery and hybridSearch with correct args", async () => {
-            await executeTool("search_archive", {
-                query: "football 1960s",
-                startDate: "1960-01-01",
-                endDate: "1969-12-31",
-                category: "Sports",
-                limit: 5,
-            });
-
-            expect(embedQuery).toHaveBeenCalledWith("football 1960s", { signal: undefined });
-            expect(hybridSearch).toHaveBeenCalledWith(
-                "football 1960s",
-                mockEmbedding,
-                expect.objectContaining({
-                    limit: 5,
-                    startDate: "1960-01-01",
-                    endDate: "1969-12-31",
-                    category: "Sports",
-                }),
-            );
-        });
-
-        it("clamps limit to range [1, 20]", async () => {
-            await executeTool("search_archive", { query: "test", limit: 0 });
-            expect(hybridSearch).toHaveBeenCalledWith(
-                "test",
-                mockEmbedding,
-                expect.objectContaining({ limit: 1 }),
-            );
-
-            vi.clearAllMocks();
-            (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(mockEmbedding);
-            (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
-
-            await executeTool("search_archive", { query: "test", limit: 50 });
-            expect(hybridSearch).toHaveBeenCalledWith(
-                "test",
-                mockEmbedding,
-                expect.objectContaining({ limit: 20 }),
-            );
-        });
-
-        it("defaults limit to 10", async () => {
-            await executeTool("search_archive", { query: "test" });
-            expect(hybridSearch).toHaveBeenCalledWith(
-                "test",
-                mockEmbedding,
-                expect.objectContaining({ limit: 10 }),
-            );
-        });
-
-        it("returns correct response shape with excerpt", async () => {
-            const result = await executeTool("search_archive", { query: "test" });
-            expect(result).toEqual({
-                results: [
-                    {
-                        id: "1965-03-15-4",
-                        headline: "Test Headline",
-                        editionDate: "1965-03-15",
-                        category: "News",
-                        summary: "Test summary",
-                        excerpt: "Full article body text here for testing excerpt truncation",
-                        imageUrls: [],
-                        imageCaptions: [],
-                    },
-                ],
-            });
-        });
-
-        it("passes through imageUrls and imageCaptions from hybridSearch", async () => {
-            (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
-                {
-                    ...mockArticle,
-                    imageUrls: ["https://cdn/a.webp", "https://cdn/b.webp"],
-                    imageCaptions: ["Homecoming 1978", null],
-                },
-            ]);
-
-            const result = await executeTool("search_archive", { query: "test" });
-            const article = (result.results as Array<Record<string, unknown>>)[0];
-            expect(article.imageUrls).toEqual(["https://cdn/a.webp", "https://cdn/b.webp"]);
-            expect(article.imageCaptions).toEqual(["Homecoming 1978", null]);
-        });
-
-        it("URL-encodes spaces so LLM can embed URLs inside markdown `![](...)`", async () => {
-            (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
-                {
-                    ...mockArticle,
-                    imageUrls: ["https://cdn/1986-02-21/images/0003_Page 3_img3.webp"],
-                    imageCaptions: ["photo"],
-                },
-            ]);
-
-            const result = await executeTool("search_archive", { query: "test" });
-            const article = (result.results as Array<Record<string, unknown>>)[0];
-            expect(article.imageUrls).toEqual([
-                "https://cdn/1986-02-21/images/0003_Page%203_img3.webp",
-            ]);
-        });
-
-        it("truncates excerpt to 500 chars", async () => {
-            const longBody = "x".repeat(1000);
-            (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
-                { ...mockArticle, bodyPlain: longBody },
-            ]);
-
-            const result = await executeTool("search_archive", { query: "test" });
-            const article = (result.results as Array<Record<string, unknown>>)[0];
-            expect((article.excerpt as string).length).toBe(500);
-        });
-
-        it("passes abort signal to embedQuery and hybridSearch", async () => {
-            const controller = new AbortController();
-            await executeTool(
-                "search_archive",
-                { query: "test" },
-                { signal: controller.signal },
-            );
-
-            expect(embedQuery).toHaveBeenCalledWith("test", { signal: controller.signal });
-            expect(hybridSearch).toHaveBeenCalledWith(
-                "test",
-                mockEmbedding,
-                expect.objectContaining({ signal: controller.signal }),
-            );
-        });
+    expect(searchAndRankArchiveMock).toHaveBeenCalledWith({
+      question: "football 1960s",
+      filters: {
+        startDate: "1960-01-01",
+        endDate: "1969-12-31",
+        category: "Sports",
+      },
+      maxArticles: 5,
+      signal: controller.signal,
+      requestId: "req-1",
     });
-
-    describe("read_article", () => {
-        it("returns full article when found", async () => {
-            mockSqlResult.mockResolvedValueOnce([
-                {
-                    id: "1965-03-15-4",
-                    edition_date: "1965-03-15",
-                    category: "News",
-                    headline: "Test",
-                    summary: "Summary",
-                    byline: "Author Name",
-                    body_plain: "Full text",
-                    image_urls: ["img.jpg"],
-                    image_captions: ["A photo"],
-                },
-            ]);
-
-            const result = await executeTool("read_article", { articleId: "1965-03-15-4" });
-
-            expect(result).toEqual({
-                id: "1965-03-15-4",
-                editionDate: "1965-03-15",
-                category: "News",
-                headline: "Test",
-                summary: "Summary",
-                byline: "Author Name",
-                bodyPlain: "Full text",
-                imageUrls: ["img.jpg"],
-                imageCaptions: ["A photo"],
-            });
-        });
-
-        it("URL-encodes spaces in read_article imageUrls", async () => {
-            mockSqlResult.mockResolvedValueOnce([
-                {
-                    id: "1986-02-21-19",
-                    edition_date: "1986-02-21",
-                    category: "News",
-                    headline: "Test",
-                    summary: "Summary",
-                    byline: null,
-                    body_plain: "Full text",
-                    image_urls: ["https://cdn/1986-02-21/images/0003_Page 3_img3.webp"],
-                    image_captions: ["photo"],
-                },
-            ]);
-
-            const result = await executeTool("read_article", { articleId: "1986-02-21-19" });
-            expect((result as Record<string, unknown>).imageUrls).toEqual([
-                "https://cdn/1986-02-21/images/0003_Page%203_img3.webp",
-            ]);
-        });
-
-        it("defaults imageCaptions to [] when column is null", async () => {
-            mockSqlResult.mockResolvedValueOnce([
-                {
-                    id: "1965-03-15-4",
-                    edition_date: "1965-03-15",
-                    category: "News",
-                    headline: "Test",
-                    summary: "Summary",
-                    byline: null,
-                    body_plain: "Full text",
-                    image_urls: [],
-                    image_captions: null,
-                },
-            ]);
-
-            const result = await executeTool("read_article", { articleId: "1965-03-15-4" });
-            expect((result as Record<string, unknown>).imageCaptions).toEqual([]);
-        });
-
-        it("returns error when article not found", async () => {
-            mockSqlResult.mockResolvedValueOnce([]);
-
-            const result = await executeTool("read_article", { articleId: "nonexistent" });
-            expect(result).toEqual({ error: "Article not found" });
-        });
+    expect(result).toEqual({
+      results: [
+        {
+          id: article.id,
+          headline: article.headline,
+          editionDate: article.editionDate,
+          category: article.category,
+          summary: article.summary,
+          byline: null,
+          relevantPassages: ["The exact relevant paragraph."],
+          excerpt: "The exact relevant paragraph.",
+          relevanceScore: 8,
+          imageUrls: [],
+          imageCaptions: [],
+        },
+      ],
+      retrieval: {
+        candidates: 12,
+        method: "hybrid",
+        mode: "text",
+        elapsedMs: 25,
+      },
     });
+  });
 
-    describe("list_editions", () => {
-        it("passes date filters to queryEditions", async () => {
-            (queryEditions as ReturnType<typeof vi.fn>).mockResolvedValue({
-                editions: [
-                    { date: "1965-03-15", articleCount: 12 },
-                    { date: "1965-03-22", articleCount: 8 },
-                ],
-            });
+  it("intersects tool dates with enforced request filters", async () => {
+    await executeTool(
+      "search_archive",
+      {
+        query: "football",
+        startDate: "1960-01-01",
+        endDate: "1990-12-31",
+        category: "News",
+      },
+      {
+        filters: {
+          startDate: "1970-01-01",
+          endDate: "1979-12-31",
+          category: "Sports",
+        },
+      },
+    );
+    expect(searchAndRankArchiveMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filters: {
+          startDate: "1970-01-01",
+          endDate: "1979-12-31",
+          category: "Sports",
+        },
+      }),
+    );
+  });
 
-            const result = await executeTool("list_editions", {
-                startDate: "1965-01-01",
-                endDate: "1965-12-31",
-            });
+  it.each([
+    [0, 1],
+    [undefined, 10],
+    [99, 20],
+  ])("clamps search limit %s to %s", async (input, expected) => {
+    await executeTool("search_archive", { query: "test", limit: input });
+    expect(searchAndRankArchiveMock).toHaveBeenCalledWith(
+      expect.objectContaining({ maxArticles: expected }),
+    );
+  });
 
-            expect(queryEditions).toHaveBeenCalledWith({
-                startDate: "1965-01-01",
-                endDate: "1965-12-31",
-                limit: 50,
-            });
-            expect(result).toEqual({
-                editions: [
-                    { date: "1965-03-15", articleCount: 12 },
-                    { date: "1965-03-22", articleCount: 8 },
-                ],
-            });
-        });
-
-        it("passes undefined dates when not provided", async () => {
-            (queryEditions as ReturnType<typeof vi.fn>).mockResolvedValue({
-                editions: [],
-            });
-
-            await executeTool("list_editions", {});
-            expect(queryEditions).toHaveBeenCalledWith({
-                startDate: undefined,
-                endDate: undefined,
-                limit: 50,
-            });
-        });
+  it("returns complete matched evidence and URL-safe images", async () => {
+    const longPassage = "x".repeat(2000);
+    searchAndRankArchiveMock.mockResolvedValue({
+      articles: [
+        {
+          ...article,
+          matchedPassages: [longPassage],
+          imageUrls: ["https://cdn/Page 3.webp"],
+          imageCaptions: ["Photo"],
+        },
+      ],
+      candidates: 1,
+      method: "hybrid",
+      mode: "visual",
+      retrievalTimeMs: 10,
     });
+    const result = await executeTool("search_archive", { query: "show photo" });
+    const item = (result.results as Array<Record<string, unknown>>)[0];
+    expect(item.excerpt).toBe(longPassage);
+    expect(item.imageUrls).toEqual(["https://cdn/Page%203.webp"]);
+  });
+
+  it.each([
+    [{}, "query is required"],
+    [{ query: "x", startDate: "1965" }, "startDate must use YYYY-MM-DD"],
+    [{ query: "x", startDate: "1965-02-30" }, "startDate is not a real date"],
+    [
+      { query: "x", startDate: "1966-01-01", endDate: "1965-01-01" },
+      "startDate must not be after endDate",
+    ],
+    [{ query: "x", category: "Classified" }, "category is not supported"],
+    [{ query: "x", limit: 2.5 }, "limit must be an integer"],
+  ])("validates search arguments", async (args, message) => {
+    await expect(executeTool("search_archive", args)).resolves.toEqual({
+      error: message,
+      kind: "invalid_arguments",
+    });
+    expect(searchAndRankArchiveMock).not.toHaveBeenCalled();
+  });
+
+  it("returns a complete article with URL-safe images", async () => {
+    fetchArticleForRagMock.mockResolvedValue({
+      ...article,
+      imageUrls: ["https://cdn/Page 3.webp"],
+      imageCaptions: null,
+    });
+    const result = await executeTool("read_article", {
+      articleId: "1965-03-15-4",
+    });
+    expect(result).toMatchObject({
+      id: "1965-03-15-4",
+      bodyPlain: "Full article body",
+      imageUrls: ["https://cdn/Page%203.webp"],
+      imageCaptions: [],
+    });
+  });
+
+  it("distinguishes an invalid article ID from a missing valid ID", async () => {
+    expect(await executeTool("read_article", { articleId: "bad" })).toEqual({
+      error: "articleId has an invalid format",
+      kind: "invalid_arguments",
+    });
+    fetchArticleForRagMock.mockResolvedValue(null);
+    expect(
+      await executeTool("read_article", { articleId: "1965-03-15-99" }),
+    ).toEqual({ error: "Article not found" });
+  });
+
+  it("does not let read_article escape enforced filters", async () => {
+    fetchArticleForRagMock.mockResolvedValue(article);
+    await expect(
+      executeTool(
+        "read_article",
+        { articleId: article.id },
+        { filters: { startDate: "1970-01-01" } },
+      ),
+    ).resolves.toEqual({ error: "Article falls outside the enforced archive filters" });
+  });
+
+  it("lists editions with bounded pagination", async () => {
+    queryEditionsMock.mockResolvedValue({
+      editions: [{ date: "1965-03-15", articleCount: 12 }],
+      pagination: { offset: 10, limit: 100, hasMore: false },
+    });
+    const controller = new AbortController();
+    const result = await executeTool(
+      "list_editions",
+      { startDate: "1965-01-01", endDate: "1965-12-31", offset: 10, limit: 500 },
+      { signal: controller.signal },
+    );
+    expect(queryEditionsMock).toHaveBeenCalledWith({
+      startDate: "1965-01-01",
+      endDate: "1965-12-31",
+      offset: 10,
+      limit: 100,
+      signal: controller.signal,
+    });
+    expect(result).toEqual({
+      editions: [{ date: "1965-03-15", articleCount: 12 }],
+      pagination: { offset: 10, limit: 100, hasMore: false },
+    });
+  });
 });

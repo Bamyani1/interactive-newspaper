@@ -2,7 +2,13 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
 // Mock the Neon SQL tag so tests can control each returned row.
-const { sqlMock } = vi.hoisted(() => ({ sqlMock: vi.fn() }));
+const { sqlMock } = vi.hoisted(() => {
+    const mock = vi.fn() as ReturnType<typeof vi.fn> & {
+        transaction: ReturnType<typeof vi.fn>;
+    };
+    mock.transaction = vi.fn();
+    return { sqlMock: mock };
+});
 vi.mock("@neondatabase/serverless", () => ({ neon: () => sqlMock }));
 
 // Ensure lazy getSql() returns our mock (requires a non-empty URL).
@@ -20,6 +26,7 @@ import {
 describe("conversation-store", () => {
     beforeEach(() => {
         sqlMock.mockReset();
+        sqlMock.transaction.mockReset();
     });
 
     it("generates unique session IDs", () => {
@@ -62,11 +69,12 @@ describe("conversation-store", () => {
     });
 
     it("stores short answers verbatim on addConversationTurn", async () => {
-        sqlMock.mockResolvedValueOnce(undefined);
+        sqlMock.transaction.mockResolvedValueOnce(undefined);
         const shortAnswer = "x".repeat(1000);
         await addConversationTurn("sid", "What?", shortAnswer, ["a", "b"]);
 
-        expect(sqlMock).toHaveBeenCalledTimes(1);
+        expect(sqlMock).toHaveBeenCalledTimes(3);
+        expect(sqlMock.transaction).toHaveBeenCalledTimes(1);
         const substitutions = sqlMock.mock.calls[0].slice(1);
         const stringArgs = substitutions.filter(
             (v: unknown) => typeof v === "string",
@@ -78,7 +86,7 @@ describe("conversation-store", () => {
     });
 
     it("caps over-long answers at 8000 chars with a truncation marker", async () => {
-        sqlMock.mockResolvedValueOnce(undefined);
+        sqlMock.transaction.mockResolvedValueOnce(undefined);
         const longAnswer = "x".repeat(10_000);
         await addConversationTurn("sid", "What?", longAnswer, []);
 
@@ -100,7 +108,7 @@ describe("conversation-store", () => {
     });
 
     it("does not throw when the DB write fails", async () => {
-        sqlMock.mockRejectedValueOnce(new Error("neon down"));
+        sqlMock.transaction.mockRejectedValueOnce(new Error("neon down"));
         await expect(
             addConversationTurn("sid", "Q", "A", []),
         ).resolves.toBeUndefined();

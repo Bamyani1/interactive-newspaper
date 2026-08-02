@@ -22,6 +22,8 @@ vi.mock("@/src/lib/agent-tools", () => ({
     executeTool: vi.fn(),
 }));
 
+vi.mock("@/src/lib/cost-tracker", () => ({ recordUsage: vi.fn() }));
+
 import { executeTool } from "@/src/lib/agent-tools";
 
 function mockGenerateContent(
@@ -59,6 +61,10 @@ describe("agent-loop", () => {
             expect(result.answer).toBe("The answer is 42.");
             expect(result.rounds).toBe(0);
             expect(result.toolCallCount).toBe(0);
+            const call = mockGenerateContentFn.mock.calls[0][0];
+            expect(call.model).toBe("gemini-3.5-flash-lite");
+            expect(call.config.thinkingConfig.thinkingLevel).toBe("MEDIUM");
+            expect(call.config).not.toHaveProperty("temperature");
         });
 
         it("executes tool calls and returns answer on second round", async () => {
@@ -116,43 +122,102 @@ describe("agent-loop", () => {
             expect(executeTool).toHaveBeenCalledTimes(2);
         });
 
-        it("stops at MAX_ROUNDS with fallback message when no text produced", async () => {
+        it("forces a no-tools synthesis call after three tool rounds", async () => {
             (executeTool as ReturnType<typeof vi.fn>).mockResolvedValue({
                 results: [],
             });
 
-            for (let i = 0; i < 8; i++) {
+            for (let i = 0; i < 3; i++) {
                 mockGenerateContent({
                     functionCalls: [{ name: "search_archive", args: { query: `attempt ${i}` } }],
                     parts: [{ functionCall: { name: "search_archive", args: { query: `attempt ${i}` } } }],
                 });
             }
+            mockGenerateContent({ text: "I don't have enough information in the retrieved evidence." });
 
             const result = await runAgentLoop("impossible question");
-            expect(result.rounds).toBe(8);
-            expect(result.answer).toContain("unable to complete my research");
+            expect(result.rounds).toBe(3);
+            expect(result.answer).toContain("don't have enough information");
             expect(result.confidence).toBe("low");
+            expect(mockGenerateContentFn).toHaveBeenCalledTimes(4);
+            const finalCall = mockGenerateContentFn.mock.calls[3][0];
+            expect(finalCall.config.tools).toBeUndefined();
+            expect(finalCall.config.toolConfig.functionCallingConfig.mode).toBe(
+                "NONE",
+            );
+            expect(finalCall.config.systemInstruction).toContain(
+                "The research phase is complete",
+            );
+            expect(finalCall.config.systemInstruction).toContain(
+                "do not request, describe, or emit a function call",
+            );
+            expect(finalCall.config.systemInstruction).not.toContain(
+                "Use the search_archive tool",
+            );
+            expect(finalCall.contents).toHaveLength(1);
+            expect(finalCall.contents[0].role).toBe("user");
+            expect(finalCall.contents[0].parts[0].text).toContain(
+                "ARCHIVE EVIDENCE",
+            );
         });
 
-        it("extracts partial text from last model response at MAX_ROUNDS", async () => {
+        it("uses partial tool-round text if forced synthesis is empty", async () => {
             (executeTool as ReturnType<typeof vi.fn>).mockResolvedValue({
                 results: [],
             });
 
-            for (let i = 0; i < 8; i++) {
+            for (let i = 0; i < 3; i++) {
                 mockGenerateContent({
                     functionCalls: [{ name: "search_archive", args: { query: `q${i}` } }],
                     parts: [
-                        { text: i === 7 ? "Partial answer so far" : undefined },
+                        { text: i === 2 ? "Partial answer so far" : undefined },
                         { functionCall: { name: "search_archive", args: { query: `q${i}` } } },
                     ],
                 });
             }
+            mockGenerateContent({ text: "" });
 
             const result = await runAgentLoop("hard question");
-            expect(result.rounds).toBe(8);
+            expect(result.rounds).toBe(3);
             expect(result.answer).toContain("Partial answer so far");
             expect(result.answer).toContain("incomplete");
+        });
+
+        it("synthesizes from a fresh deduplicated evidence packet", async () => {
+            (executeTool as ReturnType<typeof vi.fn>).mockResolvedValue({
+                results: [
+                    {
+                        id: "1968-01-31-28",
+                        headline: "Student Demonstrations Increase",
+                        editionDate: "1968-01-31",
+                        category: "Campus News",
+                        summary: "Anti-war demonstrations",
+                        relevantPassages: ["Students staged a campus demonstration."],
+                        excerpt: "Students staged a campus demonstration.",
+                        relevanceScore: 8,
+                    },
+                ],
+            });
+            for (let i = 0; i < 3; i++) {
+                mockGenerateContent({
+                    functionCalls: [{ name: "search_archive", args: { query: `q${i}` } }],
+                    parts: [
+                        { functionCall: { name: "search_archive", args: { query: `q${i}` } } },
+                    ],
+                });
+            }
+            mockGenerateContent({
+                text: "Students demonstrated [1968-01-31-28].",
+            });
+
+            const result = await runAgentLoop("Compare the protests");
+            const finalPrompt = mockGenerateContentFn.mock.calls[3][0]
+                .contents[0].parts[0].text as string;
+            expect(finalPrompt).toContain("Students staged a campus demonstration.");
+            expect(finalPrompt.match(/--- Article 1968-01-31-28 ---/g)).toHaveLength(1);
+            expect(result.citations.map((citation) => citation.articleId)).toEqual([
+                "1968-01-31-28",
+            ]);
         });
 
         it("returns timeout response when signal is already aborted", async () => {
@@ -224,6 +289,25 @@ describe("agent-loop", () => {
             expect(userText).toContain("Tell me more");
         });
 
+        it("passes enforced filters to every tool call", async () => {
+            (executeTool as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ results: [] });
+            mockGenerateContent(
+                {
+                    functionCalls: [{ name: "search_archive", args: { query: "football" } }],
+                    parts: [{ functionCall: { name: "search_archive", args: { query: "football" } } }],
+                },
+                { text: "No result." },
+            );
+
+            const filters = { startDate: "1970-01-01", endDate: "1979-12-31" };
+            await runAgentLoop("football", { filters });
+            expect(executeTool).toHaveBeenCalledWith(
+                "search_archive",
+                { query: "football" },
+                expect.objectContaining({ filters }),
+            );
+        });
+
         it("calls onProgress callback for tool calls and results", async () => {
             const events: AgentProgressEvent[] = [];
 
@@ -271,6 +355,7 @@ describe("agent-loop", () => {
             expect(meta.headline).toBe("H1");
             expect(meta.category).toBe("News");
             expect(meta.imageUrls).toEqual(["img.jpg"]);
+            expect(meta.evidenceText).toBe("E1");
         });
     });
 
@@ -304,11 +389,9 @@ describe("agent-loop", () => {
             expect(citations).toHaveLength(0);
         });
 
-        it("falls back to article ID as headline when not in lookup", () => {
+        it("rejects citations that were not returned by a tool", () => {
             const citations = parseCitations("[2000-01-01-1] unknown.", lookup);
-            expect(citations).toHaveLength(1);
-            expect(citations[0].headline).toBe("2000-01-01-1");
-            expect(citations[0].editionDate).toBe("2000-01-01");
+            expect(citations).toEqual([]);
         });
 
         it("handles multiple different citations", () => {
@@ -336,13 +419,43 @@ describe("agent-loop", () => {
             expect(scoreConfidence("I don't have enough information", [{ articleId: "a", headline: "h", editionDate: "d" }], 3)).toBe("low");
         });
 
-        it("returns high with 3+ citations", () => {
+        it("returns high only with multiple high-relevance verified citations", () => {
             const cits = [
                 { articleId: "a1", headline: "h", editionDate: "d" },
                 { articleId: "a2", headline: "h", editionDate: "d" },
                 { articleId: "a3", headline: "h", editionDate: "d" },
             ];
-            expect(scoreConfidence("answer", cits, 2)).toBe("high");
+            const articleLookup = new Map<string, ArticleMeta>(
+                cits.map((citation) => [
+                    citation.articleId,
+                    {
+                        headline: "h",
+                        editionDate: "d",
+                        category: "News",
+                        summary: "",
+                        byline: null,
+                        bodySnippet: "",
+                        imageUrls: [],
+                        imageCaptions: [],
+                        relevanceScore: 8,
+                    },
+                ]),
+            );
+            expect(
+                scoreConfidence("answer", cits, 2, {
+                    articleLookup,
+                    successfulSearchCount: 1,
+                }),
+            ).toBe("high");
+        });
+
+        it("does not award high confidence from citation count alone", () => {
+            const cits = [
+                { articleId: "a1", headline: "h", editionDate: "d" },
+                { articleId: "a2", headline: "h", editionDate: "d" },
+                { articleId: "a3", headline: "h", editionDate: "d" },
+            ];
+            expect(scoreConfidence("answer", cits, 2)).toBe("medium");
         });
 
         it("returns medium with 1-2 citations", () => {
@@ -366,6 +479,7 @@ describe("agent-loop", () => {
             expect(lookup.size).toBe(1);
             expect(lookup.get("a1")!.headline).toBe("H1");
             expect(lookup.get("a1")!.category).toBe("News");
+            expect(lookup.get("a1")!.evidenceText).toBe("E");
         });
 
         it("accumulates from read_article result", () => {
@@ -384,6 +498,33 @@ describe("agent-loop", () => {
             expect(lookup.get("a2")!.headline).toBe("H2");
             expect(lookup.get("a2")!.byline).toBe("Author");
             expect(lookup.get("a2")!.bodySnippet).toBe("Full text here");
+            expect(lookup.get("a2")!.evidenceText).toBe("Full text here");
+        });
+
+        it("preserves a search relevance score when read_article adds full text", () => {
+            const lookup = new Map<string, ArticleMeta>();
+            accumulateArticleMeta("search_archive", {
+                results: [
+                    {
+                        id: "a2",
+                        headline: "H2",
+                        editionDate: "1970-01-01",
+                        excerpt: "Matched passage",
+                        relevanceScore: 9,
+                    },
+                ],
+            }, lookup);
+            accumulateArticleMeta("read_article", {
+                id: "a2",
+                headline: "H2",
+                editionDate: "1970-01-01",
+                bodyPlain: "A longer full article body",
+            }, lookup);
+
+            expect(lookup.get("a2")!.relevanceScore).toBe(9);
+            expect(lookup.get("a2")!.evidenceText).toBe(
+                "A longer full article body",
+            );
         });
 
         it("ignores unknown tool names", () => {

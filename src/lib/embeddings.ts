@@ -1,7 +1,8 @@
 /**
  * Embedding Utility
  *
- * Shared module for generating text embeddings via Google's gemini-embedding-2-preview model.
+ * Shared module for generating text embeddings via Google's stable
+ * gemini-embedding-2 model on Vertex AI.
  * Used by both the seed/embed script (build-time) and the /api/ask route (query-time).
  *
  * Gemini Embedding 2 uses inline text prefixes for task instructions instead of taskType enums:
@@ -10,9 +11,14 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import { recordEmbeddingUsage } from "@/src/lib/cost-tracker";
+import { RAG_EMBEDDING_MODEL } from "@/src/lib/rag-model-config";
+import { createHash } from "crypto";
 
-const EMBEDDING_MODEL = "gemini-embedding-2-preview";
+const EMBEDDING_MODEL = RAG_EMBEDDING_MODEL;
 const EMBEDDING_DIMS = 768;
+const EMBEDDING_INPUT_VERSION = "article-chunk-v1";
+const IMAGE_EMBEDDING_INPUT_VERSION = "article-image-v1";
 const MAX_BATCH_SIZE = 100; // API limit per request
 // Query embed budget: 10s. Previously 5s, but under Gemini load (or
 // adjacent rapid calls from the rest of the /api/ask pipeline) the
@@ -195,7 +201,10 @@ function setCachedEmbedding(key: string, embedding: number[]): void {
  *
  * Inputs should already be formatted with the document prefix via buildEmbeddingInput().
  */
-export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> {
+export async function embedDocuments(
+  inputs: EmbedInput[],
+  opts: { requestId?: string; op?: string } = {},
+): Promise<number[][]> {
   if (inputs.length === 0) return [];
 
   const client = getGeminiClient();
@@ -240,6 +249,11 @@ export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> 
         `Embedding response mismatch: expected ${batch.length}, got ${response.embeddings?.length ?? 0}`,
       );
     }
+
+    void recordEmbeddingUsage(EMBEDDING_MODEL, response, {
+      requestId: opts.requestId,
+      op: opts.op ?? "embed.documents",
+    });
 
     for (const emb of response.embeddings) {
       if (!emb.values || emb.values.length !== EMBEDDING_DIMS) {
@@ -298,6 +312,11 @@ export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> 
         `Failed to generate multimodal embedding for image ${idx + 1} of ${withImages.length}`,
       );
     }
+    void recordEmbeddingUsage(EMBEDDING_MODEL, response, {
+      requestId: opts.requestId,
+      op: opts.op ?? "embed.image",
+      imageCount: 1,
+    });
     const emb = response.embeddings[0];
     if (!emb.values || emb.values.length !== EMBEDDING_DIMS) {
       throw new Error(
@@ -340,12 +359,12 @@ export async function embedDocuments(inputs: EmbedInput[]): Promise<number[][]> 
 
 /**
  * Embed a single query for retrieval. Uses the "task: search result" prefix
- * format required by gemini-embedding-2-preview. Includes a 5s timeout and
+ * format required by gemini-embedding-2. Includes a 5s timeout and
  * a short-lived LRU cache for repeated queries.
  */
 export async function embedQuery(
   question: string,
-  opts: { signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal; requestId?: string } = {},
 ): Promise<number[]> {
   // Early-exit on already-aborted signal so callers with an expired
   // deadline don't dispatch a doomed SDK call. Mirrors hybridSearch's
@@ -386,6 +405,11 @@ export async function embedQuery(
       throw new Error("Failed to generate query embedding");
     }
 
+    void recordEmbeddingUsage(EMBEDDING_MODEL, response, {
+      requestId: opts.requestId,
+      op: "embed.query",
+    });
+
     const values = response.embeddings[0].values;
     if (!values || values.length !== EMBEDDING_DIMS) {
       throw new Error(
@@ -410,7 +434,7 @@ export async function embedQuery(
 
 /**
  * Build the text string to embed for an article.
- * Uses the "title: ... | text: ..." prefix format for gemini-embedding-2-preview.
+ * Uses the "title: ... | text: ..." prefix format for gemini-embedding-2.
  * Prepends contextual preamble (edition date, category) for better retrieval.
  */
 export function buildEmbeddingText(article: {
@@ -492,14 +516,42 @@ export function buildEmbeddingInput(article: {
   return { text };
 }
 
-// ─── Utilities ─────────────────────────────────────────────────
-
-/** Check whether a Gemini API key is available (without throwing). */
-export function hasApiKey(): boolean {
-  return !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+/** Canonical identity for deciding whether a stored vector is reusable. */
+export function embeddingInputFingerprint(
+  input: EmbedInput,
+  inputVersion = EMBEDDING_INPUT_VERSION,
+): string {
+  const hash = createHash("sha256");
+  hash.update(EMBEDDING_MODEL);
+  hash.update("\0");
+  hash.update(inputVersion);
+  hash.update("\0");
+  hash.update(input.text);
+  if (input.imageBase64) {
+    hash.update("\0");
+    hash.update(input.imageMimeType ?? "image/jpeg");
+    hash.update("\0");
+    hash.update(input.imageBase64);
+  }
+  return hash.digest("hex");
 }
 
-export { EMBEDDING_MODEL, EMBEDDING_DIMS };
+// ─── Utilities ─────────────────────────────────────────────────
+
+/** Check whether the required Vertex project configuration is present. */
+export function hasGoogleCredentials(): boolean {
+  return Boolean(process.env.GOOGLE_CLOUD_PROJECT);
+}
+
+/** @deprecated Kept for script compatibility; RAG now uses Vertex ADC. */
+export const hasApiKey = hasGoogleCredentials;
+
+export {
+  EMBEDDING_MODEL,
+  EMBEDDING_DIMS,
+  EMBEDDING_INPUT_VERSION,
+  IMAGE_EMBEDDING_INPUT_VERSION,
+};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

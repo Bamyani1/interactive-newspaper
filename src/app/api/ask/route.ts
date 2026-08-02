@@ -8,7 +8,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { embedQuery, QuotaExhaustedError } from "@/src/lib/embeddings";
-import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
+import {
+    DbTimeoutError,
+    hybridSearch,
+    queryArticlesByEmbedding,
+} from "@/src/lib/db";
 import type { RetrievedArticle } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
@@ -192,6 +196,7 @@ async function rerankWithCragRetry(params: {
         rerankArticles(params.question, params.articles, {
             maxArticles: params.keepTopK,
             minScore,
+            mode: params.mode,
             signal: params.signal,
             requestId: params.requestId,
         }),
@@ -226,6 +231,7 @@ async function rerankWithCragRetry(params: {
         try {
             retryEmbedding = await embedQuery(retry.embeddingQuery, {
                 signal: params.signal,
+                requestId: params.requestId,
             });
         } catch (err) {
             if (err instanceof DeadlineExceededError) throw err;
@@ -235,23 +241,16 @@ async function rerankWithCragRetry(params: {
         // a local marker, not a typed class; caller unwraps via StageError.cause.
         let retryArticles: RetrievedArticle[];
         try {
-            retryArticles = await Promise.race([
-                hybridSearch(retry.ftsQuery, retryEmbedding, {
-                    limit: params.retrievalLimit,
-                    category: params.filters.category ?? null,
-                    startDate: params.filters.startDate ?? null,
-                    endDate: params.filters.endDate ?? null,
-                    vectorWeight: params.vectorWeight,
-                    onlyWithImages: params.onlyWithImages,
-                    signal: params.signal,
-                }),
-                new Promise<never>((_, reject) =>
-                    setTimeout(
-                        () => reject(new Error("Retrieval timeout")),
-                        params.retrievalTimeoutMs,
-                    ),
-                ),
-            ]);
+            retryArticles = await hybridSearch(retry.ftsQuery, retryEmbedding, {
+                limit: params.retrievalLimit,
+                category: params.filters.category ?? null,
+                startDate: params.filters.startDate ?? null,
+                endDate: params.filters.endDate ?? null,
+                vectorWeight: params.vectorWeight,
+                onlyWithImages: params.onlyWithImages,
+                timeoutMs: params.retrievalTimeoutMs,
+                signal: params.signal,
+            });
         } catch (err) {
             if (err instanceof DeadlineExceededError) throw err;
             throw new StageError("retrieve-retry", err);
@@ -260,6 +259,7 @@ async function rerankWithCragRetry(params: {
             rerankArticles(params.question, retryArticles, {
                 maxArticles: params.keepTopK,
                 minScore: params.mode === "visual" ? 2 : 3,
+                mode: params.mode,
                 signal: params.signal,
                 requestId: params.requestId,
             }),
@@ -293,6 +293,64 @@ interface AskRequestBody {
     };
 }
 
+const ASK_CATEGORIES = new Set([
+    "Campus News",
+    "News",
+    "Sports",
+    "Arts & Entertainment",
+    "Opinion",
+]);
+
+function isValidIsoDate(value: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value);
+}
+
+function validateAskContext(body: AskRequestBody): string | null {
+    if (
+        body.sessionId !== undefined &&
+        (typeof body.sessionId !== "string" ||
+            !/^[A-Za-z0-9_-]{1,128}$/.test(body.sessionId))
+    ) {
+        return "sessionId has an invalid format";
+    }
+    if (body.filters === undefined) return null;
+    if (typeof body.filters !== "object" || body.filters === null || Array.isArray(body.filters)) {
+        return "filters must be an object";
+    }
+    const { category, startDate, endDate } = body.filters;
+    if (category !== undefined && (typeof category !== "string" || !ASK_CATEGORIES.has(category))) {
+        return "filters.category is not supported";
+    }
+    if (startDate !== undefined && (typeof startDate !== "string" || !isValidIsoDate(startDate))) {
+        return "filters.startDate must be a real date in YYYY-MM-DD format";
+    }
+    if (endDate !== undefined && (typeof endDate !== "string" || !isValidIsoDate(endDate))) {
+        return "filters.endDate must be a real date in YYYY-MM-DD format";
+    }
+    if (startDate && endDate && startDate > endDate) {
+        return "filters.startDate must not be after filters.endDate";
+    }
+    return null;
+}
+
+function resolveRetrievalFilters(
+    explicit: AskRequestBody["filters"] | undefined,
+    inferred: { startDate?: string; endDate?: string },
+): NonNullable<AskRequestBody["filters"]> {
+    const requested = explicit ?? {};
+    // A caller-supplied temporal boundary is authoritative. We never combine
+    // half of an explicit range with a model-inferred range because that can
+    // silently create an impossible interval.
+    const hasExplicitDates = Boolean(requested.startDate || requested.endDate);
+    return {
+        ...requested,
+        startDate: hasExplicitDates ? requested.startDate : inferred.startDate,
+        endDate: hasExplicitDates ? requested.endDate : inferred.endDate,
+    };
+}
+
 // ── Streaming (SSE) handler ──
 // When /api/ask is hit with ?stream=1, the route returns a Server-Sent
 // Events stream instead of a JSON response. Events are typed:
@@ -323,7 +381,7 @@ async function handleStreamingAsk(params: {
 }): Promise<NextResponse> {
     const { body, requestId, totalStart, deadlineMs, sessionId, conversationHistory } = params;
     const question = body.question.trim();
-    const filters = body.filters ?? {};
+    const explicitFilters = body.filters ?? {};
 
     const globalController = new AbortController();
     const deadlineTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
@@ -349,11 +407,52 @@ async function handleStreamingAsk(params: {
             const stageElapsed = () => Date.now() - totalStart;
 
             try {
+                // Cache lookup precedes reformulation so a true hit performs
+                // zero Google calls. Contextual follow-ups still bypass it.
+                const earlyCached =
+                    conversationHistory.length === 0
+                        ? getCachedAnswer(question, explicitFilters)
+                        : null;
+                if (earlyCached) {
+                    send({
+                        type: "metadata",
+                        question,
+                        mode: earlyCached.mode,
+                        requestId,
+                        sourceArticles: earlyCached.sourceArticles,
+                        meta: earlyCached.meta,
+                    });
+                    send({ type: "delta", text: earlyCached.answer });
+                    await persistTurnBounded(
+                        sessionId,
+                        question,
+                        earlyCached.answer,
+                        earlyCached.citations.map((citation) => citation.articleId),
+                    );
+                    send({
+                        type: "done",
+                        answer: earlyCached.answer,
+                        citations: earlyCached.citations,
+                        confidence: earlyCached.confidence,
+                        sessionId,
+                        sourceArticles: earlyCached.sourceArticles,
+                        followUpQuestions: earlyCached.followUpQuestions ?? [],
+                        meta: {
+                            ...earlyCached.meta,
+                            totalTimeMs: Date.now() - totalStart,
+                            cacheHit: true,
+                        },
+                    });
+                    return;
+                }
+
                 // ── Step 1: Reformulate ──
                 let embeddingQuery: string;
                 let ftsQuery: string;
                 let mode: "text" | "visual";
                 let complexity: "simple" | "complex";
+                let inferredStartDate: string | undefined;
+                let inferredEndDate: string | undefined;
                 try {
                     const reformulated = await reformulateQuery(question, {
                         signal: globalController.signal,
@@ -364,6 +463,8 @@ async function handleStreamingAsk(params: {
                     ftsQuery = reformulated.ftsQuery;
                     mode = reformulated.mode;
                     complexity = reformulated.complexity;
+                    inferredStartDate = reformulated.startDate;
+                    inferredEndDate = reformulated.endDate;
                 } catch (err) {
                     console.error(
                         JSON.stringify({
@@ -390,6 +491,11 @@ async function handleStreamingAsk(params: {
                     detail: embeddingQuery !== question ? embeddingQuery : undefined,
                 });
 
+                const filters = resolveRetrievalFilters(explicitFilters, {
+                    startDate: inferredStartDate,
+                    endDate: inferredEndDate,
+                });
+
                 // ── Agent path for complex questions ──
                 if (complexity === "complex") {
                     send({ type: "stage", name: "agent", elapsedMs: stageElapsed() });
@@ -414,6 +520,7 @@ async function handleStreamingAsk(params: {
                             signal: globalController.signal,
                             requestId,
                             conversationContext,
+                            filters,
                             onProgress: (event) => send(event),
                         });
 
@@ -450,8 +557,8 @@ async function handleStreamingAsk(params: {
                             sessionId,
                             sourceArticles: agentSourceArticles,
                             meta: {
-                                retrievalTimeMs: 0,
-                                generationTimeMs: 0,
+                                retrievalTimeMs: agentResult.retrievalTimeMs,
+                                generationTimeMs: agentResult.generationTimeMs,
                                 totalTimeMs,
                                 articlesSearched: agentResult.articleMeta.size,
                                 method: "hybrid",
@@ -483,59 +590,12 @@ async function handleStreamingAsk(params: {
                     return;
                 }
 
-                // ── Cache check (pipeline path only; skipped when
-                // conversation history is in play so we don't serve a
-                // prior session's context-flavored answer to a fresh one).
-                const cached =
-                    conversationHistory.length === 0
-                        ? getCachedAnswer(question, filters)
-                        : null;
-                if (cached) {
-                    const cachedSourceArticles = cached.sourceArticles;
-                    const cachedMeta = cached.meta;
-                    send({
-                        type: "metadata",
-                        question,
-                        mode: cached.mode,
-                        requestId,
-                        sourceArticles: cachedSourceArticles,
-                        meta: {
-                            retrievalTimeMs: cachedMeta.retrievalTimeMs,
-                            articlesSearched: cachedMeta.articlesSearched,
-                            method: cachedMeta.method,
-                            reformulatedQuery: cachedMeta.reformulatedQuery,
-                        },
-                    });
-                    send({ type: "delta", text: cached.answer });
-                    await persistTurnBounded(
-                        sessionId,
-                        question,
-                        cached.answer,
-                        cached.citations.map((c) => c.articleId),
-                    );
-                    send({
-                        type: "done",
-                        answer: cached.answer,
-                        citations: cached.citations,
-                        confidence: cached.confidence,
-                        sessionId,
-                        sourceArticles: cachedSourceArticles,
-                        followUpQuestions: cached.followUpQuestions ?? [],
-                        meta: {
-                            ...cachedMeta,
-                            totalTimeMs: Date.now() - totalStart,
-                            cacheHit: true,
-                            complexity,
-                        },
-                    });
-                    return;
-                }
-
                 // ── Step 2: Embed (pipeline path) ──
                 let questionEmbedding: number[];
                 try {
                     questionEmbedding = await embedQuery(embeddingQuery, {
                         signal: globalController.signal,
+                        requestId,
                     });
                 } catch (err) {
                     if (err instanceof QuotaExhaustedError) {
@@ -586,31 +646,22 @@ async function handleStreamingAsk(params: {
                 const vectorWeight = mode === "visual" ? 0.7 : 0.6;
                 const onlyWithImages = mode === "visual";
 
-                const retrievalTimeout = new Promise<never>((_, reject) =>
-                    setTimeout(
-                        () => reject(new Error("Retrieval timeout")),
-                        retrievalTimeoutMs,
-                    ),
-                );
-
                 let articles: RetrievedArticle[];
                 let method: "hybrid" | "vector" = "hybrid";
 
                 try {
-                    articles = await Promise.race([
-                        hybridSearch(ftsQuery, questionEmbedding, {
-                            limit: retrievalLimit,
-                            category: filters.category ?? null,
-                            startDate: filters.startDate ?? null,
-                            endDate: filters.endDate ?? null,
-                            vectorWeight,
-                            onlyWithImages,
-                            signal: globalController.signal,
-                        }),
-                        retrievalTimeout,
-                    ]);
+                    articles = await hybridSearch(ftsQuery, questionEmbedding, {
+                        limit: retrievalLimit,
+                        category: filters.category ?? null,
+                        startDate: filters.startDate ?? null,
+                        endDate: filters.endDate ?? null,
+                        vectorWeight,
+                        onlyWithImages,
+                        timeoutMs: retrievalTimeoutMs,
+                        signal: globalController.signal,
+                    });
                 } catch (err) {
-                    if (err instanceof Error && err.message === "Retrieval timeout") {
+                    if (err instanceof DbTimeoutError || globalController.signal.aborted) {
                         send({
                             type: "error",
                             stage: "retrieve",
@@ -630,31 +681,22 @@ async function handleStreamingAsk(params: {
                         }),
                     );
                     method = "vector";
-                    const fallbackTimeout = new Promise<never>((_, reject) =>
-                        setTimeout(
-                            () => reject(new Error("Retrieval timeout")),
-                            retrievalTimeoutMs,
-                        ),
-                    );
                     try {
-                        articles = await Promise.race([
-                            queryArticlesByEmbedding(questionEmbedding, {
-                                limit: retrievalLimit,
-                                category: filters.category ?? null,
-                                startDate: filters.startDate ?? null,
-                                endDate: filters.endDate ?? null,
-                                onlyWithImages,
-                                signal: globalController.signal,
-                            }),
-                            fallbackTimeout,
-                        ]);
+                        articles = await queryArticlesByEmbedding(questionEmbedding, {
+                            limit: retrievalLimit,
+                            category: filters.category ?? null,
+                            startDate: filters.startDate ?? null,
+                            endDate: filters.endDate ?? null,
+                            onlyWithImages,
+                            timeoutMs: retrievalTimeoutMs,
+                            signal: globalController.signal,
+                        });
                     } catch (fallbackErr) {
                         send({
                             type: "error",
                             stage: "retrieve",
                             message:
-                                fallbackErr instanceof Error &&
-                                fallbackErr.message === "Retrieval timeout"
+                                fallbackErr instanceof DbTimeoutError
                                     ? "Retrieval took too long. Please try again."
                                     : "Retrieval failed. Please try again.",
                             requestId,
@@ -700,8 +742,7 @@ async function handleStreamingAsk(params: {
                             ? "Daily AI quota reached. Please try again later."
                             : cause instanceof DeadlineExceededError
                             ? "Request timed out. Please try again."
-                            : cause instanceof Error &&
-                              cause.message === "Retrieval timeout"
+                            : cause instanceof DbTimeoutError
                             ? "Retrieval took too long. Please try again."
                             : "Reranking failed. Please try again.";
                     console.error(
@@ -839,7 +880,7 @@ async function handleStreamingAsk(params: {
                 };
 
                 if (conversationHistory.length === 0) {
-                    setCachedAnswer(question, filters, streamingResponse);
+                    setCachedAnswer(question, explicitFilters, streamingResponse);
                 }
 
                 send({
@@ -960,6 +1001,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             message: `Question too long (${question.length} chars). Maximum is ${MAX_QUESTION_LENGTH}.`,
         });
     }
+    const contextValidationError = validateAskContext(body);
+    if (contextValidationError) {
+        return askErrorJson({
+            status: 400,
+            kind: "bad_request",
+            message: contextValidationError,
+        });
+    }
 
     // ── Daily budget kill switch ──
     // Fail fast if the project has already burned through today's AI
@@ -1046,8 +1095,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     const pipelinePromise = (async (): Promise<NextResponse> => {
+        const earlyCached =
+            conversationHistory.length === 0
+                ? getCachedAnswer(question, body.filters)
+                : null;
+        if (earlyCached) {
+            const response: AskResponse = {
+                ...earlyCached,
+                requestId,
+                sessionId,
+                meta: {
+                    ...earlyCached.meta,
+                    totalTimeMs: Date.now() - totalStart,
+                    cacheHit: true,
+                },
+            };
+            await persistTurnBounded(
+                sessionId,
+                question,
+                earlyCached.answer,
+                earlyCached.citations.map((citation) => citation.articleId),
+            );
+            return NextResponse.json(response);
+        }
+
         // ── Step 1: Reformulate query for better retrieval ──
-        const { embeddingQuery, ftsQuery, mode, complexity } = await wrapStage(
+        const reformulated = await wrapStage(
             "reformulate",
             () =>
                 reformulateQuery(question, {
@@ -1056,10 +1129,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     conversationHistory,
                 }),
         );
+        const { embeddingQuery, ftsQuery, mode, complexity } = reformulated;
+        const filters = resolveRetrievalFilters(body.filters, reformulated);
 
         // ── Agent path for complex questions ──
         if (complexity === "complex") {
-            const agentStart = Date.now();
             const conversationContext = conversationHistory.length > 0
                 ? formatHistoryForPrompt(conversationHistory)
                 : undefined;
@@ -1069,6 +1143,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     signal: globalController.signal,
                     requestId,
                     conversationContext,
+                    filters,
                 }),
             );
 
@@ -1105,9 +1180,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 sessionId,
                 sourceArticles: agentSourceArticles,
                 meta: {
-                    retrievalTimeMs: 0,
-                    generationTimeMs: 0,
-                    totalTimeMs: Date.now() - agentStart,
+                    retrievalTimeMs: agentResult.retrievalTimeMs,
+                    generationTimeMs: agentResult.generationTimeMs,
+                    totalTimeMs: Date.now() - totalStart,
                     articlesSearched: agentResult.articleMeta.size,
                     method: "hybrid",
                     reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
@@ -1119,38 +1194,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return NextResponse.json(response);
         }
 
-        // ── Cache check (pipeline path only; skipped when conversation
-        // history is in play to avoid cross-session context pollution).
-        const cachedResponse =
-            conversationHistory.length === 0
-                ? getCachedAnswer(question, body.filters)
-                : null;
-        if (cachedResponse) {
-            const overridden: AskResponse = {
-                ...cachedResponse,
-                requestId,
-                sessionId,
-                meta: {
-                    ...cachedResponse.meta,
-                    totalTimeMs: Date.now() - totalStart,
-                    cacheHit: true,
-                    complexity,
-                },
-            };
-            await persistTurnBounded(
-                sessionId,
-                question,
-                cachedResponse.answer,
-                cachedResponse.citations.map((c) => c.articleId),
-            );
-            return NextResponse.json(overridden);
-        }
-
         // ── Step 2: Embed the reformulated query (pipeline path) ──
         let questionEmbedding: number[];
         try {
             questionEmbedding = await embedQuery(embeddingQuery, {
                 signal: globalController.signal,
+                requestId,
             });
         } catch (err) {
             // Quota exhaustion is a distinct, retry-after-tomorrow case;
@@ -1198,7 +1247,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         // ── Step 3: Retrieve relevant articles (with timeout) ──
         const retrievalStart = Date.now();
-        const filters = body.filters ?? {};
         let articles: RetrievedArticle[];
         let method: "hybrid" | "vector" = "hybrid";
         // Visual mode retrieves more candidates since we pre-filter to articles
@@ -1207,13 +1255,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         const retrievalTimeoutMs =
             _testRetrievalTimeoutMsOverride ?? RETRIEVAL_TIMEOUT_MS;
-        const retrievalTimeout = new Promise<never>((_, reject) =>
-            setTimeout(
-                () => reject(new Error("Retrieval timeout")),
-                retrievalTimeoutMs,
-            ),
-        );
-
         // Adaptive vector/FTS weighting based on query mode:
         // Visual queries (conceptual "show me X") favor vector similarity (0.7)
         // Text queries (factual, often keyword-heavy) get more FTS weight (0.4)
@@ -1223,20 +1264,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const onlyWithImages = mode === "visual";
 
         try {
-            articles = await Promise.race([
-                hybridSearch(ftsQuery, questionEmbedding, {
-                    limit: retrievalLimit,
-                    category: filters.category ?? null,
-                    startDate: filters.startDate ?? null,
-                    endDate: filters.endDate ?? null,
-                    vectorWeight,
-                    onlyWithImages,
-                    signal: globalController.signal,
-                }),
-                retrievalTimeout,
-            ]);
+            articles = await hybridSearch(ftsQuery, questionEmbedding, {
+                limit: retrievalLimit,
+                category: filters.category ?? null,
+                startDate: filters.startDate ?? null,
+                endDate: filters.endDate ?? null,
+                vectorWeight,
+                onlyWithImages,
+                timeoutMs: retrievalTimeoutMs,
+                signal: globalController.signal,
+            });
         } catch (err) {
-            if (err instanceof Error && err.message === "Retrieval timeout") {
+            if (err instanceof DbTimeoutError || globalController.signal.aborted) {
                 return askErrorJson({
                     status: 504,
                     kind: "timeout",
@@ -1256,26 +1295,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 }),
             );
             method = "vector";
-            const fallbackTimeout = new Promise<never>((_, reject) =>
-                setTimeout(
-                    () => reject(new Error("Retrieval timeout")),
-                    retrievalTimeoutMs,
-                ),
-            );
             try {
-                articles = await Promise.race([
-                    queryArticlesByEmbedding(questionEmbedding, {
-                        limit: retrievalLimit,
-                        category: filters.category ?? null,
-                        startDate: filters.startDate ?? null,
-                        endDate: filters.endDate ?? null,
-                        onlyWithImages,
-                        signal: globalController.signal,
-                    }),
-                    fallbackTimeout,
-                ]);
+                articles = await queryArticlesByEmbedding(questionEmbedding, {
+                    limit: retrievalLimit,
+                    category: filters.category ?? null,
+                    startDate: filters.startDate ?? null,
+                    endDate: filters.endDate ?? null,
+                    onlyWithImages,
+                    timeoutMs: retrievalTimeoutMs,
+                    signal: globalController.signal,
+                });
             } catch (fallbackErr) {
-                if (fallbackErr instanceof Error && fallbackErr.message === "Retrieval timeout") {
+                if (fallbackErr instanceof DbTimeoutError) {
                     return NextResponse.json(
                         {
                             error: "Retrieval took too long. Please try again.",
@@ -1371,7 +1402,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         };
 
         if (conversationHistory.length === 0) {
-            setCachedAnswer(question, filters, response);
+            setCachedAnswer(question, body.filters, response);
         }
 
         return NextResponse.json(response);
@@ -1424,8 +1455,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 });
             }
             if (
-                err.cause instanceof Error &&
-                err.cause.message === "Retrieval timeout"
+                err.cause instanceof DbTimeoutError
             ) {
                 console.warn(
                     JSON.stringify({

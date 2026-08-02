@@ -100,21 +100,6 @@ function stripHtml(html) {
   return sanitize(html).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 
-/**
- * Stable content fingerprint keyed on the four fields that materially affect
- * an article's embedding vector. Used by seedEditions to preserve embeddings
- * across the DELETE+INSERT re-seed cycle so we don't wipe and re-embed
- * unchanged content on every run. See docs/issues/0029.
- */
-function articleContentFingerprint({ headline, byline, bodyPlain, category }) {
-  return JSON.stringify([
-    headline ?? "",
-    byline ?? "",
-    bodyPlain ?? "",
-    category ?? "",
-  ]);
-}
-
 // ─── Schema ──────────────────────────────────────────────────────
 
 // Split raw SQL into top-level statements. Respects dollar-quoted
@@ -217,7 +202,7 @@ async function exportLockedEditions() {
     try {
       const [edition] = await sql`SELECT * FROM editions WHERE date = ${date}`;
       if (!edition) continue;
-      const articles = await sql`SELECT id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model FROM articles WHERE edition_date = ${date} ORDER BY position`;
+      const articles = await sql`SELECT id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model, embedding_input_hash, embedding_input_version FROM articles WHERE edition_date = ${date} ORDER BY position`;
       const ads = await sql`SELECT edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls FROM ads WHERE edition_date = ${date} ORDER BY position`;
       saved[date] = { edition, articles, ads };
       console.log(`  Saved locked edition ${date} from DB (${articles.length} articles, ${ads.length} ads)`);
@@ -238,8 +223,8 @@ async function restoreLockedEditions(savedData) {
 
     if (articles.length > 0) {
       const articleQueries = articles.map((a) =>
-        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model)
-            VALUES (${a.id}, ${a.edition_date}, ${a.position}, ${a.category}, ${a.headline}, ${a.summary}, ${a.full_text}, ${a.body_plain}, ${a.byline}, ${a.writer_position}, ${a.page}, ${a.is_hero}, ${a.is_featured}, ${JSON.stringify(a.image_urls)}, ${a.image_caption}, ${JSON.stringify(a.image_captions)}, ${a.embedding}, ${a.embedding_model})
+        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model, embedding_input_hash, embedding_input_version)
+            VALUES (${a.id}, ${a.edition_date}, ${a.position}, ${a.category}, ${a.headline}, ${a.summary}, ${a.full_text}, ${a.body_plain}, ${a.byline}, ${a.writer_position}, ${a.page}, ${a.is_hero}, ${a.is_featured}, ${JSON.stringify(a.image_urls)}, ${a.image_caption}, ${JSON.stringify(a.image_captions)}, ${a.embedding}, ${a.embedding_model}, ${a.embedding_input_hash}, ${a.embedding_input_version})
             ON CONFLICT (id) DO NOTHING`
       );
       await sql.transaction(articleQueries);
@@ -263,6 +248,8 @@ async function dropAllTables() {
   await sql`DROP TABLE IF EXISTS music CASCADE`;
   await sql`DROP TABLE IF EXISTS weather CASCADE`;
   await sql`DROP TABLE IF EXISTS ads CASCADE`;
+  await sql`DROP TABLE IF EXISTS article_images CASCADE`;
+  await sql`DROP TABLE IF EXISTS article_chunks CASCADE`;
   await sql`DROP TABLE IF EXISTS articles CASCADE`;
   await sql`DROP TABLE IF EXISTS editions CASCADE`;
   console.log("All tables dropped.");
@@ -271,6 +258,18 @@ async function dropAllTables() {
 // ─── Seed Editions ───────────────────────────────────────────────
 
 async function seedEditions(scopedDate = "") {
+  const [embeddingModule, chunkingModule] = await Promise.all([
+    import("../../src/lib/embeddings.ts"),
+    import("../../src/lib/article-chunking.ts"),
+  ]);
+  const {
+    buildEmbeddingInput,
+    embeddingInputFingerprint,
+    EMBEDDING_INPUT_VERSION,
+    EMBEDDING_MODEL,
+  } = embeddingModule;
+  const { buildArticleChunkRecords } = chunkingModule;
+
   const entries = await readdir(ACTIVE_EDITIONS_DIR, { withFileTypes: true });
   let dateDirs = entries
     .filter((e) => e.isDirectory() && isIsoDate(e.name))
@@ -311,37 +310,38 @@ async function seedEditions(scopedDate = "") {
         article_count = EXCLUDED.article_count
     `;
 
-    // Snapshot existing embeddings keyed by content fingerprint so we can
-    // restore them after the DELETE+INSERT. Without this, every seed run
-    // wipes ~9.5k embeddings and burns Gemini daily quota re-embedding
-    // unchanged content. See docs/issues/0029.
-    const existingRows = await sql`
-      SELECT headline, byline, body_plain, category, embedding, embedding_model
-      FROM articles
-      WHERE edition_date = ${date} AND embedding IS NOT NULL
-    `;
-    const preservedByFingerprint = new Map();
-    for (const row of existingRows) {
-      const fp = articleContentFingerprint({
-        headline: row.headline,
-        byline: row.byline,
-        bodyPlain: row.body_plain,
-        category: row.category,
+    const preparedArticles = articles.map((a, i) => {
+      const prepared = {
+        ...a,
+        position: i,
+        category: sanitize(a.category),
+        headline: sanitize(a.headline),
+        summary: sanitize(a.summary),
+        fullText: sanitize(a.fullText),
+        bodyPlain: stripHtml(a.fullText),
+        byline: sanitize(a.byline) ?? null,
+        writerPosition: sanitize(a.writerPosition) ?? null,
+        imageCaption: sanitize(a.imageCaption) ?? null,
+      };
+      const embeddingInput = buildEmbeddingInput({
+        headline: prepared.headline,
+        byline: prepared.byline,
+        body_plain: prepared.bodyPlain,
+        edition_date: prepared.date,
+        category: prepared.category,
+        summary: prepared.summary,
+        image_caption: prepared.imageCaption,
       });
-      preservedByFingerprint.set(fp, {
-        embedding: row.embedding,
-        model: row.embedding_model,
-      });
-    }
+      return {
+        ...prepared,
+        embeddingInputHash: embeddingInputFingerprint(embeddingInput),
+      };
+    });
 
-    // Delete existing articles for this edition, then re-insert.
-    // This ensures articles removed by adapter filters are also removed from the DB.
-    await sql`DELETE FROM articles WHERE edition_date = ${date}`;
-
-    if (articles.length > 0) {
-      const articleQueries = articles.map((a, i) =>
-        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions)
-            VALUES (${a.id}, ${a.date}, ${i}, ${sanitize(a.category)}, ${sanitize(a.headline)}, ${sanitize(a.summary)}, ${sanitize(a.fullText)}, ${stripHtml(a.fullText)}, ${sanitize(a.byline) ?? null}, ${sanitize(a.writerPosition) ?? null}, ${a.page}, ${a.isHero}, ${a.isFeatured}, ${JSON.stringify(a.imageUrls)}, ${sanitize(a.imageCaption) ?? null}, ${JSON.stringify(a.imageCaptions)})
+    if (preparedArticles.length > 0) {
+      const articleQueries = preparedArticles.map((a) =>
+        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding_input_hash, embedding_input_version)
+            VALUES (${a.id}, ${a.date}, ${a.position}, ${a.category}, ${a.headline}, ${a.summary}, ${a.fullText}, ${a.bodyPlain}, ${a.byline}, ${a.writerPosition}, ${a.page}, ${a.isHero}, ${a.isFeatured}, ${JSON.stringify(a.imageUrls)}, ${a.imageCaption}, ${JSON.stringify(a.imageCaptions)}, ${a.embeddingInputHash}, ${EMBEDDING_INPUT_VERSION})
             ON CONFLICT (id) DO UPDATE SET
               category = EXCLUDED.category,
               headline = EXCLUDED.headline,
@@ -355,37 +355,113 @@ async function seedEditions(scopedDate = "") {
               is_featured = EXCLUDED.is_featured,
               image_urls = EXCLUDED.image_urls,
               image_caption = EXCLUDED.image_caption,
-              image_captions = EXCLUDED.image_captions`
+              image_captions = EXCLUDED.image_captions,
+              embedding = CASE
+                WHEN articles.embedding_input_hash = EXCLUDED.embedding_input_hash
+                 AND articles.embedding_input_version = EXCLUDED.embedding_input_version
+                 AND articles.embedding_model = ${EMBEDDING_MODEL}
+                THEN articles.embedding ELSE NULL END,
+              embedding_model = CASE
+                WHEN articles.embedding_input_hash = EXCLUDED.embedding_input_hash
+                 AND articles.embedding_input_version = EXCLUDED.embedding_input_version
+                 AND articles.embedding_model = ${EMBEDDING_MODEL}
+                THEN articles.embedding_model ELSE NULL END,
+              embedding_input_hash = EXCLUDED.embedding_input_hash,
+              embedding_input_version = EXCLUDED.embedding_input_version`
       );
       await sql.transaction(articleQueries);
+    }
 
-      // Restore preserved embeddings for articles whose content fingerprint
-      // matches a row snapshotted before the DELETE. Articles whose content
-      // changed (or that are new) are left with NULL embeddings for
-      // embedArticles to fill in afterward.
-      if (preservedByFingerprint.size > 0) {
-        const restoreQueries = [];
-        for (const a of articles) {
-          const fp = articleContentFingerprint({
-            headline: sanitize(a.headline),
-            byline: sanitize(a.byline) ?? null,
-            bodyPlain: stripHtml(a.fullText),
-            category: sanitize(a.category),
-          });
-          const prev = preservedByFingerprint.get(fp);
-          if (prev) {
-            restoreQueries.push(
-              sql`UPDATE articles
-                  SET embedding = ${prev.embedding},
-                      embedding_model = ${prev.model}
-                  WHERE id = ${a.id}`
-            );
-          }
-        }
-        if (restoreQueries.length > 0) {
-          await sql.transaction(restoreQueries);
-        }
-      }
+    // Remove only records that genuinely disappeared. Existing IDs are
+    // updated in place so unchanged vectors remain reusable.
+    const articleIds = preparedArticles.map((article) => article.id);
+    if (articleIds.length > 0) {
+      await sql`DELETE FROM articles
+                WHERE edition_date = ${date} AND NOT (id = ANY(${articleIds}))`;
+    } else {
+      await sql`DELETE FROM articles WHERE edition_date = ${date}`;
+    }
+
+    const chunkRecords = preparedArticles.flatMap((article) =>
+      buildArticleChunkRecords({
+        id: article.id,
+        headline: article.headline,
+        byline: article.byline,
+        body_plain: article.bodyPlain,
+        edition_date: article.date,
+        category: article.category,
+        summary: article.summary,
+      }),
+    );
+    if (chunkRecords.length > 0) {
+      await sql.transaction(
+        chunkRecords.map((chunk) =>
+          sql`INSERT INTO article_chunks (id, article_id, chunk_index, chunk_text, embedding_input_hash, embedding_input_version)
+              VALUES (${chunk.id}, ${chunk.articleId}, ${chunk.chunkIndex}, ${chunk.chunkText}, ${chunk.embeddingInputHash}, ${EMBEDDING_INPUT_VERSION})
+              ON CONFLICT (id) DO UPDATE SET
+                chunk_index = EXCLUDED.chunk_index,
+                chunk_text = EXCLUDED.chunk_text,
+                embedding = CASE
+                  WHEN article_chunks.embedding_input_hash = EXCLUDED.embedding_input_hash
+                   AND article_chunks.embedding_input_version = EXCLUDED.embedding_input_version
+                   AND article_chunks.embedding_model = ${EMBEDDING_MODEL}
+                  THEN article_chunks.embedding ELSE NULL END,
+                embedding_model = CASE
+                  WHEN article_chunks.embedding_input_hash = EXCLUDED.embedding_input_hash
+                   AND article_chunks.embedding_input_version = EXCLUDED.embedding_input_version
+                   AND article_chunks.embedding_model = ${EMBEDDING_MODEL}
+                  THEN article_chunks.embedding_model ELSE NULL END,
+                embedding_input_hash = EXCLUDED.embedding_input_hash,
+                embedding_input_version = EXCLUDED.embedding_input_version`,
+        ),
+      );
+      const chunkIds = chunkRecords.map((chunk) => chunk.id);
+      await sql`DELETE FROM article_chunks
+                WHERE article_id = ANY(${articleIds}) AND NOT (id = ANY(${chunkIds}))`;
+    }
+
+    const imageRecords = preparedArticles.flatMap((article) =>
+      (article.imageUrls ?? []).map((imageUrl, imageIndex) => ({
+        id: `${article.id}:image:${String(imageIndex).padStart(3, "0")}`,
+        articleId: article.id,
+        imageIndex,
+        imageUrl,
+        caption: article.imageCaptions?.[imageIndex] ??
+          (imageIndex === 0 ? article.imageCaption : null),
+      })),
+    );
+    if (imageRecords.length > 0) {
+      await sql.transaction(
+        imageRecords.map((image) =>
+          sql`INSERT INTO article_images (id, article_id, image_index, image_url, caption)
+              VALUES (${image.id}, ${image.articleId}, ${image.imageIndex}, ${image.imageUrl}, ${image.caption})
+              ON CONFLICT (id) DO UPDATE SET
+                image_index = EXCLUDED.image_index,
+                image_url = EXCLUDED.image_url,
+                caption = EXCLUDED.caption,
+                embedding = CASE
+                  WHEN article_images.image_url = EXCLUDED.image_url
+                   AND article_images.caption IS NOT DISTINCT FROM EXCLUDED.caption
+                  THEN article_images.embedding ELSE NULL END,
+                embedding_model = CASE
+                  WHEN article_images.image_url = EXCLUDED.image_url
+                   AND article_images.caption IS NOT DISTINCT FROM EXCLUDED.caption
+                  THEN article_images.embedding_model ELSE NULL END,
+                embedding_input_version = CASE
+                  WHEN article_images.image_url = EXCLUDED.image_url
+                   AND article_images.caption IS NOT DISTINCT FROM EXCLUDED.caption
+                  THEN article_images.embedding_input_version ELSE NULL END,
+                embedding_input_hash = CASE
+                  WHEN article_images.image_url = EXCLUDED.image_url
+                   AND article_images.caption IS NOT DISTINCT FROM EXCLUDED.caption
+                  THEN article_images.embedding_input_hash ELSE NULL END`,
+        ),
+      );
+      const imageIds = imageRecords.map((image) => image.id);
+      await sql`DELETE FROM article_images
+                WHERE article_id = ANY(${articleIds}) AND NOT (id = ANY(${imageIds}))`;
+    } else if (articleIds.length > 0) {
+      await sql`DELETE FROM article_images WHERE article_id = ANY(${articleIds})`;
     }
 
     // Insert ads in a transaction
@@ -537,7 +613,8 @@ async function buildSearchVectors(scopedDate = "") {
     await sql`
       UPDATE articles SET search_vector =
         setweight(to_tsvector('english', coalesce(headline, '')), 'A') ||
-        setweight(to_tsvector('english', coalesce(byline, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(summary, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(byline, '')), 'C') ||
         setweight(to_tsvector('english', coalesce(body_plain, '')), 'C')
       WHERE edition_date = ${scopedDate}
     `;
@@ -545,7 +622,8 @@ async function buildSearchVectors(scopedDate = "") {
     await sql`
       UPDATE articles SET search_vector =
         setweight(to_tsvector('english', coalesce(headline, '')), 'A') ||
-        setweight(to_tsvector('english', coalesce(byline, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(summary, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(byline, '')), 'C') ||
         setweight(to_tsvector('english', coalesce(body_plain, '')), 'C')
     `;
   }
@@ -553,36 +631,49 @@ async function buildSearchVectors(scopedDate = "") {
   console.log("  Search vectors built.");
 }
 
-// ─── Embed Articles (optional — requires GEMINI_API_KEY) ─────────
+// ─── Embed article chunks (optional — uses Vertex ADC) ───────────
 
 async function embedArticles(scopedDate = "") {
-  // Lazy-import to avoid errors when the key is not set
-  let embedDocuments, buildEmbeddingInput, hasApiKey, QuotaExhaustedError;
+  // Lazy-import so a data-only seed can still run without local ADC.
+  let embedDocuments, buildEmbeddingInput, embeddingInputFingerprint;
+  let hasGoogleCredentials, QuotaExhaustedError, EMBEDDING_MODEL, EMBEDDING_INPUT_VERSION;
   try {
     const mod = await import("../../src/lib/embeddings.ts");
     embedDocuments = mod.embedDocuments;
     buildEmbeddingInput = mod.buildEmbeddingInput;
-    hasApiKey = mod.hasApiKey;
+    embeddingInputFingerprint = mod.embeddingInputFingerprint;
+    hasGoogleCredentials = mod.hasGoogleCredentials;
     QuotaExhaustedError = mod.QuotaExhaustedError;
+    EMBEDDING_MODEL = mod.EMBEDDING_MODEL;
+    EMBEDDING_INPUT_VERSION = mod.EMBEDDING_INPUT_VERSION;
   } catch (err) {
     console.warn("Skipping embedding: could not load embeddings module.", err.message);
     return;
   }
 
-  if (!hasApiKey()) {
-    console.warn("Skipping embedding: GEMINI_API_KEY not set.");
+  if (!hasGoogleCredentials()) {
+    console.warn("Skipping embedding: GOOGLE_CLOUD_PROJECT is not set for Vertex ADC.");
     return;
   }
 
   const unembedded = scopedDate
-    ? await sql`SELECT id, headline, byline, body_plain, edition_date, category FROM articles WHERE embedding IS NULL AND edition_date = ${scopedDate} ORDER BY id`
-    : await sql`SELECT id, headline, byline, body_plain, edition_date, category FROM articles WHERE embedding IS NULL ORDER BY id`;
+    ? await sql`SELECT c.id, c.chunk_index, c.chunk_text, a.headline, a.byline, a.edition_date, a.category, a.summary
+                FROM article_chunks c JOIN articles a ON a.id = c.article_id
+                WHERE a.edition_date = ${scopedDate}
+                  AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
+                       OR c.embedding_input_version IS DISTINCT FROM ${EMBEDDING_INPUT_VERSION})
+                ORDER BY c.id`
+    : await sql`SELECT c.id, c.chunk_index, c.chunk_text, a.headline, a.byline, a.edition_date, a.category, a.summary
+                FROM article_chunks c JOIN articles a ON a.id = c.article_id
+                WHERE c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
+                   OR c.embedding_input_version IS DISTINCT FROM ${EMBEDDING_INPUT_VERSION}
+                ORDER BY c.id`;
   if (unembedded.length === 0) {
-    console.log("All articles already embedded.");
+    console.log("All article chunks already embedded.");
     return;
   }
 
-  console.log(`Embedding ${unembedded.length} articles...`);
+  console.log(`Embedding ${unembedded.length} article chunks...`);
 
   const BATCH = 50;
   let done = 0;
@@ -592,13 +683,26 @@ async function embedArticles(scopedDate = "") {
 
   for (let i = 0; i < unembedded.length; i += BATCH) {
     const batch = unembedded.slice(i, i + BATCH);
-    const inputs = batch.map((a) => buildEmbeddingInput({ headline: a.headline, byline: a.byline, body_plain: a.body_plain, edition_date: a.edition_date, category: a.category }));
+    const inputs = batch.map((chunk) => buildEmbeddingInput({
+      headline: chunk.headline,
+      byline: chunk.byline,
+      body_plain: chunk.chunk_text,
+      edition_date: chunk.edition_date,
+      category: chunk.category,
+      summary: chunk.chunk_index === 0 ? chunk.summary : null,
+    }));
 
     try {
-      const vectors = await embedDocuments(inputs);
-      const updates = batch.map((a, idx) => {
+      const vectors = await embedDocuments(inputs, { op: "seed.embed-chunks" });
+      const updates = batch.map((chunk, idx) => {
         const vecStr = `[${vectors[idx].join(",")}]`;
-        return sql`UPDATE articles SET embedding = ${vecStr}::vector WHERE id = ${a.id}`;
+        const inputHash = embeddingInputFingerprint(inputs[idx]);
+        return sql`UPDATE article_chunks
+                   SET embedding = ${vecStr}::vector,
+                       embedding_model = ${EMBEDDING_MODEL},
+                       embedding_input_version = ${EMBEDDING_INPUT_VERSION},
+                       embedding_input_hash = ${inputHash}
+                   WHERE id = ${chunk.id}`;
       });
       await sql.transaction(updates);
       done += batch.length;
@@ -619,7 +723,7 @@ async function embedArticles(scopedDate = "") {
     }
   }
 
-  console.log(`  Embedding complete: ${done} articles.`);
+  console.log(`  Embedding complete: ${done} chunks.`);
   if (quotaExhausted) {
     throw new Error(
       `Embedding stopped early due to Gemini quota exhaustion; ${done} of ${unembedded.length} article(s) embedded. Retry after the daily quota reset.`,
@@ -733,6 +837,8 @@ async function main() {
   // Run ANALYZE for query planner optimization
   await sql`ANALYZE editions`;
   await sql`ANALYZE articles`;
+  await sql`ANALYZE article_chunks`;
+  await sql`ANALYZE article_images`;
   await sql`ANALYZE ads`;
   await sql`ANALYZE weather`;
   await sql`ANALYZE music`;

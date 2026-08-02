@@ -10,12 +10,14 @@
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
 import { recordUsage } from "@/src/lib/cost-tracker";
+import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import type { RetrievedArticle } from "@/src/lib/db";
 
-const RERANKER_MODEL = "gemini-3-flash-preview";
+const RERANKER_MODEL = RAG_MODEL_CONFIG.rerank.model;
 const RERANKER_TIMEOUT_MS = 8_000;
 const RERANKER_MAX_TOKENS = 150;
 const RERANKER_BODY_CHARS = 2000; // body excerpt sent to reranker per article
+const RERANKER_IMAGE_CAPTION_CHARS = 1000;
 const DEFAULT_MIN_SCORE = 5;
 const DEFAULT_MAX_ARTICLES = 5;
 
@@ -26,6 +28,7 @@ export interface RankedArticle extends RetrievedArticle {
 interface RerankOptions {
     minScore?: number;
     maxArticles?: number;
+    mode?: "text" | "visual";
     signal?: AbortSignal;
     requestId?: string;
 }
@@ -39,8 +42,23 @@ Given a user question and a list of article summaries, rate each article's relev
 - 7: Relevant
 - 10: Directly answers the question
 
-Respond with ONLY a JSON array of scores in the same order as the articles. Example: [8, 2, 6, 0, 9]
-No other text.`;
+For a visual search, judge whether the listed image captions describe the requested visual. A direct caption match is strong evidence (7-10); article prose that mentions the subject does not make an unrelated image relevant.
+
+Judge whether a source helps answer the question, not whether it confirms the question's premise. A source that directly says a supposed visit, event, plan, or claim did not happen is highly relevant (7-10), because correcting the false premise is the answer.
+
+Return a JSON object with a "scores" array in the same order as the articles. Example: {"scores":[8,2,6,0,9]}`;
+
+const RERANKER_SCHEMA = {
+    type: "object",
+    properties: {
+        scores: {
+            type: "array",
+            items: { type: "number", minimum: 0, maximum: 10 },
+        },
+    },
+    required: ["scores"],
+    additionalProperties: false,
+} as const;
 
 export async function rerankArticles(
     question: string,
@@ -58,12 +76,21 @@ export async function rerankArticles(
 
         const articleSummaries = articles
             .map((a, i) => {
-                const bodyExcerpt = (a.bodyPlain || "").slice(0, RERANKER_BODY_CHARS);
-                return `[${i + 1}] "${a.headline}" (${a.editionDate}, ${a.category})\nSummary: ${a.summary || "(none)"}\nExcerpt: ${bodyExcerpt}`;
+                const relevantText =
+                    a.matchedPassages && a.matchedPassages.length > 0
+                        ? a.matchedPassages.join("\n\n")
+                        : a.bodyPlain || "";
+                const bodyExcerpt = relevantText.slice(0, RERANKER_BODY_CHARS);
+                const imageCaptions = (a.imageCaptions ?? [])
+                    .filter((caption): caption is string => Boolean(caption?.trim()))
+                    .map((caption) => caption.trim())
+                    .join(" | ")
+                    .slice(0, RERANKER_IMAGE_CAPTION_CHARS);
+                return `[${i + 1}] "${a.headline}" (${a.editionDate}, ${a.category})\nSummary: ${a.summary || "(none)"}\nExcerpt: ${bodyExcerpt}\nImage captions: ${imageCaptions || "(none)"}`;
             })
             .join("\n\n");
 
-        const userPrompt = `<user_question>${question}</user_question>\n\nArticles:\n${articleSummaries}`;
+        const userPrompt = `SEARCH MODE: ${options.mode ?? "text"}\nUSER QUESTION (JSON string): ${JSON.stringify(question)}\n\nArticles:\n${articleSummaries}`;
 
         const controller = new AbortController();
         const timeout = setTimeout(
@@ -81,8 +108,11 @@ export async function rerankArticles(
             config: {
                 systemInstruction: RERANKER_PROMPT,
                 maxOutputTokens: RERANKER_MAX_TOKENS,
-                temperature: 0.0,
-                thinkingConfig: { thinkingBudget: 0 },
+                thinkingConfig: {
+                    thinkingLevel: RAG_MODEL_CONFIG.rerank.thinkingLevel,
+                },
+                responseMimeType: "application/json",
+                responseJsonSchema: RERANKER_SCHEMA,
                 abortSignal: combinedSignal,
             },
         });
@@ -143,11 +173,12 @@ export function parseScores(
     expectedCount: number,
 ): number[] | null {
     try {
-        // Extract JSON array from the response (may have surrounding text)
-        const arrayMatch = text.match(/\[[\d\s,.]+\]/);
-        if (!arrayMatch) return null;
-
-        const parsed = JSON.parse(arrayMatch[0]) as unknown[];
+        const decoded = JSON.parse(text) as unknown;
+        const parsed = Array.isArray(decoded)
+            ? decoded
+            : typeof decoded === "object" && decoded !== null
+              ? (decoded as { scores?: unknown }).scores
+              : null;
         if (!Array.isArray(parsed) || parsed.length !== expectedCount) return null;
 
         const scores = parsed.map(Number);
