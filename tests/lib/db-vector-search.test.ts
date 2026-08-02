@@ -1,3 +1,4 @@
+/** @vitest-environment node */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mock setup ────────────────────────────────────────────────────────
@@ -16,6 +17,7 @@ import {
   hybridSearch,
   DbTimeoutError,
   _clearHybridSearchCacheForTests,
+  _setRagV2TablesAvailableForTests,
 } from "@/src/lib/db";
 import type { RetrievedArticle } from "@/src/lib/db";
 
@@ -59,7 +61,9 @@ const DUMMY_EMBEDDING = Array.from({ length: 3 }, (_, i) => i * 0.1);
 
 describe("queryArticlesByEmbedding", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockSql.mockReset();
+    mockSql.transaction.mockReset();
+    _setRagV2TablesAvailableForTests(false);
   });
 
   it("returns mapped results with correct fields and source 'vector'", async () => {
@@ -85,6 +89,7 @@ describe("queryArticlesByEmbedding", () => {
       source: "vector",
       imageUrls: [],
       imageCaptions: [],
+      matchedPassages: [],
     });
     expect(results[1].headline).toBe("Second Article");
     expect(results[1].distance).toBe(0.4);
@@ -97,6 +102,15 @@ describe("queryArticlesByEmbedding", () => {
     await queryArticlesByEmbedding(DUMMY_EMBEDDING, { limit: 5 });
 
     expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("never compares a stable query vector with an old-model article vector", async () => {
+    mockSql.transaction.mockResolvedValueOnce([[], []]);
+    await queryArticlesByEmbedding(DUMMY_EMBEDDING);
+    const renderedSql = mockSql.mock.calls
+      .map((call) => Array.isArray(call[0]) ? call[0].join(" ") : "")
+      .join(" ");
+    expect(renderedSql).toContain("a.embedding_model =");
   });
 
   it("returns empty array when no rows match", async () => {
@@ -219,24 +233,83 @@ describe("queryArticlesByEmbedding", () => {
   });
 });
 
+describe("queryArticlesByEmbedding with RAG v2 tables", () => {
+  beforeEach(() => {
+    mockSql.mockReset();
+    mockSql.transaction.mockReset();
+    _setRagV2TablesAvailableForTests(true);
+  });
+
+  it("aggregates multiple matching chunks into article-local evidence", async () => {
+    mockSql.transaction.mockResolvedValueOnce([
+      [],
+      [],
+      [
+        makeVectorRow({ id: "article-a", chunk_text: "Late paragraph one.", distance: "0.10" }),
+        makeVectorRow({ id: "article-a", chunk_text: "Late paragraph two.", distance: "0.12" }),
+        makeVectorRow({ id: "article-b", chunk_text: "Another article.", distance: "0.15" }),
+      ],
+    ]);
+    const controller = new AbortController();
+    const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING, {
+      limit: 2,
+      signal: controller.signal,
+    });
+
+    expect(results).toHaveLength(2);
+    expect(results[0].id).toBe("article-a");
+    expect(results[0].matchedPassages).toEqual([
+      "Late paragraph one.",
+      "Late paragraph two.",
+    ]);
+    expect(mockSql.transaction.mock.calls[0][1]).toEqual({
+      readOnly: true,
+      fetchOptions: { signal: expect.any(AbortSignal) },
+    });
+  });
+
+  it("uses a separately embedded image result and promotes that image", async () => {
+    mockSql.transaction.mockResolvedValueOnce([
+      [],
+      [],
+      [
+        makeVectorRow({
+          id: "visual-a",
+          image_urls: ["first.jpg", "matched.jpg"],
+          image_captions: ["First", "Matched"],
+          matched_image_url: "matched.jpg",
+          matched_caption: "Matched",
+          distance: "0.08",
+        }),
+      ],
+    ]);
+    const [result] = await queryArticlesByEmbedding(DUMMY_EMBEDDING, {
+      onlyWithImages: true,
+    });
+    expect(result.imageUrls).toEqual(["matched.jpg", "first.jpg"]);
+    expect(result.imageCaptions).toEqual(["Matched", "First"]);
+    expect(result.matchedPassages).toEqual(["Matched"]);
+  });
+});
+
 // ── hybridSearch ──────────────────────────────────────────────────────
 
 describe("hybridSearch", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockSql.mockReset();
+    mockSql.transaction.mockReset();
     _clearHybridSearchCacheForTests();
+    _setRagV2TablesAvailableForTests(false);
   });
 
-  // Helper: mock the three sql calls that hybridSearch triggers:
-  // 1-2: two tagged template calls inside queryArticlesByEmbedding's transaction array (SET LOCAL + SELECT)
-  // 3: one tagged template call for FTS in searchArticlesForRag
-  // Plus: sql.transaction() for the vector search wrapper
+  // Both retrieval branches now use read-only Neon transactions so the same
+  // AbortSignal reaches the underlying fetch.
   function mockHybridCalls(vectorRows: Record<string, unknown>[], ftsRows: Record<string, unknown>[]) {
-    mockSql
-      .mockResolvedValueOnce([])  // SET LOCAL (dummy, transaction overrides)
-      .mockResolvedValueOnce([])  // SELECT vector (dummy, transaction overrides)
-      .mockResolvedValueOnce(ftsRows);
-    mockSql.transaction.mockResolvedValueOnce([[], vectorRows]);
+    mockSql.mockResolvedValue([]);
+    mockSql.transaction.mockImplementation(
+      async (queries: unknown[]) =>
+        queries.length === 2 ? [[], vectorRows] : [ftsRows],
+    );
   }
 
   it("merges vector and FTS results sorted by RRF score", async () => {
@@ -330,11 +403,10 @@ describe("hybridSearch", () => {
   // vector transaction array, FTS query call) plus one sql.transaction.
   function mockHybridHang() {
     const hang = () => new Promise<never>(() => {});
-    mockSql
-      .mockResolvedValueOnce([]) // SET LOCAL placeholder inside transaction array
-      .mockResolvedValueOnce([]) // SELECT placeholder inside transaction array
-      .mockImplementationOnce(hang); // FTS tagged template — hangs
-    mockSql.transaction.mockImplementationOnce(hang); // vector transaction — hangs
+    mockSql.mockResolvedValue([]);
+    mockSql.transaction
+      .mockImplementationOnce(hang)
+      .mockImplementationOnce(hang);
   }
 
   it("throws DbTimeoutError when sql hangs past the timeout budget", async () => {
@@ -360,10 +432,10 @@ describe("hybridSearch", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(DbTimeoutError);
       if (err instanceof DbTimeoutError) {
-        expect(err.op).toBe("hybridSearch");
+        expect(err.op).toMatch(/queryArticlesByEmbedding|searchArticlesForRag/);
         expect(err.timeoutMs).toBe(80);
         expect(err.name).toBe("DbTimeoutError");
-        expect(err.message).toContain("hybridSearch");
+        expect(err.message).toMatch(/queryArticlesByEmbedding|searchArticlesForRag/);
         expect(err.message).toContain("80ms");
       }
     }
@@ -381,12 +453,12 @@ describe("hybridSearch", () => {
     // First call populates cache
     const first = await hybridSearch("cache-me", DUMMY_EMBEDDING);
     expect(first.length).toBe(2);
-    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
 
     // Second identical call hits cache — no new sql activity
     const second = await hybridSearch("cache-me", DUMMY_EMBEDDING);
     expect(second).toEqual(first);
-    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
   });
 
   it("cache key distinguishes different questions", async () => {
@@ -395,7 +467,7 @@ describe("hybridSearch", () => {
       [makeFtsRow({ id: "f1", rank: "0.9" })],
     );
     await hybridSearch("question one", DUMMY_EMBEDDING);
-    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
 
     mockHybridCalls(
       [makeVectorRow({ id: "v2", distance: "0.2000" })],
@@ -403,7 +475,7 @@ describe("hybridSearch", () => {
     );
     await hybridSearch("question two", DUMMY_EMBEDDING);
     // Different question — cache miss → second SQL round trip
-    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(4);
   });
 
   it("cache key distinguishes different filters for the same question", async () => {
@@ -412,7 +484,7 @@ describe("hybridSearch", () => {
       [makeFtsRow({ id: "f1", rank: "0.9" })],
     );
     await hybridSearch("same-q", DUMMY_EMBEDDING, { category: "News" });
-    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
 
     mockHybridCalls(
       [makeVectorRow({ id: "v2", distance: "0.2000" })],
@@ -420,7 +492,7 @@ describe("hybridSearch", () => {
     );
     await hybridSearch("same-q", DUMMY_EMBEDDING, { category: "Sports" });
     // Different filter → cache miss → new SQL round trip
-    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(4);
   });
 
   it("cache is cleared by _clearHybridSearchCacheForTests", async () => {
@@ -429,7 +501,7 @@ describe("hybridSearch", () => {
       [makeFtsRow({ id: "f1", rank: "0.9" })],
     );
     await hybridSearch("clear-me", DUMMY_EMBEDDING);
-    expect(mockSql.transaction).toHaveBeenCalledTimes(1);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
 
     _clearHybridSearchCacheForTests();
 
@@ -439,6 +511,6 @@ describe("hybridSearch", () => {
     );
     await hybridSearch("clear-me", DUMMY_EMBEDDING);
     // Cache cleared → another SQL round trip
-    expect(mockSql.transaction).toHaveBeenCalledTimes(2);
+    expect(mockSql.transaction).toHaveBeenCalledTimes(4);
   });
 });

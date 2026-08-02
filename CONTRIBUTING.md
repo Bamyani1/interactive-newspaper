@@ -22,7 +22,8 @@ Thanks for taking a look. This is a solo portfolio project, so the primary autho
 ```bash
 # Install
 npm install
-cp .env.example .env.local     # fill DATABASE_URL, GOOGLE_API_KEY, etc.
+cp .env.example .env.local     # fill DATABASE_URL and Google Cloud project/location
+gcloud auth application-default login
 
 # Run locally
 npm run dev                    # http://localhost:3000

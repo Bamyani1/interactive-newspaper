@@ -4,6 +4,14 @@
     "question": "What did The Transcript say about Kennedy's visit to Ohio?",
     "minCitations": 1,
     "keywordsAny": ["Kennedy"],
+    "expectedSourceIdsAny": [
+      "1960-02-24-49",
+      "1960-04-13-30",
+      "1960-01-13-11"
+    ],
+    "expectedFactsAny": [
+      ["Political Days", "presidential primaries", "Ohio delegates"]
+    ],
     "confidenceMin": "low",
     "mode": "text"
   },
@@ -12,14 +20,47 @@
     "question": "How did Ohio Wesleyan students react to the Vietnam War?",
     "minCitations": 2,
     "keywordsAny": ["Vietnam", "war", "protest", "anti-war"],
+    "expectedSourceIdsAny": ["1970-04-08-18", "1968-01-31-28"],
+    "expectedFactsAny": [
+      ["moratorium", "demonstration", "protest"]
+    ],
     "confidenceMin": "medium",
     "mode": "text"
+  },
+  {
+    "id": "vietnam-1968-1970-agent",
+    "question": "Compare the anti-war actions described by The Transcript in 1968 and 1970.",
+    "minCitations": 2,
+    "keywordsAny": ["Vietnam", "anti-war", "demonstration", "moratorium", "protest"],
+    "expectedSourceIdGroupsAll": [
+      ["1968-01-31-28", "1968-01-10-3"],
+      ["1970-04-08-13", "1970-04-08-18"]
+    ],
+    "expectedFactsAny": [
+      ["booing pickets", "Burn Draft Cards", "Gray Chapel", "LeMay"],
+      ["taxpayer rallies", "three day fast", "moratorium"]
+    ],
+    "confidenceMin": "medium",
+    "mode": "text",
+    "complexity": "complex"
   },
   {
     "id": "women-at-owu",
     "question": "What was student life like for women at Ohio Wesleyan in the 1960s?",
     "minCitations": 2,
     "keywordsAny": ["women", "woman", "girls", "female", "sorority"],
+    "expectedSourceIdsAny": [
+      "1960-04-13-33",
+      "1965-04-28-31",
+      "1966-11-02-42",
+      "1967-01-10-30",
+      "1968-01-10-4",
+      "1968-10-09-65",
+      "1968-10-09-66"
+    ],
+    "expectedFactsAny": [
+      ["restriction", "curfew", "dress", "slacks", "AWS"]
+    ],
     "confidenceMin": "medium",
     "mode": "text"
   },
@@ -28,6 +69,12 @@
     "question": "How did the OWU football team perform in a 1970s season?",
     "minCitations": 2,
     "keywordsAny": ["football"],
+    "expectedSourceIdsAny": [
+      "1979-01-11-13",
+      "1977-11-10-21",
+      "1978-09-14-28",
+      "1970-01-07-20"
+    ],
     "confidenceMin": "medium",
     "mode": "text"
   },
@@ -36,6 +83,12 @@
     "question": "What were the dorms and campus housing like?",
     "minCitations": 2,
     "keywordsAny": ["dorm", "dormitory", "housing", "residence"],
+    "expectedSourceIdsAny": [
+      "1983-01-13-0",
+      "1983-04-14-3",
+      "1968-01-10-28",
+      "1995-03-22-3"
+    ],
     "confidenceMin": "medium",
     "mode": "text"
   },
@@ -53,6 +106,11 @@
     "question": "Show me photos of the homecoming parade",
     "minCitations": 2,
     "keywordsAny": ["parade", "homecoming"],
+    "expectedSourceIdsAny": [
+      "1991-10-16-1",
+      "1990-10-24-4",
+      "2000-10-25-12"
+    ],
     "confidenceMin": "low",
     "mode": "visual"
   },

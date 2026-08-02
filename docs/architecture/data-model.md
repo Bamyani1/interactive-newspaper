@@ -15,11 +15,8 @@ As of this writing:
 | Editions | 351 |
 | Articles | 11,705 |
 | Ads | 6,846 |
-| Embedded articles | 11,705 (100%) |
 | Embedding dimension | 768 |
-| Vector data size | ~7 MB |
-| FTS index size | ~14 MB |
-| HNSW index size | ~18 MB |
+| Active vector records | Query with `npm run db:embed -- --dry-run` after migration |
 
 Every tuning decision in this doc is anchored in that scale. "RRF K=40 because the corpus is small" means "small relative to ~12k articles."
 
@@ -71,7 +68,9 @@ src/server/ocr-adapter/index.ts
         ▼
 Neon PostgreSQL (via @neondatabase/serverless HTTP)
   ├── editions   (UPSERT on conflict)
-  ├── articles   (DELETE + INSERT + embedding restore)
+  ├── articles   (in-place UPSERT; removed IDs deleted)
+  ├── article_chunks (deterministic text evidence)
+  ├── article_images (one record per visual)
   └── ads        (DELETE + INSERT)
         │
         ▼
@@ -85,24 +84,17 @@ seed.mjs → buildSearchVectors()
 npm run db:embed  →  scripts/db/embed.mjs
         │
         ▼
-SELECT articles WHERE embedding IS NULL   (or all, with --force)
+SELECT pending article_chunks and article_images   (or all, with --force)
         │
         ▼
-src/lib/embeddings.ts :: buildEmbeddingText()
-  prepend "From The Transcript Archive..., {date}, {category} section"
-  then byline, summary, [Photo: {caption}]?, body_plain
+src/lib/article-chunking.ts + src/lib/embeddings.ts
+  sentence-aware text chunks + separately loaded images
         │
         ▼
-Google Gemini API (gemini-embedding-2-preview, 768-dim)
+Vertex AI via ADC (gemini-embedding-2, 768 dimensions)
         │
         ▼
-UPDATE articles SET embedding = '[…]'::vector, embedding_model = '…'
-        │
-        ▼  (after all articles embedded)
-scripts/db/recreate-hnsw-index.mjs
-  DROP INDEX idx_articles_embedding;
-  CREATE INDEX idx_articles_embedding ON articles USING hnsw (embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 128);
+UPDATE article_chunks/article_images with vector, model, version, and hash
 ```
 
 ### C. Image CDN path
@@ -126,10 +118,11 @@ CDN: IMAGE_BASE_URL/<date>/images/<file>.webp   (production)
 
 ```
 POST /api/ask
-  → embedQuery(question)    (embeddings.ts, 10s timeout, 5-min LRU)
+  → reformulateQuery(question)
+  → embedQuery(semantic query)    (embeddings.ts, 10s timeout, 5-min LRU)
   → hybridSearch()          (db.ts: vector + FTS → RRF, 5-min LRU)
-    ├── queryArticlesByEmbedding()   (HNSW cosine, hnsw.ef_search=100)
-    └── searchArticlesForRag()       (websearch_to_tsquery + ts_rank)
+    ├── queryArticlesByEmbedding()   (chunk or image HNSW cosine)
+    └── searchArticlesForRag()       (chunk/article FTS)
   → rerankArticles()
   → generateAnswer() or runAgentLoop()
 
@@ -173,9 +166,9 @@ Columns grouped by access pattern:
 | `id` | `TEXT PRIMARY KEY` | `'{date}-{index}'` |
 | `edition_date` | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target |
 | `headline` | `TEXT NOT NULL DEFAULT ''` | result display + FTS weight A |
-| `body_plain` | `TEXT NOT NULL DEFAULT ''` | FTS source + embedding source + reranker input |
+| `body_plain` | `TEXT NOT NULL DEFAULT ''` | canonical plain text and legacy fallback evidence |
 | `search_vector` | `TSVECTOR` | auto-populated by trigger; GIN indexed |
-| `embedding` | `VECTOR(768)` | `gemini-embedding-2-preview`; HNSW indexed |
+| `embedding` | `VECTOR(768)` | legacy rollback/cutover vector; active v2 vectors live in child tables |
 
 **Warm — read on result hydration**
 
@@ -199,6 +192,7 @@ Columns grouped by access pattern:
 | `is_featured` | `BOOLEAN NOT NULL DEFAULT FALSE` |  |
 | `image_captions` | `JSONB NOT NULL DEFAULT '[]'` | parallel to `image_urls` |
 | `embedding_model` | `TEXT` | records model name; used for migrations |
+| `embedding_input_hash`, `embedding_input_version` | `TEXT` | legacy vector identity metadata |
 
 Indexes:
 
@@ -211,6 +205,32 @@ Indexes:
 | `idx_articles_embedding` | `(embedding vector_cosine_ops)` | HNSW (`m=16, ef_construction=128`) |
 
 The `search_vector` is maintained by a `BEFORE INSERT OR UPDATE` trigger (`articles_search_vector_trig`) that calls `articles_search_vector_update()`. Weights: `headline(A)`, `summary(B)`, `byline(C)`, `body_plain(C)`.
+
+### `article_chunks`
+
+Each row is one deterministic sentence-aware article segment. `id` is `{article_id}:{chunk_index padded to four digits}`. `article_id` cascades on delete; `(article_id, chunk_index)` is also unique.
+
+| Column | Type | Notes |
+|---|---|---|
+| `chunk_text` | `TEXT NOT NULL` | evidence sent to reranking/generation when matched |
+| `search_vector` | `TSVECTOR` | trigger-maintained and GIN indexed |
+| `embedding` | `VECTOR(768)` | HNSW cosine index |
+| `embedding_model` | `TEXT` | must equal the query embedding model |
+| `embedding_input_version` | `TEXT` | currently `article-chunk-v1` |
+| `embedding_input_hash` | `TEXT NOT NULL` | SHA-256 identity of canonical model/version/input |
+
+### `article_images`
+
+Each row represents one image, not one article. `id` is `{article_id}:image:{image_index padded to three digits}`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `image_url` | `TEXT NOT NULL` | source image/CDN identity |
+| `caption` | `TEXT` | semantic text paired with the image |
+| `embedding` | `VECTOR(768)` | one multimodal vector; HNSW indexed |
+| `embedding_model` | `TEXT` | current stable embedding model |
+| `embedding_input_version` | `TEXT` | currently `article-image-v1` |
+| `embedding_input_hash` | `TEXT` | includes model, version, text, MIME type, and image bytes |
 
 ### `ads`
 
@@ -367,7 +387,7 @@ The API route reads from DB in the normal case; it only invokes the adapter when
 
 **Idempotency on re-seed**. On every `db:seed`, the adapter sees the current `edition.json`, re-runs every rule, and produces a deterministic output. The DB is a view of that computation. If the rules change, reseeding updates the DB; if the rules don't change, reseeding is a no-op (plus embedding preservation, see below).
 
-**Dedup and filtering**. Articles dropped by the adapter (too short, empty, AI-described image artifacts, headline-equals-caption with no body) are also absent from the DB after re-seed, since the delete-then-insert cycle removes anything not in the adapter's output.
+**Dedup and filtering**. Articles dropped by the adapter (too short, empty, AI-described image artifacts, headline-equals-caption with no body) are also absent after re-seed. The seed path upserts current IDs in place, then deletes only IDs no longer produced by the adapter; child chunk/image records cascade.
 
 **Gold restores**. Per the project's CLAUDE.md: "restores must go through the ocr-adapter path, not raw SQL — dedup lives in the adapter." Direct SQL inserts would bypass the filtering and dedup logic, risking stale content in the DB.
 
@@ -389,82 +409,75 @@ Other adapter modules (`category-rules`, `text-cleaning`, `article-transform`, `
 
 ### Model and dimensions
 
-Model: `gemini-embedding-2-preview`. Dimension: `EMBEDDING_DIMS = 768`. Schema: `VECTOR(768)`.
+Model: stable `gemini-embedding-2` on Vertex AI with ADC. Dimension: `EMBEDDING_DIMS = 768`. Schema: `VECTOR(768)`.
 
 This model uses inline text prefixes rather than `taskType` enums:
 
 - Documents: `"title: {headline} | text: {body}"` via `buildEmbeddingText`
 - Queries: `"task: search result | query: {question}"` via `embedQuery`
 
-### Document input assembly
+### Text chunk input
 
-`buildEmbeddingText` assembles:
+`buildArticleChunkRecords` normalizes whitespace, targets 3,200-character sentence-aware chunks, and overlaps up to 600 characters of complete trailing sentences. Each chunk passes through `buildEmbeddingText`, which assembles:
 
 ```
 From The Transcript Archive: {date}, {category} section.
 Byline: {byline}
 Summary: {summary}
-[Photo: {image_caption}]              ← if present
-{body_plain}
+{chunk_text}
 ```
 
 Capped at 30,000 chars to stay under the API's 8,192-token limit.
 
-For articles with images, `embed.mjs` optionally loads the first image as base64 and sends a multimodal embedding request. Multimodal inputs are sent individually (not batched) due to the Gemini API's 6-image-per-request ceiling.
+### Image input
 
-The `embedding_model` column records which model produced each vector, enabling future model migrations without losing which articles need re-embedding.
+Every `article_images` record is embedded independently. The input combines article context and caption with the exact local image bytes. Missing local files remain pending and are reported; they do not abort text backfill.
+
+### Vector identity
+
+Every active vector stores:
+
+- `embedding_model`;
+- `embedding_input_version` (`article-chunk-v1` or `article-image-v1`);
+- `embedding_input_hash`, a SHA-256 digest of model, version, exact text, and image data when present.
+
+Seed/migration upserts preserve a vector only when its canonical identity is unchanged. Any changed input clears only that vector. Query SQL filters by model and input version, so old and new embedding spaces are never compared.
 
 ### HNSW index
 
-Creation script: `scripts/db/recreate-hnsw-index.mjs`.
-
 ```sql
-DROP INDEX IF EXISTS idx_articles_embedding;
-CREATE INDEX idx_articles_embedding
-  ON articles USING hnsw (embedding vector_cosine_ops)
+CREATE INDEX idx_article_chunks_embedding
+  ON article_chunks USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 128);
+CREATE INDEX idx_article_images_embedding
+  ON article_images USING hnsw (embedding vector_cosine_ops)
   WITH (m = 16, ef_construction = 128);
 ```
-
-The original schema had `ef_construction = 64`; raised to 128 for better index quality. `schema.sql` line 45 reflects 128.
 
 At query time, `queryArticlesByEmbedding` runs:
 
 ```sql
 BEGIN;
   SET LOCAL hnsw.ef_search = 100;   -- default is 40
+  SET LOCAL hnsw.iterative_scan = 'relaxed_order';
   SELECT ... ORDER BY embedding <=> $queryVec LIMIT $k;
 COMMIT;
 ```
 
-The tradeoff is slightly slower scan for better recall on a small corpus.
-
-### When to rebuild
-
-- After any model change (different dimension or prefix format invalidates all stored vectors)
-- After `db:embed --force` completes
-- When `migrate-rag-improvements.mjs` drops the old index
-
-The script verifies at least one embedding exists before building.
-
-### Sequential scan fallback
-
-If `idx_articles_embedding` does not exist — e.g., dropped by `migrate-rag-improvements.mjs` and not yet rebuilt — pgvector falls back to a full sequential scan. With ~10k articles this is noticeably slower but not catastrophic. CLAUDE.md's "migrate-rag-improvements.mjs follow-up" reminder means: after running that migration, immediately run:
-
-```bash
-npm run db:embed:force
-node --import tsx scripts/db/recreate-hnsw-index.mjs
-```
+Iterative scanning improves recall when category/date/image filters would otherwise discard ANN candidates.
 
 ### Incremental vs force
 
 | Command | Effect |
 |---|---|
-| `npm run db:embed` | `WHERE embedding IS NULL` — only unembedded articles |
-| `npm run db:embed:force` | All articles; used after changing model or text format |
+| `npm run db:embed -- --dry-run` | Counts pending chunks/images and estimates online cost; no model call |
+| `npm run db:embed` | Missing/stale model or version rows only |
+| `npm run db:embed:force` | Every text chunk and available image |
 
-- Batch size: 50 articles per API call
-- Quota handling: `QuotaExhaustedError` breaks the loop immediately rather than retrying. Daily quota failures will recur on every batch and waste wall time.
-- Per-minute RPM quota: 3 exponential retries (1s, 2s, 4s) via `retryOnQuota` in `embeddings.ts`.
+- Script text batch size: 50 chunks.
+- Images are embedded one at a time.
+- One script-level transient retry is allowed; `QuotaExhaustedError` stops the run.
+- Rerunning resumes pending rows.
 
 ---
 
@@ -492,7 +505,7 @@ Route.ts overrides by mode:
 - `visual` mode → 0.7 vector / 0.3 FTS
 - `text` mode → 0.6 vector / 0.4 FTS
 
-Articles appearing in both result sets get both scores summed and their `source` field set to `"both"`. Result is a sorted, deduplicated list up to `limit`. Module-level LRU cache (50 entries, 5-min TTL, keyed on question + filters) short-circuits repeated identical queries.
+Articles appearing in both result sets get both scores summed and their `source` field set to `"both"`. Their unique matched passages are combined. The module-level LRU (50 entries, five-minute TTL) keys on lexical query, semantic-vector digest, filters, pipeline version, and corpus version.
 
 ---
 
@@ -507,10 +520,11 @@ Convention: standalone `.mjs` scripts in `scripts/db/`, each idempotent via `IF 
 | `migrate-api-rate-bucket.mjs` | Creates `api_rate_bucket` + expiry index | no |
 | `migrate-ask-sessions.mjs` | Creates `ask_session_turns` + 2 indexes | no |
 | `migrate-ask-feedback.mjs` | Creates `ask_feedback` + 2 indexes (also in `schema.sql`) | no |
-| `migrate-rag-improvements.mjs` | Updates FTS trigger to include `summary(B)`, drops old HNSW index | **yes** — run `db:embed:force` then `recreate-hnsw-index.mjs` |
-| `recreate-hnsw-index.mjs` | Drops and rebuilds HNSW with `ef_construction=128` | no (is itself the follow-up) |
+| `migrate-rag-v2.mjs` | Creates chunk/image indexes, repairs FTS weighting, and backfills deterministic metadata without model calls | **yes** — inspect `db:embed -- --dry-run`, then run `db:embed` |
+| `migrate-rag-improvements.mjs` | Legacy whole-article migration, superseded by RAG v2 | do not use for a new v2 deployment |
+| `recreate-hnsw-index.mjs` | Legacy article-vector index rebuild | not needed for v2 child-table indexes |
 
-The `migrate-rag-improvements.mjs` follow-up is the one called out in CLAUDE.md. The migration intentionally drops the old HNSW index, leaving vector search on sequential scan until the index is rebuilt with the new parameters.
+Online embedding is deliberately separate from schema migration so it can be cost-previewed, stopped, and resumed.
 
 ---
 
@@ -527,45 +541,31 @@ The `migrate-rag-improvements.mjs` follow-up is the one called out in CLAUDE.md.
    - Read `edition.json`
    - Call adapter's `transformArticles` and `transformAds`
    - UPSERT into `editions` (ON CONFLICT DO UPDATE)
-   - **Snapshot existing embeddings by content fingerprint**
-   - DELETE all `articles` for the date
-   - Re-INSERT via transaction
-   - **Restore matching embeddings**
+   - Build canonical article/chunk/image records and hashes
+   - UPSERT current article IDs in place; preserve unchanged vectors
+   - Delete article IDs no longer produced by the adapter
+   - Synchronize chunk and image child records, invalidating only changed vectors
    - DELETE and re-INSERT `ads`
 5. **`seedWeather()`** — bulk insert weather records (batched 500), skipped if `--date` flag set.
 6. **`seedMusic()`** — bulk insert music records, skipped if `--date` flag set.
 7. **`buildSearchVectors(targetDate)`** — bulk `UPDATE articles SET search_vector = …`. Redundant with the trigger but ensures correctness on first seed when the trigger wasn't yet active.
-8. **`embedArticles(targetDate)`** — embeds only articles with `embedding IS NULL`. Hard-stops on quota exhaustion.
-9. **`ANALYZE`** — updates planner statistics for `editions`, `articles`, `ads`, `weather`, `music`.
+8. **`embedArticles(targetDate)`** — embeds pending current-version text chunks when ADC is configured. Image backfill remains explicit through `db:embed`.
+9. **`ANALYZE`** — updates planner statistics, including the v2 child tables.
 
 ### Reset mode — `npm run db:reset`
 
 Before step 1, the script:
 
 - **`exportLockedEditions()`** — reads `editions`, `articles`, `ads` for every date in `locked-editions.json` and saves them in memory. This protects the gold edition even when the source files aren't locally present.
-- **`dropAllTables()`** — `DROP TABLE IF EXISTS` for `ask_feedback`, `music`, `weather`, `ads`, `articles`, `editions` in that order (reverse FK order).
+- **`dropAllTables()`** — drops child `article_images`/`article_chunks` before `articles`, then the remaining tables in reverse FK order.
 
 Then continues from step 1. After `applySchema`, `restoreLockedEditions(savedData)` re-inserts the saved gold rows before the general seed loop runs.
 
 With `--unlock`, the export/restore of locked editions is skipped entirely.
 
-### Embedding preservation — the fingerprint mechanism
+### Embedding preservation — canonical identity
 
-Critical design detail. The delete-then-insert cycle would destroy all embeddings on every seed if not for the fingerprint mechanism.
-
-**How it works**:
-
-1. Before DELETE, `seed.mjs` snapshots `{embedding, embedding_model}` keyed by `JSON.stringify([headline, byline, body_plain, category])`.
-2. After INSERT, articles whose fingerprint matches get their embedding restored.
-3. Articles whose content changed (or are new) are left `NULL` for `embed.mjs` to fill in.
-
-**Worked example**:
-
-- Article A before reseed: `headline="Students March"`, `body_plain="Hundreds marched..."`. Fingerprint computed, embedding snapshotted.
-- Reseed runs adapter, produces the same headline and body. Fingerprint matches; embedding restored. No API call.
-- Article B before reseed: `headline="Fire Destroys Gymnasium"`. After an OCR fix, `body_plain` now has corrected text. Fingerprint differs; B is left with `NULL` embedding. `embed.mjs` re-embeds only B — ~$0.0001 vs re-embedding the whole corpus at ~$1.
-
-**Failure mode**: any whitespace-only diff in `body_plain` (e.g., `"\n\n"` normalization) produces a different fingerprint and triggers a spurious re-embed. The adapter's text-cleaning pipeline is deterministic, so this is rare in practice but worth knowing before you introduce whitespace changes mid-pipeline.
+The seed does not delete and recreate current articles. For every active vector it compares the stored canonical hash/version with the newly derived record. Exact matches retain their vector; changed inputs clear it for the next incremental backfill. Record IDs removed by the adapter are deleted, so their child vectors cascade instead of becoming stale search results.
 
 ---
 
@@ -602,24 +602,23 @@ Called in `article-transform.ts` and `ad-transform.ts` at seed time.
 
 ## Neon specifics
 
-`@neondatabase/serverless` uses HTTP for every query. No persistent TCP connection, no connection pool. Ideal for Vercel serverless but with one critical limitation: **no `AbortSignal` support**.
+`@neondatabase/serverless` uses HTTP for each query. Hot-path RAG transactions pass an `AbortSignal` through `fetchOptions`, allowing the Neon HTTP request to be cancelled.
 
-The implication: once `sql\`...\`` is called, the query runs to completion on Neon's server regardless of client-side cancellation. `AbortController` or `AbortSignal` have no effect.
-
-### The `raceWithTimeout` pattern
+### Cancellation plus deadline race
 
 ```typescript
-function raceWithTimeout<T>(op, promise, timeoutMs) {
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new DbTimeoutError(op, timeoutMs)), timeoutMs);
-  });
-  return Promise.race([promise.finally(() => clearTimeout(timer)), timeoutPromise]);
+function runWithDbTimeout<T>(op, operation, timeoutMs, outerSignal) {
+  const controller = new AbortController();
+  const signal = AbortSignal.any([outerSignal, controller.signal]);
+  const aborted = rejectWhenAborted(signal, new DbTimeoutError(op, timeoutMs));
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return Promise.race([operation(signal), aborted]).finally(() => clearTimeout(timer));
 }
 ```
 
-`DbTimeoutError` unblocks the caller. The underlying Neon query may still be running server-side — orphaned. The 8-second default (`HYBRID_SEARCH_TIMEOUT_MS`) protects the `/api/ask` response budget (30s global deadline) from a stuck DB call. All callers that receive `DbTimeoutError` convert it to HTTP 504.
+The signal is supplied to the real transaction fetch, while the race guarantees the caller returns even if a driver regression or test double ignores cancellation. The eight-second default protects the 30-second request budget. `DbTimeoutError` becomes HTTP 504/SSE stage `retrieve`, and no second fallback query starts after timeout or abort.
 
-This pattern applies to `hybridSearch` and `queryArticlesByEmbedding`. It is not applied to simpler point-lookup queries (`queryEditionByDate`, `searchArticles`) which don't participate in the RAG hot path.
+This pattern covers vector search, chunk FTS, edition listing for agent tools, and full-article reads used by the agent.
 
 ### Lazy `_sql` clients
 
@@ -647,14 +646,14 @@ The gold edition at `gold/1960-01-13/gold-edition.json` is protected by `scripts
 
 Accepted tradeoffs. These are intentional, not TODOs.
 
-1. **`migrate-rag-improvements.mjs` drops the HNSW index.** After running the migration, you *must* run `db:embed:force` then `recreate-hnsw-index.mjs`, or vector search silently falls back to sequential scan. **Accepted because** bundling the re-embed step into the migration would make it un-cancelable on a multi-hour embed job. The sharp edge is documented.
-2. **Embedding fingerprint is whitespace-sensitive.** A normalization change to `body_plain` produces fingerprint misses on every article, triggering a full re-embed. **Accepted because** the adapter's text-cleaning pipeline is deterministic and rarely changes. The cost of a false miss (~$1 corpus re-embed) is acceptable for a portfolio project.
+1. **Schema and online backfill are separate operations.** `db:migrate:rag-v2` never calls Google; `db:embed` is the explicit, resumable online step. During the gap, chunk FTS works while current-model vector coverage is incomplete.
+2. **Embedding fingerprints are intentionally exact.** A normalization or chunking change invalidates affected hashes. This may require a broad re-embed, but it prevents stale vectors from being silently reused.
 3. **Ads use SERIAL PK and can't be upserted.** Every re-seed does a DELETE + INSERT; ad IDs change across seeds. **Accepted because** ads have no cross-reference surface (no URLs, no deep links). If they ever do, this needs rethinking.
 4. **Per-instance rate-limit fallback under-counts across Vercel instances.** During Neon outages, effective per-IP limit is `N × instance_count`. **Accepted because** the primary path (Neon-backed) handles correctness; the fallback only fires during infrastructure failure.
-5. **Neon orphan queries accumulate on timeout.** `raceWithTimeout` unblocks the caller but the query continues server-side. **Accepted because** the HTTP driver has no cancellation mechanism; at current scale the connection pool tolerates it.
+5. **Neon cancellation is HTTP-driver dependent.** Every hot-path transaction receives `fetchOptions.signal`, and the caller also races the abort event. This guarantees request completion; server-side cancellation still depends on Neon honoring the signal.
 6. **No schema-version column.** There's no automated check that the DB has every migration applied. **Accepted because** all migrations are idempotent (`IF NOT EXISTS`); running them all is safe and fast. Manual verification via `psql \d+ articles` is the fallback.
 7. **Gold edition `locked-editions.json` is the only dated-article protection mechanism.** Any other edition can be destroyed by `db:reset --unlock`. **Accepted because** all other editions are reproducible from `edition.json` on disk; only the gold regression baseline matters for verification.
-8. **Multimodal embedding batch atomicity.** `embedDocuments` fails the whole batch on one image failure. **Accepted because** splitting on error doubles API calls on the common path. See `docs/issues/` for the full analysis.
+8. **Missing local images cannot be embedded.** The backfill records them as pending and continues. Their articles remain available through chunk vectors, FTS, and stored captions.
 
 ---
 
@@ -671,33 +670,32 @@ npm run db:reset
 
 If `gold/1960-01-13/gold-edition.json` is present locally, it's automatically restored. If not, the DB export mechanism (pre-drop snapshot) handles it as long as the table had the data before DROP.
 
-### Re-embed after changing embedding model or text format
+### Migrate and backfill RAG v2
+
+```bash
+npm run db:migrate:rag-v2
+# Metadata/schema only; no model calls.
+
+npm run db:embed -- --dry-run
+npm run db:embed
+# Resumable stable text-chunk and per-image backfill.
+```
+
+### Force a full re-embed after changing the canonical input format
 
 ```bash
 npm run db:embed:force
-# Re-embeds all ~10k articles. ~50 min at gemini-embedding-2-preview rates.
-# Stops early on daily quota exhaustion; resume next day.
-
-node --import tsx scripts/db/recreate-hnsw-index.mjs
-# MUST run after embed completes. Drops and recreates the HNSW index.
-# Without this, vector search falls back to sequential scan.
 ```
 
-### Rebuild HNSW index without re-embedding
-
-```bash
-node --import tsx scripts/db/recreate-hnsw-index.mjs
-```
-
-Only needed if the index was dropped (e.g., by `migrate-rag-improvements.mjs`) and embeddings are already current.
+Use only when the model, canonical input format, or source image bytes changed without a corresponding hash/version bump.
 
 ### Investigate a slow query
 
-1. **Confirm HNSW index exists**. Use `\d articles` in `psql` to verify `idx_articles_embedding`. If missing, vector search is on sequential scan.
+1. **Confirm v2 indexes exist**. Use `\d article_chunks` and `\d article_images` in `psql` to verify both HNSW indexes.
 2. **Check the daily budget**. `SELECT * FROM ai_spend_counter WHERE day = CURRENT_DATE`. A request that looks stuck may be budget-blocked before the query reached the DB.
 3. **Check `api_rate_bucket`**. Look for IP-level throttling.
 4. **Hybrid search timeout**. `hybridSearch` has an 8-second timeout (`HYBRID_SEARCH_TIMEOUT_MS`); a `DbTimeoutError` in logs means the DB exceeded that budget.
-5. **Neon slow-query log**. Examine the Neon console for server-side slow queries that may indicate orphaned queries accumulating.
+5. **Neon slow-query log**. Examine the Neon console for slow or repeatedly cancelled queries.
 
 ### Restore from gold
 
@@ -710,15 +708,15 @@ Alternatively, with gold files on disk, any `db:seed` triggers `ensureLockedEdit
 
 **Direct SQL restore is not supported** — it bypasses the adapter's filtering and dedup logic.
 
-### Run the migration follow-up sequence
+### Run the RAG v2 deployment sequence
 
 ```bash
-node --import tsx scripts/db/migrate-rag-improvements.mjs
-npm run db:embed:force
-node --import tsx scripts/db/recreate-hnsw-index.mjs
+npm run db:migrate:rag-v2
+npm run db:embed -- --dry-run
+npm run db:embed
 ```
 
-Run in this exact order. Skipping or reordering leaves vector search degraded.
+Run in this order. The first command is metadata-only; the dry run reports the online work before it is authorized.
 
 ---
 

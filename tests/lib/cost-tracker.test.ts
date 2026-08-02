@@ -19,6 +19,8 @@ process.env.DATABASE_URL = process.env.DATABASE_URL ?? "postgres://fake/test";
 // Import AFTER the mock is declared so the module sees our fake.
 import {
     computeCostUsd,
+    computeEmbeddingCostUsd,
+    embeddingTokenCount,
     checkDailyBudget,
     recordUsage,
     DailyBudgetExceededError,
@@ -30,7 +32,7 @@ const ORIGINAL_BUDGET = 0.5;
 
 describe("computeCostUsd", () => {
     it("returns 0 when usage is undefined", () => {
-        expect(computeCostUsd("gemini-3-flash-preview", undefined)).toBe(0);
+        expect(computeCostUsd("gemini-3.5-flash-lite", undefined)).toBe(0);
     });
 
     it("returns 0 for an unknown model", () => {
@@ -43,30 +45,67 @@ describe("computeCostUsd", () => {
     });
 
     it("multiplies tokens by the model's input+output rate", () => {
-        // 1M input tokens at $0.10/M + 1M output at $0.40/M = $0.50
-        const cost = computeCostUsd("gemini-3-flash-preview", {
+        // 1M input at $0.30/M + 1M output/reasoning at $2.50/M.
+        const cost = computeCostUsd("gemini-3.5-flash-lite", {
             promptTokenCount: 1_000_000,
             candidatesTokenCount: 1_000_000,
         });
-        expect(cost).toBeCloseTo(0.5, 6);
+        expect(cost).toBeCloseTo(2.8, 6);
     });
 
     it("handles embedding model with zero output price", () => {
-        // 1M input tokens at $0.025/M = $0.025
-        const cost = computeCostUsd("gemini-embedding-2-preview", {
+        const cost = computeCostUsd("gemini-embedding-2", {
             promptTokenCount: 1_000_000,
             candidatesTokenCount: 0,
         });
-        expect(cost).toBeCloseTo(0.025, 6);
+        expect(cost).toBeCloseTo(0.2, 6);
     });
 
     it("treats missing token counts as 0", () => {
         expect(
-            computeCostUsd("gemini-3-flash-preview", {
+            computeCostUsd("gemini-3.5-flash-lite", {
                 promptTokenCount: undefined,
                 candidatesTokenCount: undefined,
             }),
         ).toBe(0);
+    });
+
+    it("bills tool-use prompt tokens as input and thought tokens as output", () => {
+        expect(
+            computeCostUsd("gemini-3.5-flash-lite", {
+                promptTokenCount: 1_000_000,
+                toolUsePromptTokenCount: 1_000_000,
+                candidatesTokenCount: 1_000_000,
+                thoughtsTokenCount: 1_000_000,
+            }),
+        ).toBeCloseTo(5.6, 6);
+    });
+});
+
+describe("embedding cost", () => {
+    it("uses exact Vertex token statistics and the per-image charge", () => {
+        const response = {
+            embeddings: [
+                { values: [], statistics: { tokenCount: 600 } },
+                { values: [], statistics: { tokenCount: 400 } },
+            ],
+            metadata: { billableCharacterCount: 999_999 },
+        };
+        expect(embeddingTokenCount(response)).toBe(1000);
+        expect(
+            computeEmbeddingCostUsd("gemini-embedding-2", response, {
+                imageCount: 2,
+            }),
+        ).toBeCloseTo(0.00044, 8);
+    });
+
+    it("falls back to billable characters when token statistics are absent", () => {
+        expect(
+            embeddingTokenCount({
+                embeddings: [{ values: [] }],
+                metadata: { billableCharacterCount: 400 },
+            }),
+        ).toBe(100);
     });
 });
 
@@ -130,7 +169,7 @@ describe("recordUsage", () => {
     it("emits an INSERT ... ON CONFLICT with the day + cost", async () => {
         sqlMock.mockResolvedValueOnce(undefined);
         await recordUsage(
-            "gemini-3-flash-preview",
+            "gemini-3.5-flash-lite",
             { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 },
             { op: "test.route", requestId: "r1" },
         );
@@ -141,7 +180,7 @@ describe("recordUsage", () => {
         // passed — the exact SQL text is an implementation detail.
         const call = sqlMock.mock.calls[0];
         const substitutions = call.slice(1);
-        expect(substitutions).toContain(0.5); // cost in USD
+        expect(substitutions).toContain(2.8); // cost in USD
         // day string is YYYY-MM-DD
         expect(substitutions.some((v: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(v)))).toBe(true);
     });
@@ -150,7 +189,7 @@ describe("recordUsage", () => {
         sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
         await expect(
             recordUsage(
-                "gemini-3-flash-preview",
+                "gemini-3.5-flash-lite",
                 { promptTokenCount: 100, candidatesTokenCount: 50 },
                 { op: "test" },
             ),

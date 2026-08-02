@@ -13,6 +13,11 @@
 
 import { createHash } from "crypto";
 import type { AskResponse } from "@/src/types";
+import {
+    RAG_EMBEDDING_MODEL,
+    RAG_GENERATION_MODEL,
+    RAG_PIPELINE_VERSION,
+} from "@/src/lib/rag-model-config";
 
 const MAX_ENTRIES = 200;
 const TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -27,7 +32,19 @@ const cache = new Map<string, CacheEntry>();
 function makeKey(question: string, filters?: unknown): string {
     const normalized = question.trim().toLowerCase();
     const filtersJson = JSON.stringify(filters ?? {});
-    return createHash("sha256").update(`${normalized}|${filtersJson}`).digest("hex");
+    const corpusVersion = process.env.RAG_CORPUS_VERSION ?? "default";
+    return createHash("sha256")
+        .update(
+            [
+                RAG_PIPELINE_VERSION,
+                RAG_GENERATION_MODEL,
+                RAG_EMBEDDING_MODEL,
+                corpusVersion,
+                normalized,
+                filtersJson,
+            ].join("|"),
+        )
+        .digest("hex");
 }
 
 export function getCachedAnswer(

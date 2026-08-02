@@ -24,6 +24,9 @@ import {
   EmbedTimeoutError,
   QuotaExhaustedError,
   _setQuotaRetryDelaysForTests,
+  embeddingInputFingerprint,
+  EMBEDDING_INPUT_VERSION,
+  IMAGE_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/embeddings";
 
 describe("buildEmbeddingText", () => {
@@ -134,7 +137,7 @@ describe("embedDocuments", () => {
       contents: Array<{ parts: Array<{ text: string }> }>;
       config: { outputDimensionality: number; abortSignal?: AbortSignal };
     };
-    expect(call.model).toBe("gemini-embedding-2-preview");
+    expect(call.model).toBe("gemini-embedding-2");
     expect(call.contents).toHaveLength(2);
     expect(call.contents[0].parts[0].text).toBe("first");
     // Step 2 wraps the call with AbortController, so the signal must be passed
@@ -424,6 +427,28 @@ describe("embedDocuments", () => {
     // images came from sequential image calls
     expect(result[1]).toEqual(makeFakeVector(501));
     expect(result[3]).toEqual(makeFakeVector(502));
+  });
+});
+
+describe("embedding input identity", () => {
+  it("versions text chunks and image inputs separately", () => {
+    expect(EMBEDDING_INPUT_VERSION).toBe("article-chunk-v1");
+    expect(IMAGE_EMBEDDING_INPUT_VERSION).toBe("article-image-v1");
+  });
+
+  it("changes the fingerprint when canonical text, image bytes, or version changes", () => {
+    const base = { text: "title: One | text: Body" };
+    const first = embeddingInputFingerprint(base);
+    expect(embeddingInputFingerprint(base)).toBe(first);
+    expect(embeddingInputFingerprint({ text: `${base.text}.` })).not.toBe(first);
+    expect(embeddingInputFingerprint(base, "article-chunk-v2")).not.toBe(first);
+    expect(
+      embeddingInputFingerprint({
+        ...base,
+        imageBase64: "different-bytes",
+        imageMimeType: "image/jpeg",
+      }),
+    ).not.toBe(first);
   });
 });
 

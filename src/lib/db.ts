@@ -1,5 +1,14 @@
 import { neon } from "@neondatabase/serverless";
 import type { Article, EditionInfo, VintageAd } from "@/src/types";
+import { createHash } from "crypto";
+import {
+  RAG_EMBEDDING_MODEL,
+  RAG_PIPELINE_VERSION,
+} from "@/src/lib/rag-model-config";
+import {
+  EMBEDDING_INPUT_VERSION,
+  IMAGE_EMBEDDING_INPUT_VERSION,
+} from "@/src/lib/embeddings";
 
 // Neon's serverless driver uses HTTP — no persistent connection, no pool.
 // Each query is a single HTTP request, ideal for Vercel serverless functions.
@@ -23,6 +32,7 @@ const hybridCache = new Map<string, HybridCacheEntry>();
 
 function hybridCacheKey(
     question: string,
+    embeddingVec: number[],
     options: {
         limit?: number;
         vectorWeight?: number;
@@ -33,7 +43,12 @@ function hybridCacheKey(
     },
 ): string {
     return JSON.stringify({
-        q: question,
+        fts: question,
+        semantic: createHash("sha256")
+          .update(Buffer.from(new Float32Array(embeddingVec).buffer))
+          .digest("base64url"),
+        pipeline: RAG_PIPELINE_VERSION,
+        corpus: process.env.RAG_CORPUS_VERSION ?? "default",
         l: options.limit ?? 8,
         v: options.vectorWeight ?? 0.7,
         c: options.category ?? null,
@@ -72,10 +87,8 @@ export function _clearHybridSearchCacheForTests(): void {
 
 /**
  * Thrown by db.ts when a database operation exceeds its timeout budget.
- * Callers can check `err instanceof DbTimeoutError` to return a 504 instead
- * of an opaque 500. The orphaned underlying request may still keep running
- * on Neon's side because @neondatabase/serverless doesn't accept an
- * AbortSignal — this wrapper protects the caller, not the server.
+ * Neon HTTP requests receive the same AbortSignal, so a timeout cancels the
+ * underlying fetch instead of leaving an orphaned database request running.
  */
 export class DbTimeoutError extends Error {
     constructor(
@@ -87,24 +100,52 @@ export class DbTimeoutError extends Error {
     }
 }
 
-function raceWithTimeout<T>(
+async function runWithDbTimeout<T>(
     op: string,
-    promise: Promise<T>,
+    operation: (signal: AbortSignal) => Promise<T>,
     timeoutMs: number,
+    outerSignal?: AbortSignal,
 ): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-        timer = setTimeout(
-            () => reject(new DbTimeoutError(op, timeoutMs)),
-            timeoutMs,
-        );
+    const controller = new AbortController();
+    const signal = outerSignal
+      ? AbortSignal.any([outerSignal, controller.signal])
+      : controller.signal;
+    let rejectOnAbort: (() => void) | undefined;
+    const aborted = new Promise<never>((_, reject) => {
+      rejectOnAbort = () => reject(new DbTimeoutError(op, timeoutMs));
+      signal.addEventListener("abort", rejectOnAbort, { once: true });
     });
-    return Promise.race([
-        promise.finally(() => {
-            if (timer) clearTimeout(timer);
-        }),
-        timeoutPromise,
-    ]);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      if (signal.aborted) throw new DbTimeoutError(op, timeoutMs);
+      // Neon receives the signal and normally rejects its fetch itself. The
+      // race is still required so a driver regression or test double that
+      // ignores AbortSignal can never pin a request past its deadline.
+      return await Promise.race([operation(signal), aborted]);
+    } catch (error) {
+      if (signal.aborted) throw new DbTimeoutError(op, timeoutMs);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      if (rejectOnAbort) signal.removeEventListener("abort", rejectOnAbort);
+    }
+}
+
+let ragV2TablesAvailable: boolean | null = null;
+
+async function hasRagV2Tables(signal: AbortSignal): Promise<boolean> {
+  if (ragV2TablesAvailable !== null) return ragV2TablesAvailable;
+  const rows = await sql.query(
+    "SELECT to_regclass('public.article_chunks') IS NOT NULL AS chunks, to_regclass('public.article_images') IS NOT NULL AS images",
+    [],
+    { fetchOptions: { signal } },
+  );
+  ragV2TablesAvailable = Boolean(rows[0]?.chunks && rows[0]?.images);
+  return ragV2TablesAvailable;
+}
+
+export function _setRagV2TablesAvailableForTests(value: boolean | null): void {
+  ragV2TablesAvailable = value;
 }
 
 // ─── Edition Queries ─────────────────────────────────────────────
@@ -114,6 +155,8 @@ interface QueryEditionsOptions {
   offset?: number;
   startDate?: string;
   endDate?: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export async function queryEditions(
@@ -131,21 +174,26 @@ export async function queryEditions(
   // large limit and ignores `pagination` — so the COUNT query is only relevant
   // when /api/editions is hit by an external/paginating consumer. Keeping it
   // here gives those consumers a correct `total` and `hasMore`.
-  const [countResult, rows] = await sql.transaction([
-    sql`
-      SELECT COUNT(*)::int as total FROM editions
-      WHERE (${startDate}::text IS NULL OR date >= ${startDate})
-        AND (${endDate}::text IS NULL OR date <= ${endDate})
-    `,
-    sql`
-      SELECT date, publication_info, page_count, article_count
-      FROM editions
-      WHERE (${startDate}::text IS NULL OR date >= ${startDate})
-        AND (${endDate}::text IS NULL OR date <= ${endDate})
-      ORDER BY date DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `,
-  ]);
+  const [countResult, rows] = await runWithDbTimeout(
+    "queryEditions",
+    (signal) => sql.transaction([
+      sql`
+        SELECT COUNT(*)::int as total FROM editions
+        WHERE (${startDate}::text IS NULL OR date >= ${startDate})
+          AND (${endDate}::text IS NULL OR date <= ${endDate})
+      `,
+      sql`
+        SELECT date, publication_info, page_count, article_count
+        FROM editions
+        WHERE (${startDate}::text IS NULL OR date >= ${startDate})
+          AND (${endDate}::text IS NULL OR date <= ${endDate})
+        ORDER BY date DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `,
+    ], { readOnly: true, fetchOptions: { signal } }),
+    options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS,
+    options.signal,
+  );
   const total = countResult[0].total;
 
   const editions: EditionInfo[] = rows.map((r) => ({
@@ -318,6 +366,8 @@ export interface RetrievedArticle {
   source: "vector" | "fts" | "both";
   imageUrls: string[];
   imageCaptions: (string | null)[];
+  /** Retrieval-local evidence, populated by chunk/image indexes when available. */
+  matchedPassages?: string[];
 }
 
 interface VectorSearchOptions {
@@ -330,14 +380,89 @@ interface VectorSearchOptions {
   signal?: AbortSignal;
 }
 
-/**
- * Retrieve articles by cosine similarity to a query embedding vector.
- * Uses the HNSW index for fast approximate nearest-neighbor search.
- * Sets ef_search=100 (vs default 40) for better recall on our small corpus.
- */
-export async function queryArticlesByEmbedding(
+interface RagResultRow {
+  id?: string;
+  edition_date?: string;
+  category?: string;
+  headline?: string;
+  summary?: string;
+  byline?: string | null;
+  body_plain?: string;
+  image_urls?: string[] | null;
+  image_captions?: (string | null)[] | null;
+  distance?: string | number | null;
+  chunk_text?: string | null;
+  matched_caption?: string | null;
+  matched_image_url?: string | null;
+}
+
+function retrievedFromRow(
+  row: RagResultRow,
+  source: "vector" | "fts",
+): RetrievedArticle {
+  const distanceValue = Number.parseFloat(String(row.distance ?? ""));
+  let imageUrls: string[] = Array.isArray(row.image_urls) ? row.image_urls : [];
+  let imageCaptions: (string | null)[] = Array.isArray(row.image_captions)
+    ? row.image_captions
+    : [];
+  if (row.matched_image_url && imageUrls.includes(row.matched_image_url)) {
+    const matchedIndex = imageUrls.indexOf(row.matched_image_url);
+    imageUrls = [imageUrls[matchedIndex], ...imageUrls.filter((_, i) => i !== matchedIndex)];
+    imageCaptions = [
+      imageCaptions[matchedIndex] ?? row.matched_caption ?? null,
+      ...imageCaptions.filter((_, i) => i !== matchedIndex),
+    ];
+  }
+  const passage = cleanEvidencePassage(row.chunk_text ?? row.matched_caption);
+  return {
+    id: row.id ?? "",
+    editionDate: row.edition_date ?? "",
+    category: row.category ?? "",
+    headline: row.headline ?? "",
+    summary: row.summary ?? "",
+    byline: row.byline ?? null,
+    bodyPlain: row.body_plain ?? "",
+    distance: Number.isFinite(distanceValue) ? distanceValue : null,
+    source,
+    imageUrls,
+    imageCaptions,
+    matchedPassages: passage ? [passage] : [],
+  };
+}
+
+function cleanEvidencePassage(value: string | null | undefined): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/<\/?b>/gi, "").replace(/\s+/g, " ").trim();
+}
+
+function aggregateEvidenceRows(
+  rows: RagResultRow[],
+  source: "vector" | "fts",
+  limit: number,
+): RetrievedArticle[] {
+  const results = new Map<string, RetrievedArticle>();
+  for (const row of rows) {
+    if (!row.id) continue;
+    const existing = results.get(row.id);
+    const passage = cleanEvidencePassage(row.chunk_text ?? row.matched_caption);
+    if (existing) {
+      if (
+        passage &&
+        !existing.matchedPassages?.includes(passage)
+      ) {
+        existing.matchedPassages = [...(existing.matchedPassages ?? []), passage];
+      }
+      continue;
+    }
+    if (results.size >= limit) continue;
+    results.set(row.id, retrievedFromRow(row, source));
+  }
+  return [...results.values()];
+}
+
+async function queryRagV2ByEmbedding(
   embeddingVec: number[],
-  options: VectorSearchOptions = {},
+  options: VectorSearchOptions,
 ): Promise<RetrievedArticle[]> {
   const limit = options.limit ?? 10;
   const category = options.category ?? null;
@@ -346,55 +471,115 @@ export async function queryArticlesByEmbedding(
   const onlyWithImages = options.onlyWithImages ?? false;
   const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
   const vecStr = `[${embeddingVec.join(",")}]`;
+  const evidenceLimit = Math.min(Math.max(limit * 5, 40), 150);
 
-  // Mirror hybridSearch's early-exit so the /api/ask fallback path
-  // doesn't orphan a DB call when the global deadline has already fired.
+  return runWithDbTimeout(
+    "queryArticlesByEmbedding.v2",
+    async (signal) => {
+      if (onlyWithImages) {
+        const [, , rows] = await sql.transaction([
+          sql`SET LOCAL hnsw.ef_search = 100`,
+          sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
+          sql`
+            SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+                   a.byline, a.body_plain, a.image_urls, a.image_captions,
+                   i.image_url AS matched_image_url, i.caption AS matched_caption,
+                   (i.embedding <=> ${vecStr}::vector) AS distance
+            FROM article_images i JOIN articles a ON a.id = i.article_id
+            WHERE i.embedding IS NOT NULL
+              AND i.embedding_model = ${RAG_EMBEDDING_MODEL}
+              AND i.embedding_input_version = ${IMAGE_EMBEDDING_INPUT_VERSION}
+              AND (${category}::text IS NULL OR a.category = ${category})
+              AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+              AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+            ORDER BY i.embedding <=> ${vecStr}::vector
+            LIMIT ${evidenceLimit}
+          `,
+        ], { readOnly: true, fetchOptions: { signal } });
+        return aggregateEvidenceRows(rows, "vector", limit);
+      }
+
+      const [, , rows] = await sql.transaction([
+        sql`SET LOCAL hnsw.ef_search = 100`,
+        sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
+        sql`
+          SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+                 a.byline, a.body_plain, a.image_urls, a.image_captions,
+                 c.chunk_text, (c.embedding <=> ${vecStr}::vector) AS distance
+          FROM article_chunks c JOIN articles a ON a.id = c.article_id
+          WHERE c.embedding IS NOT NULL
+            AND c.embedding_model = ${RAG_EMBEDDING_MODEL}
+            AND c.embedding_input_version = ${EMBEDDING_INPUT_VERSION}
+            AND (${category}::text IS NULL OR a.category = ${category})
+            AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+            AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+          ORDER BY c.embedding <=> ${vecStr}::vector
+          LIMIT ${evidenceLimit}
+        `,
+      ], { readOnly: true, fetchOptions: { signal } });
+      return aggregateEvidenceRows(rows, "vector", limit);
+    },
+    timeoutMs,
+    options.signal,
+  );
+}
+
+async function queryLegacyArticlesByEmbedding(
+  embeddingVec: number[],
+  options: VectorSearchOptions,
+): Promise<RetrievedArticle[]> {
+  const limit = options.limit ?? 10;
+  const category = options.category ?? null;
+  const startDate = options.startDate ?? null;
+  const endDate = options.endDate ?? null;
+  const onlyWithImages = options.onlyWithImages ?? false;
+  const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
+  const vecStr = `[${embeddingVec.join(",")}]`;
+  return runWithDbTimeout(
+    "queryArticlesByEmbedding.legacy",
+    async (signal) => {
+      const [, rows] = await sql.transaction([
+        sql`SET LOCAL hnsw.ef_search = 100`,
+        sql`
+          SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+                 a.byline, a.body_plain, a.image_urls, a.image_captions,
+                 (a.embedding <=> ${vecStr}::vector) AS distance
+          FROM articles a
+          WHERE a.embedding IS NOT NULL
+            AND a.embedding_model = ${RAG_EMBEDDING_MODEL}
+            AND (${category}::text IS NULL OR a.category = ${category})
+            AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+            AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+            AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
+          ORDER BY a.embedding <=> ${vecStr}::vector
+          LIMIT ${limit}
+        `,
+      ], { readOnly: true, fetchOptions: { signal } });
+      return rows.map((row) => retrievedFromRow(row, "vector"));
+    },
+    timeoutMs,
+    options.signal,
+  );
+}
+
+/** Retrieve articles using chunk vectors, or the legacy article index pre-migration. */
+export async function queryArticlesByEmbedding(
+  embeddingVec: number[],
+  options: VectorSearchOptions = {},
+): Promise<RetrievedArticle[]> {
+  const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
   if (options.signal?.aborted) {
     throw new DbTimeoutError("queryArticlesByEmbedding", timeoutMs);
   }
-
-  const [, rows] = await raceWithTimeout(
-    "queryArticlesByEmbedding",
-    sql.transaction([
-      sql`SET LOCAL hnsw.ef_search = 100`,
-      sql`
-        SELECT
-          a.id, a.edition_date, a.category, a.headline, a.summary,
-          a.byline, a.body_plain, a.image_urls, a.image_captions,
-          (a.embedding <=> ${vecStr}::vector) as distance
-        FROM articles a
-        WHERE a.embedding IS NOT NULL
-          AND (${category}::text IS NULL OR a.category = ${category})
-          AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-          AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-          AND (${onlyWithImages}::boolean = false OR (a.image_urls IS NOT NULL AND jsonb_array_length(a.image_urls) > 0))
-        ORDER BY a.embedding <=> ${vecStr}::vector
-        LIMIT ${limit}
-      `,
-    ]),
+  const v2 = await runWithDbTimeout(
+    "detectRagV2Tables",
+    (signal) => hasRagV2Tables(signal),
     timeoutMs,
+    options.signal,
   );
-
-  return rows.map((r) => {
-    // Guard against NaN from parseFloat(null/undefined/malformed).
-    // Downstream confidence math (answer-generator.ts:109-112) already
-    // filters out null distance; a NaN would silently corrupt the sum.
-    // See docs/issues/0006.
-    const distValue = parseFloat(r.distance);
-    return {
-      id: r.id,
-      editionDate: r.edition_date,
-      category: r.category,
-      headline: r.headline,
-      summary: r.summary,
-      byline: r.byline ?? null,
-      bodyPlain: r.body_plain,
-      distance: Number.isFinite(distValue) ? distValue : null,
-      source: "vector" as const,
-      imageUrls: r.image_urls ?? [],
-      imageCaptions: r.image_captions ?? [],
-    };
-  });
+  return v2
+    ? queryRagV2ByEmbedding(embeddingVec, options)
+    : queryLegacyArticlesByEmbedding(embeddingVec, options);
 }
 
 /**
@@ -427,27 +612,25 @@ export async function hybridSearch(
     throw new DbTimeoutError("hybridSearch", timeoutMs);
   }
 
-  // Cache check: identical (question, filters, limit, weights) hits skip
-  // the full double-SQL + RRF round trip. Keyed on the question string
-  // (not the embedding) since embedQuery's cache ensures the same
-  // question produces the same vector.
-  const cacheKey = hybridCacheKey(question, options);
+  // The key includes both the lexical query and a digest of the semantic
+  // vector. A CRAG retry can therefore never receive an earlier result just
+  // because its FTS string happens to collide.
+  const cacheKey = hybridCacheKey(question, embeddingVec, options);
   const cached = getCachedHybridSearch(cacheKey);
   if (cached) return cached;
 
-  // Run vector search and FTS search in parallel, wrapped in a single
-  // timeout budget. A hung Neon call would otherwise block /api/ask
-  // indefinitely because @neondatabase/serverless has no AbortSignal
-  // support. See docs/issues/0005.
-  const [vectorResults, ftsResults] = await raceWithTimeout(
-    "hybridSearch",
-    Promise.all([
+  // Each Neon HTTP fetch receives the outer signal and its own bounded
+  // timeout, so a timed-out branch is actually cancelled.
+  const [vectorResults, ftsResults] = await Promise.all(
+    [
       queryArticlesByEmbedding(embeddingVec, {
         limit: fetchK,
         category: options.category,
         startDate: options.startDate,
         endDate: options.endDate,
         onlyWithImages: options.onlyWithImages,
+        timeoutMs,
+        signal: options.signal,
       }),
       searchArticlesForRag(question, {
         limit: fetchK,
@@ -455,9 +638,10 @@ export async function hybridSearch(
         startDate: options.startDate ?? undefined,
         endDate: options.endDate ?? undefined,
         onlyWithImages: options.onlyWithImages,
+        timeoutMs,
+        signal: options.signal,
       }),
-    ]),
-    timeoutMs,
+    ],
   );
 
   // Reciprocal Rank Fusion (RRF): score = sum(weight / (k + rank))
@@ -480,7 +664,15 @@ export async function hybridSearch(
     const existing = scoreMap.get(article.id);
     if (existing) {
       existing.score += rrfScore;
-      existing.article = { ...existing.article, source: "both" };
+      const passages = [
+        ...(existing.article.matchedPassages ?? []),
+        ...(article.matchedPassages ?? []),
+      ].filter((passage, index, all) => all.indexOf(passage) === index);
+      existing.article = {
+        ...existing.article,
+        source: "both",
+        matchedPassages: passages,
+      };
     } else {
       scoreMap.set(article.id, { score: rrfScore, article });
     }
@@ -502,41 +694,76 @@ export async function hybridSearch(
  */
 async function searchArticlesForRag(
   query: string,
-  options: { limit?: number; category?: string; startDate?: string; endDate?: string; onlyWithImages?: boolean } = {},
+  options: {
+    limit?: number;
+    category?: string;
+    startDate?: string;
+    endDate?: string;
+    onlyWithImages?: boolean;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<RetrievedArticle[]> {
   const limit = options.limit ?? 20;
   const category = options.category ?? null;
   const startDate = options.startDate ?? null;
   const endDate = options.endDate ?? null;
   const onlyWithImages = options.onlyWithImages ?? false;
+  const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
 
-  const rows = await sql`
-    SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-           a.byline, a.body_plain, a.image_urls, a.image_captions,
-           ts_rank(a.search_vector, q) as rank
-    FROM articles a, websearch_to_tsquery('english', ${query}) q
-    WHERE a.search_vector @@ q
-      AND (${category}::text IS NULL OR a.category = ${category})
-      AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-      AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-      AND (${onlyWithImages}::boolean = false OR (a.image_urls IS NOT NULL AND jsonb_array_length(a.image_urls) > 0))
-    ORDER BY rank DESC
-    LIMIT ${limit}
-  `;
+  return runWithDbTimeout(
+    "searchArticlesForRag",
+    async (signal) => {
+      if (await hasRagV2Tables(signal)) {
+        const evidenceLimit = Math.min(Math.max(limit * 5, 40), 150);
+        const [rows] = await sql.transaction([
+          sql`
+            SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+                   a.byline, a.body_plain, a.image_urls, a.image_captions,
+                   CASE
+                     WHEN c.search_vector @@ q THEN c.chunk_text
+                     ELSE concat_ws(' ', a.headline, a.summary)
+                   END AS chunk_text,
+                   GREATEST(ts_rank(c.search_vector, q), ts_rank(a.search_vector, q)) AS rank
+            FROM article_chunks c
+            JOIN articles a ON a.id = c.article_id,
+                 websearch_to_tsquery('english', ${query}) q
+            WHERE (c.search_vector @@ q OR a.search_vector @@ q)
+              AND (${category}::text IS NULL OR a.category = ${category})
+              AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+              AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+              AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
+            ORDER BY rank DESC
+            LIMIT ${evidenceLimit}
+          `,
+        ], { readOnly: true, fetchOptions: { signal } });
+        return aggregateEvidenceRows(rows, "fts", limit);
+      }
 
-  return rows.map((r) => ({
-    id: r.id,
-    editionDate: r.edition_date,
-    category: r.category,
-    headline: r.headline,
-    summary: r.summary,
-    byline: r.byline ?? null,
-    bodyPlain: r.body_plain,
-    distance: null, // FTS doesn't produce cosine distance
-    source: "fts" as const,
-    imageUrls: r.image_urls ?? [],
-    imageCaptions: r.image_captions ?? [],
-  }));
+      const [rows] = await sql.transaction([
+        sql`
+          SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+                 a.byline, a.body_plain, a.image_urls, a.image_captions,
+                 ts_headline(
+                   'english', a.body_plain, q,
+                   'MaxFragments=3, MinWords=20, MaxWords=70'
+                 ) AS chunk_text,
+                 ts_rank(a.search_vector, q) AS rank
+          FROM articles a, websearch_to_tsquery('english', ${query}) q
+          WHERE a.search_vector @@ q
+            AND (${category}::text IS NULL OR a.category = ${category})
+            AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+            AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+            AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
+          ORDER BY rank DESC
+          LIMIT ${limit}
+        `,
+      ], { readOnly: true, fetchOptions: { signal } });
+      return rows.map((row) => retrievedFromRow(row, "fts"));
+    },
+    timeoutMs,
+    options.signal,
+  );
 }
 
 export interface SessionArticleMeta {
@@ -549,6 +776,29 @@ export interface SessionArticleMeta {
   bodySnippet: string;
   imageUrls: string[];
   imageCaptions: (string | null)[];
+}
+
+export async function fetchArticleForRag(
+  articleId: string,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<RetrievedArticle | null> {
+  const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
+  return runWithDbTimeout(
+    "fetchArticleForRag",
+    async (signal) => {
+      const [rows] = await sql.transaction([
+        sql`
+          SELECT id, edition_date, category, headline, summary, byline,
+                 body_plain, image_urls, image_captions
+          FROM articles WHERE id = ${articleId}
+        `,
+      ], { readOnly: true, fetchOptions: { signal } });
+      if (rows.length === 0) return null;
+      return retrievedFromRow(rows[0], "fts");
+    },
+    timeoutMs,
+    options.signal,
+  );
 }
 
 /**

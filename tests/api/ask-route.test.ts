@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 // Re-declare QuotaExhaustedError shape inside the mock so tests can throw
 // it without dragging in the real module. vi.hoisted ensures the class is
 // defined when the hoisted vi.mock factory runs.
-const { MockQuotaExhaustedError } = vi.hoisted(() => {
+const { MockQuotaExhaustedError, MockDbTimeoutError } = vi.hoisted(() => {
   class MockQuotaExhaustedError extends Error {
     readonly op: string;
     readonly cause?: unknown;
@@ -15,7 +15,17 @@ const { MockQuotaExhaustedError } = vi.hoisted(() => {
       this.cause = cause;
     }
   }
-  return { MockQuotaExhaustedError };
+  class MockDbTimeoutError extends Error {
+    readonly op: string;
+    readonly timeoutMs: number;
+    constructor(op: string, timeoutMs: number) {
+      super(`Database operation timed out: ${op} after ${timeoutMs}ms`);
+      this.name = "DbTimeoutError";
+      this.op = op;
+      this.timeoutMs = timeoutMs;
+    }
+  }
+  return { MockQuotaExhaustedError, MockDbTimeoutError };
 });
 
 vi.mock("@/src/lib/embeddings", () => ({
@@ -24,6 +34,7 @@ vi.mock("@/src/lib/embeddings", () => ({
 }));
 
 vi.mock("@/src/lib/db", () => ({
+  DbTimeoutError: MockDbTimeoutError,
   hybridSearch: vi.fn(),
   queryArticlesByEmbedding: vi.fn(),
 }));
@@ -499,10 +510,16 @@ describe("POST /api/ask", () => {
     _setGlobalDeadlineForTests(2000);
     _setRetrievalTimeoutForTests(150);
     try {
-      // Both hybrid AND the vector-only fallback hang; the inner retrieval
-      // timeout should fire for hybrid, return 504 with stage=retrieve.
+      // The mocked DB layer surfaces the same typed timeout that the real
+      // AbortSignal-aware Neon wrapper emits at its local budget.
       (hybridSearch as ReturnType<typeof vi.fn>).mockImplementation(
-        () => new Promise(() => {}),
+        () =>
+          new Promise((_, reject) => {
+            setTimeout(
+              () => reject(new MockDbTimeoutError("hybridSearch", 150)),
+              150,
+            );
+          }),
       );
 
       const start = Date.now();
@@ -591,6 +608,49 @@ describe("POST /api/ask", () => {
     ]);
 
     expect(reformulateQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies dates inferred from an explicit decade to retrieval", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "football season",
+      ftsQuery: "football season",
+      mode: "text",
+      complexity: "simple",
+      startDate: "1970-01-01",
+      endDate: "1979-12-31",
+    });
+    await POST(makeRequest({ question: "football in the 1970s" }));
+    expect(hybridSearch).toHaveBeenCalledWith(
+      "football season",
+      expect.any(Array),
+      expect.objectContaining({
+        startDate: "1970-01-01",
+        endDate: "1979-12-31",
+      }),
+    );
+  });
+
+  it("keeps explicit API dates authoritative over inferred dates", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "football",
+      ftsQuery: "football",
+      mode: "text",
+      complexity: "simple",
+      startDate: "1970-01-01",
+      endDate: "1979-12-31",
+    });
+    await POST(makeRequest({
+      question: "football",
+      filters: { startDate: "1980-01-01", endDate: "1980-12-31" },
+    }));
+    expect(hybridSearch).toHaveBeenCalledWith(
+      "football",
+      expect.any(Array),
+      expect.objectContaining({
+        startDate: "1980-01-01",
+        endDate: "1980-12-31",
+      }),
+    );
   });
 
   it("does NOT dedup same question with different sessionIds (bug_018)", async () => {

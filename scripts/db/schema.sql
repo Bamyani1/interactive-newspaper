@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS articles (
   image_caption   TEXT,
   image_captions  JSONB NOT NULL DEFAULT '[]',
   search_vector   TSVECTOR,                 -- auto-populated for FTS
-  embedding       VECTOR(768)               -- semantic embedding for RAG (gemini-embedding-2-preview)
+  embedding       VECTOR(768),              -- legacy article vector during chunk-index migration
+  embedding_input_hash TEXT,
+  embedding_input_version TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_edition ON articles(edition_date);
@@ -42,6 +44,43 @@ CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category);
 CREATE INDEX IF NOT EXISTS idx_articles_byline ON articles(byline) WHERE byline IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_articles_search ON articles USING gin(search_vector);
 CREATE INDEX IF NOT EXISTS idx_articles_embedding ON articles USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 128);
+
+-- ─── RAG chunks and image vectors ───────────────────────────────
+
+CREATE TABLE IF NOT EXISTS article_chunks (
+  id                      TEXT PRIMARY KEY,
+  article_id              TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  chunk_index             INTEGER NOT NULL,
+  chunk_text              TEXT NOT NULL,
+  search_vector           TSVECTOR,
+  embedding               VECTOR(768),
+  embedding_model         TEXT,
+  embedding_input_version TEXT,
+  embedding_input_hash    TEXT NOT NULL,
+  UNIQUE (article_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_article_chunks_article ON article_chunks(article_id, chunk_index);
+CREATE INDEX IF NOT EXISTS idx_article_chunks_search ON article_chunks USING gin(search_vector);
+CREATE INDEX IF NOT EXISTS idx_article_chunks_embedding ON article_chunks USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 128);
+
+CREATE TABLE IF NOT EXISTS article_images (
+  id                      TEXT PRIMARY KEY,
+  article_id              TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  image_index             INTEGER NOT NULL,
+  image_url               TEXT NOT NULL,
+  caption                 TEXT,
+  embedding               VECTOR(768),
+  embedding_model         TEXT,
+  embedding_input_version TEXT,
+  embedding_input_hash    TEXT,
+  UNIQUE (article_id, image_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_article_images_article ON article_images(article_id, image_index);
+CREATE INDEX IF NOT EXISTS idx_article_images_embedding ON article_images USING hnsw (embedding vector_cosine_ops)
   WITH (m = 16, ef_construction = 128);
 
 -- ─── Ads ─────────────────────────────────────────────────────────
@@ -67,6 +106,8 @@ CREATE INDEX IF NOT EXISTS idx_ads_edition ON ads(edition_date);
 
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS writer_position TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS embedding_model TEXT;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS embedding_input_hash TEXT;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS embedding_input_version TEXT;
 
 ALTER TABLE ads ADD COLUMN IF NOT EXISTS image_urls JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE ads ADD COLUMN IF NOT EXISTS category TEXT;
@@ -140,5 +181,21 @@ DO $$ BEGIN
     CREATE TRIGGER articles_search_vector_trig
     BEFORE INSERT OR UPDATE ON articles
     FOR EACH ROW EXECUTE FUNCTION articles_search_vector_update();
+  END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION article_chunks_search_vector_update() RETURNS trigger AS $$
+BEGIN
+  NEW.search_vector := to_tsvector('english', coalesce(NEW.chunk_text, ''));
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'article_chunks_search_vector_trig'
+  ) THEN
+    CREATE TRIGGER article_chunks_search_vector_trig
+    BEFORE INSERT OR UPDATE OF chunk_text ON article_chunks
+    FOR EACH ROW EXECUTE FUNCTION article_chunks_search_vector_update();
   END IF;
 END $$;
