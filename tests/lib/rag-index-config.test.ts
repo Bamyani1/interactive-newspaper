@@ -9,7 +9,12 @@ describe("RAG retrieval configuration", () => {
     expect(getRagRetrievalConfig({})).toEqual({
       mode: "legacy",
       activeIndexBuildId: null,
-      cacheIdentity: "legacy",
+      corpusVersion: "legacy-unversioned",
+      pipelineVersion: "rag-v3-independent-grounded",
+      embeddingModel: "gemini-embedding-2",
+      textEmbeddingInputVersion: "article-chunk-v1",
+      imageEmbeddingInputVersion: "article-image-v1",
+      cacheIdentity: expect.stringContaining("index=legacy"),
     });
   });
 
@@ -26,11 +31,19 @@ describe("RAG retrieval configuration", () => {
     const env = {
       RAG_RETRIEVAL_MODE: "versioned",
       RAG_ACTIVE_INDEX_BUILD_ID: "build-2026-08-02",
+      RAG_CORPUS_VERSION: "corpus-a",
     };
     expect(getRagRetrievalConfig(env)).toEqual({
       mode: "versioned",
       activeIndexBuildId: "build-2026-08-02",
-      cacheIdentity: "versioned:build-2026-08-02",
+      corpusVersion: "corpus-a",
+      pipelineVersion: "rag-v3-independent-grounded",
+      embeddingModel: "gemini-embedding-2",
+      textEmbeddingInputVersion: "article-chunk-v1",
+      imageEmbeddingInputVersion: "article-image-v1",
+      cacheIdentity: expect.stringContaining(
+        "index=versioned:build-2026-08-02",
+      ),
     });
     expect(shouldServeVersionedRetrieval(env)).toBe(true);
   });

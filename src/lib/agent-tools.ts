@@ -184,6 +184,7 @@ async function executeSearchArchive(
         article.summary ||
         article.bodyPlain,
       relevanceScore: article.relevanceScore,
+      contentRevisionId: article.contentRevisionId,
       imageUrls: mdSafeUrls(article.imageUrls),
       imageCaptions: article.imageCaptions ?? [],
     })),
@@ -221,6 +222,7 @@ async function executeReadArticle(
     summary: article.summary,
     byline: article.byline,
     bodyPlain: article.bodyPlain,
+    contentRevisionId: article.contentRevisionId,
     imageUrls: mdSafeUrls(article.imageUrls),
     imageCaptions: article.imageCaptions ?? [],
   };

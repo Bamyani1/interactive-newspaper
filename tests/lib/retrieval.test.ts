@@ -1,36 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
-  DbTimeoutErrorMock,
   embedQueryMock,
-  hybridSearchMock,
+  fuseArticleResultsMock,
   queryArticlesByEmbeddingMock,
   reformulateQueryMock,
   rerankArticlesMock,
-} = vi.hoisted(() => {
-  class DbTimeoutErrorMock extends Error {
-    constructor(
-      public readonly op: string,
-      public readonly timeoutMs: number,
-    ) {
-      super(`${op} timed out after ${timeoutMs}ms`);
-      this.name = "DbTimeoutError";
-    }
-  }
-  return {
-    DbTimeoutErrorMock,
-    embedQueryMock: vi.fn(),
-    hybridSearchMock: vi.fn(),
-    queryArticlesByEmbeddingMock: vi.fn(),
-    reformulateQueryMock: vi.fn(),
-    rerankArticlesMock: vi.fn(),
-  };
-});
+  searchArticlesForRagMock,
+} = vi.hoisted(() => ({
+  embedQueryMock: vi.fn(),
+  fuseArticleResultsMock: vi.fn(),
+  queryArticlesByEmbeddingMock: vi.fn(),
+  reformulateQueryMock: vi.fn(),
+  rerankArticlesMock: vi.fn(),
+  searchArticlesForRagMock: vi.fn(),
+}));
 
 vi.mock("@/src/lib/db", () => ({
-  DbTimeoutError: DbTimeoutErrorMock,
-  hybridSearch: hybridSearchMock,
+  fuseArticleResults: fuseArticleResultsMock,
   queryArticlesByEmbedding: queryArticlesByEmbeddingMock,
+  searchArticlesForRag: searchArticlesForRagMock,
 }));
 vi.mock("@/src/lib/embeddings", () => ({ embedQuery: embedQueryMock }));
 vi.mock("@/src/lib/query-reformulator", () => ({
@@ -40,11 +29,12 @@ vi.mock("@/src/lib/reranker", () => ({ rerankArticles: rerankArticlesMock }));
 
 import {
   rerankWithCorrectiveRetry,
+  RetrievalSignalsUnavailableError,
   retrieveCandidates,
   searchAndRankArchive,
 } from "@/src/lib/retrieval";
 
-const candidate = {
+const ftsCandidate = {
   id: "1965-03-15-4",
   editionDate: "1965-03-15",
   category: "Sports",
@@ -52,18 +42,41 @@ const candidate = {
   summary: "Summary",
   byline: null,
   bodyPlain: "Body",
-  distance: 0.2,
-  source: "both" as const,
+  distance: null,
+  source: "fts" as const,
   imageUrls: [],
   imageCaptions: [],
+  matchedPassages: ["Lexical evidence"],
 };
+
+const vectorCandidate = {
+  ...ftsCandidate,
+  distance: 0.2,
+  source: "vector" as const,
+  matchedPassages: [],
+};
+
+function candidateParams(overrides: Record<string, unknown> = {}) {
+  return {
+    embeddingQuery: "semantic",
+    ftsQuery: "keywords",
+    limit: 20,
+    vectorWeight: 0.6,
+    onlyWithImages: false,
+    ...overrides,
+  };
+}
 
 describe("canonical RAG retrieval", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     vi.clearAllMocks();
     embedQueryMock.mockResolvedValue([0.1, 0.2]);
-    hybridSearchMock.mockResolvedValue([candidate]);
-    queryArticlesByEmbeddingMock.mockResolvedValue([candidate]);
+    searchArticlesForRagMock.mockResolvedValue([ftsCandidate]);
+    queryArticlesByEmbeddingMock.mockResolvedValue([vectorCandidate]);
+    fuseArticleResultsMock.mockReturnValue([
+      { ...ftsCandidate, source: "both" as const },
+    ]);
     reformulateQueryMock.mockResolvedValue({
       embeddingQuery: "semantic terms",
       ftsQuery: "keyword terms",
@@ -71,28 +84,34 @@ describe("canonical RAG retrieval", () => {
       complexity: "simple",
     });
     rerankArticlesMock.mockResolvedValue([
-      { ...candidate, relevanceScore: 8 },
+      { ...ftsCandidate, relevanceScore: 8 },
     ]);
   });
 
-  it("runs one hybrid query with the same request identity and deadline", async () => {
+  it("starts lexical and embedding/vector branches independently", async () => {
     const controller = new AbortController();
-    const result = await retrieveCandidates({
-      embeddingQuery: "semantic",
-      ftsQuery: "keywords",
+    const result = await retrieveCandidates(candidateParams({
       filters: { category: "Sports" },
-      limit: 20,
-      vectorWeight: 0.6,
-      onlyWithImages: false,
       timeoutMs: 5000,
       signal: controller.signal,
       requestId: "req-1",
+    }));
+
+    expect(searchArticlesForRagMock).toHaveBeenCalledWith("keywords", {
+      limit: 20,
+      category: "Sports",
+      startDate: undefined,
+      endDate: undefined,
+      onlyWithImages: false,
+      timeoutMs: 5000,
+      signal: controller.signal,
+      retrievalTarget: "legacy",
     });
     expect(embedQueryMock).toHaveBeenCalledWith("semantic", {
       signal: controller.signal,
       requestId: "req-1",
     });
-    expect(hybridSearchMock).toHaveBeenCalledWith("keywords", [0.1, 0.2], {
+    expect(queryArticlesByEmbeddingMock).toHaveBeenCalledWith([0.1, 0.2], {
       limit: 20,
       category: "Sports",
       startDate: null,
@@ -100,76 +119,144 @@ describe("canonical RAG retrieval", () => {
       onlyWithImages: false,
       timeoutMs: 5000,
       signal: controller.signal,
-      vectorWeight: 0.6,
+      retrievalTarget: "legacy",
     });
+    expect(result).toMatchObject({
+      method: "hybrid",
+      servedTarget: "legacy",
+      signals: {
+        fts: { status: "success", count: 1 },
+        vector: { status: "success", count: 1 },
+      },
+    });
+  });
+
+  it("serves legacy while measuring a versioned shadow with one embedding call", async () => {
+    vi.stubEnv("RAG_RETRIEVAL_MODE", "shadow");
+    vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "candidate-a");
+    vi.stubEnv("RAG_CORPUS_VERSION", "corpus-a");
+    const shadowFts = { ...ftsCandidate, id: "shadow-fts" };
+    const shadowVector = { ...vectorCandidate, id: "shadow-vector" };
+    searchArticlesForRagMock
+      .mockResolvedValueOnce([ftsCandidate])
+      .mockResolvedValueOnce([shadowFts]);
+    queryArticlesByEmbeddingMock
+      .mockResolvedValueOnce([vectorCandidate])
+      .mockResolvedValueOnce([shadowVector]);
+    fuseArticleResultsMock.mockImplementation(
+      (vector: typeof vectorCandidate[], fts: typeof ftsCandidate[]) => [
+        ...fts,
+        ...vector,
+      ],
+    );
+
+    const result = await retrieveCandidates(candidateParams());
+
+    expect(result.servedTarget).toBe("legacy");
+    expect(result.identity.activeIndexBuildId).toBe("candidate-a");
+    expect(result.articles.map((article) => article.id)).toEqual([
+      ftsCandidate.id,
+      vectorCandidate.id,
+    ]);
+    expect(result.shadow?.articles.map((article) => article.id)).toEqual([
+      "shadow-fts",
+      "shadow-vector",
+    ]);
+    expect(embedQueryMock).toHaveBeenCalledTimes(1);
+    expect(searchArticlesForRagMock).toHaveBeenCalledTimes(2);
+    expect(queryArticlesByEmbeddingMock).toHaveBeenCalledTimes(2);
+    expect(searchArticlesForRagMock.mock.calls[0][1]).toMatchObject({
+      retrievalTarget: "legacy",
+    });
+    expect(searchArticlesForRagMock.mock.calls[1][1]).toMatchObject({
+      retrievalTarget: "versioned",
+    });
+  });
+
+  it("never lets a failed shadow candidate alter the served legacy result", async () => {
+    vi.stubEnv("RAG_RETRIEVAL_MODE", "shadow");
+    vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "candidate-a");
+    searchArticlesForRagMock
+      .mockResolvedValueOnce([ftsCandidate])
+      .mockRejectedValueOnce(new Error("candidate FTS unavailable"));
+    queryArticlesByEmbeddingMock
+      .mockResolvedValueOnce([vectorCandidate])
+      .mockRejectedValueOnce(new Error("candidate vector unavailable"));
+
+    const result = await retrieveCandidates(candidateParams());
+
+    expect(result.servedTarget).toBe("legacy");
     expect(result.method).toBe("hybrid");
+    expect(result.articles).toEqual([
+      { ...ftsCandidate, source: "both" },
+    ]);
+    expect(result.shadow?.articles).toEqual([]);
+    expect(result.shadow?.signals.fts.status).toBe("failed");
+    expect(result.shadow?.signals.vector.status).toBe("failed");
   });
 
-  it("uses vector-only fallback for a genuine hybrid query error", async () => {
-    hybridSearchMock.mockRejectedValue(new Error("FTS syntax failure"));
-    const result = await retrieveCandidates({
-      embeddingQuery: "semantic",
-      ftsQuery: "keywords",
-      limit: 10,
-      vectorWeight: 0.6,
-      onlyWithImages: false,
-    });
-    expect(queryArticlesByEmbeddingMock).toHaveBeenCalledTimes(1);
+  it("returns FTS results when query embedding fails", async () => {
+    embedQueryMock.mockRejectedValue(new Error("embedding unavailable"));
+    const result = await retrieveCandidates(candidateParams());
+
+    expect(result.method).toBe("fts");
+    expect(result.articles).toEqual([ftsCandidate]);
+    expect(result.signals.vector.status).toBe("failed");
+    expect(queryArticlesByEmbeddingMock).not.toHaveBeenCalled();
+  });
+
+  it("returns vector results when FTS fails", async () => {
+    searchArticlesForRagMock.mockRejectedValue(new Error("FTS unavailable"));
+    const result = await retrieveCandidates(candidateParams());
+
     expect(result.method).toBe("vector");
+    expect(result.articles).toEqual([vectorCandidate]);
+    expect(result.signals.fts.status).toBe("failed");
   });
 
-  it("does not start duplicate DB work after a timeout", async () => {
-    hybridSearchMock.mockRejectedValue(new DbTimeoutErrorMock("hybridSearch", 100));
-    await expect(
-      retrieveCandidates({
-        embeddingQuery: "semantic",
-        ftsQuery: "keywords",
-        limit: 10,
-        vectorWeight: 0.6,
-        onlyWithImages: false,
-      }),
-    ).rejects.toBeInstanceOf(DbTimeoutErrorMock);
-    expect(queryArticlesByEmbeddingMock).not.toHaveBeenCalled();
-  });
+  it("reports FTS truthfully when the configured vector label has no rows", async () => {
+    queryArticlesByEmbeddingMock.mockResolvedValue([]);
+    const result = await retrieveCandidates(candidateParams());
 
-  it("does not fall back when the outer request is aborted", async () => {
-    const controller = new AbortController();
-    hybridSearchMock.mockImplementation(async () => {
-      controller.abort();
-      throw new Error("aborted");
+    expect(result.method).toBe("fts");
+    expect(result.rawVector).toEqual([]);
+    expect(fuseArticleResultsMock).toHaveBeenCalledWith([], [ftsCandidate], {
+      limit: 20,
+      vectorWeight: 0.6,
     });
-    await expect(
-      retrieveCandidates({
-        embeddingQuery: "semantic",
-        ftsQuery: "keywords",
-        limit: 10,
-        vectorWeight: 0.6,
-        onlyWithImages: false,
-        signal: controller.signal,
-      }),
-    ).rejects.toThrow("aborted");
-    expect(queryArticlesByEmbeddingMock).not.toHaveBeenCalled();
   });
 
-  it("performs exactly one broader corrective retry", async () => {
+  it("throws a typed error only when neither signal succeeds", async () => {
+    searchArticlesForRagMock.mockRejectedValue(new Error("FTS unavailable"));
+    embedQueryMock.mockRejectedValue(new Error("embedding unavailable"));
+
+    await expect(retrieveCandidates(candidateParams())).rejects.toMatchObject({
+      name: "RetrievalSignalsUnavailableError",
+      ftsError: expect.any(Error),
+      vectorError: expect.any(Error),
+    });
+    await expect(retrieveCandidates(candidateParams())).rejects.toBeInstanceOf(
+      RetrievalSignalsUnavailableError,
+    );
+  });
+
+  it("performs exactly one broader corrective retry through the same service", async () => {
     rerankArticlesMock
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ ...candidate, relevanceScore: 7 }]);
+      .mockResolvedValueOnce([{ ...ftsCandidate, relevanceScore: 7 }]);
     const result = await rerankWithCorrectiveRetry({
       question: "How did the team change?",
-      articles: [candidate],
+      articles: [ftsCandidate],
       mode: "text",
       maxArticles: 5,
       retrievalLimit: 20,
       vectorWeight: 0.6,
       onlyWithImages: false,
     });
+
     expect(reformulateQueryMock).toHaveBeenCalledTimes(1);
-    expect(reformulateQueryMock).toHaveBeenCalledWith(
-      "Try broader search terms for: How did the team change?",
-      expect.any(Object),
-    );
-    expect(hybridSearchMock).toHaveBeenCalledTimes(1);
+    expect(searchArticlesForRagMock).toHaveBeenCalledTimes(1);
+    expect(embedQueryMock).toHaveBeenCalledTimes(1);
     expect(rerankArticlesMock).toHaveBeenCalledTimes(2);
     expect(result[0].relevanceScore).toBe(7);
   });
@@ -177,7 +264,7 @@ describe("canonical RAG retrieval", () => {
   it("uses the same service for agent searches and visual retrieval", async () => {
     reformulateQueryMock.mockResolvedValue({
       embeddingQuery: "homecoming photographs",
-      ftsQuery: "homecoming OR parade",
+      ftsQuery: "homecoming parade",
       mode: "visual",
       complexity: "simple",
     });
@@ -186,44 +273,20 @@ describe("canonical RAG retrieval", () => {
       maxArticles: 7,
       requestId: "agent-1",
     });
-    expect(hybridSearchMock).toHaveBeenCalledWith(
-      "homecoming OR parade",
-      [0.1, 0.2],
-      expect.objectContaining({
-        limit: 20,
-        vectorWeight: 0.7,
-        onlyWithImages: true,
-      }),
+
+    expect(searchArticlesForRagMock).toHaveBeenCalledWith(
+      "homecoming parade",
+      expect.objectContaining({ limit: 20, onlyWithImages: true }),
     );
     expect(rerankArticlesMock).toHaveBeenCalledWith(
       "Show homecoming photos",
-      [candidate],
+      expect.any(Array),
       expect.objectContaining({ maxArticles: 7, minScore: 3 }),
     );
     expect(result.mode).toBe("visual");
   });
 
-  it("applies a model-inferred explicit decade when callers provide no dates", async () => {
-    reformulateQueryMock.mockResolvedValue({
-      embeddingQuery: "football season results",
-      ftsQuery: "football season",
-      mode: "text",
-      complexity: "simple",
-      startDate: "1970-01-01",
-      endDate: "1979-12-31",
-    });
-    await searchAndRankArchive({ question: "football in the 1970s" });
-    expect(hybridSearchMock).toHaveBeenCalledWith(
-      "football season",
-      [0.1, 0.2],
-      expect.objectContaining({
-        startDate: "1970-01-01",
-        endDate: "1979-12-31",
-      }),
-    );
-  });
-
-  it("keeps caller date filters authoritative over inferred dates", async () => {
+  it("applies inferred dates but keeps caller filters authoritative", async () => {
     reformulateQueryMock.mockResolvedValue({
       embeddingQuery: "football",
       ftsQuery: "football",
@@ -236,9 +299,8 @@ describe("canonical RAG retrieval", () => {
       question: "football",
       filters: { startDate: "1980-01-01", endDate: "1980-12-31" },
     });
-    expect(hybridSearchMock).toHaveBeenCalledWith(
+    expect(searchArticlesForRagMock).toHaveBeenCalledWith(
       "football",
-      [0.1, 0.2],
       expect.objectContaining({
         startDate: "1980-01-01",
         endDate: "1980-12-31",

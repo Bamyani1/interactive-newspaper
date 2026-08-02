@@ -4,7 +4,7 @@
  * RAG golden regression suite
  *
  * Hits the REAL /api/ask pipeline (real Gemini, real Neon) with a
- * hand-curated catalog of questions and asserts frozen source/fact, security,
+ * previously used development catalog of questions and asserts source/fact, security,
  * citation, mode, and deadline invariants. Historical count/confidence drift is
  * printed as telemetry, not treated as an accuracy oracle.
  *
@@ -66,8 +66,22 @@ interface GoldenQuestion {
     expectedFactsAny?: string[][];
 }
 
+interface DevelopmentCatalog {
+    schemaVersion: 2;
+    datasetId: string;
+    split: "development";
+    provenance: string;
+    questions: GoldenQuestion[];
+}
+
 const catalogPath = resolve(__dirname, "rag-golden-questions.json");
-const catalog: GoldenQuestion[] = JSON.parse(readFileSync(catalogPath, "utf-8"));
+const developmentCatalog: DevelopmentCatalog = JSON.parse(
+    readFileSync(catalogPath, "utf-8"),
+);
+if (developmentCatalog.split !== "development") {
+    throw new Error("Previously used RAG questions must be labeled as development data.");
+}
+const catalog = developmentCatalog.questions;
 
 const CONFIDENCE_RANK: Record<Confidence, number> = {
     low: 1,
@@ -94,7 +108,7 @@ interface ObservedResult {
     totalTimeMs?: number;
     retrievalTimeMs?: number;
     generationTimeMs?: number;
-    method?: "hybrid" | "vector";
+    method?: "hybrid" | "fts" | "vector";
     sourceIds?: string[];
 }
 

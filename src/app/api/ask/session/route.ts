@@ -77,7 +77,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // in one query, then re-scatter per-turn so the client can render
     // source cards immediately on hydrate.
     const allIds = Array.from(
-        new Set(turns.flatMap((t) => t.citedArticleIds)),
+        new Set(
+            turns.flatMap((turn) => {
+                const pinned = new Set(
+                    (turn.citationSnapshots ?? []).map(
+                        (snapshot) => snapshot.articleId,
+                    ),
+                );
+                return turn.citedArticleIds.filter((id) => !pinned.has(id));
+            }),
+        ),
     );
     const articleMap = await fetchArticlesByIds(allIds);
 
@@ -90,21 +99,41 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             // deleted in step 9 of the redesign rollout.
             answerSnippet: t.answer,
             citedArticleIds: t.citedArticleIds,
-            sourceArticles: t.citedArticleIds
-                .map((id) => articleMap.get(id))
-                .filter((a): a is NonNullable<typeof a> => a !== undefined)
-                .map((a) => ({
-                    id: a.id,
-                    headline: a.headline,
-                    editionDate: a.editionDate,
-                    category: a.category,
-                    summary: a.summary,
-                    byline: a.byline,
-                    bodySnippet: a.bodySnippet,
-                    distance: null,
-                    imageUrls: a.imageUrls,
-                    imageCaptions: a.imageCaptions,
-                })),
+            sourceArticles: t.citedArticleIds.flatMap((id) => {
+                const snapshot = (t.citationSnapshots ?? []).find(
+                    (candidate) => candidate.articleId === id,
+                );
+                if (snapshot) {
+                    return [{
+                        id: snapshot.articleId,
+                        contentRevisionId: snapshot.contentRevisionId,
+                        headline: snapshot.headline,
+                        editionDate: snapshot.editionDate,
+                        category: snapshot.category,
+                        summary: snapshot.summary,
+                        byline: snapshot.byline,
+                        bodySnippet: snapshot.bodySnippet,
+                        distance: null,
+                        imageUrls: snapshot.imageUrls,
+                        imageCaptions: snapshot.imageCaptions,
+                    }];
+                }
+                const article = articleMap.get(id);
+                return article
+                    ? [{
+                          id: article.id,
+                          headline: article.headline,
+                          editionDate: article.editionDate,
+                          category: article.category,
+                          summary: article.summary,
+                          byline: article.byline,
+                          bodySnippet: article.bodySnippet,
+                          distance: null,
+                          imageUrls: article.imageUrls,
+                          imageCaptions: article.imageCaptions,
+                      }]
+                    : [];
+            }),
             timestamp: t.timestamp,
         })),
         expired,

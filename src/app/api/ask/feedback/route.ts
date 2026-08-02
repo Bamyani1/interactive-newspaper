@@ -22,6 +22,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
+import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 
 const MAX_QUESTION_LENGTH = 1000;
 const MAX_ANSWER_LENGTH = 20_000;
@@ -153,6 +154,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
         const trimmed = body.comment.trim();
         comment = trimmed === "" ? null : trimmed;
+    }
+
+    if (isRagEvaluationMode()) {
+        return NextResponse.json(
+            { ok: true, persisted: false, evaluationMode: true },
+            { status: 202 },
+        );
     }
 
     // ── Insert ──

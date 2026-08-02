@@ -39,8 +39,13 @@ async function main() {
       question           TEXT NOT NULL,
       answer             TEXT NOT NULL,
       cited_article_ids  TEXT[] NOT NULL DEFAULT '{}',
+      citation_snapshots JSONB NOT NULL DEFAULT '[]'::jsonb,
       created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `;
+  await sql`
+    ALTER TABLE ask_session_turns
+    ADD COLUMN IF NOT EXISTS citation_snapshots JSONB NOT NULL DEFAULT '[]'::jsonb
   `;
   console.log("Creating idx_ask_session_turns_session_created...");
   await sql`

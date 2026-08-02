@@ -292,6 +292,7 @@ CREATE TABLE IF NOT EXISTS ask_session_turns (
   question           TEXT NOT NULL,
   answer             TEXT NOT NULL,           -- capped at 8000 chars + marker
   cited_article_ids  TEXT[] NOT NULL DEFAULT '{}',
+  citation_snapshots JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_ask_session_turns_session_created
@@ -300,7 +301,13 @@ CREATE INDEX IF NOT EXISTS idx_ask_session_turns_created
   ON ask_session_turns (created_at DESC);
 ```
 
-Queries select the last 5 turns within a 30-minute window. Rows age out of the query window (not automatically purged). User-triggered "Clear conversation" issues a hard `DELETE`.
+Queries select the last 5 turns within a 30-minute window. Citation snapshots
+pin the cited content revision and bounded source-card/evidence metadata so a
+later re-OCR cannot rewrite an earlier answer's hydrated sources. The runtime
+probes this expand-only column with a 30-second TTL and retains the legacy-ID
+fallback for pre-migration rows. Rows age out of the query window (not
+automatically purged). User-triggered "Clear conversation" issues a hard
+`DELETE`.
 
 ### `ask_feedback`
 

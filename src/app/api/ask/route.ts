@@ -7,13 +7,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { embedQuery, QuotaExhaustedError } from "@/src/lib/embeddings";
-import {
-    DbTimeoutError,
-    hybridSearch,
-    queryArticlesByEmbedding,
-} from "@/src/lib/db";
+import { QuotaExhaustedError } from "@/src/lib/embeddings";
+import { DbTimeoutError, queryArchiveCoverage } from "@/src/lib/db";
 import type { RetrievedArticle } from "@/src/lib/db";
+import type { RetrievalMethod } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
@@ -25,7 +22,12 @@ import {
 } from "@/src/lib/conversation-store";
 import { runAgentLoop } from "@/src/lib/agent-loop";
 import type { RankedArticle } from "@/src/lib/reranker";
-import type { AskResponse, AskErrorKind, Citation } from "@/src/types";
+import type {
+    AskResponse,
+    AskErrorKind,
+    Citation,
+    CitationSnapshot,
+} from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 import { getCachedAnswer, setCachedAnswer } from "@/src/lib/answer-cache";
 import { checkDailyBudget, DailyBudgetExceededError } from "@/src/lib/cost-tracker";
@@ -44,6 +46,19 @@ import {
     logRerankSignals,
     _computeRerankSignalsForTests,
 } from "@/src/lib/rerank-signals";
+import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
+import {
+    retrieveCandidates,
+    RetrievalSignalsUnavailableError,
+} from "@/src/lib/retrieval";
+import type { CandidateRetrievalResult } from "@/src/lib/retrieval";
+import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
+import type { CoverageIntent } from "@/src/lib/query-reformulator";
+import type { ArchiveCoverage } from "@/src/lib/rag-coverage";
+import {
+    buildCitationSnapshots,
+    type CitationSnapshotSource,
+} from "@/src/lib/citation-snapshot";
 
 export {
     _clearAskDedupForTests,
@@ -85,6 +100,88 @@ class StageError extends Error {
     }
 }
 
+function retrievalFailureParts(error: unknown): unknown[] {
+    return error instanceof RetrievalSignalsUnavailableError
+        ? [error.ftsError, error.vectorError]
+        : [error];
+}
+
+function retrievalTimeout(error: unknown): DbTimeoutError | undefined {
+    return retrievalFailureParts(error).find(
+        (part): part is DbTimeoutError => part instanceof DbTimeoutError,
+    );
+}
+
+function retrievalQuota(error: unknown): QuotaExhaustedError | undefined {
+    return retrievalFailureParts(error).find(
+        (part): part is QuotaExhaustedError =>
+            part instanceof QuotaExhaustedError,
+    );
+}
+
+function retrievalIdentityMetadata(
+    identity: CandidateRetrievalResult["identity"] = getRagRetrievalConfig(),
+) {
+    return {
+        corpusVersion: identity.corpusVersion,
+        indexBuildId: identity.activeIndexBuildId,
+        pipelineVersion: identity.pipelineVersion,
+        embeddingModel: identity.embeddingModel,
+        textEmbeddingInputVersion: identity.textEmbeddingInputVersion,
+        imageEmbeddingInputVersion: identity.imageEmbeddingInputVersion,
+        retrievalTarget:
+            identity.mode === "versioned" ? "versioned" as const : "legacy" as const,
+    };
+}
+
+async function resolveArchiveCoverage(
+    intent: CoverageIntent | undefined,
+    filters: { category?: string; startDate?: string; endDate?: string },
+    signal: AbortSignal,
+    requestId: string,
+): Promise<ArchiveCoverage | undefined> {
+    if (!intent || intent === "none") return undefined;
+    const identity = getRagRetrievalConfig();
+    const stats = await queryArchiveCoverage({ ...filters, signal });
+    const coverage: ArchiveCoverage = {
+        intent,
+        ...stats,
+        requestedStartDate: filters.startDate,
+        requestedEndDate: filters.endDate,
+        category: filters.category,
+        corpusVersion: identity.corpusVersion,
+    };
+    // eslint-disable-next-line no-console -- structured retrieval telemetry
+    console.info(
+        JSON.stringify({
+            level: "info",
+            route: "/api/ask",
+            requestId,
+            stage: "coverage",
+            msg: "deterministic archive coverage loaded",
+            ...coverage,
+        }),
+    );
+    return coverage;
+}
+
+function coverageMetadata(coverage?: ArchiveCoverage) {
+    return coverage
+        ? {
+              coverage: {
+                  intent: coverage.intent,
+                  editionCount: coverage.editionCount,
+                  articleCount: coverage.articleCount,
+                  earliestEditionDate: coverage.earliestEditionDate,
+                  latestEditionDate: coverage.latestEditionDate,
+                  requestedStartDate: coverage.requestedStartDate,
+                  requestedEndDate: coverage.requestedEndDate,
+                  category: coverage.category,
+              },
+          }
+        : {};
+}
+
 function wrapStage<T>(stage: string, fn: () => Promise<T>): Promise<T> {
     return fn().catch((err) => {
         // Don't wrap errors that the route already handles specifically.
@@ -119,13 +216,29 @@ async function persistTurnBounded(
     question: string,
     answer: string,
     citedArticleIds: string[],
+    citationSnapshots: CitationSnapshot[],
 ): Promise<void> {
     await Promise.race([
-        addConversationTurn(sessionId, question, answer, citedArticleIds),
+        addConversationTurn(
+            sessionId,
+            question,
+            answer,
+            citedArticleIds,
+            citationSnapshots,
+        ),
         new Promise<void>((resolve) =>
             setTimeout(resolve, PERSIST_TURN_TIMEOUT_MS),
         ),
     ]);
+}
+
+function agentSnapshotSources(
+    articleMeta: Map<string, import("@/src/lib/agent-loop").ArticleMeta>,
+): CitationSnapshotSource[] {
+    return [...articleMeta.entries()].map(([id, article]) => ({
+        id,
+        ...article,
+    }));
 }
 
 /**
@@ -223,37 +336,26 @@ async function rerankWithCragRetry(params: {
                 conversationHistory: params.conversationHistory,
             }),
         );
-        // embed-retry: QuotaExhaustedError otherwise flows through wrapStage
-        // untouched and loses the retry-stage tag. Wrap it (and any other
-        // non-deadline error) in StageError so both streaming and
-        // non-streaming catches can attribute it to "embed-retry".
-        let retryEmbedding: number[];
-        try {
-            retryEmbedding = await embedQuery(retry.embeddingQuery, {
-                signal: params.signal,
-                requestId: params.requestId,
-            });
-        } catch (err) {
-            if (err instanceof DeadlineExceededError) throw err;
-            throw new StageError("embed-retry", err);
-        }
-        // retrieve-retry: same pattern. The "Retrieval timeout" Error is
-        // a local marker, not a typed class; caller unwraps via StageError.cause.
         let retryArticles: RetrievedArticle[];
         try {
-            retryArticles = await hybridSearch(retry.ftsQuery, retryEmbedding, {
+            const retrieval = await retrieveCandidates({
+                embeddingQuery: retry.embeddingQuery,
+                ftsQuery: retry.ftsQuery,
                 limit: params.retrievalLimit,
-                category: params.filters.category ?? null,
-                startDate: params.filters.startDate ?? null,
-                endDate: params.filters.endDate ?? null,
+                filters: params.filters,
                 vectorWeight: params.vectorWeight,
                 onlyWithImages: params.onlyWithImages,
                 timeoutMs: params.retrievalTimeoutMs,
                 signal: params.signal,
+                requestId: params.requestId,
             });
+            retryArticles = retrieval.articles;
         } catch (err) {
             if (err instanceof DeadlineExceededError) throw err;
-            throw new StageError("retrieve-retry", err);
+            throw new StageError(
+                "retrieve-retry",
+                retrievalTimeout(err) ?? retrievalQuota(err) ?? err,
+            );
         }
         ranked = await wrapStage("rerank-retry", () =>
             rerankArticles(params.question, retryArticles, {
@@ -428,6 +530,10 @@ async function handleStreamingAsk(params: {
                         question,
                         earlyCached.answer,
                         earlyCached.citations.map((citation) => citation.articleId),
+                        buildCitationSnapshots(
+                            earlyCached.citations,
+                            earlyCached.sourceArticles,
+                        ),
                     );
                     send({
                         type: "done",
@@ -451,6 +557,7 @@ async function handleStreamingAsk(params: {
                 let ftsQuery: string;
                 let mode: "text" | "visual";
                 let complexity: "simple" | "complex";
+                let coverageIntent: CoverageIntent | undefined;
                 let inferredStartDate: string | undefined;
                 let inferredEndDate: string | undefined;
                 try {
@@ -463,6 +570,7 @@ async function handleStreamingAsk(params: {
                     ftsQuery = reformulated.ftsQuery;
                     mode = reformulated.mode;
                     complexity = reformulated.complexity;
+                    coverageIntent = reformulated.coverageIntent;
                     inferredStartDate = reformulated.startDate;
                     inferredEndDate = reformulated.endDate;
                 } catch (err) {
@@ -495,6 +603,36 @@ async function handleStreamingAsk(params: {
                     startDate: inferredStartDate,
                     endDate: inferredEndDate,
                 });
+                let coverage: ArchiveCoverage | undefined;
+                try {
+                    coverage = await resolveArchiveCoverage(
+                        coverageIntent,
+                        filters,
+                        globalController.signal,
+                        requestId,
+                    );
+                } catch (err) {
+                    console.error(
+                        JSON.stringify({
+                            level: "error",
+                            route: "/api/ask",
+                            requestId,
+                            stage: "coverage",
+                            msg: "archive coverage query failed",
+                            err: err instanceof Error ? err.message : String(err),
+                        }),
+                    );
+                    send({
+                        type: "error",
+                        stage: "coverage",
+                        message: "Archive coverage could not be verified. Please try again.",
+                        requestId,
+                    });
+                    return;
+                }
+                if (coverage) {
+                    send({ type: "stage", name: "coverage", elapsedMs: stageElapsed() });
+                }
 
                 // ── Agent path for complex questions ──
                 if (complexity === "complex") {
@@ -508,6 +646,7 @@ async function handleStreamingAsk(params: {
                         meta: {
                             reformulatedQuery:
                                 embeddingQuery !== question ? embeddingQuery : undefined,
+                            ...coverageMetadata(coverage),
                         },
                     });
 
@@ -521,6 +660,7 @@ async function handleStreamingAsk(params: {
                             requestId,
                             conversationContext,
                             filters,
+                            coverage,
                             onProgress: (event) => send(event),
                         });
 
@@ -529,12 +669,17 @@ async function handleStreamingAsk(params: {
                             question,
                             agentResult.answer,
                             agentResult.citations.map((c) => c.articleId),
+                            buildCitationSnapshots(
+                                agentResult.citations,
+                                agentSnapshotSources(agentResult.articleMeta),
+                            ),
                         );
 
                         const agentSourceArticles = agentResult.citations.map((c) => {
                             const meta = agentResult.articleMeta.get(c.articleId);
                             return {
                                 id: c.articleId,
+                                contentRevisionId: meta?.contentRevisionId,
                                 headline: c.headline,
                                 editionDate: c.editionDate,
                                 category: meta?.category ?? "",
@@ -561,12 +706,14 @@ async function handleStreamingAsk(params: {
                                 generationTimeMs: agentResult.generationTimeMs,
                                 totalTimeMs,
                                 articlesSearched: agentResult.articleMeta.size,
-                                method: "hybrid",
+                                method: agentResult.retrievalMethod ?? "none",
                                 reformulatedQuery:
                                     embeddingQuery !== question ? embeddingQuery : undefined,
                                 complexity,
                                 agentSteps: agentResult.rounds,
                                 agentToolCalls: agentResult.toolCallCount,
+                                ...retrievalIdentityMetadata(),
+                                ...coverageMetadata(coverage),
                             },
                         });
                     } catch (err) {
@@ -590,78 +737,41 @@ async function handleStreamingAsk(params: {
                     return;
                 }
 
-                // ── Step 2: Embed (pipeline path) ──
-                let questionEmbedding: number[];
-                try {
-                    questionEmbedding = await embedQuery(embeddingQuery, {
-                        signal: globalController.signal,
-                        requestId,
-                    });
-                } catch (err) {
-                    if (err instanceof QuotaExhaustedError) {
-                        console.warn(
-                            JSON.stringify({
-                                level: "warn",
-                                route: "/api/ask",
-                                requestId,
-                                stage: "embed",
-                                msg: "quota exhausted (streaming)",
-                                err: err instanceof Error ? err.message : String(err),
-                            }),
-                        );
-                        send({
-                            type: "error",
-                            stage: "embed",
-                            cause: "quota_exhausted",
-                            message: "Daily AI quota reached. Please try again tomorrow.",
-                            requestId,
-                        });
-                        return;
-                    }
-                    console.error(
-                        JSON.stringify({
-                            level: "error",
-                            route: "/api/ask",
-                            requestId,
-                            stage: "embed",
-                            msg: "embed failed (streaming)",
-                            err: err instanceof Error ? err.message : String(err),
-                        }),
-                    );
-                    send({
-                        type: "error",
-                        stage: "embed",
-                        message: "Failed to process question. Please try again.",
-                        requestId,
-                    });
-                    return;
-                }
-                send({ type: "stage", name: "embed", elapsedMs: stageElapsed() });
-
-                // ── Step 3: Retrieve ──
+                // ── Step 2: Retrieve independent lexical + vector signals ──
                 const retrievalTimeoutMs =
                     _testRetrievalTimeoutMsOverride ?? RETRIEVAL_TIMEOUT_MS;
-                const retrievalStart = Date.now();
                 const retrievalLimit = mode === "visual" ? 30 : 20;
                 const vectorWeight = mode === "visual" ? 0.7 : 0.6;
                 const onlyWithImages = mode === "visual";
 
                 let articles: RetrievedArticle[];
-                let method: "hybrid" | "vector" = "hybrid";
+                let method: RetrievalMethod = "hybrid";
+                let retrievalTimeMs = 0;
+                let retrievalIdentity = getRagRetrievalConfig();
 
                 try {
-                    articles = await hybridSearch(ftsQuery, questionEmbedding, {
+                    const retrieval = await retrieveCandidates({
+                        embeddingQuery,
+                        ftsQuery,
                         limit: retrievalLimit,
-                        category: filters.category ?? null,
-                        startDate: filters.startDate ?? null,
-                        endDate: filters.endDate ?? null,
+                        filters,
                         vectorWeight,
                         onlyWithImages,
                         timeoutMs: retrievalTimeoutMs,
                         signal: globalController.signal,
+                        requestId,
                     });
+                    articles = retrieval.articles;
+                    method = retrieval.method;
+                    retrievalTimeMs = retrieval.retrievalTimeMs;
+                    retrievalIdentity = retrieval.identity;
                 } catch (err) {
-                    if (err instanceof DbTimeoutError || globalController.signal.aborted) {
+                    const timeoutError = retrievalTimeout(err);
+                    const quotaError = retrievalQuota(err);
+                    if (
+                        timeoutError ||
+                        globalController.signal.aborted
+                    ) {
                         send({
                             type: "error",
                             stage: "retrieve",
@@ -670,44 +780,21 @@ async function handleStreamingAsk(params: {
                         });
                         return;
                     }
-                    console.warn(
-                        JSON.stringify({
-                            level: "warn",
-                            route: "/api/ask",
-                            requestId,
-                            stage: "retrieve",
-                            msg: "hybrid search failed — falling back (streaming)",
-                            err: err instanceof Error ? err.message : String(err),
-                        }),
-                    );
-                    method = "vector";
-                    try {
-                        articles = await queryArticlesByEmbedding(questionEmbedding, {
-                            limit: retrievalLimit,
-                            category: filters.category ?? null,
-                            startDate: filters.startDate ?? null,
-                            endDate: filters.endDate ?? null,
-                            onlyWithImages,
-                            timeoutMs: retrievalTimeoutMs,
-                            signal: globalController.signal,
-                        });
-                    } catch (fallbackErr) {
-                        send({
-                            type: "error",
-                            stage: "retrieve",
-                            message:
-                                fallbackErr instanceof DbTimeoutError
-                                    ? "Retrieval took too long. Please try again."
-                                    : "Retrieval failed. Please try again.",
-                            requestId,
-                        });
-                        return;
-                    }
+                    send({
+                        type: "error",
+                        stage: "retrieve",
+                        cause: quotaError ? "quota_exhausted" : undefined,
+                        message:
+                            quotaError
+                                ? "Vector quota was exhausted and full-text retrieval also failed. Please try again later."
+                                : "Retrieval failed. Please try again.",
+                        requestId,
+                    });
+                    return;
                 }
-                const retrievalTimeMs = Date.now() - retrievalStart;
                 send({ type: "stage", name: "retrieve", elapsedMs: stageElapsed() });
 
-                // ── Step 4: Rerank ──
+                // ── Step 3: Rerank ──
                 const keepTopK = mode === "visual" ? 15 : 10;
                 logRerankSignals(requestId, computeRerankSignals(articles), mode, "streaming");
 
@@ -773,6 +860,7 @@ async function handleStreamingAsk(params: {
                 // streaming in.
                 const sourceArticles = rankedArticles.map((a) => ({
                     id: a.id,
+                    contentRevisionId: a.contentRevisionId,
                     headline: a.headline,
                     editionDate: a.editionDate,
                     category: a.category,
@@ -799,6 +887,7 @@ async function handleStreamingAsk(params: {
                         method,
                         reformulatedQuery:
                             embeddingQuery !== question ? embeddingQuery : undefined,
+                        ...retrievalIdentityMetadata(retrievalIdentity),
                     },
                 });
 
@@ -817,6 +906,7 @@ async function handleStreamingAsk(params: {
                             conversationHistory.length > 0
                                 ? formatHistoryForPrompt(conversationHistory)
                                 : undefined,
+                        coverage,
                     })) {
                         if (event.type === "delta") {
                             send({ type: "delta", text: event.text });
@@ -855,6 +945,7 @@ async function handleStreamingAsk(params: {
                     question,
                     finalAnswer,
                     finalCitations.map((c) => c.articleId),
+                    buildCitationSnapshots(finalCitations, rankedArticles),
                 );
 
                 const streamingResponse: AskResponse = {
@@ -876,6 +967,8 @@ async function handleStreamingAsk(params: {
                         reformulatedQuery:
                             embeddingQuery !== question ? embeddingQuery : undefined,
                         complexity,
+                        ...retrievalIdentityMetadata(retrievalIdentity),
+                        ...coverageMetadata(coverage),
                     },
                 };
 
@@ -899,6 +992,8 @@ async function handleStreamingAsk(params: {
                         reformulatedQuery:
                             embeddingQuery !== question ? embeddingQuery : undefined,
                         complexity,
+                        ...retrievalIdentityMetadata(retrievalIdentity),
+                        ...coverageMetadata(coverage),
                     },
                 });
             } catch (err) {
@@ -1018,13 +1113,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await checkDailyBudget();
     } catch (err) {
         if (err instanceof DailyBudgetExceededError) {
+            const evaluationBudget = err.scope === "evaluation_run";
             console.warn(
                 JSON.stringify({
                     level: "warn",
                     route: "/api/ask",
                     requestId,
                     stage: "budget",
-                    msg: "daily budget exceeded",
+                    msg: evaluationBudget
+                        ? "evaluation run budget exceeded"
+                        : "daily budget exceeded",
                     spentUsd: err.spentUsd,
                     budgetUsd: err.budgetUsd,
                 }),
@@ -1032,9 +1130,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return askErrorJson({
                 status: 429,
                 kind: "budget",
-                message: "Daily AI budget reached. Please try again tomorrow.",
-                retryAfterSec: 3600,
-                cause: "daily_budget_reached",
+                message: evaluationBudget
+                    ? "Evaluation spending cap reached. Start a separately approved run to continue."
+                    : "Daily AI budget reached. Please try again tomorrow.",
+                retryAfterSec: evaluationBudget ? undefined : 3600,
+                cause: evaluationBudget
+                    ? "evaluation_budget_reached"
+                    : "daily_budget_reached",
                 stage: "budget",
                 requestId,
             });
@@ -1070,8 +1172,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // If an identical (ip, question, filters) request is already in
     // flight, piggyback on it instead of running the full pipeline again.
     // Falls through (runs our own) if the in-flight one rejects.
+    const evaluationMode = isRagEvaluationMode();
     const dedupId = dedupKey(ip, question, body.filters, sessionId);
-    const existingEntry = inFlightAsk.get(dedupId);
+    const existingEntry = evaluationMode ? undefined : inFlightAsk.get(dedupId);
     if (existingEntry) {
         try {
             const data = await getOrExtract(existingEntry);
@@ -1115,6 +1218,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 question,
                 earlyCached.answer,
                 earlyCached.citations.map((citation) => citation.articleId),
+                buildCitationSnapshots(
+                    earlyCached.citations,
+                    earlyCached.sourceArticles,
+                ),
             );
             return NextResponse.json(response);
         }
@@ -1129,8 +1236,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     conversationHistory,
                 }),
         );
-        const { embeddingQuery, ftsQuery, mode, complexity } = reformulated;
+        const {
+            embeddingQuery,
+            ftsQuery,
+            mode,
+            complexity,
+            coverageIntent,
+        } = reformulated;
         const filters = resolveRetrievalFilters(body.filters, reformulated);
+        const coverage = await wrapStage("coverage", () =>
+            resolveArchiveCoverage(
+                coverageIntent,
+                filters,
+                globalController.signal,
+                requestId,
+            ),
+        );
 
         // ── Agent path for complex questions ──
         if (complexity === "complex") {
@@ -1144,6 +1265,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     requestId,
                     conversationContext,
                     filters,
+                    coverage,
                 }),
             );
 
@@ -1152,12 +1274,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 question,
                 agentResult.answer,
                 agentResult.citations.map((c) => c.articleId),
+                buildCitationSnapshots(
+                    agentResult.citations,
+                    agentSnapshotSources(agentResult.articleMeta),
+                ),
             );
 
             const agentSourceArticles = agentResult.citations.map((c) => {
                 const meta = agentResult.articleMeta.get(c.articleId);
                 return {
                     id: c.articleId,
+                    contentRevisionId: meta?.contentRevisionId,
                     headline: c.headline,
                     editionDate: c.editionDate,
                     category: meta?.category ?? "",
@@ -1184,71 +1311,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     generationTimeMs: agentResult.generationTimeMs,
                     totalTimeMs: Date.now() - totalStart,
                     articlesSearched: agentResult.articleMeta.size,
-                    method: "hybrid",
+                    method: agentResult.retrievalMethod ?? "none",
                     reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
                     complexity,
                     agentSteps: agentResult.rounds,
                     agentToolCalls: agentResult.toolCallCount,
+                    ...retrievalIdentityMetadata(),
+                    ...coverageMetadata(coverage),
                 },
             };
             return NextResponse.json(response);
         }
 
-        // ── Step 2: Embed the reformulated query (pipeline path) ──
-        let questionEmbedding: number[];
-        try {
-            questionEmbedding = await embedQuery(embeddingQuery, {
-                signal: globalController.signal,
-                requestId,
-            });
-        } catch (err) {
-            // Quota exhaustion is a distinct, retry-after-tomorrow case;
-            // surface as 429 so the client UI can show a useful message
-            // instead of an opaque "failed to process question". 0028.
-            if (err instanceof QuotaExhaustedError) {
-                console.warn(
-                    JSON.stringify({
-                        level: "warn",
-                        route: "/api/ask",
-                        requestId,
-                        stage: "embed",
-                        msg: "quota exhausted",
-                        err: err instanceof Error ? err.message : String(err),
-                    }),
-                );
-                return askErrorJson({
-                    status: 429,
-                    kind: "budget",
-                    message: "Daily AI quota reached. Please try again tomorrow.",
-                    retryAfterSec: 3600,
-                    cause: "quota_exhausted",
-                    stage: "embed",
-                    requestId,
-                });
-            }
-            console.error(
-                JSON.stringify({
-                    level: "error",
-                    route: "/api/ask",
-                    requestId,
-                    stage: "embed",
-                    msg: "embed failed",
-                    err: err instanceof Error ? err.message : String(err),
-                }),
-            );
-            return askErrorJson({
-                status: 502,
-                kind: "server",
-                message: "Failed to process question. Please try again.",
-                stage: "embed",
-                requestId,
-            });
-        }
-
-        // ── Step 3: Retrieve relevant articles (with timeout) ──
-        const retrievalStart = Date.now();
+        // ── Step 2: Retrieve independent lexical + vector signals ──
         let articles: RetrievedArticle[];
-        let method: "hybrid" | "vector" = "hybrid";
+        let method: RetrievalMethod = "hybrid";
+        let retrievalTimeMs = 0;
+        let retrievalIdentity = getRagRetrievalConfig();
         // Visual mode retrieves more candidates since we pre-filter to articles
         // with images (smaller pool, need wider net to find relevant photos)
         const retrievalLimit = mode === "visual" ? 30 : 20;
@@ -1264,18 +1343,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const onlyWithImages = mode === "visual";
 
         try {
-            articles = await hybridSearch(ftsQuery, questionEmbedding, {
+            const retrieval = await retrieveCandidates({
+                embeddingQuery,
+                ftsQuery,
                 limit: retrievalLimit,
-                category: filters.category ?? null,
-                startDate: filters.startDate ?? null,
-                endDate: filters.endDate ?? null,
+                filters,
                 vectorWeight,
                 onlyWithImages,
                 timeoutMs: retrievalTimeoutMs,
                 signal: globalController.signal,
+                requestId,
             });
+            articles = retrieval.articles;
+            method = retrieval.method;
+            retrievalTimeMs = retrieval.retrievalTimeMs;
+            retrievalIdentity = retrieval.identity;
         } catch (err) {
-            if (err instanceof DbTimeoutError || globalController.signal.aborted) {
+            const timeoutError = retrievalTimeout(err);
+            const quotaError = retrievalQuota(err);
+            if (
+                timeoutError ||
+                globalController.signal.aborted
+            ) {
                 return askErrorJson({
                     status: 504,
                     kind: "timeout",
@@ -1284,45 +1373,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     requestId,
                 });
             }
-            console.warn(
-                JSON.stringify({
-                    level: "warn",
-                    route: "/api/ask",
-                    requestId,
+            if (quotaError) {
+                return askErrorJson({
+                    status: 429,
+                    kind: "budget",
+                    message:
+                        "Vector quota was exhausted and full-text retrieval also failed. Please try again later.",
+                    retryAfterSec: 3600,
+                    cause: "quota_exhausted",
                     stage: "retrieve",
-                    msg: "hybrid search failed — falling back to vector-only",
-                    err: err instanceof Error ? err.message : String(err),
-                }),
-            );
-            method = "vector";
-            try {
-                articles = await queryArticlesByEmbedding(questionEmbedding, {
-                    limit: retrievalLimit,
-                    category: filters.category ?? null,
-                    startDate: filters.startDate ?? null,
-                    endDate: filters.endDate ?? null,
-                    onlyWithImages,
-                    timeoutMs: retrievalTimeoutMs,
-                    signal: globalController.signal,
+                    requestId,
                 });
-            } catch (fallbackErr) {
-                if (fallbackErr instanceof DbTimeoutError) {
-                    return NextResponse.json(
-                        {
-                            error: "Retrieval took too long. Please try again.",
-                            stage: "retrieve",
-                            requestId,
-                        },
-                        { status: 504 },
-                    );
-                }
-                // Re-throw with stage tag so the outer catch reports it correctly
-                throw new StageError("retrieve", fallbackErr);
             }
+            throw new StageError("retrieve", err);
         }
-        const retrievalTimeMs = Date.now() - retrievalStart;
 
-        // ── Step 4: Re-rank articles by relevance ──
+        // ── Step 3: Re-rank articles by relevance ──
         // Visual mode uses a lower threshold (3 = tangentially related) because
         // the user's goal is seeing photos, not precise answers — "somewhat related"
         // photos are still valuable. Text mode stays strict at 5.
@@ -1356,6 +1422,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                         conversationHistory.length > 0
                             ? formatHistoryForPrompt(conversationHistory)
                             : undefined,
+                    coverage,
                 }),
         );
         const generationTimeMs = Date.now() - generationStart;
@@ -1366,6 +1433,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             question,
             answer,
             citations.map((c) => c.articleId),
+            buildCitationSnapshots(citations, rankedArticles),
         );
 
         // ── Build response ──
@@ -1379,6 +1447,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             sessionId,
             sourceArticles: rankedArticles.map((a) => ({
                 id: a.id,
+                contentRevisionId: a.contentRevisionId,
                 headline: a.headline,
                 editionDate: a.editionDate,
                 category: a.category,
@@ -1398,6 +1467,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 method,
                 reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
                 complexity,
+                ...retrievalIdentityMetadata(retrievalIdentity),
+                ...coverageMetadata(coverage),
             },
         };
 
@@ -1414,7 +1485,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // the same deadline behavior as the original.
     const racePromise = Promise.race([pipelinePromise, deadlinePromise]);
     const dedupEntry: DedupEntry = { promise: racePromise };
-    inFlightAsk.set(dedupId, dedupEntry);
+    if (!evaluationMode) inFlightAsk.set(dedupId, dedupEntry);
 
     try {
         return await racePromise;
@@ -1517,10 +1588,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // Auto-evict after TTL so a long-completed entry doesn't pin
         // memory. We don't delete immediately because slow concurrent
         // dups still need a window to read the cached body.
-        setTimeout(() => {
-            if (inFlightAsk.get(dedupId) === dedupEntry) {
-                inFlightAsk.delete(dedupId);
-            }
-        }, DEDUP_TTL_MS);
+        if (!evaluationMode) {
+            setTimeout(() => {
+                if (inFlightAsk.get(dedupId) === dedupEntry) {
+                    inFlightAsk.delete(dedupId);
+                }
+            }, DEDUP_TTL_MS);
+        }
     }
 }

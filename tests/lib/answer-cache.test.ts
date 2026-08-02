@@ -102,6 +102,24 @@ describe("answer-cache", () => {
         expect(getCachedAnswer("complex question", {})).toBeNull();
     });
 
+    it("bypasses reads and writes during an isolated evaluation", () => {
+        const response = makeResponse({ answer: "production cache" });
+        setCachedAnswer("same question", {}, response);
+        expect(getCachedAnswer("same question", {})).not.toBeNull();
+
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        expect(getCachedAnswer("same question", {})).toBeNull();
+        setCachedAnswer(
+            "evaluation-only question",
+            {},
+            makeResponse({ answer: "must not persist" }),
+        );
+
+        vi.stubEnv("RAG_EVALUATION_MODE", "0");
+        expect(getCachedAnswer("same question", {})?.answer).toBe("production cache");
+        expect(getCachedAnswer("evaluation-only question", {})).toBeNull();
+    });
+
     it("different filters produce different keys", () => {
         const r1 = makeResponse({ answer: "no filter" });
         const r2 = makeResponse({ answer: "with filter" });

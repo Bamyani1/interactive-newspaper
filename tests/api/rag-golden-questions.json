@@ -1,4 +1,9 @@
-[
+{
+  "schemaVersion": 2,
+  "datasetId": "rag-development-v1",
+  "split": "development",
+  "provenance": "Every question in this catalog was used while developing or reviewing the legacy RAG pipeline before the blind holdout was frozen.",
+  "questions": [
   {
     "id": "kennedy-visit",
     "question": "What did The Transcript say about Kennedy's visit to Ohio?",
@@ -141,4 +146,5 @@
     "forbiddenInAnswer": ["haiku"],
     "mode": "text"
   }
-]
+  ]
+}

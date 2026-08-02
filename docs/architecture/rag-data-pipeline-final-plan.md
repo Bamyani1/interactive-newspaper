@@ -1,6 +1,6 @@
 # RAG and Archive Data Pipeline — Final Implementation Plan
 
-Status: **approved for local implementation; Phase 0 completed 2026-08-02**
+Status: **Phases 0–2 locally complete; Phase 2 gate passed and review is required before Phase 3 (2026-08-02)**
 Branch: `rag-enhancement`  
 Starting commit: `652f9fc`  
 Prepared: 2026-08-02
@@ -41,17 +41,18 @@ one irreversible change.
   `temperature`, `topP`, or `topK` overrides.
 - The current online `/ask` daily guard remains $0.50. Offline evaluation and
   embedding backfill use separate ledgers and can never consume that guard.
-- A live evaluation session has a hard $5 aggregate ceiling. This is a stop
+- A live evaluation session has a hard $10 aggregate ceiling. This is a stop
   limit, not a spending target. A full embedding backfill requires its own cost
   estimate and separate approval.
 
 ### Scope
 
 - The active 351-edition database corpus is the first rollout corpus.
-- The approximately 1,567 CONTENTdm records are **records, not editions**. They
-  may include compound parents, child pages, supplements, duplicates, and
-  non-issue items. No backlog count will be described as missing editions until
-  source classification is complete.
+- The verified source query returns **4,424 matching parent/root records** and
+  **41,741 records including compound child pages**. Of the roots, 4,084 are
+  classified as issue candidates and 340 remain ambiguous compound records.
+  These are records, not automatically publishable editions. No backlog count
+  will be described as missing editions until source classification is complete.
 - Keep the existing 70% successful-page publication rule. An edition need not
   be complete, but its expected, processed, and failed pages must be explicit.
 - Preserve ads and substantive `other_content` in the data model, but keep both
@@ -83,10 +84,9 @@ one irreversible change.
 
 ## Current checkpoint
 
-The branch contains an uncommitted first RAG-v2 draft: centralized Gemini model
-routing, query reformulation, chunk/image tables, hybrid retrieval, reranking,
-grounded answer generation, agent retrieval, conversation persistence, cost
-tracking, tests, and documentation.
+The first RAG-v2 draft is preserved in commit `ef2d2b5`. Phase 0 safety changes
+are preserved in commit `16af899`: explicit legacy activation, cache identity,
+ADC-only initialization, and a read-only Google runtime preflight.
 
 The draft is not production-ready because:
 
@@ -107,8 +107,48 @@ Verified checkpoint gates on 2026-08-02:
 
 - `git diff --check`: pass;
 - `npm run typecheck`: pass;
-- `npx vitest run tests/api tests/lib`: 24 files passed, 421 tests passed,
-  12 live golden tests skipped by their explicit environment guard.
+- full unit suite: 78 files passed, 770 tests passed, 12 live golden tests
+  skipped by their explicit environment guard;
+- production build: pass, 364 pages generated;
+- ADC preflight: pass for `anwari.works@gmail.com`, Vertex `global`/`v1`, and
+  the enabled `us` Document AI OCR processor; no API keys detected.
+
+Phase 1 measured artifacts:
+
+- corpus version: `legacy-8b8207373510d69e` (351 editions, 11,705 articles,
+  6,846 ads, 2,876 legacy image references);
+- source inventory: 4,424 matching roots, 41,741 matching records with child
+  pages, 351/351 active manifests fetched, and no active-date collision;
+- current stable-vector coverage: **0/11,705** articles. Stored vectors are
+  labeled `gemini-embedding-2-preview` (9,582) or unlabeled (2,123), while
+  runtime SQL requires `gemini-embedding-2`; current service therefore relies
+  on lexical retrieval until a separately approved backfill;
+- legacy `page_count` equals IIIF canvas count for 329 editions and undercounts
+  22. This is not proof of failed OCR because legacy `page_count` is derived
+  from article source pages and no processed/failed page ledger exists.
+
+Phase 2 local implementation:
+
+- explicit `legacy` / `shadow` / `versioned` routing with validated build
+  identity and a 30-second readiness TTL;
+- independent FTS and vector branches, truthful degradation, one canonical
+  route/agent/CRAG retrieval service, and shadow isolation;
+- article-local SQL evidence ranking, article deduplication before the limit,
+  caption search, and exact passage/image preservation;
+- citation/link/image allowlisting and explicit untrusted-data instructions;
+- deterministic coverage semantics for absence, count, and exhaustive queries;
+- legacy content-revision hashes plus bounded citation snapshots used by
+  session hydration when the expand-only column is present.
+
+Phase 2 gate results:
+
+- full unit suite: 87 files passed, 834 tests passed, and 12 live/paid golden
+  tests skipped by their explicit environment guard;
+- lint, TypeScript typecheck, migration/embed script syntax, evaluation-freeze
+  verification, and `git diff --check`: pass;
+- production build: pass, 364 pages generated.
+
+No production mode, schema, corpus, vector, or asset state has been changed.
 
 ## Implementation sequence
 
@@ -342,7 +382,7 @@ and a staging export manifest proving only approved public tables were copied.
    image/link output, and zero successful instruction-injection behavior.
 
 **Gate:** candidate is non-inferior on the locked holdout acceptance bands,
-passes all hard safety requirements, and stays below the $5 evaluation ceiling.
+passes all hard safety requirements, and stays below the $10 evaluation ceiling.
 
 ### Phase 8 — Controlled rollout
 

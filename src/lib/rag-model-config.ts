@@ -7,6 +7,9 @@ import type { ThinkingLevel } from "@google/genai";
  */
 export const RAG_GENERATION_MODEL = "gemini-3.5-flash-lite";
 export const RAG_EMBEDDING_MODEL = "gemini-embedding-2";
+export const RAG_QUERY_EMBEDDING_INPUT_VERSION = "query-search-v1";
+export const RAG_TEXT_EMBEDDING_INPUT_VERSION = "article-chunk-v1";
+export const RAG_IMAGE_EMBEDDING_INPUT_VERSION = "article-image-v1";
 
 export const RAG_MODEL_CONFIG = {
     reformulate: {
@@ -31,4 +34,4 @@ export const RAG_MODEL_CONFIG = {
  * Bump when retrieval inputs, ranking behavior, or answer semantics change.
  * It deliberately participates in in-memory cache keys.
  */
-export const RAG_PIPELINE_VERSION = "rag-v2-chunked-grounded";
+export const RAG_PIPELINE_VERSION = "rag-v3-independent-grounded";
