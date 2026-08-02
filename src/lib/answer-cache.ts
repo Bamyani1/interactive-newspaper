@@ -19,6 +19,7 @@ import {
     RAG_PIPELINE_VERSION,
 } from "@/src/lib/rag-model-config";
 import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
+import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 
 const MAX_ENTRIES = 200;
 const TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -53,6 +54,7 @@ export function getCachedAnswer(
     question: string,
     filters?: unknown,
 ): AskResponse | null {
+    if (isRagEvaluationMode()) return null;
     const key = makeKey(question, filters);
     const entry = cache.get(key);
     if (!entry) return null;
@@ -71,6 +73,7 @@ export function setCachedAnswer(
     filters: unknown,
     response: AskResponse,
 ): void {
+    if (isRagEvaluationMode()) return;
     if (response.confidence === "low") return;
     if (response.meta?.complexity === "complex") return;
 

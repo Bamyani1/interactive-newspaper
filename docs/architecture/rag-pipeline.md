@@ -24,8 +24,9 @@ The model and thinking configuration lives in `src/lib/rag-model-config.ts`. `RA
 question
   ├─ answer cache hit (simple, history-free requests only)
   └─ reformulate + classify
-       ├─ simple → embed → hybrid retrieve → rerank → optional CRAG retry → answer
-       └─ complex → agent loop → search/read/list tools → cited answer
+       ├─ absence/count/exhaustive → deterministic indexed-scope query
+       ├─ simple → independent FTS + vector retrieval → fuse → rerank → optional CRAG retry → answer
+       └─ complex → agent loop → canonical search/read/list tools → cited answer
 ```
 
 The reformulator returns:
@@ -34,6 +35,7 @@ The reformulator returns:
 - `ftsQuery`: keyword query for PostgreSQL full-text search;
 - `mode`: `text` or `visual`;
 - `complexity`: `simple` or `complex`;
+- `coverageIntent`: `none`, `absence`, `count`, or `exhaustive`;
 - `startDate` / `endDate`: database filters inferred only from an explicit year, decade, or bounded range in the question.
 
 The semantic query may contain era-aware vocabulary. The lexical query stays at 1–3 essential names/nouns (or one quoted phrase), with no model-generated synonym/`OR` chain. Explicit caller filters remain authoritative over inferred dates.
@@ -54,7 +56,13 @@ RAG_RETRIEVAL_MODE=legacy
 
 `RAG_RETRIEVAL_MODE` defaults to `legacy`. `shadow` and `versioned` require an
 explicit `RAG_ACTIVE_INDEX_BUILD_ID`; table existence never changes behavior.
-The active build is also part of retrieval and answer-cache identities.
+The active build, corpus, pipeline, embedding model, and text/image input
+versions are part of retrieval telemetry and cache identities. A versioned
+build must match every configured identity field and be in the allowed state;
+readiness is rechecked after a 30-second TTL. `versioned` additionally requires
+exactly one active build for the corpus. `shadow` serves legacy results while
+measuring a validated candidate, and a candidate failure never changes the
+served answer.
 
 Local ADC setup is external to the application:
 
@@ -89,7 +97,10 @@ Article bodies are normalized and split deterministically at sentence boundaries
 
 Every record stores the chunk text, FTS vector, 768-dimensional embedding, model, input version, and SHA-256 canonical input hash. The hash includes the model, version, and exact embedding input.
 
-The query retrieves more evidence rows than the final article limit and then aggregates matching passages by article. Reranking and answer generation receive those passages instead of blindly taking the first part of `body_plain`.
+The query ranks evidence within each article, retains a bounded set of the best
+passages, deduplicates articles, and only then applies the final article limit.
+Reranking and answer generation receive the exact passages that earned the
+rank instead of blindly taking the first part of `body_plain`.
 
 ### `article_images`
 
@@ -108,12 +119,17 @@ The old `articles.embedding` column remains during migration and rollback. Legac
 
 ## Hybrid search
 
-`src/lib/db.ts` runs vector retrieval and PostgreSQL FTS in parallel, then merges them with Reciprocal Rank Fusion. Default vector weights are:
+The canonical retrieval service starts PostgreSQL FTS immediately and runs
+query embedding/vector search as an independent branch. It returns hybrid when
+both succeed, FTS-only when embedding or vector retrieval fails, vector-only
+when FTS fails, and a typed error only when neither signal succeeds. Route,
+agent, visual, and CRAG-retry searches all use this service. Default vector
+weights are:
 
 - text: `0.6` vector / `0.4` FTS;
 - visual: `0.7` vector / `0.3` FTS.
 
-Vector queries set `hnsw.ef_search = 100` and `hnsw.iterative_scan = 'relaxed_order'` for filtered ANN recall. V2 FTS searches both chunk and article search vectors and returns the matched chunks as evidence.
+Vector queries set `hnsw.ef_search = 100` and `hnsw.iterative_scan = 'relaxed_order'` for filtered ANN recall. Versioned FTS searches article, chunk, and `article_images.caption` evidence. Article-level matches are emitted once, and the exact matched caption/image is promoted for downstream use.
 
 The hybrid cache key includes:
 
@@ -123,9 +139,7 @@ The hybrid cache key includes:
 - pipeline version;
 - corpus version.
 
-This prevents a broader CRAG retry from receiving the first query's cached candidates.
-
-If hybrid search fails for a non-timeout database error, one vector-only fallback is allowed. A timeout or abort never launches duplicate fallback work under the same expired deadline.
+This prevents a broader CRAG retry from receiving the first query's cached candidates. A timeout or abort never launches duplicate work under the same expired deadline.
 
 ## Reranking and corrective retrieval
 
@@ -161,7 +175,18 @@ Post-processing:
 2. build citations only from markers visible in the final answer;
 3. map each marker to an article actually supplied to the model;
 4. downgrade confidence when citations are missing or weak;
-5. URL-encode spaces in archive image URLs.
+5. remove arbitrary Markdown links and bare model-produced web URLs;
+6. allow an inline image only when it is registered to a cited retrieved article, replace model alt text with the stored caption, and cap output at three images;
+7. attach the immutable content-revision identity to each accepted citation.
+
+Questions classified as absence, count, or exhaustive receive a read-only
+database count of the editions and searchable articles in the effective
+date/category scope. Coverage metadata is explicitly marked as metadata, never
+evidence. With no verified citation, model prose is replaced by deterministic
+"no matching evidence was found in the indexed scope" wording; the system never
+turns retrieval silence into a claim that an event was absent from the paper.
+A supported positive answer keeps its evidence-derived confidence and receives
+only a scope note.
 
 Confidence no longer depends on hardcoded embedding-distance thresholds. It is based on the model-independent 0–10 reranker rubric and verified cited sources. A single source can support a medium-confidence answer, but never a high-confidence synthesis.
 
@@ -183,7 +208,7 @@ Tool arguments are type-checked, date ranges are validated, categories are allow
 
 The model receives full relevant passages and complete `read_article` bodies. The 300-character `bodySnippet` truncation applies only to UI metadata, not the evidence returned to the model.
 
-Agent citations use `[YYYY-MM-DD-index]`. A citation is accepted only if that exact ID appeared in a successful tool result. Citation count alone cannot create high confidence; verified reranker scores and tool success are also required.
+Agent citations use `[YYYY-MM-DD-index]`. A citation is accepted only if that exact ID appeared in a successful tool result. The response reports the truthful aggregate retrieval method used by those searches. Citation count alone cannot create high confidence; verified reranker scores and tool success are also required.
 
 ## Deadlines and cancellation
 
@@ -208,11 +233,15 @@ Query embeddings and hybrid results have five-minute bounded LRUs. Agent answers
 
 Conversation turns live in Neon for 30 minutes. Each successful write transaction:
 
-1. inserts the turn;
+1. inserts the turn, cited IDs, and bounded citation snapshots when the expand-only column is available;
 2. deletes expired global rows;
 3. keeps only the newest five rows for that session.
 
-The route bounds persistence latency so a slow history write cannot indefinitely delay a response.
+Each snapshot pins a content revision, headline/date metadata, a bounded evidence
+excerpt, and registered image metadata. Session hydration uses the snapshot
+instead of rereading a later mutable article row; legacy turns without snapshots
+retain the old lookup fallback. The route bounds persistence latency so a slow
+history write cannot indefinitely delay a response.
 
 ## Cost accounting
 
@@ -225,7 +254,10 @@ Standard global rates represented by `src/lib/cost-tracker.ts`:
 
 `toolUsePromptTokenCount` is counted as input and `thoughtsTokenCount` as output. Embedding telemetry uses per-embedding token statistics when available and billable-character estimation otherwise.
 
-The application keeps its existing `$0.50` daily software guard. This counter is an application safety control, not Google Cloud billing reconciliation; promotional-credit usage must be verified in Cloud Billing.
+The application keeps its existing `$0.50` daily software guard. Isolated live
+evaluation uses a separate ledger with a hard `$10` aggregate stop limit. These
+counters are application safety controls, not Google Cloud billing
+reconciliation; promotional-credit usage must be verified in Cloud Billing.
 
 ## Migration and backfill
 

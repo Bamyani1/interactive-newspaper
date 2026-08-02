@@ -26,6 +26,13 @@ import {
     DailyBudgetExceededError,
     _setDailyBudgetForTests,
     _getDailyBudgetForTests,
+    _getEvaluationSpendForTests,
+    _getEvaluationReservedForTests,
+    _resetEvaluationSpendForTests,
+    executeTrackedGenerationCall,
+    releaseEvaluationGoogleCall,
+    reserveEvaluationGoogleCall,
+    settleEvaluationGoogleCall,
 } from "@/src/lib/cost-tracker";
 
 const ORIGINAL_BUDGET = 0.5;
@@ -111,6 +118,8 @@ describe("embedding cost", () => {
 
 describe("checkDailyBudget", () => {
     beforeEach(() => {
+        vi.unstubAllEnvs();
+        _resetEvaluationSpendForTests();
         sqlMock.mockReset();
         _setDailyBudgetForTests(ORIGINAL_BUDGET);
     });
@@ -155,6 +164,8 @@ describe("checkDailyBudget", () => {
 
 describe("recordUsage", () => {
     beforeEach(() => {
+        vi.unstubAllEnvs();
+        _resetEvaluationSpendForTests();
         sqlMock.mockReset();
         _setDailyBudgetForTests(ORIGINAL_BUDGET);
     });
@@ -194,6 +205,119 @@ describe("recordUsage", () => {
                 { op: "test" },
             ),
         ).resolves.toBeUndefined();
+    });
+
+    it("keeps evaluation spend out of the online Neon ledger", async () => {
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        vi.stubEnv("RAG_EVALUATION_RUN_ID", "cost-test");
+        vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
+        vi.stubEnv("RAG_EVALUATION_SPEND_CAP_USD", "5");
+
+        await recordUsage(
+            "gemini-3.5-flash-lite",
+            { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 },
+            { op: "evaluation.test" },
+        );
+
+        expect(_getEvaluationSpendForTests()).toBeCloseTo(2.8, 6);
+        expect(sqlMock).not.toHaveBeenCalled();
+    });
+
+    it("blocks the next request after the evaluation run reaches its cap", async () => {
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        vi.stubEnv("RAG_EVALUATION_RUN_ID", "cost-cap-test");
+        vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
+        vi.stubEnv("RAG_EVALUATION_SPEND_CAP_USD", "5");
+        const usage = {
+            promptTokenCount: 1_000_000,
+            candidatesTokenCount: 1_000_000,
+        };
+        await recordUsage("gemini-3.5-flash-lite", usage, { op: "evaluation.one" });
+        await recordUsage("gemini-3.5-flash-lite", usage, { op: "evaluation.two" });
+
+        try {
+            await checkDailyBudget();
+            throw new Error("expected evaluation budget rejection");
+        } catch (error) {
+            expect(error).toBeInstanceOf(DailyBudgetExceededError);
+            expect((error as DailyBudgetExceededError).scope).toBe("evaluation_run");
+        }
+        expect(sqlMock).not.toHaveBeenCalled();
+    });
+});
+
+describe("hard evaluation reservations", () => {
+    beforeEach(() => {
+        vi.unstubAllEnvs();
+        _resetEvaluationSpendForTests();
+        sqlMock.mockReset();
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        vi.stubEnv("RAG_EVALUATION_RUN_ID", "reservation-test");
+        vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
+        vi.stubEnv("RAG_EVALUATION_SPEND_CAP_USD", "1");
+    });
+
+    it("rejects parallel calls before their conservative maxima can cross the cap", () => {
+        const first = reserveEvaluationGoogleCall({
+            model: "gemini-3.5-flash-lite",
+            op: "first",
+            maxOutputTokens: 8192,
+        });
+        expect(first).not.toBeNull();
+        expect(_getEvaluationReservedForTests()).toBeGreaterThan(0.6);
+        expect(() =>
+            reserveEvaluationGoogleCall({
+                model: "gemini-3.5-flash-lite",
+                op: "second",
+                maxOutputTokens: 8192,
+            }),
+        ).toThrow(DailyBudgetExceededError);
+        releaseEvaluationGoogleCall(first);
+        expect(_getEvaluationReservedForTests()).toBe(0);
+    });
+
+    it("atomically replaces a reservation with actual usage", () => {
+        const reservation = reserveEvaluationGoogleCall({
+            model: "gemini-3.5-flash-lite",
+            op: "settle",
+            maxOutputTokens: 8192,
+        });
+        settleEvaluationGoogleCall(reservation, 0.0125);
+        expect(_getEvaluationReservedForTests()).toBe(0);
+        expect(_getEvaluationSpendForTests()).toBeCloseTo(0.0125, 8);
+    });
+
+    it("tracked generation records evaluation cost exactly once", async () => {
+        const response = await executeTrackedGenerationCall({
+            model: "gemini-3.5-flash-lite",
+            op: "tracked",
+            maxOutputTokens: 350,
+            call: async () => ({
+                usageMetadata: {
+                    promptTokenCount: 1000,
+                    candidatesTokenCount: 100,
+                },
+            }),
+        });
+        expect(response.usageMetadata.promptTokenCount).toBe(1000);
+        expect(_getEvaluationReservedForTests()).toBe(0);
+        expect(_getEvaluationSpendForTests()).toBeCloseTo(0.00055, 8);
+        expect(sqlMock).not.toHaveBeenCalled();
+    });
+
+    it("releases the reservation when Google rejects the call", async () => {
+        await expect(
+            executeTrackedGenerationCall({
+                model: "gemini-3.5-flash-lite",
+                op: "failure",
+                maxOutputTokens: 350,
+                call: async () => {
+                    throw new Error("google unavailable");
+                },
+            }),
+        ).rejects.toThrow("google unavailable");
+        expect(_getEvaluationReservedForTests()).toBe(0);
+        expect(_getEvaluationSpendForTests()).toBe(0);
     });
 });
 

@@ -193,6 +193,44 @@ describe("GET /api/ask/session", () => {
         expect(body.turns[0].sourceArticles[0].id).toBe("1960-01-07-0");
     });
 
+    it("hydrates from the pinned citation revision instead of a later article row", async () => {
+        (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+            {
+                question: "Q1",
+                answer: "Original answer",
+                citedArticleIds: ["1960-01-07-0"],
+                citationSnapshots: [
+                    {
+                        articleId: "1960-01-07-0",
+                        contentRevisionId: "legacy-sha256:original",
+                        headline: "Original headline",
+                        editionDate: "1960-01-07",
+                        category: "News",
+                        summary: "Original summary",
+                        byline: "Original writer",
+                        bodySnippet: "Original body",
+                        evidenceSnippet: "Original cited evidence",
+                        imageUrls: [],
+                        imageCaptions: [],
+                    },
+                ],
+                timestamp: 1_700_000_000_000,
+            },
+        ]);
+
+        const response = await GET(makeRequest("pinned-sid"));
+        const body = await response.json();
+
+        expect(fetchArticlesByIds).toHaveBeenCalledWith([]);
+        expect(body.turns[0].sourceArticles[0]).toMatchObject({
+            id: "1960-01-07-0",
+            contentRevisionId: "legacy-sha256:original",
+            headline: "Original headline",
+            summary: "Original summary",
+            bodySnippet: "Original body",
+        });
+    });
+
     it("returns empty body without probing when sessionId is missing", async () => {
         const response = await GET(makeRequest(undefined));
         const body = await response.json();

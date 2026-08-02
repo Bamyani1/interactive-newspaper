@@ -9,6 +9,11 @@ export type RagRetrievalMode = (typeof RAG_RETRIEVAL_MODES)[number];
 export interface RagRetrievalConfig {
   mode: RagRetrievalMode;
   activeIndexBuildId: string | null;
+  corpusVersion: string;
+  pipelineVersion: string;
+  embeddingModel: string;
+  textEmbeddingInputVersion: string;
+  imageEmbeddingInputVersion: string;
   cacheIdentity: string;
 }
 
@@ -40,11 +45,24 @@ export function getRagRetrievalConfig(
   }
 
   const activeIndexBuildId = mode === "legacy" ? null : configuredBuildId;
+  const corpusVersion = env.RAG_CORPUS_VERSION?.trim() || "legacy-unversioned";
+  const identityParts = [
+    `corpus=${corpusVersion}`,
+    `index=${mode === "legacy" ? "legacy" : `${mode}:${activeIndexBuildId}`}`,
+    `pipeline=${RAG_PIPELINE_VERSION}`,
+    `embedding=${RAG_EMBEDDING_MODEL}`,
+    `textInput=${RAG_TEXT_EMBEDDING_INPUT_VERSION}`,
+    `imageInput=${RAG_IMAGE_EMBEDDING_INPUT_VERSION}`,
+  ];
   return {
     mode,
     activeIndexBuildId,
-    cacheIdentity:
-      mode === "legacy" ? "legacy" : `${mode}:${activeIndexBuildId}`,
+    corpusVersion,
+    pipelineVersion: RAG_PIPELINE_VERSION,
+    embeddingModel: RAG_EMBEDDING_MODEL,
+    textEmbeddingInputVersion: RAG_TEXT_EMBEDDING_INPUT_VERSION,
+    imageEmbeddingInputVersion: RAG_IMAGE_EMBEDDING_INPUT_VERSION,
+    cacheIdentity: identityParts.join("|"),
   };
 }
 
@@ -53,3 +71,9 @@ export function shouldServeVersionedRetrieval(
 ): boolean {
   return getRagRetrievalConfig(env).mode === "versioned";
 }
+import {
+  RAG_EMBEDDING_MODEL,
+  RAG_IMAGE_EMBEDDING_INPUT_VERSION,
+  RAG_PIPELINE_VERSION,
+  RAG_TEXT_EMBEDDING_INPUT_VERSION,
+} from "@/src/lib/rag-model-config";

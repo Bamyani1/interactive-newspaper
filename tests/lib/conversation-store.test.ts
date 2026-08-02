@@ -21,10 +21,13 @@ import {
     addConversationTurn,
     newSessionId,
     formatHistoryForPrompt,
+    _clearSessionsForTests,
 } from "@/src/lib/conversation-store";
 
 describe("conversation-store", () => {
     beforeEach(() => {
+        vi.unstubAllEnvs();
+        _clearSessionsForTests();
         sqlMock.mockReset();
         sqlMock.transaction.mockReset();
     });
@@ -50,12 +53,14 @@ describe("conversation-store", () => {
                 question: "Q2",
                 answer: "A2",
                 cited_article_ids: ["art-2"],
+                citation_snapshots: [],
                 created_at: now,
             },
             {
                 question: "Q1",
                 answer: "A1",
                 cited_article_ids: ["art-1"],
+                citation_snapshots: [],
                 created_at: new Date(now.getTime() - 1000),
             },
         ]);
@@ -70,12 +75,13 @@ describe("conversation-store", () => {
 
     it("stores short answers verbatim on addConversationTurn", async () => {
         sqlMock.transaction.mockResolvedValueOnce(undefined);
+        sqlMock.mockResolvedValueOnce([{ exists: true }]);
         const shortAnswer = "x".repeat(1000);
         await addConversationTurn("sid", "What?", shortAnswer, ["a", "b"]);
 
-        expect(sqlMock).toHaveBeenCalledTimes(3);
+        expect(sqlMock).toHaveBeenCalledTimes(4);
         expect(sqlMock.transaction).toHaveBeenCalledTimes(1);
-        const substitutions = sqlMock.mock.calls[0].slice(1);
+        const substitutions = sqlMock.mock.calls[1].slice(1);
         const stringArgs = substitutions.filter(
             (v: unknown) => typeof v === "string",
         );
@@ -87,10 +93,11 @@ describe("conversation-store", () => {
 
     it("caps over-long answers at 8000 chars with a truncation marker", async () => {
         sqlMock.transaction.mockResolvedValueOnce(undefined);
+        sqlMock.mockResolvedValueOnce([{ exists: true }]);
         const longAnswer = "x".repeat(10_000);
         await addConversationTurn("sid", "What?", longAnswer, []);
 
-        const substitutions = sqlMock.mock.calls[0].slice(1);
+        const substitutions = sqlMock.mock.calls[1].slice(1);
         const stringArgs = substitutions.filter(
             (v: unknown) => typeof v === "string",
         );
@@ -120,11 +127,62 @@ describe("conversation-store", () => {
                 question: "Q",
                 answer: "A",
                 cited_article_ids: null,
+                citation_snapshots: null,
                 created_at: new Date(),
             },
         ]);
         const history = await getConversationHistory("sid");
         expect(history[0].citedArticleIds).toEqual([]);
+        expect(history[0].citationSnapshots).toEqual([]);
+    });
+
+    it("stores and restores immutable citation snapshots when the column exists", async () => {
+        const snapshot = {
+            articleId: "1960-01-07-0",
+            contentRevisionId: "legacy-sha256:abc",
+            headline: "Original headline",
+            editionDate: "1960-01-07",
+            category: "News",
+            summary: "Original summary",
+            byline: "Staff",
+            bodySnippet: "Original body",
+            evidenceSnippet: "Exact cited evidence",
+            imageUrls: [],
+            imageCaptions: [],
+        };
+        sqlMock.mockResolvedValueOnce([{ exists: true }]);
+        sqlMock.transaction.mockResolvedValueOnce(undefined);
+
+        await addConversationTurn("sid", "Q", "A", [snapshot.articleId], [snapshot]);
+
+        const insertSql = Array.isArray(sqlMock.mock.calls[1][0])
+            ? sqlMock.mock.calls[1][0].join(" ")
+            : "";
+        expect(insertSql).toContain("citation_snapshots");
+        expect(sqlMock.mock.calls[1]).toContain(JSON.stringify([snapshot]));
+
+        sqlMock.mockResolvedValueOnce([
+            {
+                question: "Q",
+                answer: "A",
+                cited_article_ids: [snapshot.articleId],
+                citation_snapshots: [snapshot],
+                created_at: new Date(),
+            },
+        ]);
+        const history = await getConversationHistory("sid");
+        expect(history[0].citationSnapshots).toEqual([snapshot]);
+    });
+
+    it("uses an ephemeral store and makes no Neon call in evaluation mode", async () => {
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        await addConversationTurn("eval-session", "Q", "A", ["article-1"]);
+
+        expect(await getConversationHistory("eval-session")).toMatchObject([
+            { question: "Q", answer: "A", citedArticleIds: ["article-1"] },
+        ]);
+        expect(sqlMock).not.toHaveBeenCalled();
+        expect(sqlMock.transaction).not.toHaveBeenCalled();
     });
 });
 
@@ -135,8 +193,8 @@ describe("formatHistoryForPrompt", () => {
 
     it("formats turns with numbered labels", () => {
         const turns = [
-            { question: "Q1", answer: "A1", citedArticleIds: [], timestamp: 0 },
-            { question: "Q2", answer: "A2", citedArticleIds: [], timestamp: 0 },
+            { question: "Q1", answer: "A1", citedArticleIds: [], citationSnapshots: [], timestamp: 0 },
+            { question: "Q2", answer: "A2", citedArticleIds: [], citationSnapshots: [], timestamp: 0 },
         ];
         const result = formatHistoryForPrompt(turns);
         expect(result).toContain("[Turn 1] Q: Q1");

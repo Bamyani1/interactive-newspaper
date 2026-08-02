@@ -24,6 +24,7 @@ import {
   EmbedTimeoutError,
   QuotaExhaustedError,
   _setQuotaRetryDelaysForTests,
+  _clearQueryEmbeddingCacheForTests,
   embeddingInputFingerprint,
   EMBEDDING_INPUT_VERSION,
   IMAGE_EMBEDDING_INPUT_VERSION,
@@ -461,11 +462,27 @@ describe("embedding input identity", () => {
 
 describe("embedQuery", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
+    _clearQueryEmbeddingCacheForTests();
     // mockReset clears both history AND any leaked mockImplementation from
     // the embedDocuments block (notably the persistent mixed-batch impl).
     // clearAllMocks only clears history, so queued mockRejectedValueOnce
     // calls would otherwise fall back to a stale impl after one call.
     mockEmbedContent.mockReset();
+  });
+
+  it("bypasses the query embedding cache in evaluation mode", async () => {
+    vi.stubEnv("RAG_EVALUATION_MODE", "1");
+    vi.stubEnv("RAG_EVALUATION_RUN_ID", "embedding-cache-test");
+    vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
+    mockEmbedContent.mockResolvedValue({
+      embeddings: [{ values: makeFakeVector(7) }],
+    });
+
+    await embedQuery("repeat exactly");
+    await embedQuery("repeat exactly");
+
+    expect(mockEmbedContent).toHaveBeenCalledTimes(2);
   });
 
   it("throws immediately when signal is pre-aborted (no SDK call)", async () => {

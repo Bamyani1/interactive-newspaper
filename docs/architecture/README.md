@@ -25,6 +25,8 @@ Terms that appear across multiple docs:
 - **RRF** — Reciprocal Rank Fusion. The algorithm that merges vector and FTS rank lists: `score = weight / (K + rank)` with `K=40`.
 - **simple pipeline** — The 5-stage non-agent path in `/api/ask`: reformulate → embed → retrieve → rerank → generate.
 - **turn** — One (question, answer) pair in a conversation. Multiple turns form a session (up to 5 within 30 min, stored in `ask_session_turns`).
+- **citation snapshot** — Bounded, immutable metadata/evidence retained with a turn and keyed to the cited content revision, so later OCR changes do not rewrite hydrated sources.
+- **coverage intent** — `absence`, `count`, or `exhaustive` classification that triggers a deterministic indexed-edition/article scope query. Coverage metadata describes search scope and is never source evidence.
 - **CRAG retry stages** — `reformulate-retry`, `embed-retry`, `retrieve-retry`, `rerank-retry`. Tagged for log attribution.
 
 ## Operator shortcuts

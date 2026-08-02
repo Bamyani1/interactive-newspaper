@@ -11,14 +11,20 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
-import { recordEmbeddingUsage } from "@/src/lib/cost-tracker";
-import { RAG_EMBEDDING_MODEL } from "@/src/lib/rag-model-config";
+import { executeTrackedEmbeddingCall } from "@/src/lib/cost-tracker";
+import {
+  RAG_EMBEDDING_MODEL,
+  RAG_IMAGE_EMBEDDING_INPUT_VERSION,
+  RAG_QUERY_EMBEDDING_INPUT_VERSION,
+  RAG_TEXT_EMBEDDING_INPUT_VERSION,
+} from "@/src/lib/rag-model-config";
 import { createHash } from "crypto";
+import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 
 const EMBEDDING_MODEL = RAG_EMBEDDING_MODEL;
 const EMBEDDING_DIMS = 768;
-const EMBEDDING_INPUT_VERSION = "article-chunk-v1";
-const IMAGE_EMBEDDING_INPUT_VERSION = "article-image-v1";
+const EMBEDDING_INPUT_VERSION = RAG_TEXT_EMBEDDING_INPUT_VERSION;
+const IMAGE_EMBEDDING_INPUT_VERSION = RAG_IMAGE_EMBEDDING_INPUT_VERSION;
 const MAX_BATCH_SIZE = 100; // API limit per request
 // Query embed budget: 10s. Previously 5s, but under Gemini load (or
 // adjacent rapid calls from the rest of the /api/ask pipeline) the
@@ -168,6 +174,7 @@ const CACHE_MAX_SIZE = 100;
 const queryCache = new Map<string, { embedding: number[]; ts: number }>();
 
 function getCachedEmbedding(key: string): number[] | null {
+  if (isRagEvaluationMode()) return null;
   const entry = queryCache.get(key);
   if (!entry) return null;
   if (Date.now() - entry.ts > CACHE_TTL_MS) {
@@ -181,12 +188,17 @@ function getCachedEmbedding(key: string): number[] | null {
 }
 
 function setCachedEmbedding(key: string, embedding: number[]): void {
+  if (isRagEvaluationMode()) return;
   // Evict oldest entries if at capacity
   if (queryCache.size >= CACHE_MAX_SIZE) {
     const oldest = queryCache.keys().next().value;
     if (oldest !== undefined) queryCache.delete(oldest);
   }
   queryCache.set(key, { embedding, ts: Date.now() });
+}
+
+export function _clearQueryEmbeddingCacheForTests(): void {
+  queryCache.clear();
 }
 
 // ─── Document Embedding ────────────────────────────────────────
@@ -229,19 +241,25 @@ export async function embedDocuments(
     const batch = textOnly.slice(i, i + MAX_BATCH_SIZE);
 
     const response = await retryOnQuota("embedDocuments.textBatch", () =>
-      embedWithTimeout(
-        "embedDocuments.textBatch",
-        (signal) =>
-          client.models.embedContent({
-            model: EMBEDDING_MODEL,
-            contents: batch.map((inp) => ({ parts: [{ text: inp.text }] })),
-            config: {
-              outputDimensionality: EMBEDDING_DIMS,
-              abortSignal: signal,
-            },
-          }),
-        EMBED_DOCUMENTS_TIMEOUT_MS,
-      ),
+      executeTrackedEmbeddingCall({
+        model: EMBEDDING_MODEL,
+        requestId: opts.requestId,
+        op: opts.op ?? "embed.documents",
+        call: () =>
+          embedWithTimeout(
+            "embedDocuments.textBatch",
+            (signal) =>
+              client.models.embedContent({
+                model: EMBEDDING_MODEL,
+                contents: batch.map((inp) => ({ parts: [{ text: inp.text }] })),
+                config: {
+                  outputDimensionality: EMBEDDING_DIMS,
+                  abortSignal: signal,
+                },
+              }),
+            EMBED_DOCUMENTS_TIMEOUT_MS,
+          ),
+      }),
     );
 
     if (!response.embeddings || response.embeddings.length !== batch.length) {
@@ -249,11 +267,6 @@ export async function embedDocuments(
         `Embedding response mismatch: expected ${batch.length}, got ${response.embeddings?.length ?? 0}`,
       );
     }
-
-    void recordEmbeddingUsage(EMBEDDING_MODEL, response, {
-      requestId: opts.requestId,
-      op: opts.op ?? "embed.documents",
-    });
 
     for (const emb of response.embeddings) {
       if (!emb.values || emb.values.length !== EMBEDDING_DIMS) {
@@ -279,24 +292,31 @@ export async function embedDocuments(
     let response;
     try {
       response = await retryOnQuota("embedDocuments.multimodal", () =>
-        embedWithTimeout(
-          "embedDocuments.multimodal",
-          (signal) =>
-            client.models.embedContent({
-              model: EMBEDDING_MODEL,
-              contents: [{
-                parts: [
-                  { text: inp.text },
-                  { inlineData: { mimeType: inp.imageMimeType || "image/jpeg", data: inp.imageBase64! } },
-                ],
-              }],
-              config: {
-                outputDimensionality: EMBEDDING_DIMS,
-                abortSignal: signal,
-              },
-            }),
-          EMBED_DOCUMENTS_TIMEOUT_MS,
-        ),
+        executeTrackedEmbeddingCall({
+          model: EMBEDDING_MODEL,
+          requestId: opts.requestId,
+          op: opts.op ?? "embed.image",
+          imageCount: 1,
+          call: () =>
+            embedWithTimeout(
+              "embedDocuments.multimodal",
+              (signal) =>
+                client.models.embedContent({
+                  model: EMBEDDING_MODEL,
+                  contents: [{
+                    parts: [
+                      { text: inp.text },
+                      { inlineData: { mimeType: inp.imageMimeType || "image/jpeg", data: inp.imageBase64! } },
+                    ],
+                  }],
+                  config: {
+                    outputDimensionality: EMBEDDING_DIMS,
+                    abortSignal: signal,
+                  },
+                }),
+              EMBED_DOCUMENTS_TIMEOUT_MS,
+            ),
+        }),
       );
     } catch (err) {
       // Re-throw with context so operators know WHERE the partial failure
@@ -312,11 +332,6 @@ export async function embedDocuments(
         `Failed to generate multimodal embedding for image ${idx + 1} of ${withImages.length}`,
       );
     }
-    void recordEmbeddingUsage(EMBEDDING_MODEL, response, {
-      requestId: opts.requestId,
-      op: opts.op ?? "embed.image",
-      imageCount: 1,
-    });
     const emb = response.embeddings[0];
     if (!emb.values || emb.values.length !== EMBEDDING_DIMS) {
       throw new Error(
@@ -374,9 +389,10 @@ export async function embedQuery(
   }
 
   const prefixed = `task: search result | query: ${question}`;
+  const cacheKey = `${EMBEDDING_MODEL}\0${RAG_QUERY_EMBEDDING_INPUT_VERSION}\0${prefixed}`;
 
   // Check cache first
-  const cached = getCachedEmbedding(prefixed);
+  const cached = getCachedEmbedding(cacheKey);
   if (cached) return cached;
 
   const client = getGeminiClient();
@@ -390,13 +406,19 @@ export async function embedQuery(
     : controller.signal;
 
   try {
-    const response = await client.models.embedContent({
+    const response = await executeTrackedEmbeddingCall({
       model: EMBEDDING_MODEL,
-      contents: [{ parts: [{ text: prefixed }] }],
-      config: {
-        outputDimensionality: EMBEDDING_DIMS,
-        abortSignal: combinedSignal,
-      },
+      requestId: opts.requestId,
+      op: "embed.query",
+      call: () =>
+        client.models.embedContent({
+          model: EMBEDDING_MODEL,
+          contents: [{ parts: [{ text: prefixed }] }],
+          config: {
+            outputDimensionality: EMBEDDING_DIMS,
+            abortSignal: combinedSignal,
+          },
+        }),
     });
 
     clearTimeout(timeout);
@@ -405,11 +427,6 @@ export async function embedQuery(
       throw new Error("Failed to generate query embedding");
     }
 
-    void recordEmbeddingUsage(EMBEDDING_MODEL, response, {
-      requestId: opts.requestId,
-      op: "embed.query",
-    });
-
     const values = response.embeddings[0].values;
     if (!values || values.length !== EMBEDDING_DIMS) {
       throw new Error(
@@ -417,7 +434,7 @@ export async function embedQuery(
       );
     }
 
-    setCachedEmbedding(prefixed, values);
+    setCachedEmbedding(cacheKey, values);
     return values;
   } catch (err) {
     clearTimeout(timeout);

@@ -14,6 +14,9 @@
  */
 
 import { neon } from "@neondatabase/serverless";
+import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
+import type { CitationSnapshot } from "@/src/types";
+import { isCitationSnapshot } from "@/src/lib/citation-snapshot";
 
 const MAX_TURNS = 5;
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -27,16 +30,63 @@ export interface ConversationTurn {
     question: string;
     answer: string;
     citedArticleIds: string[];
+    citationSnapshots: CitationSnapshot[];
     timestamp: number;
 }
 
+// Live evaluations need multi-turn behavior without persisting user-like test
+// content. The store is process-local, TTL-bound, and cleared between runs.
+const evaluationSessions = new Map<string, ConversationTurn[]>();
+
+function liveEvaluationTurns(sessionId: string): ConversationTurn[] {
+    const cutoff = Date.now() - TTL_MS;
+    const turns = (evaluationSessions.get(sessionId) ?? []).filter(
+        (turn) => turn.timestamp >= cutoff,
+    );
+    if (turns.length === 0) evaluationSessions.delete(sessionId);
+    else evaluationSessions.set(sessionId, turns);
+    return turns;
+}
+
 let _sql: ReturnType<typeof neon> | null = null;
+let citationSnapshotColumn: { value: boolean; checkedAt: number } | null = null;
+const SCHEMA_PROBE_TTL_MS = 30_000;
 function getSql(): ReturnType<typeof neon> | null {
     if (_sql !== null) return _sql;
     const url = process.env.DATABASE_URL;
     if (!url) return null;
     _sql = neon(url);
     return _sql;
+}
+
+async function hasCitationSnapshotColumn(
+    sql: ReturnType<typeof neon>,
+): Promise<boolean> {
+    if (
+        citationSnapshotColumn &&
+        Date.now() - citationSnapshotColumn.checkedAt < SCHEMA_PROBE_TTL_MS
+    ) {
+        return citationSnapshotColumn.value;
+    }
+    try {
+        const rows = (await sql`
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'ask_session_turns'
+                  AND column_name = 'citation_snapshots'
+            ) AS exists
+        `) as Array<{ exists: boolean }>;
+        const value = Boolean(rows[0]?.exists);
+        citationSnapshotColumn = { value, checkedAt: Date.now() };
+        return value;
+    } catch {
+        // A probe failure must not drop an otherwise valid conversation turn.
+        // Fall back to the legacy insert and retry the probe after the TTL.
+        citationSnapshotColumn = { value: false, checkedAt: Date.now() };
+        return false;
+    }
 }
 
 export function newSessionId(): string {
@@ -48,12 +98,20 @@ export function newSessionId(): string {
 export async function getConversationHistory(
     sessionId: string,
 ): Promise<ConversationTurn[]> {
+    if (isRagEvaluationMode()) {
+        return liveEvaluationTurns(sessionId).slice(-MAX_TURNS);
+    }
     const sql = getSql();
     if (!sql) return [];
     const sinceIso = new Date(Date.now() - TTL_MS).toISOString();
     try {
         const rows = (await sql`
-            SELECT question, answer, cited_article_ids, created_at
+            SELECT question, answer, cited_article_ids,
+                   COALESCE(
+                     to_jsonb(ask_session_turns)->'citation_snapshots',
+                     '[]'::jsonb
+                   ) AS citation_snapshots,
+                   created_at
             FROM ask_session_turns
             WHERE session_id = ${sessionId}
               AND created_at >= ${sinceIso}
@@ -63,6 +121,7 @@ export async function getConversationHistory(
             question: string;
             answer: string;
             cited_article_ids: string[] | null;
+            citation_snapshots: unknown;
             created_at: string | Date;
         }>;
         // DB returns most-recent-first; reverse so callers see
@@ -71,6 +130,9 @@ export async function getConversationHistory(
             question: r.question,
             answer: r.answer,
             citedArticleIds: r.cited_article_ids ?? [],
+            citationSnapshots: Array.isArray(r.citation_snapshots)
+                ? r.citation_snapshots.filter(isCitationSnapshot)
+                : [],
             timestamp:
                 r.created_at instanceof Date
                     ? r.created_at.getTime()
@@ -95,9 +157,8 @@ export async function addConversationTurn(
     question: string,
     answer: string,
     citedArticleIds: string[],
+    citationSnapshots: CitationSnapshot[] = [],
 ): Promise<void> {
-    const sql = getSql();
-    if (!sql) return;
     const stored =
         answer.length > ANSWER_TRUNCATE_CHARS
             ? answer.slice(
@@ -105,15 +166,38 @@ export async function addConversationTurn(
                   ANSWER_TRUNCATE_CHARS - TRUNCATION_MARKER.length,
               ) + TRUNCATION_MARKER
             : answer;
+    if (isRagEvaluationMode()) {
+        const turns = liveEvaluationTurns(sessionId);
+        turns.push({
+            question,
+            answer: stored,
+            citedArticleIds: [...citedArticleIds],
+            citationSnapshots: citationSnapshots.map((snapshot) => ({ ...snapshot })),
+            timestamp: Date.now(),
+        });
+        evaluationSessions.set(sessionId, turns.slice(-MAX_TURNS));
+        return;
+    }
+    const sql = getSql();
+    if (!sql) return;
     const cutoffIso = new Date(Date.now() - TTL_MS).toISOString();
     try {
-        await sql.transaction([
-            sql`
+        const snapshotColumnAvailable = await hasCitationSnapshotColumn(sql);
+        const insert = snapshotColumnAvailable
+            ? sql`
+                INSERT INTO ask_session_turns
+                  (session_id, question, answer, cited_article_ids, citation_snapshots)
+                VALUES
+                  (${sessionId}, ${question}, ${stored}, ${citedArticleIds}, ${JSON.stringify(citationSnapshots)}::jsonb)
+            `
+            : sql`
                 INSERT INTO ask_session_turns
                   (session_id, question, answer, cited_article_ids)
                 VALUES
                   (${sessionId}, ${question}, ${stored}, ${citedArticleIds})
-            `,
+            `;
+        await sql.transaction([
+            insert,
             sql`DELETE FROM ask_session_turns WHERE created_at < ${cutoffIso}`,
             sql`
                 DELETE FROM ask_session_turns
@@ -148,6 +232,10 @@ export async function addConversationTurn(
 export async function deleteConversationTurns(
     sessionId: string,
 ): Promise<void> {
+    if (isRagEvaluationMode()) {
+        evaluationSessions.delete(sessionId);
+        return;
+    }
     const sql = getSql();
     if (!sql) return;
     try {
@@ -175,6 +263,9 @@ export async function deleteConversationTurns(
  * expired' banner instead of a silent empty state.
  */
 export async function sessionHasAnyTurns(sessionId: string): Promise<boolean> {
+    if (isRagEvaluationMode()) {
+        return liveEvaluationTurns(sessionId).length > 0;
+    }
     const sql = getSql();
     if (!sql) return false;
     try {
@@ -206,8 +297,7 @@ export function formatHistoryForPrompt(turns: ConversationTurn[]): string {
         .join("\n\n");
 }
 
-// Test hook — no-op now that state lives in Neon, but kept to preserve
-// call-site compatibility with tests that import it.
 export function _clearSessionsForTests(): void {
-    // intentional no-op
+    evaluationSessions.clear();
+    citationSnapshotColumn = null;
 }

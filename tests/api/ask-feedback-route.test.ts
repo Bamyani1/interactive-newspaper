@@ -47,6 +47,7 @@ const validBody = {
 
 describe("POST /api/ask/feedback", () => {
     beforeEach(() => {
+        vi.unstubAllEnvs();
         vi.clearAllMocks();
         mockSql.mockResolvedValue(undefined);
     });
@@ -69,6 +70,20 @@ describe("POST /api/ask/feedback", () => {
         );
         expect(response.status).toBe(201);
         expect(mockSql).toHaveBeenCalledTimes(1);
+    });
+
+    it("validates but does not persist feedback in evaluation mode", async () => {
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        const response = await POST(
+            makeRequest(validBody) as unknown as Parameters<typeof POST>[0],
+        );
+        expect(response.status).toBe(202);
+        await expect(response.json()).resolves.toMatchObject({
+            ok: true,
+            persisted: false,
+            evaluationMode: true,
+        });
+        expect(mockSql).not.toHaveBeenCalled();
     });
 
     it("rejects an invalid JSON body with 400", async () => {

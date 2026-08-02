@@ -48,8 +48,28 @@ CREATE INDEX IF NOT EXISTS idx_articles_embedding ON articles USING hnsw (embedd
 
 -- ─── RAG chunks and image vectors ───────────────────────────────
 
+CREATE TABLE IF NOT EXISTS rag_index_builds (
+  id                            TEXT PRIMARY KEY,
+  corpus_version                TEXT NOT NULL,
+  status                        TEXT NOT NULL CHECK (
+    status IN ('building', 'validated', 'active', 'failed', 'retired')
+  ),
+  pipeline_version              TEXT NOT NULL,
+  embedding_model               TEXT NOT NULL,
+  text_embedding_input_version  TEXT NOT NULL,
+  image_embedding_input_version TEXT NOT NULL,
+  created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  validated_at                  TIMESTAMPTZ,
+  activated_at                  TIMESTAMPTZ,
+  failure_reason                TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_index_builds_one_active_per_corpus
+  ON rag_index_builds(corpus_version) WHERE status = 'active';
+
 CREATE TABLE IF NOT EXISTS article_chunks (
   id                      TEXT PRIMARY KEY,
+  index_build_id          TEXT NOT NULL REFERENCES rag_index_builds(id),
   article_id              TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   chunk_index             INTEGER NOT NULL,
   chunk_text              TEXT NOT NULL,
@@ -58,16 +78,18 @@ CREATE TABLE IF NOT EXISTS article_chunks (
   embedding_model         TEXT,
   embedding_input_version TEXT,
   embedding_input_hash    TEXT NOT NULL,
-  UNIQUE (article_id, chunk_index)
+  UNIQUE (index_build_id, article_id, chunk_index)
 );
 
-CREATE INDEX IF NOT EXISTS idx_article_chunks_article ON article_chunks(article_id, chunk_index);
+CREATE INDEX IF NOT EXISTS idx_article_chunks_article
+  ON article_chunks(index_build_id, article_id, chunk_index);
 CREATE INDEX IF NOT EXISTS idx_article_chunks_search ON article_chunks USING gin(search_vector);
 CREATE INDEX IF NOT EXISTS idx_article_chunks_embedding ON article_chunks USING hnsw (embedding vector_cosine_ops)
   WITH (m = 16, ef_construction = 128);
 
 CREATE TABLE IF NOT EXISTS article_images (
   id                      TEXT PRIMARY KEY,
+  index_build_id          TEXT NOT NULL REFERENCES rag_index_builds(id),
   article_id              TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   image_index             INTEGER NOT NULL,
   image_url               TEXT NOT NULL,
@@ -76,10 +98,13 @@ CREATE TABLE IF NOT EXISTS article_images (
   embedding_model         TEXT,
   embedding_input_version TEXT,
   embedding_input_hash    TEXT,
-  UNIQUE (article_id, image_index)
+  UNIQUE (index_build_id, article_id, image_index)
 );
 
-CREATE INDEX IF NOT EXISTS idx_article_images_article ON article_images(article_id, image_index);
+CREATE INDEX IF NOT EXISTS idx_article_images_article
+  ON article_images(index_build_id, article_id, image_index);
+CREATE INDEX IF NOT EXISTS idx_article_images_caption_search ON article_images
+  USING gin (to_tsvector('english', coalesce(caption, '')));
 CREATE INDEX IF NOT EXISTS idx_article_images_embedding ON article_images USING hnsw (embedding vector_cosine_ops)
   WITH (m = 16, ef_construction = 128);
 

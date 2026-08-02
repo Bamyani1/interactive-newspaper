@@ -14,12 +14,14 @@ vi.mock("@neondatabase/serverless", () => ({
 
 import {
   queryArticlesByEmbedding,
+  searchArticlesForRag,
   hybridSearch,
   DbTimeoutError,
   _clearHybridSearchCacheForTests,
   _setRagV2TablesAvailableForTests,
+  _setRagIndexBuildReadyForTests,
+  legacyContentRevisionId,
 } from "@/src/lib/db";
-import type { RetrievedArticle } from "@/src/lib/db";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -59,6 +61,7 @@ const DUMMY_EMBEDDING = Array.from({ length: 3 }, (_, i) => i * 0.1);
 
 beforeEach(() => {
   vi.unstubAllEnvs();
+  _setRagIndexBuildReadyForTests(null);
 });
 
 // ── queryArticlesByEmbedding ──────────────────────────────────────────
@@ -81,7 +84,7 @@ describe("queryArticlesByEmbedding", () => {
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
     expect(results).toHaveLength(2);
-    expect(results[0]).toEqual<RetrievedArticle>({
+    expect(results[0]).toEqual({
       id: "1960-01-07-0",
       editionDate: "1960-01-07",
       category: "News",
@@ -93,11 +96,30 @@ describe("queryArticlesByEmbedding", () => {
       source: "vector",
       imageUrls: [],
       imageCaptions: [],
+      contentRevisionId: expect.stringMatching(/^legacy-sha256:[a-f0-9]{64}$/),
       matchedPassages: [],
     });
     expect(results[1].headline).toBe("Second Article");
     expect(results[1].distance).toBe(0.4);
     expect(results[1].source).toBe("vector");
+  });
+
+  it("uses a deterministic legacy revision that changes with article content", () => {
+    const article = {
+      id: "1960-01-07-0",
+      editionDate: "1960-01-07",
+      category: "News",
+      headline: "Headline",
+      summary: "Summary",
+      byline: null,
+      bodyPlain: "Original body",
+      imageUrls: [],
+      imageCaptions: [],
+    };
+    expect(legacyContentRevisionId(article)).toBe(legacyContentRevisionId(article));
+    expect(
+      legacyContentRevisionId({ ...article, bodyPlain: "Revised body" }),
+    ).not.toBe(legacyContentRevisionId(article));
   });
 
   it("respects the limit option", async () => {
@@ -242,6 +264,7 @@ describe("queryArticlesByEmbedding with RAG v2 tables", () => {
     mockSql.mockReset();
     mockSql.transaction.mockReset();
     _setRagV2TablesAvailableForTests(true);
+    _setRagIndexBuildReadyForTests(true);
     vi.stubEnv("RAG_RETRIEVAL_MODE", "versioned");
     vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "test-index-build");
   });
@@ -282,6 +305,25 @@ describe("queryArticlesByEmbedding with RAG v2 tables", () => {
       readOnly: true,
       fetchOptions: { signal: expect.any(AbortSignal) },
     });
+    const renderedSql = mockSql.mock.calls
+      .map((call) => (Array.isArray(call[0]) ? call[0].join(" ") : ""))
+      .join(" ");
+    expect(renderedSql).toContain("PARTITION BY c.article_id");
+    expect(renderedSql).toContain("ranked_articles");
+    expect(renderedSql).toContain("e.evidence_rank <=");
+    expect(renderedSql).toContain("index_build_id =");
+    expect(
+      mockSql.mock.calls.some((call) => call.includes("test-index-build")),
+    ).toBe(true);
+  });
+
+  it("fails closed instead of querying an unready configured build", async () => {
+    _setRagIndexBuildReadyForTests(false);
+
+    await expect(queryArticlesByEmbedding(DUMMY_EMBEDDING)).rejects.toThrow(
+      "not ready",
+    );
+    expect(mockSql.transaction).not.toHaveBeenCalled();
   });
 
   it("uses a separately embedded image result and promotes that image", async () => {
@@ -305,6 +347,84 @@ describe("queryArticlesByEmbedding with RAG v2 tables", () => {
     expect(result.imageUrls).toEqual(["matched.jpg", "first.jpg"]);
     expect(result.imageCaptions).toEqual(["Matched", "First"]);
     expect(result.matchedPassages).toEqual(["Matched"]);
+  });
+});
+
+describe("searchArticlesForRag with RAG v2 evidence", () => {
+  beforeEach(() => {
+    mockSql.mockReset();
+    mockSql.transaction.mockReset();
+    _setRagV2TablesAvailableForTests(true);
+    _setRagIndexBuildReadyForTests(true);
+    vi.stubEnv("RAG_RETRIEVAL_MODE", "versioned");
+    vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "test-index-build");
+  });
+
+  it("deduplicates article rows while retaining bounded evidence", async () => {
+    mockSql.transaction.mockResolvedValueOnce([[
+      makeFtsRow({
+        id: "article-a",
+        chunk_text: "Headline evidence.",
+      }),
+      makeFtsRow({
+        id: "article-a",
+        chunk_text: "Matching body passage.",
+      }),
+      makeFtsRow({
+        id: "article-b",
+        chunk_text: "A different article.",
+      }),
+    ]]);
+
+    const results = await searchArticlesForRag("campus history", { limit: 2 });
+
+    expect(results.map((result) => result.id)).toEqual(["article-a", "article-b"]);
+    expect(results[0].matchedPassages).toEqual([
+      "Headline evidence.",
+      "Matching body passage.",
+    ]);
+  });
+
+  it("ranks caption evidence and promotes the exact matched registered image", async () => {
+    mockSql.transaction.mockResolvedValueOnce([[
+      makeFtsRow({
+        id: "visual-a",
+        image_urls: ["first.jpg", "matched.jpg"],
+        image_captions: ["First", "Matched caption"],
+        chunk_text: "Article evidence.",
+      }),
+      makeFtsRow({
+        id: "visual-a",
+        image_urls: ["first.jpg", "matched.jpg"],
+        image_captions: ["First", "Matched caption"],
+        chunk_text: null,
+        matched_image_url: "matched.jpg",
+        matched_caption: "Matched caption",
+      }),
+    ]]);
+
+    const [result] = await searchArticlesForRag("matched caption", {
+      onlyWithImages: true,
+    });
+
+    expect(result.imageUrls).toEqual(["matched.jpg", "first.jpg"]);
+    expect(result.imageCaptions).toEqual(["Matched caption", "First"]);
+    expect(result.matchedPassages).toEqual([
+      "Article evidence.",
+      "Matched caption",
+    ]);
+    const renderedSql = mockSql.mock.calls
+      .map((call) => (Array.isArray(call[0]) ? call[0].join(" ") : ""))
+      .join(" ");
+    expect(renderedSql).toContain("caption_matches");
+    expect(renderedSql).toContain("article_images");
+    expect(renderedSql).toContain("PARTITION BY e.id");
+    expect(renderedSql).toContain("ranked_articles");
+    expect(renderedSql).toContain("i.index_build_id =");
+    expect(renderedSql).toContain("c.index_build_id =");
+    expect(
+      mockSql.mock.calls.some((call) => call.includes("test-index-build")),
+    ).toBe(true);
   });
 });
 

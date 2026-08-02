@@ -29,6 +29,6 @@ describe("RAG model routing", () => {
 
   it("uses the stable embedding model and versioned pipeline", () => {
     expect(RAG_EMBEDDING_MODEL).toBe("gemini-embedding-2");
-    expect(RAG_PIPELINE_VERSION).toBe("rag-v2-chunked-grounded");
+    expect(RAG_PIPELINE_VERSION).toBe("rag-v3-independent-grounded");
   });
 });
