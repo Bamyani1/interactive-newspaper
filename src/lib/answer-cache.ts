@@ -18,6 +18,7 @@ import {
     RAG_GENERATION_MODEL,
     RAG_PIPELINE_VERSION,
 } from "@/src/lib/rag-model-config";
+import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
 
 const MAX_ENTRIES = 200;
 const TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -40,6 +41,7 @@ function makeKey(question: string, filters?: unknown): string {
                 RAG_GENERATION_MODEL,
                 RAG_EMBEDDING_MODEL,
                 corpusVersion,
+                getRagRetrievalConfig().cacheIdentity,
                 normalized,
                 filtersJson,
             ].join("|"),

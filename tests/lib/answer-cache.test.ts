@@ -28,6 +28,7 @@ function makeResponse(overrides: Partial<AskResponse> = {}): AskResponse {
 
 describe("answer-cache", () => {
     beforeEach(() => {
+        vi.unstubAllEnvs();
         clearAnswerCache();
     });
 
@@ -108,6 +109,15 @@ describe("answer-cache", () => {
         setCachedAnswer("same question", { category: "News" }, r2);
         expect(getCachedAnswer("same question", {})!.answer).toBe("no filter");
         expect(getCachedAnswer("same question", { category: "News" })!.answer).toBe("with filter");
+    });
+
+    it("does not reuse answers across retrieval index builds", () => {
+        vi.stubEnv("RAG_RETRIEVAL_MODE", "versioned");
+        vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "build-a");
+        setCachedAnswer("same question", {}, makeResponse({ answer: "build a" }));
+
+        vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "build-b");
+        expect(getCachedAnswer("same question", {})).toBeNull();
     });
 
     it("MRU promotion: accessed entries survive eviction", () => {

@@ -1,6 +1,6 @@
 # RAG and Archive Data Pipeline — Final Implementation Plan
 
-Status: **ready for user review; not approved for implementation yet**  
+Status: **approved for local implementation; Phase 0 completed 2026-08-02**
 Branch: `rag-enhancement`  
 Starting commit: `652f9fc`  
 Prepared: 2026-08-02
