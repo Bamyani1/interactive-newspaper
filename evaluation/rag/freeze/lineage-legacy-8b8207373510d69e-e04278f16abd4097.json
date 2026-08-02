@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "corpusVersion": "legacy-8b8207373510d69e",
+  "sourceInventorySha256": "6a9d9286b30620f72fa3d25999a48e1b35669f4ee87663f411608cf0c8f3f523",
+  "datasets": [
+    {
+      "id": "contentdm_issue_metadata",
+      "authority": "OCLC CONTENTdm p15963coll9 metadata and IIIF manifests",
+      "transformations": [
+        "exact source filter",
+        "record classification",
+        "active-date manifest inventory"
+      ],
+      "fieldConsumers": [
+        "source discovery",
+        "expected page count",
+        "source pointer provenance"
+      ],
+      "revisionRule": "identify by collection, pointer, and manifest SHA-256; never choose date collisions automatically",
+      "retention": "durable public provenance metadata",
+      "privacyClass": "public"
+    },
+    {
+      "id": "editions",
+      "authority": "published OCR archive edition records",
+      "transformations": [
+        "OCR assembly",
+        "legacy database publication"
+      ],
+      "fieldConsumers": [
+        "archive browsing",
+        "RAG date filters",
+        "agent list_editions"
+      ],
+      "revisionRule": "legacy rows are mutable; future publication must pin an immutable content revision",
+      "retention": "durable public archive record",
+      "privacyClass": "public",
+      "ragUsage": "direct"
+    },
+    {
+      "id": "articles",
+      "authority": "published OCR article records",
+      "transformations": [
+        "page structuring",
+        "continuation merge",
+        "schema adapter",
+        "legacy article embedding"
+      ],
+      "fieldConsumers": [
+        "FTS",
+        "vector retrieval",
+        "reranking",
+        "answers",
+        "citations",
+        "article hydration"
+      ],
+      "revisionRule": "legacy IDs are date/position based; future identities must be stable and revision-pinned",
+      "retention": "durable public archive record",
+      "privacyClass": "public",
+      "ragUsage": "direct"
+    },
+    {
+      "id": "ads",
+      "authority": "published OCR advertisement records",
+      "transformations": [
+        "OCR ad extraction",
+        "legacy database publication"
+      ],
+      "fieldConsumers": [
+        "edition display"
+      ],
+      "revisionRule": "preserve in archive model; exclude from default RAG rollout",
+      "retention": "durable public archive record",
+      "privacyClass": "public",
+      "ragUsage": "excluded_by_policy"
+    },
+    {
+      "id": "article_images_legacy",
+      "authority": "article image URL and caption arrays plus R2 derivatives",
+      "transformations": [
+        "visual-region crop",
+        "WebP derivative",
+        "article association"
+      ],
+      "fieldConsumers": [
+        "edition display",
+        "visual retrieval filter",
+        "answer image rendering"
+      ],
+      "revisionRule": "legacy date paths remain readable; future assets are content-addressed and revision-pinned",
+      "retention": "durable derivative; original source page remains re-downloadable",
+      "privacyClass": "public",
+      "ragUsage": "direct_legacy_metadata"
+    },
+    {
+      "id": "weather_music",
+      "authority": "derived contextual archive datasets",
+      "transformations": [
+        "separate archive-data import"
+      ],
+      "fieldConsumers": [
+        "edition experience outside /ask"
+      ],
+      "revisionRule": "version independently from newspaper corpus",
+      "retention": "durable contextual data",
+      "privacyClass": "public",
+      "ragUsage": "unused"
+    },
+    {
+      "id": "entities_article_entities",
+      "authority": "derived entity index",
+      "transformations": [
+        "legacy entity extraction"
+      ],
+      "fieldConsumers": [],
+      "revisionRule": "do not assume coverage or activate without an evaluated consumer",
+      "retention": "review before future migration",
+      "privacyClass": "public_derived",
+      "ragUsage": "unused"
+    },
+    {
+      "id": "ask_session_turns",
+      "authority": "user conversation activity",
+      "transformations": [
+        "answer truncation",
+        "citation ID storage"
+      ],
+      "fieldConsumers": [
+        "multi-turn context",
+        "session hydration"
+      ],
+      "revisionRule": "ephemeral; evaluation mode must not persist rows",
+      "retention": "30-minute application TTL with explicit deletion support",
+      "privacyClass": "private_user_content",
+      "ragUsage": "operational"
+    },
+    {
+      "id": "ask_feedback",
+      "authority": "user-submitted answer feedback",
+      "transformations": [
+        "validation",
+        "citation JSON storage"
+      ],
+      "fieldConsumers": [
+        "quality review"
+      ],
+      "revisionRule": "append-only feedback; evaluation mode must not persist rows",
+      "retention": "requires explicit privacy retention policy",
+      "privacyClass": "private_user_content",
+      "ragUsage": "evaluation_signal_only"
+    },
+    {
+      "id": "ai_spend_counter_api_rate_bucket",
+      "authority": "application operational telemetry",
+      "transformations": [
+        "cost aggregation",
+        "rate-limit bucket aggregation"
+      ],
+      "fieldConsumers": [
+        "online spend guard",
+        "rate limiting"
+      ],
+      "revisionRule": "online and offline evaluation ledgers must remain separate",
+      "retention": "operational policy",
+      "privacyClass": "operational_metadata",
+      "ragUsage": "operational"
+    }
+  ],
+  "lineageSha256": "e04278f16abd4097a8d6a47f74ae4977afc1081f4a40afebc600a0d9fa048a84",
+  "generatedAt": "2026-08-02T19:15:11.316Z"
+}
