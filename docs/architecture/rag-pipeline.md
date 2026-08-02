@@ -1,6 +1,6 @@
 # RAG Pipeline — Ask the Archive
 
-This document describes the production `/api/ask` pipeline after the RAG v2 retrieval migration. OCR is intentionally out of scope; see `ocr-pipeline.md` for that system.
+This document describes the `/api/ask` pipeline and the isolated RAG-v2 candidate. Production remains on explicit `legacy` retrieval until a versioned index is separately validated and activated. OCR is intentionally out of scope; see `ocr-pipeline.md` for that system.
 
 ## Core decisions
 
@@ -49,13 +49,19 @@ DATABASE_URL=postgresql://...
 GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=global
 RAG_CORPUS_VERSION=2026-07-31
+RAG_RETRIEVAL_MODE=legacy
 ```
+
+`RAG_RETRIEVAL_MODE` defaults to `legacy`. `shadow` and `versioned` require an
+explicit `RAG_ACTIVE_INDEX_BUILD_ID`; table existence never changes behavior.
+The active build is also part of retrieval and answer-cache identities.
 
 Local ADC setup is external to the application:
 
 ```bash
 gcloud auth application-default login
 gcloud auth application-default set-quota-project "$GOOGLE_CLOUD_PROJECT"
+npm run google:verify-adc
 ```
 
 The deployed runtime must have an identity with permission to invoke the relevant Vertex AI models. Do not add `GEMINI_API_KEY` or `GOOGLE_API_KEY` as a fallback; doing so makes project attribution and promotional-credit verification ambiguous.
@@ -70,7 +76,7 @@ The legacy index stored one vector for an entire article and mixed the primary i
 2. text and visual intent competed inside one vector;
 3. a changed input could silently retain a stale vector.
 
-RAG v2 stores text and visual evidence separately.
+The disabled RAG-v2 candidate stores text and visual evidence separately.
 
 ### `article_chunks`
 
@@ -98,7 +104,7 @@ Visual queries search this index. The closest matched image is promoted to the f
 
 ### Legacy cutover behavior
 
-The old `articles.embedding` column remains during migration and rollback. Legacy retrieval filters by `embedding_model = 'gemini-embedding-2'`; it never compares a stable query vector against preview-model document vectors. Before the v2 vectors are backfilled, lexical FTS therefore remains useful without mixing incompatible embedding spaces.
+The old `articles.embedding` column remains during migration and rollback. Legacy retrieval filters by `embedding_model = 'gemini-embedding-2'`; it never compares a stable query vector against preview-model document vectors. Before the v2 vectors are backfilled, lexical FTS therefore remains useful without mixing incompatible embedding spaces. Even if `article_chunks` and `article_images` exist, they are not served unless `RAG_RETRIEVAL_MODE=versioned` names an explicit build.
 
 ## Hybrid search
 
@@ -224,6 +230,11 @@ The application keeps its existing `$0.50` daily software guard. This counter is
 ## Migration and backfill
 
 No migration runs automatically at application startup.
+
+The commands below belong to the checkpointed candidate and are **not approved
+for production use**. In particular, the current seed path still contains draft
+RAG-v2 DDL. The versioned migration ledger and index-build state machine must be
+implemented and rehearsed before these commands may target production.
 
 ```bash
 # 1. Schema + deterministic metadata only; no Google calls

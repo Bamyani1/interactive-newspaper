@@ -25,6 +25,7 @@
     "db:embed": "node --import tsx scripts/db/embed.mjs",
     "db:embed:force": "node --import tsx scripts/db/embed.mjs --force",
     "db:migrate:rag-v2": "node --import tsx scripts/db/migrate-rag-v2.mjs",
+    "google:verify-adc": "node --import tsx scripts/google/verify-adc.ts",
     "test:invariants": "vitest run tests/ocr/pipeline-invariants.test.ts",
     "images:upload": "node scripts/db/upload-images.mjs",
     "images:gc": "node scripts/db/gc-r2-assets.mjs"
@@ -35,6 +36,7 @@
     "@neondatabase/serverless": "^1.0.2",
     "@vercel/analytics": "^2.0.1",
     "framer-motion": "12.42.2",
+    "google-auth-library": "10.5.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.556.0",

@@ -57,6 +57,10 @@ function makeFtsRow(overrides: Record<string, unknown> = {}) {
 
 const DUMMY_EMBEDDING = Array.from({ length: 3 }, (_, i) => i * 0.1);
 
+beforeEach(() => {
+  vi.unstubAllEnvs();
+});
+
 // ── queryArticlesByEmbedding ──────────────────────────────────────────
 
 describe("queryArticlesByEmbedding", () => {
@@ -238,6 +242,18 @@ describe("queryArticlesByEmbedding with RAG v2 tables", () => {
     mockSql.mockReset();
     mockSql.transaction.mockReset();
     _setRagV2TablesAvailableForTests(true);
+    vi.stubEnv("RAG_RETRIEVAL_MODE", "versioned");
+    vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "test-index-build");
+  });
+
+  it("does not activate from table existence while retrieval mode is legacy", async () => {
+    vi.stubEnv("RAG_RETRIEVAL_MODE", "legacy");
+    mockSql.transaction.mockResolvedValueOnce([[], [makeVectorRow()]]);
+
+    const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
+
+    expect(results).toHaveLength(1);
+    expect(mockSql.transaction.mock.calls[0][0]).toHaveLength(2);
   });
 
   it("aggregates multiple matching chunks into article-local evidence", async () => {

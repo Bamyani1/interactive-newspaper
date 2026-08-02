@@ -9,6 +9,10 @@ import {
   EMBEDDING_INPUT_VERSION,
   IMAGE_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/embeddings";
+import {
+  getRagRetrievalConfig,
+  shouldServeVersionedRetrieval,
+} from "@/src/lib/rag-index-config";
 
 // Neon's serverless driver uses HTTP — no persistent connection, no pool.
 // Each query is a single HTTP request, ideal for Vercel serverless functions.
@@ -49,6 +53,7 @@ function hybridCacheKey(
           .digest("base64url"),
         pipeline: RAG_PIPELINE_VERSION,
         corpus: process.env.RAG_CORPUS_VERSION ?? "default",
+        index: getRagRetrievalConfig().cacheIdentity,
         l: options.limit ?? 8,
         v: options.vectorWeight ?? 0.7,
         c: options.category ?? null,
@@ -131,21 +136,30 @@ async function runWithDbTimeout<T>(
     }
 }
 
-let ragV2TablesAvailable: boolean | null = null;
+const RAG_SCHEMA_PROBE_TTL_MS = 30_000;
+let ragV2TablesAvailable: { value: boolean; checkedAt: number } | null = null;
 
 async function hasRagV2Tables(signal: AbortSignal): Promise<boolean> {
-  if (ragV2TablesAvailable !== null) return ragV2TablesAvailable;
+  if (
+    ragV2TablesAvailable !== null &&
+    Date.now() - ragV2TablesAvailable.checkedAt < RAG_SCHEMA_PROBE_TTL_MS
+  ) {
+    return ragV2TablesAvailable.value;
+  }
   const rows = await sql.query(
     "SELECT to_regclass('public.article_chunks') IS NOT NULL AS chunks, to_regclass('public.article_images') IS NOT NULL AS images",
     [],
     { fetchOptions: { signal } },
   );
-  ragV2TablesAvailable = Boolean(rows[0]?.chunks && rows[0]?.images);
-  return ragV2TablesAvailable;
+  const value = Boolean(rows[0]?.chunks && rows[0]?.images);
+  ragV2TablesAvailable = { value, checkedAt: Date.now() };
+  return value;
 }
 
 export function _setRagV2TablesAvailableForTests(value: boolean | null): void {
-  ragV2TablesAvailable = value;
+  ragV2TablesAvailable = value === null
+    ? null
+    : { value, checkedAt: Date.now() };
 }
 
 // ─── Edition Queries ─────────────────────────────────────────────
@@ -571,15 +585,21 @@ export async function queryArticlesByEmbedding(
   if (options.signal?.aborted) {
     throw new DbTimeoutError("queryArticlesByEmbedding", timeoutMs);
   }
+  if (!shouldServeVersionedRetrieval()) {
+    return queryLegacyArticlesByEmbedding(embeddingVec, options);
+  }
   const v2 = await runWithDbTimeout(
     "detectRagV2Tables",
     (signal) => hasRagV2Tables(signal),
     timeoutMs,
     options.signal,
   );
-  return v2
-    ? queryRagV2ByEmbedding(embeddingVec, options)
-    : queryLegacyArticlesByEmbedding(embeddingVec, options);
+  if (!v2) {
+    throw new Error(
+      "Versioned RAG retrieval was selected, but its required tables are unavailable.",
+    );
+  }
+  return queryRagV2ByEmbedding(embeddingVec, options);
 }
 
 /**
@@ -714,7 +734,12 @@ async function searchArticlesForRag(
   return runWithDbTimeout(
     "searchArticlesForRag",
     async (signal) => {
-      if (await hasRagV2Tables(signal)) {
+      if (shouldServeVersionedRetrieval()) {
+        if (!(await hasRagV2Tables(signal))) {
+          throw new Error(
+            "Versioned RAG retrieval was selected, but its required tables are unavailable.",
+          );
+        }
         const evidenceLimit = Math.min(Math.max(limit * 5, 40), 150);
         const [rows] = await sql.transaction([
           sql`

@@ -456,7 +456,10 @@ Create `.env.local` from `.env.example`:
 | `DATABASE_URL` | Yes | Neon Postgres connection string |
 | `GOOGLE_CLOUD_PROJECT` | Yes | Vertex AI/Document AI project used with ADC |
 | `GOOGLE_CLOUD_LOCATION` | Yes | Vertex AI location; use `global` for current RAG models |
+| `GOOGLE_ADC_EXPECTED_PRINCIPAL` | Recommended locally | Optional identity assertion used by the read-only ADC preflight |
 | `RAG_CORPUS_VERSION` | Recommended | Cache namespace; bump after a corpus/index deployment |
+| `RAG_RETRIEVAL_MODE` | Yes | Retrieval selector; defaults to and should remain `legacy` until a validated index is approved |
+| `RAG_ACTIVE_INDEX_BUILD_ID` | Candidate only | Required immutable build identity for `shadow` or `versioned` retrieval |
 | `DOCUMENT_AI_PROCESSOR_ID` | Yes (OCR) | Document AI layout parser processor |
 | `DOCUMENT_AI_LOCATION` | Yes (OCR) | Typically `us` |
 | `LAYOUT_PARSER_PROCESSOR_ID` | Optional | Secondary layout processor |
@@ -485,6 +488,7 @@ Create `.env.local` from `.env.example`:
 | `npm run test` | Vitest watch mode |
 | `npm run test:run` | Vitest run (CI mode) |
 | `npm run test:invariants` | OCR pipeline invariant tests |
+| `npm run google:verify-adc` | Read-only verification of ADC identity, project/quota project, required Google APIs, and OCR processor |
 | `npm run db:seed` | Seed editions into Neon Postgres |
 | `npm run db:reset` | Drop + recreate tables, then seed |
 | `npm run db:embed` | Generate vector embeddings for articles (incremental) |
