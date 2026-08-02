@@ -1,12 +1,14 @@
 # Architecture
 
-Three deep-dive docs describe how the project works end-to-end. Read them in this order if you're new.
+Four documents describe how the project works end-to-end and record the current
+implementation state. Read them in this order if you're new.
 
 ## Reading order
 
 1. **[ocr-pipeline.md](ocr-pipeline.md)** — How raw scanned TIF images become structured `edition.json` with articles, ads, and image crops. Seven-phase pipeline: Phase 0 (TIF→PNG) through Phase 6 (write diagnostics).
 2. **[data-model.md](data-model.md)** — How `edition.json` becomes DB rows. Schema, the `ocr-adapter` boundary, embeddings + HNSW, migrations, and the embedding-preservation fingerprint mechanism that makes re-seeds cheap.
 3. **[rag-pipeline.md](rag-pipeline.md)** — How DB rows become answers. `/api/ask` end-to-end: reformulate → embed → retrieve → rerank → generate, plus the agent loop for complex queries, SSE streaming, caching, dedup, budget, and the error taxonomy.
+4. **[rag-enhancement-handoff.md](rag-enhancement-handoff.md)** — The exact `rag-enhancement` branch state, completed phases, frozen evaluation evidence, verification results, user decisions, known boundaries, and the continuation protocol for the next agent.
 
 Each doc is written to be readable standalone, but the three share vocabulary and cross-link at points where duplicating would drift.
 
