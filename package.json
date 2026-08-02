@@ -26,6 +26,10 @@
     "db:embed:force": "node --import tsx scripts/db/embed.mjs --force",
     "db:migrate:rag-v2": "node --import tsx scripts/db/migrate-rag-v2.mjs",
     "google:verify-adc": "node --import tsx scripts/google/verify-adc.ts",
+    "rag:snapshot-corpus": "node --import tsx scripts/rag/snapshot-corpus.ts",
+    "rag:inventory-source": "node --import tsx scripts/iiif/inventory-source.ts",
+    "rag:build-freeze-report": "node --import tsx scripts/rag/build-freeze-report.ts",
+    "rag:verify-evaluation-freeze": "node --import tsx scripts/rag/verify-evaluation-freeze.ts",
     "test:invariants": "vitest run tests/ocr/pipeline-invariants.test.ts",
     "images:upload": "node scripts/db/upload-images.mjs",
     "images:gc": "node scripts/db/gc-r2-assets.mjs"

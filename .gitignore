@@ -75,6 +75,7 @@ scripts/dev/data/
 !audit-evidence/manifest.json
 !audit-evidence/curated/
 !audit-evidence/curated/**
+!evaluation/rag/**/*.json
 !tests/api/rag-golden-questions.json
 # Baseline snapshot for the nightly RAG regression workflow. Must be
 # committed so rag-golden-nightly can compare each run against a stable
