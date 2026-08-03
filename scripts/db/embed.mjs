@@ -7,7 +7,6 @@
  *
  * Usage:
  *   npm run db:embed
- *   npm run db:embed -- --force
  *   npm run db:embed -- --dry-run
  */
 
@@ -37,7 +36,6 @@ const {
     QuotaExhaustedError,
 } = await import("../../src/lib/embeddings.ts");
 
-const isForce = process.argv.includes("--force");
 const isDryRun = process.argv.includes("--dry-run");
 const BATCH_SIZE = 50;
 const EDITIONS_DIR = path.resolve(__dirnameEnv, "../../public/editions");
@@ -105,30 +103,22 @@ function imageInput(image, loaded) {
 }
 
 async function loadPendingRecords() {
-    const chunks = isForce
-        ? await sql`SELECT c.id, c.chunk_index, c.chunk_text,
+    const chunks = await sql`SELECT c.id, c.chunk_index, c.chunk_text,
                            a.headline, a.byline, a.edition_date, a.category, a.summary
                     FROM article_chunks c JOIN articles a ON a.id = c.article_id
-                    ORDER BY c.id`
-        : await sql`SELECT c.id, c.chunk_index, c.chunk_text,
-                           a.headline, a.byline, a.edition_date, a.category, a.summary
-                    FROM article_chunks c JOIN articles a ON a.id = c.article_id
-                    WHERE c.embedding IS NULL
+                    WHERE c.index_build_id IS NULL
+                      AND (c.embedding IS NULL
                        OR c.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
-                       OR c.embedding_input_version IS DISTINCT FROM ${EMBEDDING_INPUT_VERSION}
+                       OR c.embedding_input_version IS DISTINCT FROM ${EMBEDDING_INPUT_VERSION})
                     ORDER BY c.id`;
 
-    const images = isForce
-        ? await sql`SELECT i.id, i.image_url, i.caption,
+    const images = await sql`SELECT i.id, i.image_url, i.caption,
                            a.headline, a.byline, a.edition_date, a.category, a.summary
                     FROM article_images i JOIN articles a ON a.id = i.article_id
-                    ORDER BY i.id`
-        : await sql`SELECT i.id, i.image_url, i.caption,
-                           a.headline, a.byline, a.edition_date, a.category, a.summary
-                    FROM article_images i JOIN articles a ON a.id = i.article_id
-                    WHERE i.embedding IS NULL
+                    WHERE i.index_build_id IS NULL
+                      AND (i.embedding IS NULL
                        OR i.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
-                       OR i.embedding_input_version IS DISTINCT FROM ${IMAGE_EMBEDDING_INPUT_VERSION}
+                       OR i.embedding_input_version IS DISTINCT FROM ${IMAGE_EMBEDDING_INPUT_VERSION})
                     ORDER BY i.id`;
     return { chunks, images };
 }
@@ -145,7 +135,7 @@ async function embedChunkBatch(batch) {
                            embedding_model = ${EMBEDDING_MODEL},
                            embedding_input_version = ${EMBEDDING_INPUT_VERSION},
                            embedding_input_hash = ${inputHash}
-                       WHERE id = ${chunk.id}`;
+                       WHERE id = ${chunk.id} AND index_build_id IS NULL`;
         }),
     );
 }
@@ -163,6 +153,14 @@ async function retryOnce(label, operation) {
 }
 
 async function main() {
+    if (!process.argv.includes("--legacy-unversioned")) {
+        console.error(
+            "ERROR: embed.mjs only maintains legacy unversioned rows (index_build_id IS NULL). " +
+                "Re-run with --legacy-unversioned to confirm; versioned index work uses " +
+                "`npm run rag:index:build`.",
+        );
+        process.exit(1);
+    }
     const started = Date.now();
     const { chunks, images } = await loadPendingRecords();
     const preparedImages = images.map((image) => ({ image, loaded: loadImage(image.image_url) }));
@@ -179,7 +177,7 @@ async function main() {
         (estimatedTextTokens / 1_000_000) * 0.2 + availableImages.length * 0.00012;
 
     console.log("\nThe Transcript Archive — RAG Embedding Backfill");
-    console.log(`Mode: ${isForce ? "force" : isDryRun ? "dry-run" : "incremental"}`);
+    console.log(`Mode: ${isDryRun ? "dry-run" : "incremental"}`);
     console.log(`Model: ${EMBEDDING_MODEL} (${EMBEDDING_DIMS} dimensions)`);
     console.log(`Text chunks: ${chunks.length}`);
     console.log(`Images available locally: ${availableImages.length}`);
@@ -221,7 +219,7 @@ async function main() {
                               embedding_model = ${EMBEDDING_MODEL},
                               embedding_input_version = ${IMAGE_EMBEDDING_INPUT_VERSION},
                               embedding_input_hash = ${inputHash}
-                          WHERE id = ${image.id}`;
+                          WHERE id = ${image.id} AND index_build_id IS NULL`;
             });
             embeddedImages += 1;
             if (embeddedImages % 25 === 0 || embeddedImages === availableImages.length) {

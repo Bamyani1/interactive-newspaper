@@ -1,6 +1,7 @@
 # RAG and Archive Data Pipeline — Final Implementation Plan
 
-Status: **Phases 0–4 locally complete; Phase 4 gate passed and review is required before Phase 5 (2026-08-02)**
+Status: **Phases 0–5 locally complete; the backfill cost estimate awaits its
+separate approval before any paid embedding work (2026-08-02)**
 Branch: `rag-enhancement`  
 Starting commit: `652f9fc`  
 Prepared: 2026-08-02
@@ -392,6 +393,39 @@ pass. Production Neon/R2 untouched.
 
 **Gate:** bounded-memory tests, corrupt/missing-object tests, exact hash
 resumption, zero broken active asset references, and an approved backfill cost.
+
+**Phase 5 actuals (2026-08-02):** implemented entirely local; no production
+Neon or R2 contact of any kind (the read-only registry scan and dry-run that
+produce exact figures are approval-gated and have not run).
+`scripts/db/build-rag-index.mjs` (`npm run rag:index:build`) is the first
+writer of `rag_index_builds` anywhere: create (`building`) → populate
+build-scoped chunk/image rows (ids prefixed by build; `content_revision_id`
+attached via legacy aliases) → resumable text/image embedding keyed by exact
+`(model, input version, input hash)` with per-item failure isolation →
+finalize to `validated` only on full text coverage (image gaps are recorded,
+never fatal, never blocking). Images stream from R2 one at a time (both key
+layouts, 10 MiB cap, magic-byte validation, per-iteration buffer release).
+There is no `--force`: a changed input means a new immutable build.
+`embed.mjs` is fenced to legacy rows only (`--legacy-unversioned` required;
+`index_build_id IS NULL` on every statement; `--force` removed).
+`bootstrap-asset-registry.mjs` (`npm run assets:bootstrap`) builds a
+deterministic, self-hashed registry artifact from database references plus
+both R2 namespaces (matched/orphan/missing/unknown reported; artifacts are
+immutable; `--apply` writes `assets` rows for content-addressed objects only
+and is double-flag-guarded). `gc-r2-assets.mjs` now refuses to run without a
+verified registry artifact, protects the union of artifact and live database
+references across BOTH namespaces, guards its grace ledger with a
+compare-and-swap, and requires an approval token even for `--apply` — GC
+still never runs before Phase 9. The written cost estimate is
+`docs/architecture/embedding-backfill-cost-estimate.md` (central ≈ $1.7
+text-only / ≈ $2.2 with images per pass; worst case ≈ $7 across eval +
+production passes; exact figures pending the approved dry-run). 36 new tests
+(build lifecycle, exact-hash no-op resumption, failure isolation, streaming,
+concurrent-build disjointness, legacy-row isolation, dry-run cost math pinned
+to cost-tracker constants; registry parse/join/pagination/immutability/apply;
+GC refusal matrix, partial-world protection, CAS conflict). Gate: 955 tests
+passed / 12 live-golden skipped, lint, app+test typechecks, production build,
+evaluation-freeze verification, and `git diff --check` all pass.
 
 ### Phase 6 — Harden sessions, feedback, and evaluation privacy
 
