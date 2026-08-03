@@ -368,6 +368,30 @@ async function rerankWithCragRetry(params: {
         );
     }
 
+    // Total-veto guard: the reranker's job is trimming noise, not overruling
+    // retrieval wholesale. An LLM judge scoring 20 real candidates all-below-
+    // threshold is far more often a judging artifact (broad/thematic
+    // questions score poorly per-article) than a true no-evidence state —
+    // and downstream, zero kept articles becomes a categorical "no matching
+    // evidence" refusal that is simply false. Fall back to fused retrieval
+    // order at relevanceScore 0 so citation allowlisting and the generator's
+    // own confidence machinery stay in charge of honesty.
+    if (ranked.length === 0 && params.articles.length > 0 && !params.signal.aborted) {
+        console.warn(
+            JSON.stringify({
+                level: "warn",
+                route: "/api/ask",
+                requestId: params.requestId,
+                stage: "rerank-fallback",
+                msg: "reranker (and retry) kept nothing; falling back to fused retrieval order",
+                candidateCount: params.articles.length,
+            }),
+        );
+        return params.articles
+            .slice(0, params.keepTopK)
+            .map((article) => ({ ...article, relevanceScore: 0 }));
+    }
+
     return ranked;
 }
 

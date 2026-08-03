@@ -55,7 +55,10 @@ function noEvidenceAnswer(coverage: ArchiveCoverage): string {
     if (coverage.intent === "absence") {
         return `No matching evidence was found in ${scope}. This does not establish that the subject was absent from every newspaper page; it only describes the indexed archive evidence.`;
     }
-    return `I couldn't determine a complete answer from the indexed archive evidence. No matching evidence was found in ${scope}.`;
+    // Non-absence intents must not overclaim: reaching this branch means no
+    // citation SURVIVED verification, not that the archive holds nothing —
+    // retrieval may well have found candidates the answer failed to ground.
+    return `I couldn't ground a verifiable answer for this question in ${scope}. That reflects this attempt, not proven absence — a more specific phrasing (a name, event, or date) may surface the coverage.`;
 }
 
 /**
