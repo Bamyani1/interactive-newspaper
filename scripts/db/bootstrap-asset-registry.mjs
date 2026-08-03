@@ -184,11 +184,19 @@ export async function collectDbReferences(executor) {
             rawRows.push({ raw: url, table: "ads", id: String(row.id) });
         }
     }
-    const articleImages = await executor.query({
-        text: "SELECT id, image_url FROM article_images ORDER BY id",
+    // article_images is a branch-era table; an unmigrated production database
+    // does not have it. Probe before selecting so read-only collection works
+    // against every database shape.
+    const articleImagesExists = await executor.query({
+        text: "SELECT to_regclass('public.article_images') IS NOT NULL AS present",
     });
-    for (const row of articleImages) {
-        rawRows.push({ raw: row.image_url, table: "article_images", id: String(row.id) });
+    if (articleImagesExists[0]?.present === true) {
+        const articleImages = await executor.query({
+            text: "SELECT id, image_url FROM article_images ORDER BY id",
+        });
+        for (const row of articleImages) {
+            rawRows.push({ raw: row.image_url, table: "article_images", id: String(row.id) });
+        }
     }
 
     const byIdentity = new Map();
@@ -497,19 +505,24 @@ async function createR2ListFn() {
     };
 }
 
-async function createDbExecutor() {
+async function createDbExecutor({ readOnly = false } = {}) {
     if (!process.env.DATABASE_URL) fail("DATABASE_URL is required for this command.");
     if (!process.argv.includes("--yes")) {
         fail(
             "This phase authorizes local/test databases only. Re-run with --yes to confirm the target database is not production.",
         );
     }
-    const runnerModule = await import("./lib/migration-runner.ts");
-    const { assertMigrationsCurrent } = runnerModule.default ?? runnerModule;
     const executorModule = await import("./lib/neon-executor.ts");
     const { createNeonExecutor } = executorModule.default ?? executorModule;
     const executor = createNeonExecutor(process.env.DATABASE_URL);
-    await assertMigrationsCurrent(executor);
+    // Read-only commands (--collect/--build) touch only the legacy image
+    // reference tables, which exist on an unmigrated database (e.g. approved
+    // read-only production scans). --apply writes and keeps the preflight.
+    if (!readOnly) {
+        const runnerModule = await import("./lib/migration-runner.ts");
+        const { assertMigrationsCurrent } = runnerModule.default ?? runnerModule;
+        await assertMigrationsCurrent(executor);
+    }
     return executor;
 }
 
@@ -539,7 +552,7 @@ async function main() {
     );
 
     if (values.collect) {
-        const executor = await createDbExecutor();
+        const executor = await createDbExecutor({ readOnly: true });
         const references = await collectDbReferences(executor);
         console.log(JSON.stringify({ references }, null, 2));
         return;
@@ -553,7 +566,7 @@ async function main() {
     }
 
     if (values.build) {
-        const executor = await createDbExecutor();
+        const executor = await createDbExecutor({ readOnly: true });
         const listFn = await createR2ListFn();
         const references = await collectDbReferences(executor);
         const objects = await listR2Objects(listFn);
