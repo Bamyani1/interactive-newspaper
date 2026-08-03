@@ -724,110 +724,105 @@ async function queryRagV2ByEmbedding(
   embeddingVec: number[],
   options: VectorSearchOptions,
   indexBuildId: string,
+  signal: AbortSignal,
 ): Promise<RetrievedArticle[]> {
   const limit = options.limit ?? 10;
   const category = options.category ?? null;
   const startDate = options.startDate ?? null;
   const endDate = options.endDate ?? null;
   const onlyWithImages = options.onlyWithImages ?? false;
-  const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
   const vecStr = `[${embeddingVec.join(",")}]`;
   const evidencePerArticle = onlyWithImages ? 2 : 3;
 
-  return runWithDbTimeout(
-    "queryArticlesByEmbedding.v2",
-    async (signal) => {
-      if (onlyWithImages) {
-        const [, , rows] = await sql.transaction([
-          sql`SET LOCAL hnsw.ef_search = 100`,
-          sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
-          sql`
-            WITH image_evidence AS (
-              SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-                     a.byline, a.body_plain, a.image_urls, a.image_captions,
-                     i.image_url AS matched_image_url,
-                     i.caption AS matched_caption,
-                     (i.embedding <=> ${vecStr}::vector) AS evidence_distance,
-                     MIN(i.embedding <=> ${vecStr}::vector)
-                       OVER (PARTITION BY i.article_id) AS article_distance,
-                     ROW_NUMBER() OVER (
-                       PARTITION BY i.article_id
-                       ORDER BY i.embedding <=> ${vecStr}::vector, i.image_index
-                     ) AS evidence_rank
-              FROM article_images i
-              JOIN articles a ON a.id = i.article_id
-              WHERE i.embedding IS NOT NULL
-                AND i.index_build_id = ${indexBuildId}
-                AND i.embedding_model = ${RAG_EMBEDDING_MODEL}
-                AND i.embedding_input_version = ${RAG_IMAGE_EMBEDDING_INPUT_VERSION}
-                AND (${category}::text IS NULL OR a.category = ${category})
-                AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-                AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-            ), ranked_articles AS (
-              SELECT id, MIN(article_distance) AS article_distance
-              FROM image_evidence
-              GROUP BY id
-              ORDER BY article_distance
-              LIMIT ${limit}
-            )
-            SELECT e.id, e.edition_date, e.category, e.headline, e.summary,
-                   e.byline, e.body_plain, e.image_urls, e.image_captions,
-                   e.matched_image_url, e.matched_caption,
-                   r.article_distance AS distance
-            FROM ranked_articles r
-            JOIN image_evidence e ON e.id = r.id
-            WHERE e.evidence_rank <= ${evidencePerArticle}
-            ORDER BY r.article_distance, e.evidence_rank
-          `,
-        ], { readOnly: true, fetchOptions: { signal } });
-        return aggregateEvidenceRows(rows, "vector", limit);
-      }
+  // Runs under the caller's single runWithDbTimeout budget (shared with the
+  // schema probe and build-readiness validation) — no nested timeout here.
+  if (onlyWithImages) {
+    const [, , rows] = await sql.transaction([
+      sql`SET LOCAL hnsw.ef_search = 100`,
+      sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
+      sql`
+        WITH image_evidence AS (
+          SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+                 a.byline, a.body_plain, a.image_urls, a.image_captions,
+                 i.image_url AS matched_image_url,
+                 i.caption AS matched_caption,
+                 (i.embedding <=> ${vecStr}::vector) AS evidence_distance,
+                 MIN(i.embedding <=> ${vecStr}::vector)
+                   OVER (PARTITION BY i.article_id) AS article_distance,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY i.article_id
+                   ORDER BY i.embedding <=> ${vecStr}::vector, i.image_index
+                 ) AS evidence_rank
+          FROM article_images i
+          JOIN articles a ON a.id = i.article_id
+          WHERE i.embedding IS NOT NULL
+            AND i.index_build_id = ${indexBuildId}
+            AND i.embedding_model = ${RAG_EMBEDDING_MODEL}
+            AND i.embedding_input_version = ${RAG_IMAGE_EMBEDDING_INPUT_VERSION}
+            AND (${category}::text IS NULL OR a.category = ${category})
+            AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+            AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+        ), ranked_articles AS (
+          SELECT id, MIN(article_distance) AS article_distance
+          FROM image_evidence
+          GROUP BY id
+          ORDER BY article_distance
+          LIMIT ${limit}
+        )
+        SELECT e.id, e.edition_date, e.category, e.headline, e.summary,
+               e.byline, e.body_plain, e.image_urls, e.image_captions,
+               e.matched_image_url, e.matched_caption,
+               r.article_distance AS distance
+        FROM ranked_articles r
+        JOIN image_evidence e ON e.id = r.id
+        WHERE e.evidence_rank <= ${evidencePerArticle}
+        ORDER BY r.article_distance, e.evidence_rank
+      `,
+    ], { readOnly: true, fetchOptions: { signal } });
+    return aggregateEvidenceRows(rows, "vector", limit);
+  }
 
-      const [, , rows] = await sql.transaction([
-        sql`SET LOCAL hnsw.ef_search = 100`,
-        sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
-        sql`
-          WITH chunk_evidence AS (
-            SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-                   a.byline, a.body_plain, a.image_urls, a.image_captions,
-                   c.chunk_text,
-                   (c.embedding <=> ${vecStr}::vector) AS evidence_distance,
-                   MIN(c.embedding <=> ${vecStr}::vector)
-                     OVER (PARTITION BY c.article_id) AS article_distance,
-                   ROW_NUMBER() OVER (
-                     PARTITION BY c.article_id
-                     ORDER BY c.embedding <=> ${vecStr}::vector, c.chunk_index
-                   ) AS evidence_rank
-            FROM article_chunks c
-            JOIN articles a ON a.id = c.article_id
-            WHERE c.embedding IS NOT NULL
-              AND c.index_build_id = ${indexBuildId}
-              AND c.embedding_model = ${RAG_EMBEDDING_MODEL}
-              AND c.embedding_input_version = ${RAG_TEXT_EMBEDDING_INPUT_VERSION}
-              AND (${category}::text IS NULL OR a.category = ${category})
-              AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-              AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-          ), ranked_articles AS (
-            SELECT id, MIN(article_distance) AS article_distance
-            FROM chunk_evidence
-            GROUP BY id
-            ORDER BY article_distance
-            LIMIT ${limit}
-          )
-          SELECT e.id, e.edition_date, e.category, e.headline, e.summary,
-                 e.byline, e.body_plain, e.image_urls, e.image_captions,
-                 e.chunk_text, r.article_distance AS distance
-          FROM ranked_articles r
-          JOIN chunk_evidence e ON e.id = r.id
-          WHERE e.evidence_rank <= ${evidencePerArticle}
-          ORDER BY r.article_distance, e.evidence_rank
-        `,
-      ], { readOnly: true, fetchOptions: { signal } });
-      return aggregateEvidenceRows(rows, "vector", limit);
-    },
-    timeoutMs,
-    options.signal,
-  );
+  const [, , rows] = await sql.transaction([
+    sql`SET LOCAL hnsw.ef_search = 100`,
+    sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
+    sql`
+      WITH chunk_evidence AS (
+        SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+               a.byline, a.body_plain, a.image_urls, a.image_captions,
+               c.chunk_text,
+               (c.embedding <=> ${vecStr}::vector) AS evidence_distance,
+               MIN(c.embedding <=> ${vecStr}::vector)
+                 OVER (PARTITION BY c.article_id) AS article_distance,
+               ROW_NUMBER() OVER (
+                 PARTITION BY c.article_id
+                 ORDER BY c.embedding <=> ${vecStr}::vector, c.chunk_index
+               ) AS evidence_rank
+        FROM article_chunks c
+        JOIN articles a ON a.id = c.article_id
+        WHERE c.embedding IS NOT NULL
+          AND c.index_build_id = ${indexBuildId}
+          AND c.embedding_model = ${RAG_EMBEDDING_MODEL}
+          AND c.embedding_input_version = ${RAG_TEXT_EMBEDDING_INPUT_VERSION}
+          AND (${category}::text IS NULL OR a.category = ${category})
+          AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+          AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+      ), ranked_articles AS (
+        SELECT id, MIN(article_distance) AS article_distance
+        FROM chunk_evidence
+        GROUP BY id
+        ORDER BY article_distance
+        LIMIT ${limit}
+      )
+      SELECT e.id, e.edition_date, e.category, e.headline, e.summary,
+             e.byline, e.body_plain, e.image_urls, e.image_captions,
+             e.chunk_text, r.article_distance AS distance
+      FROM ranked_articles r
+      JOIN chunk_evidence e ON e.id = r.id
+      WHERE e.evidence_rank <= ${evidencePerArticle}
+      ORDER BY r.article_distance, e.evidence_rank
+    `,
+  ], { readOnly: true, fetchOptions: { signal } });
+  return aggregateEvidenceRows(rows, "vector", limit);
 }
 
 async function queryLegacyArticlesByEmbedding(
@@ -883,24 +878,24 @@ export async function queryArticlesByEmbedding(
   if (!serveVersioned) {
     return queryLegacyArticlesByEmbedding(embeddingVec, options);
   }
-  const v2 = await runWithDbTimeout(
-    "detectRagV2Tables",
-    (signal) => hasRagV2Tables(signal),
+  // One shared budget for the schema probe, build-readiness validation, AND
+  // the vector query — mirroring searchArticlesForRag. Sequential wrappers
+  // would let the versioned leg burn up to 3× timeoutMs right after a cold
+  // start or probe-cache expiry, starving the whole request's deadline.
+  return runWithDbTimeout(
+    "queryArticlesByEmbedding.v2",
+    async (signal) => {
+      if (!(await hasRagV2Tables(signal))) {
+        throw new Error(
+          "Versioned RAG retrieval was selected, but its required tables are unavailable.",
+        );
+      }
+      const indexBuildId = await assertConfiguredIndexBuildReady(signal);
+      return queryRagV2ByEmbedding(embeddingVec, options, indexBuildId, signal);
+    },
     timeoutMs,
     options.signal,
   );
-  if (!v2) {
-    throw new Error(
-      "Versioned RAG retrieval was selected, but its required tables are unavailable.",
-    );
-  }
-  const indexBuildId = await runWithDbTimeout(
-    "validateRagIndexBuild",
-    (signal) => assertConfiguredIndexBuildReady(signal),
-    timeoutMs,
-    options.signal,
-  );
-  return queryRagV2ByEmbedding(embeddingVec, options, indexBuildId);
 }
 
 /**
