@@ -7,9 +7,11 @@ commits listed below
 
 Branch: `rag-enhancement`
 
-Status: Phases 0–6 complete and gated. Next: the approval gate for read-only
-production access and the paid backfill, then Phase 7 (isolated rehearsal and
-blind comparison)
+Status: Phases 0–6 complete and gated, and the Phase 7 tooling is implemented
+and tested. Every remaining action requires an explicit user approval:
+read-only production access (exact backfill figures), Neon evaluation
+environment creation, the paid backfill, and then the pre-authorized $10
+evaluation run itself.
 
 ## Read this first
 
@@ -202,7 +204,8 @@ pipeline. The RAG implementation commits are:
 | `2bf0c6c` | Phase 3: canonical migrations and immutable identities |
 | `2895111` | Phase 4: resumable versioned publisher |
 | `071a10c` | Phase 5: asset registry and build-scoped embedding operations |
-| (current) | Phase 6: session, feedback, and privacy hardening |
+| `0438dc4` | Phase 6: session, feedback, and privacy hardening |
+| (current) | Phase 7 tooling: eval environment setup, run/score harness, blind gate |
 
 The branch had not been pushed at the implementation checkpoint; the user
 explicitly chose not to push yet (Vercel preview-deploy risk while vector
@@ -442,6 +445,44 @@ round-trip/hard-fail; 28 net-new). Full gate: 983 tests passed with 12 live/paid
 tests skipped, ESLint clean, app and test typechecks clean, production build
 passed, evaluation-freeze verification passed, `git diff --check` clean.
 Production untouched.
+
+### Phase 7 tooling — isolated rehearsal harness (no external resource touched)
+
+- `scripts/rag/setup-eval-db.mjs` (`npm run rag:setup-eval-db`): bootstraps
+  the isolated evaluation database from `EVAL_DATABASE_URL` only, with a
+  belt-and-braces production-URL refusal (host/db comparison against every
+  `*DATABASE_URL*` env value plus an `eval`-name requirement). Applies
+  canonical migrations, deep-verifies the live schema against the committed
+  snapshot, imports the allowlist-only public corpus export (manifest and
+  per-file hashes verified before any write), registers the frozen corpus
+  version, runs the identity backfill, and verifies row counts against the
+  frozen corpus manifest.
+- `scripts/rag/run-eval.ts` / `score-eval.ts` / `lib/eval-records.ts`:
+  in-process route driver with injectable transport; per-question records
+  with per-stage capture (gaps in the response envelope are recorded as
+  unavailable, never invented); cost accumulation aborts at the ledger cap;
+  self-hashed run files plus a frozen-candidate receipt
+  (order-independent answers hash). Scoring computes recall@3/@8, MRR,
+  nDCG@8, evidence-group recall, citation precision/recall, claim support,
+  visual accuracy, no-answer calibration, injection resistance, per-stage
+  latency percentiles, tokens, fallback rate, and cost/question;
+  `lockAcceptanceBands` locks non-inferiority bands from the development
+  baseline only.
+- Blindness is mechanized, not procedural: `verify-evaluation-freeze.ts`
+  gained `assertHoldoutScoringAllowed` (`--check-holdout-gate`) — holdout
+  runs and holdout scoring both refuse unless committed acceptance bands
+  exist and the frozen-candidate receipt matches the run file's answers
+  hash. The runner strips holdout questions to id/question/turn/dependsOn;
+  a static test asserts the runner source never references the evidence
+  fields. Existing freeze verification is byte-compatible and still passes.
+
+Phase 7 tooling verification: 54 new tests (eval-DB bootstrap incl.
+production-URL matrix, count/schema divergence; hand-computed metric
+expectations; band lock/compare matrices; the holdout-gate refusal matrix
+and lexical blindness proof). Full gate: 1,037 tests passed with 12
+live/paid golden tests skipped, ESLint clean, app and test typechecks clean,
+production build passed, evaluation-freeze verification passed,
+`git diff --check` clean. No external resource was touched.
 
 ### Phase 5 — Asset registry and build-scoped embedding operations
 
