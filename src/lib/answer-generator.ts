@@ -31,7 +31,9 @@ const GENERATION_MODEL = RAG_MODEL_CONFIG.answer.model;
 // nearly the old 4,096-token limit in a live housing synthesis and truncated
 // the JSON envelope, so leave enough room for both reasoning and the answer.
 const MAX_ANSWER_TOKENS = 8192;
-const GENERATION_TIMEOUT_MS = 15_000;
+// gemini-3.6-flash with MEDIUM thinking regularly needs 15-25s for
+// survey-style answers; the route's global deadline still bounds the request.
+const GENERATION_TIMEOUT_MS = 30_000;
 const MAX_SOURCE_CHARS = 5000;
 
 // Confidence uses verified citations and the model-independent 0–10 reranker

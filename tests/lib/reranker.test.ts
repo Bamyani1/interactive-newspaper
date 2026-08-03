@@ -91,7 +91,7 @@ describe("rerankArticles", () => {
     ]);
 
     const call = generateContentMock.mock.calls[0][0];
-    expect(call.model).toBe("gemini-3.5-flash-lite");
+    expect(call.model).toBe("gemini-3.6-flash");
     expect(call.config.thinkingConfig.thinkingLevel).toBe("MINIMAL");
     expect(call.config.responseMimeType).toBe("application/json");
     expect(call.config).not.toHaveProperty("temperature");

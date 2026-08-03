@@ -14,6 +14,7 @@
 import { createHash } from "crypto";
 import type { AskResponse } from "@/src/types";
 import {
+    RAG_ANSWER_MODEL,
     RAG_EMBEDDING_MODEL,
     RAG_GENERATION_MODEL,
     RAG_PIPELINE_VERSION,
@@ -40,6 +41,7 @@ function makeKey(question: string, filters?: unknown): string {
             [
                 RAG_PIPELINE_VERSION,
                 RAG_GENERATION_MODEL,
+                RAG_ANSWER_MODEL,
                 RAG_EMBEDDING_MODEL,
                 corpusVersion,
                 getRagRetrievalConfig().cacheIdentity,

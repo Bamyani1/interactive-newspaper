@@ -347,6 +347,29 @@ export async function rerankWithCorrectiveRetry(params: {
         signal: params.signal,
         requestId: params.requestId,
     });
+    if (ranked.length === 0 && !params.signal?.aborted) {
+        // Total-veto guard, mirroring the route pipeline: an all-below-
+        // threshold verdict over real retrieval candidates is usually a
+        // judging artifact on broad questions, not a no-evidence state.
+        // Score 5 is the reranker's own degraded-mode value and the minimum
+        // the answer generator will engage with.
+        const fallback = retry.articles.length > 0 ? retry.articles : params.articles;
+        if (fallback.length > 0) {
+            console.warn(
+                JSON.stringify({
+                    level: "warn",
+                    route: "/api/ask",
+                    requestId: params.requestId,
+                    stage: "rerank-fallback",
+                    msg: "reranker (and retry) kept nothing; falling back to fused retrieval order",
+                    candidateCount: fallback.length,
+                }),
+            );
+            return fallback
+                .slice(0, params.maxArticles)
+                .map((article) => ({ ...article, relevanceScore: 5 }));
+        }
+    }
     return ranked;
 }
 
