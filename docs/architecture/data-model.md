@@ -34,7 +34,7 @@ Every tuning decision in this doc is anchored in that scale. "RRF K=40 because t
 - [Neon specifics](#neon-specifics)
 - [Tests](#tests)
 - [Operator runbook](#operator-runbook)
-- [File map](#file-map)
+- [Start here](#start-here)
 
 ---
 
@@ -142,7 +142,7 @@ GET /api/editions/[date]
 
 ### `editions`
 
-Source: `scripts/db/schema.sql:11-16`.
+Source: `scripts/db/migrations/0002_legacy_core.sql:6-11`.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -155,7 +155,7 @@ No secondary indexes. `date` is the FK target for `articles` and `ads`. Written 
 
 ### `articles`
 
-Source: `scripts/db/schema.sql:20-45` (table + indexes) plus ALTER TABLE addendums at lines 68-69.
+Source: `scripts/db/migrations/0002_legacy_core.sql:13-45` (table + ALTER TABLE addendums + indexes).
 
 Columns grouped by access pattern:
 
@@ -208,10 +208,14 @@ The `search_vector` is maintained by a `BEFORE INSERT OR UPDATE` trigger (`artic
 
 ### `article_chunks`
 
-Each row is one deterministic sentence-aware article segment. `id` is `{article_id}:{chunk_index padded to four digits}`. `article_id` cascades on delete; `(article_id, chunk_index)` is also unique.
+Source: `scripts/db/migrations/0005_rag_evidence_tables.sql` plus `0009_revision_keys_and_corpus.sql` (`content_revision_id`).
+
+Each row is one deterministic sentence-aware article segment. `id` is `{article_id}:{chunk_index padded to four digits}`. `article_id` cascades on delete.
 
 | Column | Type | Notes |
 |---|---|---|
+| `index_build_id` | `TEXT REFERENCES rag_index_builds(id)` | **nullable** — `NULL` marks legacy seed rows, which versioned retrieval never serves (runtime SQL filters by an explicit build id); build-scoped rows are written only by the index build tool |
+| `content_revision_id` | `TEXT REFERENCES content_revisions(id)` | nullable; keys versioned rows to an immutable content revision; legacy rows keep `NULL` |
 | `chunk_text` | `TEXT NOT NULL` | evidence sent to reranking/generation when matched |
 | `search_vector` | `TSVECTOR` | trigger-maintained and GIN indexed |
 | `embedding` | `VECTOR(768)` | HNSW cosine index |
@@ -219,12 +223,18 @@ Each row is one deterministic sentence-aware article segment. `id` is `{article_
 | `embedding_input_version` | `TEXT` | currently `article-chunk-v1` |
 | `embedding_input_hash` | `TEXT NOT NULL` | SHA-256 identity of canonical model/version/input |
 
+Uniqueness is two partial unique indexes, not one table constraint: `uq_article_chunks_legacy` on `(article_id, chunk_index) WHERE index_build_id IS NULL` and `uq_article_chunks_build` on `(index_build_id, article_id, chunk_index) WHERE index_build_id IS NOT NULL`.
+
 ### `article_images`
+
+Source: `scripts/db/migrations/0005_rag_evidence_tables.sql` plus `0009_revision_keys_and_corpus.sql` (`content_revision_id`).
 
 Each row represents one image, not one article. `id` is `{article_id}:image:{image_index padded to three digits}`.
 
 | Column | Type | Notes |
 |---|---|---|
+| `index_build_id` | `TEXT REFERENCES rag_index_builds(id)` | **nullable** — `NULL` marks legacy seed rows, never served by versioned retrieval |
+| `content_revision_id` | `TEXT REFERENCES content_revisions(id)` | nullable; legacy rows keep `NULL` |
 | `image_url` | `TEXT NOT NULL` | source image/CDN identity |
 | `caption` | `TEXT` | semantic text paired with the image |
 | `embedding` | `VECTOR(768)` | one multimodal vector; HNSW indexed |
@@ -232,9 +242,11 @@ Each row represents one image, not one article. `id` is `{article_id}:image:{ima
 | `embedding_input_version` | `TEXT` | currently `article-image-v1` |
 | `embedding_input_hash` | `TEXT` | includes model, version, text, MIME type, and image bytes |
 
+Same uniqueness pattern as chunks: `uq_article_images_legacy` on `(article_id, image_index) WHERE index_build_id IS NULL` and `uq_article_images_build` on `(index_build_id, article_id, image_index) WHERE index_build_id IS NOT NULL`.
+
 ### `ads`
 
-Source: `scripts/db/schema.sql:49-77`.
+Source: `scripts/db/migrations/0002_legacy_core.sql:47-70`.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -253,7 +265,7 @@ Index: `idx_ads_edition` on `(edition_date)`. The SERIAL PK means ads can't be u
 
 ### `ai_spend_counter`
 
-Source: `scripts/db/migrate-ai-spend-counter.mjs:35-41`.
+Source: `scripts/db/migrations/0003_runtime_tables.sql:39-43`.
 
 ```sql
 CREATE TABLE IF NOT EXISTS ai_spend_counter (
@@ -267,7 +279,7 @@ Written by `cost-tracker.ts :: recordUsage()` as an atomic increment via `INSERT
 
 ### `api_rate_bucket`
 
-Source: `scripts/db/migrate-api-rate-bucket.mjs:37-43`.
+Source: `scripts/db/migrations/0003_runtime_tables.sql:45-53`.
 
 ```sql
 CREATE TABLE IF NOT EXISTS api_rate_bucket (
@@ -283,7 +295,7 @@ Written by `rate-limit.ts :: checkNeon()` via atomic upsert that resets `count` 
 
 ### `ask_session_turns`
 
-Source: `scripts/db/migrate-ask-sessions.mjs:35-49`.
+Source: `scripts/db/migrations/0003_runtime_tables.sql:21-37`.
 
 ```sql
 CREATE TABLE IF NOT EXISTS ask_session_turns (
@@ -311,7 +323,7 @@ automatically purged). User-triggered "Clear conversation" issues a hard
 
 ### `ask_feedback`
 
-Source: `scripts/db/schema.sql:107-122` and `scripts/db/migrate-ask-feedback.mjs:38-51`.
+Source: `scripts/db/migrations/0003_runtime_tables.sql:5-19`.
 
 ```sql
 CREATE TABLE IF NOT EXISTS ask_feedback (
@@ -332,11 +344,34 @@ Indexes: `idx_ask_feedback_request` on `(request_id)`, `idx_ask_feedback_created
 
 ### `weather`
 
-Source: `scripts/db/schema.sql:82-93`. Composite PK `(date, scope)`. Seeded once from `public/data/weather/ohio/index/delaware-by-date-1950-2000.json`. Not consumed by RAG — only by `/api/weather`.
+Source: `scripts/db/migrations/0002_legacy_core.sql:72-83`. Composite PK `(date, scope)`. Seeded once from `public/data/weather/ohio/index/delaware-by-date-1950-2000.json`. Not consumed by RAG — only by `/api/weather`.
 
 ### `music`
 
-Source: `scripts/db/schema.sql:97-104`. Composite PK `(year, month, rank)`. Seeded from `public/top-10-music/chart-1950-2010.json`. Not consumed by RAG.
+Source: `scripts/db/migrations/0002_legacy_core.sql:85-93`. Composite PK `(year, month, rank)`. Seeded from `public/top-10-music/chart-1950-2010.json`. Not consumed by RAG.
+
+### Phase 3 identity and publication tables
+
+Created by migrations `0004` and `0006`–`0009`. Column-by-column detail lives in those migration files, deliberately not duplicated here. Nothing in the runtime writes these yet; `backfill-identities.mjs` and `register-corpus-version.mjs` (data-only, `--yes`-gated, local/test databases only in this phase) are the only writers so far.
+
+| Table | Purpose |
+|---|---|
+| `schema_migrations` | Migration ledger: `id`, `checksum`, `applied_at`, `duration_ms`, `runner_version`. Created by the runner itself, not by a numbered migration |
+| `rag_index_builds` | Immutable index-build identity + status state machine (`building`→`validated`→`active`/`failed`/`retired`); partial unique index enforces one active build per corpus version |
+| `source_records` | Immutable external source identity: `(source_system, pointer)` unique, classified by `kind` |
+| `issues` | Stable internal issue identity per canonical date; points at the active edition revision |
+| `legacy_edition_aliases` | Maps legacy `editions.date` to an issue id |
+| `edition_revisions` | Immutable per-run edition snapshots, unique on `(issue_id, revision_hash)` |
+| `edition_revision_pages` | Page-level provenance and `processed`/`failed`/`missing` status per revision |
+| `content_items` | Stable content identity per issue: `(issue_id, identity_key)` unique, with identity evidence and an active-revision pointer |
+| `content_revisions` | Immutable content snapshots; a `BEFORE UPDATE` trigger (`content_revisions_immutable_trig`) rejects any `UPDATE` |
+| `legacy_content_aliases` | Maps legacy article ids to content items/revisions (articles only in Phase 3) |
+| `content_identity_conflicts` | Review queue for ambiguous re-OCR identity matches |
+| `assets` | Content-addressed asset registry keyed by `sha256`; rows are immutable |
+| `asset_references` | Per-revision image references `(content_revision_id, position)` → asset, with role and printed caption |
+| `publication_runs` | Publication state machine (`discovered` → … → `active`/`failed`/`rolled_back`) |
+| `publication_run_events` | Append-only transition log per run |
+| `corpus_versions` | Corpus version registry; the frozen legacy snapshot row is registered by `register-corpus-version.mjs`, never by migrations |
 
 ---
 
@@ -518,20 +553,58 @@ Articles appearing in both result sets get both scores summed and their `source`
 
 ## Migrations
 
-Convention: standalone `.mjs` scripts in `scripts/db/`, each idempotent via `IF NOT EXISTS` or `CREATE OR REPLACE`. No migration framework — one-off scripts run manually.
+Canonical system: numbered SQL files in `scripts/db/migrations/` (`NNNN_snake_case.sql`, currently `0001`–`0009`), applied by `scripts/db/lib/migration-runner.ts` through the CLI `scripts/db/migrate.mjs`. All schema comes from here — nothing else runs DDL. `scripts/db/schema.sql` no longer exists; the old file is frozen as `tests/db/fixtures/legacy-draft-schema.sql`, where the upgrade-path tests prove the canonical migrations converge a database that was created from it.
 
-| Script | What it does | Follow-up required? |
-|---|---|---|
-| `schema.sql` | Core DDL — all tables, indexes, FTS trigger. Applied by `seed.mjs :: applySchema()` on every seed run | no |
-| `migrate-ai-spend-counter.mjs` | Creates `ai_spend_counter` table | no |
-| `migrate-api-rate-bucket.mjs` | Creates `api_rate_bucket` + expiry index | no |
-| `migrate-ask-sessions.mjs` | Creates `ask_session_turns` + 2 indexes | no |
-| `migrate-ask-feedback.mjs` | Creates `ask_feedback` + 2 indexes (also in `schema.sql`) | no |
-| `migrate-rag-v2.mjs` | Creates chunk/image indexes, repairs FTS weighting, and backfills deterministic metadata without model calls | **yes** — inspect `db:embed -- --dry-run`, then run `db:embed` |
-| `migrate-rag-improvements.mjs` | Legacy whole-article migration, superseded by RAG v2 | do not use for a new v2 deployment |
-| `recreate-hnsw-index.mjs` | Legacy article-vector index rebuild | not needed for v2 child-table indexes |
+| Command | Effect |
+|---|---|
+| `npm run db:migrate` | Apply pending migrations |
+| `npm run db:migrate:status` | Show applied/pending without applying |
+| `npm run db:schema:snapshot` | Apply every migration to in-memory PGlite and regenerate `scripts/db/schema-snapshot.json`; run after adding a migration |
 
-Online embedding is deliberately separate from schema migration so it can be cost-previewed, stopped, and resumed.
+### Ledger
+
+Applied migrations are recorded in `schema_migrations`, created on demand by the runner:
+
+```sql
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id             TEXT PRIMARY KEY,   -- file name without .sql
+  checksum       TEXT NOT NULL,      -- SHA-256 of the raw file
+  applied_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  duration_ms    INTEGER,
+  runner_version TEXT NOT NULL
+);
+```
+
+`assertMigrationsCurrent()` is the read-only preflight used by every data-only command (`db:seed`, the backfills): it succeeds only when every on-disk migration is applied with a matching checksum, and otherwise refuses with "run: npm run db:migrate". Data commands never run DDL.
+
+### Batch mechanics
+
+Each pending migration is submitted as **one non-interactive transaction** over the Neon HTTP driver (`scripts/db/lib/neon-executor.ts :: transactionBatch`): `SELECT pg_advisory_xact_lock(727401, 552023)` first, then the migration's statements, then the ledger `INSERT`. The advisory lock is transaction-scoped, so it is held exactly for the duration of the batch. If two runners race past the lock queue, the loser's ledger `INSERT` fails with a `23505` unique violation, which rolls back its entire batch — DDL included — and the runner reports that migration as skipped instead of throwing. Files are split into statements by the comment-safe splitter in `scripts/db/lib/sql-statements.ts`, a quote-aware state machine (`''`/`""` escapes, line comments, nested block comments, `$$`/`$tag$` dollar-quoting) so a string literal containing `--` or `/*` is never corrupted.
+
+### Immutability rules
+
+- **Applied migrations are immutable.** A checksum mismatch against the ledger, or a ledger row whose file is missing on disk, fails every runner entry point by name. Add a new migration; never edit or delete an applied one.
+- **`CONCURRENTLY` and `VACUUM` are forbidden** — they cannot run inside a transaction, and discovery rejects any migration containing them (checked against comment-stripped statement text).
+
+### Table registry
+
+`CANONICAL_TABLES` in `migration-runner.ts` registers every migration-managed table with a kind: `reseedable` (derived from `edition.json` or rebuildable artifacts; truncated by `db:reset`) or `runtime` (sessions, feedback, spend, rate limits; preserved by `db:reset` unless `--include-runtime`). See [Seed flow](#seed-flow).
+
+### Deprecated one-off scripts
+
+The pre-ledger one-off `migrate-*.mjs` scripts in `scripts/db/` are kept as production-history artifacts. The canonical migrations converge a database to the same shape regardless of whether they ever ran; do not run them for new work.
+
+| Script | Status |
+|---|---|
+| `migrate-ai-spend-counter.mjs` | Superseded by `0003_runtime_tables.sql` |
+| `migrate-api-rate-bucket.mjs` | Superseded by `0003_runtime_tables.sql` |
+| `migrate-ask-sessions.mjs` | Superseded by `0003_runtime_tables.sql` |
+| `migrate-ask-feedback.mjs` | Superseded by `0003_runtime_tables.sql` |
+| `migrate-rag-v2.mjs` | Renamed to `backfill-rag-records.mjs` (`npm run db:backfill:rag-records`); its DDL moved into `0005_rag_evidence_tables.sql`, leaving a deterministic DML-only backfill |
+| `migrate-rag-improvements.mjs` | Legacy whole-article migration, superseded by RAG v2 |
+| `recreate-hnsw-index.mjs` | Legacy article-vector index rebuild; the v2 child-table indexes come from `0005` |
+
+Online embedding is deliberately separate from schema migration so it can be cost-previewed, stopped, and resumed (`db:embed`).
 
 ---
 
@@ -539,9 +612,9 @@ Online embedding is deliberately separate from schema migration so it can be cos
 
 ### Default mode — `npm run db:seed`
 
-`seed.mjs` execution order:
+`seed.mjs` is data-only — it never runs DDL. Execution order:
 
-1. **`applySchema()`** — reads `schema.sql`, splits statements respecting dollar-quoted PL/pgSQL blocks, executes each. All DDL uses `IF NOT EXISTS` so it's safe on an existing DB.
+1. **`assertMigrationsCurrent()`** — read-only preflight, run in **both** modes; the script refuses an unmigrated database (missing ledger, pending migration, or checksum mismatch) and points at `npm run db:migrate`. Schema comes exclusively from the canonical migrations.
 2. **`restoreLockedEditions(null)`** — no-op in non-reset mode.
 3. **`ensureLockedEditions()`** — copies `gold/1960-01-13/gold-edition.json` to `public/editions/1960-01-13/edition.json` if not already present.
 4. **`seedEditions(targetDate)`** — for each `public/editions/<date>/` directory:
@@ -561,12 +634,12 @@ Online embedding is deliberately separate from schema migration so it can be cos
 
 ### Reset mode — `npm run db:reset`
 
-Before step 1, the script:
+After the step-1 preflight, the script:
 
 - **`exportLockedEditions()`** — reads `editions`, `articles`, `ads` for every date in `locked-editions.json` and saves them in memory. This protects the gold edition even when the source files aren't locally present.
-- **`dropAllTables()`** — drops child `article_images`/`article_chunks` before `articles`, then the remaining tables in reverse FK order.
+- **`truncateSeedTables()`** — one `TRUNCATE … RESTART IDENTITY CASCADE` over every `reseedable` table in the `CANONICAL_TABLES` registry. Runtime tables (`ask_session_turns`, `ask_feedback`, `ai_spend_counter`, `api_rate_bucket`) are preserved by default; `--include-runtime` truncates them too. The `schema_migrations` ledger is never touched.
 
-Then continues from step 1. After `applySchema`, `restoreLockedEditions(savedData)` re-inserts the saved gold rows before the general seed loop runs.
+Then `restoreLockedEditions(savedData)` re-inserts the saved gold rows before the general seed loop runs. There is no DROP and no schema re-apply — reset is data-only.
 
 With `--unlock`, the export/restore of locked editions is skipped entirely.
 
@@ -643,6 +716,10 @@ In `cost-tracker.ts`, `conversation-store.ts`, and `rate-limit.ts`, Neon clients
 
 `tests/lib/db-vector-search.test.ts` covers `hybridSearch` and the vector/FTS merge logic with a mocked Neon client.
 
+### Migration-system tests
+
+`tests/db/` runs the canonical migrations against in-memory PGlite (`tests/db/helpers/pglite.ts`): `migration-runner.test.ts` (ledger recording, checksum immutability, forbidden statements, ledger-race rollback and 23505 skip mapping, the SQL splitter), `upgrade-path.test.ts` (the fixtures in `tests/db/fixtures/` — the production baseline, the migrate-rag-v2-era shape, and `legacy-draft-schema.sql`, the frozen old `schema.sql` — all introspect identically to a fresh apply and to the committed `scripts/db/schema-snapshot.json`), `seed-data-only.test.ts` (seed contains no DDL; registry matches created tables), and `identity-and-compat.test.ts` (identity backfill idempotency, immutability trigger, legacy projection hydration).
+
 ### Gold-edition regression
 
 The gold edition at `gold/1960-01-13/gold-edition.json` is protected by `scripts/db/locked-editions.json` and serves as a frozen known-good baseline. Changes to adapter rules can be validated by diffing the current DB state against a fresh seed of the gold source.
@@ -653,14 +730,13 @@ The gold edition at `gold/1960-01-13/gold-edition.json` is protected by `scripts
 
 Accepted tradeoffs. These are intentional, not TODOs.
 
-1. **Schema and online backfill are separate operations.** `db:migrate:rag-v2` never calls Google; `db:embed` is the explicit, resumable online step. During the gap, chunk FTS works while current-model vector coverage is incomplete.
+1. **Schema and online backfill are separate operations.** `db:migrate` and `db:backfill:rag-records` never call Google; `db:embed` is the explicit, resumable online step. During the gap, chunk FTS works while current-model vector coverage is incomplete.
 2. **Embedding fingerprints are intentionally exact.** A normalization or chunking change invalidates affected hashes. This may require a broad re-embed, but it prevents stale vectors from being silently reused.
 3. **Ads use SERIAL PK and can't be upserted.** Every re-seed does a DELETE + INSERT; ad IDs change across seeds. **Accepted because** ads have no cross-reference surface (no URLs, no deep links). If they ever do, this needs rethinking.
 4. **Per-instance rate-limit fallback under-counts across Vercel instances.** During Neon outages, effective per-IP limit is `N × instance_count`. **Accepted because** the primary path (Neon-backed) handles correctness; the fallback only fires during infrastructure failure.
 5. **Neon cancellation is HTTP-driver dependent.** Every hot-path transaction receives `fetchOptions.signal`, and the caller also races the abort event. This guarantees request completion; server-side cancellation still depends on Neon honoring the signal.
-6. **No schema-version column.** There's no automated check that the DB has every migration applied. **Accepted because** all migrations are idempotent (`IF NOT EXISTS`); running them all is safe and fast. Manual verification via `psql \d+ articles` is the fallback.
-7. **Gold edition `locked-editions.json` is the only dated-article protection mechanism.** Any other edition can be destroyed by `db:reset --unlock`. **Accepted because** all other editions are reproducible from `edition.json` on disk; only the gold regression baseline matters for verification.
-8. **Missing local images cannot be embedded.** The backfill records them as pending and continues. Their articles remain available through chunk vectors, FTS, and stored captions.
+6. **Gold edition `locked-editions.json` is the only dated-article protection mechanism.** Any other edition can be destroyed by `db:reset --unlock`. **Accepted because** all other editions are reproducible from `edition.json` on disk; only the gold regression baseline matters for verification.
+7. **Missing local images cannot be embedded.** The backfill records them as pending and continues. Their articles remain available through chunk vectors, FTS, and stored captions.
 
 ---
 
@@ -669,19 +745,29 @@ Accepted tradeoffs. These are intentional, not TODOs.
 ### Reseed from scratch
 
 ```bash
+npm run db:migrate
+# No-op when current; seed refuses an unmigrated database.
+
 npm run db:reset
-# Drops all tables, applies schema, restores gold, seeds all editions,
-# builds search vectors, embeds unembedded articles.
+# Truncates re-seedable tables (runtime tables and the migration ledger
+# are preserved), restores gold, seeds all editions, builds search
+# vectors, embeds unembedded articles.
 # With --unlock: skips gold protection.
+# With --include-runtime: also truncates sessions/feedback/spend/rate-limit tables.
 ```
 
-If `gold/1960-01-13/gold-edition.json` is present locally, it's automatically restored. If not, the DB export mechanism (pre-drop snapshot) handles it as long as the table had the data before DROP.
+If `gold/1960-01-13/gold-edition.json` is present locally, it's automatically restored. If not, the DB export mechanism (pre-truncate snapshot) handles it as long as the table had the data before truncation.
 
 ### Migrate and backfill RAG v2
 
+`db:migrate` owns all schema; the backfill is DML-only.
+
 ```bash
-npm run db:migrate:rag-v2
-# Metadata/schema only; no model calls.
+npm run db:migrate
+# Canonical, ledger-tracked schema; no model calls.
+
+npm run db:backfill:rag-records
+# Deterministic chunk/image metadata backfill; no DDL, no model calls.
 
 npm run db:embed -- --dry-run
 npm run db:embed
@@ -708,8 +794,8 @@ Use only when the model, canonical input format, or source image bytes changed w
 
 The gold edition at `gold/1960-01-13/` is protected by `locked-editions.json`. On any `db:reset`:
 
-1. Pre-DROP: seed exports DB rows for that date
-2. Post-DROP + schema recreation: seed re-imports the saved rows
+1. Pre-truncate: seed exports DB rows for that date
+2. Post-truncate: seed re-inserts the saved rows
 
 Alternatively, with gold files on disk, any `db:seed` triggers `ensureLockedEditions()` which copies `gold/1960-01-13/gold-edition.json` → `public/editions/1960-01-13/edition.json`, then seeds through the adapter.
 
@@ -718,12 +804,13 @@ Alternatively, with gold files on disk, any `db:seed` triggers `ensureLockedEdit
 ### Run the RAG v2 deployment sequence
 
 ```bash
-npm run db:migrate:rag-v2
+npm run db:migrate
+npm run db:backfill:rag-records
 npm run db:embed -- --dry-run
 npm run db:embed
 ```
 
-Run in this order. The first command is metadata-only; the dry run reports the online work before it is authorized.
+Run in this order. The first two commands never call the model; the dry run reports the online work before it is authorized.
 
 ---
 
@@ -731,7 +818,7 @@ Run in this order. The first command is metadata-only; the dry run reports the o
 
 If you're new and need to make a change, read these in order:
 
-1. `scripts/db/schema.sql` — the canonical DDL. Everything else is downstream of this.
+1. `scripts/db/migrations/` — the canonical DDL, nine numbered files applied by `scripts/db/lib/migration-runner.ts`. Everything else is downstream of this.
 2. `ocr/src/transcript_ocr/contracts/content_models.py` — the `edition.json` contract, source of truth for everything that flows into the DB.
 3. `src/server/ocr-adapter/article-transform.ts` — where `edition.json` becomes DB rows. Every normalization rule lives here.
 4. `src/lib/db.ts` — every runtime read query. `raceWithTimeout` and `DbTimeoutError` patterns apply to every caller.

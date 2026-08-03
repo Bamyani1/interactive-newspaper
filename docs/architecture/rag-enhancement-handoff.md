@@ -2,11 +2,12 @@
 
 Last verified: 2026-08-02
 
-Implementation checkpoint: `6c40a6b`
+Implementation checkpoint: `6c40a6b` (Phase 2); Phase 3 completed in the
+current commit
 
 Branch: `rag-enhancement`
 
-Status: Phases 0–2 complete and gated; Phase 3 is next
+Status: Phases 0–3 complete and gated; Phase 4 is next
 
 ## Read this first
 
@@ -194,8 +195,13 @@ pipeline. The RAG implementation commits are:
 | `16af899` | Enforce ADC-only Google initialization and explicit legacy activation |
 | `6d5f54c` | Freeze corpus/source inventory and blind holdout |
 | `6c40a6b` | Harden retrieval, grounding, coverage, and provenance |
+| `9063aec` | Phase 0–2 handoff documentation |
+| `c292c71` | Prep fixes: test typechecking, silent script guards |
+| (current) | Phase 3: canonical migrations and immutable identities |
 
-The branch had not been pushed at the implementation checkpoint. Confirm remote
+The branch had not been pushed at the implementation checkpoint; the user
+explicitly chose not to push yet (Vercel preview-deploy risk while vector
+coverage is zero). Confirm remote
 state before relying on another machine or removing the temporary worktree.
 
 ## Work completed
@@ -298,6 +304,57 @@ CRAG retry. Key changes:
 - `migrate-ask-sessions.mjs` contains an expand-only draft addition for the
   `citation_snapshots` JSONB column. It has not been run in production.
 
+### Phase 3 — Canonical migrations and immutable identities
+
+- Canonical migration directory `scripts/db/migrations/0001–0009` with a
+  `schema_migrations` ledger, checksum-immutable applied migrations, and a
+  transaction-scoped advisory lock; a concurrent runner's duplicate ledger
+  INSERT rolls back its entire batch (DDL included), which closes the
+  apply race over Neon's non-interactive HTTP transactions.
+- Runner (`scripts/db/lib/migration-runner.ts`) is executor-injectable:
+  production uses the Neon HTTP driver (`neon-executor.ts`); tests use PGlite
+  (`@electric-sql/pglite` + `pglite-pgvector`, dev-only — HNSW, plpgsql
+  triggers, tsvector, and advisory locks all verified in-process).
+- Resolved the chunk/image shape divergence expand-only: `index_build_id` is
+  now nullable with partial unique indexes (legacy rows `WHERE NULL`,
+  build-scoped rows `WHERE NOT NULL`); migration `0005` converges the
+  production-absent, rag-v2, and branch-draft variants to one shape without
+  dropping any row or vector. Old `scripts/db/schema.sql` is frozen as the
+  upgrade fixture `tests/db/fixtures/legacy-draft-schema.sql`.
+- Expand-only identity/publication tables: `source_records`, `issues`,
+  `legacy_edition_aliases`, `edition_revisions`, `edition_revision_pages`,
+  `content_items`, `content_revisions` (immutability trigger),
+  `legacy_content_aliases`, `content_identity_conflicts`, `assets`,
+  `asset_references`, `publication_runs`, `publication_run_events`,
+  `corpus_versions`.
+- `seed.mjs` is data-only: it refuses unmigrated databases and its `--reset`
+  is a TRUNCATE that preserves runtime/privacy tables (sessions, feedback,
+  spend, rate buckets) unless `--include-runtime` is passed. The ledger is
+  never touched. `migrate-rag-v2.mjs` became DML-only
+  `backfill-rag-records.mjs`.
+- Stable identity module `src/server/identity/content-identity.ts`: identity
+  keys from source pages + headline/byline (never positional index or body
+  text), revision hashes from normalized content, typed
+  `AmbiguousIdentityMatchError` for re-OCR ambiguity (Phase 4 persists these
+  to `content_identity_conflicts` and stops). `backfill-identities.mjs` maps
+  every legacy article ID to issues/items/revisions/aliases idempotently
+  (articles only; ad aliases deferred to Phase 4 by user decision);
+  `register-corpus-version.mjs` registers the frozen corpus row. Both are
+  local-only in this phase and guarded accordingly.
+- Compatibility: zero runtime SQL changes; a test proves revision-backed
+  hydration deep-equals the legacy article read.
+- New commands: `npm run db:migrate`, `db:migrate:status`,
+  `db:schema:snapshot` (regenerates the committed
+  `scripts/db/schema-snapshot.json`), `db:backfill:rag-records`.
+
+Phase 3 verification: 40 new tests in `tests/db/` (migration runner, splitter,
+fresh-vs-upgraded snapshot equality across all three legacy shapes with
+row/vector survival, seed data-only enforcement with a drop-list drift guard,
+identity/immutability/alias/compat). Full gate: 874 tests passed with 12
+live/paid golden tests skipped, ESLint clean, app and test typechecks clean,
+production build passed, evaluation-freeze verification passed,
+`git diff --check` clean. Production Neon/R2 untouched.
+
 ## Main implementation files
 
 | Area | Files |
@@ -312,7 +369,10 @@ CRAG retry. Key changes:
 | Citation provenance | `src/lib/citation-snapshot.ts`, `src/lib/conversation-store.ts` |
 | Evaluation/cost | `src/lib/rag-evaluation.ts`, `src/lib/cost-tracker.ts` |
 | API orchestration | `src/app/api/ask/route.ts`, `src/app/api/ask/session/route.ts`, `src/app/api/ask/feedback/route.ts` |
-| Draft schema/scripts | `scripts/db/schema.sql`, `scripts/db/migrate-rag-v2.mjs`, `scripts/db/migrate-ask-sessions.mjs`, `scripts/db/embed.mjs` |
+| Canonical migrations | `scripts/db/migrations/`, `scripts/db/lib/migration-runner.ts`, `scripts/db/lib/neon-executor.ts`, `scripts/db/lib/sql-statements.ts`, `scripts/db/migrate.mjs`, `scripts/db/schema-snapshot.json` |
+| Identity and backfills | `src/server/identity/content-identity.ts`, `src/server/identity/ulid.ts`, `scripts/db/backfill-identities.mjs`, `scripts/db/register-corpus-version.mjs` |
+| Data scripts | `scripts/db/seed.mjs`, `scripts/db/backfill-rag-records.mjs`, `scripts/db/embed.mjs` (legacy), `scripts/db/migrate-ask-sessions.mjs` (deprecated) |
+| Isolated DB tests | `tests/db/` (PGlite harness, frozen legacy fixtures, runner/upgrade/seed/identity suites) |
 | Frozen evidence | `evaluation/rag/` |
 
 ## Verification already completed
@@ -364,12 +424,14 @@ As of this handoff:
 
 ## Known boundaries and gotchas
 
-1. **Do not run the current draft RAG migration against production.** Phase 3
-   must introduce the canonical migration directory, migration ledger,
-   advisory lock, fresh-schema tests, and upgrade tests first.
-2. `CREATE TABLE IF NOT EXISTS` does not upgrade an older draft table missing
-   newer columns. Runtime candidate activation therefore validates and fails
-   closed; Phase 3 must own the real upgrade path.
+1. **Production has still never been migrated.** The canonical migration
+   system exists and its fresh/upgrade paths are proven on isolated PGlite
+   databases, but `npm run db:migrate` has not been run against production
+   Neon and must not be without the explicit Phase 8 approval.
+2. The chunk-table shape divergence is resolved in the canonical migrations
+   (0005 converges all three variants expand-only). The retired one-off
+   `migrate-*.mjs` scripts remain only as production-history artifacts; do
+   not use them for new work.
 3. `citation_snapshots` is optional until its expand-only migration is applied.
    The conversation store probes for the column with a 30-second TTL and falls
    back to the legacy insert without dropping a turn.
@@ -395,17 +457,6 @@ As of this handoff:
 
 The detailed acceptance criteria are in the final plan. The next agent should
 complete these phases sequentially and make one reviewable commit per phase.
-
-### Phase 3 — Canonical migrations and immutable identities
-
-- Add a canonical migration directory, `schema_migrations` ledger, and
-  transaction-scoped advisory lock.
-- Ensure seed commands perform data operations only and never DDL.
-- Add expand-only source, issue, revision, content, alias, asset, publication,
-  corpus, index-build, chunk, and visual-evidence tables.
-- Establish stable issue/content identity and immutable revision identity.
-- Preserve legacy API shapes through compatibility reads.
-- Prove fresh-schema and legacy-upgrade paths in isolated databases.
 
 ### Phase 4 — Resumable versioned publisher
 
@@ -471,7 +522,8 @@ complete these phases sequentially and make one reviewable commit per phase.
 
 1. Confirm the correct worktree, branch, clean status, and freeze hash.
 2. Read the final plan and this handoff completely.
-3. Implement Phase 3 only; do not mix publisher/backfill work into its commit.
+3. Implement Phase 4 only; do not mix asset-registry/backfill work into its
+   commit.
 4. Run the smallest relevant tests while editing and the full gate before the
    phase commit.
 5. Record actual results and newly discovered constraints in the final plan and
@@ -483,5 +535,5 @@ complete these phases sequentially and make one reviewable commit per phase.
 8. Do not inspect/tune against blind holdout evidence before candidate output is
    frozen.
 
-The immediate next implementation task is Phase 3, not disabling current RAG
+The immediate next implementation task is Phase 4, not disabling current RAG
 components and not running the blind holdout prematurely.

@@ -1,6 +1,6 @@
 # RAG and Archive Data Pipeline — Final Implementation Plan
 
-Status: **Phases 0–2 locally complete; Phase 2 gate passed and review is required before Phase 3 (2026-08-02)**
+Status: **Phases 0–3 locally complete; Phase 3 gate passed and review is required before Phase 4 (2026-08-02)**
 Branch: `rag-enhancement`  
 Starting commit: `652f9fc`  
 Prepared: 2026-08-02
@@ -280,6 +280,30 @@ coverage wording, and injection resistance. No production activation.
 
 **Gate:** fresh-schema and upgrade tests pass on isolated databases; migrations
 are idempotent, locked, reversible where possible, and do not activate data.
+
+**Phase 3 actuals (2026-08-02):** implemented as designed, entirely local.
+Canonical migrations `scripts/db/migrations/0001–0009` with a
+`schema_migrations` ledger, transaction-scoped `pg_advisory_xact_lock`, and
+checksum-immutable applied migrations (a concurrent runner's duplicate ledger
+INSERT rolls back its whole batch, closing the race over Neon's non-interactive
+HTTP transactions). The chunk/image draft divergence was converged expand-only:
+`index_build_id` is nullable, uniqueness moved to partial indexes (legacy rows
+`WHERE NULL`, build-scoped `WHERE NOT NULL`), and existing rows/vectors survive
+upgrade from all three legacy shapes. `seed.mjs` is data-only (migration
+preflight; TRUNCATE-based reset preserving runtime/privacy tables unless
+`--include-runtime`); `migrate-rag-v2.mjs` became DML-only
+`backfill-rag-records.mjs`. Stable identity lives in
+`src/server/identity/content-identity.ts` (source-page/headline/byline identity
+keys, immutable revision hashes, typed ambiguity errors backed by
+`content_identity_conflicts`); `backfill-identities.mjs` and
+`register-corpus-version.mjs` are idempotent local-only data scripts. Isolated
+tests run on PGlite (dev-dependency; pgvector HNSW verified): 40 tests across
+four `tests/db/` files, including fresh-vs-upgraded schema-snapshot equality
+against frozen production-shape, rag-v2-shape, and branch-draft fixtures.
+Gate: 874 tests passed / 12 live-golden skipped, lint, typecheck (app + tests),
+production build, evaluation-freeze verification, and `git diff --check` all
+pass. Production Neon was not touched; ad aliases were deferred to Phase 4 by
+user decision.
 
 ### Phase 4 — Build a resumable, versioned publisher
 

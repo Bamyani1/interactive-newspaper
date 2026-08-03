@@ -1,15 +1,18 @@
 /**
- * Database Seed Script
+ * Database Seed Script (data-only — never runs DDL)
  *
  * Reads edition JSON files, weather index, and music data from the filesystem,
  * transforms them using ocr-adapter functions, and inserts into Neon PostgreSQL.
+ * The schema comes exclusively from `npm run db:migrate`; this script refuses
+ * to run against an unmigrated database.
  *
  * Locked editions (defined in locked-editions.json) are automatically restored
  * from their gold source on every --reset, preventing accidental deletion.
  *
  * Usage:
  *   npm run db:seed              — insert data (skip existing editions)
- *   npm run db:reset             — drop all tables, recreate, and re-seed
+ *   npm run db:reset             — truncate re-seedable tables and re-seed
+ *   npm run db:reset -- --include-runtime — also truncate runtime tables (sessions, feedback, spend, rate limits)
  *   npm run db:reset -- --unlock — reset WITHOUT restoring locked editions
  *   npm run db:seed -- --date 1960-05-11 --editions-dir public/editions --summary-path ocr/runs/1960-05-11/seed-summary.json
  */
@@ -36,6 +39,14 @@ if (existsSync(envPath)) {
 import ocrAdapter from "../../src/server/ocr-adapter/index.ts";
 const { transformArticles, transformAds, computePageCount } = ocrAdapter;
 
+// .mjs importing .ts named exports needs the default-interop pattern (tsx
+// compiles .ts to CJS because package.json has no "type":"module").
+const migrationRunnerModule = await import("./lib/migration-runner.ts");
+const { assertMigrationsCurrent, CANONICAL_TABLES, LEDGER_TABLE } =
+  migrationRunnerModule.default ?? migrationRunnerModule;
+const neonExecutorModule = await import("./lib/neon-executor.ts");
+const { createNeonExecutor } = neonExecutorModule.default ?? neonExecutorModule;
+
 const ROOT = path.resolve(__dirnameEnv, "../..");
 const EDITIONS_DIR = path.join(ROOT, "public", "editions");
 const WEATHER_INDEX = path.join(
@@ -43,10 +54,10 @@ const WEATHER_INDEX = path.join(
   "public/data/weather/ohio/index/delaware-by-date-1950-2000.json",
 );
 const MUSIC_ARCHIVE = path.join(ROOT, "public/top-10-music/chart-1950-2010.json");
-const SCHEMA_FILE = path.join(__dirnameEnv, "schema.sql");
 
 const isReset = process.argv.includes("--reset");
 const isUnlock = process.argv.includes("--unlock");
+const includeRuntime = process.argv.includes("--include-runtime");
 
 // ─── Locked Editions ────────────────────────────────────────────
 // Locked editions are restored from their gold source on every --reset
@@ -100,98 +111,10 @@ function stripHtml(html) {
   return sanitize(html).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 
-// ─── Schema ──────────────────────────────────────────────────────
-
-// Split raw SQL into top-level statements. Respects dollar-quoted
-// blocks ($$...$$ and $tag$...$tag$) and single-quoted strings so that
-// PL/pgSQL function bodies and DO blocks don't get chopped mid-body.
-function splitSqlStatements(sql) {
-  const out = [];
-  let cur = "";
-  let i = 0;
-  let inSingle = false; // inside '...'
-  let dollarTag = null; // null when not in $tag$...$tag$; '' for $$, 'tag' for $tag$
-
-  while (i < sql.length) {
-    const ch = sql[i];
-
-    if (dollarTag !== null) {
-      const closeTag = `$${dollarTag}$`;
-      if (sql.startsWith(closeTag, i)) {
-        cur += closeTag;
-        i += closeTag.length;
-        dollarTag = null;
-        continue;
-      }
-      cur += ch;
-      i += 1;
-      continue;
-    }
-
-    if (inSingle) {
-      cur += ch;
-      i += 1;
-      if (ch === "'") {
-        if (sql[i] === "'") {
-          cur += "'";
-          i += 1;
-        } else {
-          inSingle = false;
-        }
-      }
-      continue;
-    }
-
-    if (ch === "'") {
-      inSingle = true;
-      cur += ch;
-      i += 1;
-      continue;
-    }
-
-    if (ch === "$") {
-      const match = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i));
-      if (match) {
-        dollarTag = match[1] ?? "";
-        cur += match[0];
-        i += match[0].length;
-        continue;
-      }
-    }
-
-    if (ch === ";") {
-      const trimmed = cur.trim();
-      if (trimmed.length > 0) out.push(trimmed);
-      cur = "";
-      i += 1;
-      continue;
-    }
-
-    cur += ch;
-    i += 1;
-  }
-
-  const tail = cur.trim();
-  if (tail.length > 0) out.push(tail);
-  return out;
-}
-
-async function applySchema() {
-  const schemaSql = await readFile(SCHEMA_FILE, "utf-8");
-  const cleaned = schemaSql.replace(/--.*$/gm, "");
-  const statements = splitSqlStatements(cleaned);
-
-  for (const stmt of statements) {
-    await sql.query(stmt);
-  }
-
-  console.log(`Schema applied (${statements.length} statements).`);
-}
-
 // ─── DB-Level Lock: Export / Restore ────────────────────────────
-// Saves locked edition data from the database before DROP, then
-// re-inserts after schema recreation. This protects the gold edition
-// even on machines that don't have the gold source files locally.
+// Saves locked edition data from the database before the reset truncation,
+// then re-inserts it afterward. This protects the gold edition even on
+// machines that don't have the gold source files locally.
 
 async function exportLockedEditions() {
   const lockedDates = Object.keys(LOCKED_EDITIONS);
@@ -243,16 +166,21 @@ async function restoreLockedEditions(savedData) {
   }
 }
 
-async function dropAllTables() {
-  await sql`DROP TABLE IF EXISTS ask_feedback CASCADE`;
-  await sql`DROP TABLE IF EXISTS music CASCADE`;
-  await sql`DROP TABLE IF EXISTS weather CASCADE`;
-  await sql`DROP TABLE IF EXISTS ads CASCADE`;
-  await sql`DROP TABLE IF EXISTS article_images CASCADE`;
-  await sql`DROP TABLE IF EXISTS article_chunks CASCADE`;
-  await sql`DROP TABLE IF EXISTS articles CASCADE`;
-  await sql`DROP TABLE IF EXISTS editions CASCADE`;
-  console.log("All tables dropped.");
+// TRUNCATE-based reset — data only, never DDL. Truncates every registered
+// re-seedable table (plus runtime tables with --include-runtime) in one
+// statement; the migration ledger is never touched.
+async function truncateSeedTables() {
+  const truncated = CANONICAL_TABLES
+    .filter((t) => t.kind === "reseedable" || (includeRuntime && t.kind === "runtime"))
+    .map((t) => t.name);
+  const preserved = CANONICAL_TABLES
+    .filter((t) => !truncated.includes(t.name))
+    .map((t) => t.name);
+
+  await sql.query(`TRUNCATE ${truncated.join(", ")} RESTART IDENTITY CASCADE`);
+
+  console.log(`Truncated ${truncated.length} table(s): ${truncated.join(", ")}`);
+  console.log(`Preserved: ${[...preserved, LEDGER_TABLE].join(", ")}`);
 }
 
 // ─── Seed Editions ───────────────────────────────────────────────
@@ -798,7 +726,10 @@ async function main() {
   const start = Date.now();
 
   console.log(`\nThe Transcript Archive — Database Seed`);
-  console.log(`Mode: ${isReset ? "RESET (drop + recreate)" : "UPSERT"}${targetDate ? ` | DATE=${targetDate}` : ""}\n`);
+  console.log(`Mode: ${isReset ? "RESET (truncate + re-seed)" : "UPSERT"}${targetDate ? ` | DATE=${targetDate}` : ""}\n`);
+
+  // Data-only preflight: both modes require a fully migrated database.
+  await assertMigrationsCurrent(createNeonExecutor(process.env.DATABASE_URL));
 
   const summary = {
     mode: isReset ? "reset" : "upsert",
@@ -816,10 +747,9 @@ async function main() {
   let savedLockedData = null;
   if (isReset) {
     savedLockedData = await exportLockedEditions();
-    await dropAllTables();
+    await truncateSeedTables();
   }
 
-  await applySchema();
   await restoreLockedEditions(savedLockedData);
   await ensureLockedEditions();
   summary.editions = await seedEditions(targetDate);

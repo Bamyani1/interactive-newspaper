@@ -264,18 +264,22 @@ reconciliation; promotional-credit usage must be verified in Cloud Billing.
 No migration runs automatically at application startup.
 
 The commands below belong to the checkpointed candidate and are **not approved
-for production use**. In particular, the current seed path still contains draft
-RAG-v2 DDL. The versioned migration ledger and index-build state machine must be
-implemented and rehearsed before these commands may target production.
+for production use**. The versioned migration ledger (`schema_migrations`,
+applied by `npm run db:migrate`) now exists, but production remains unmigrated;
+the migrations and the index-build state machine must be rehearsed before these
+commands may target production.
 
 ```bash
-# 1. Schema + deterministic metadata only; no Google calls
-npm run db:migrate:rag-v2
+# 1. Canonical, ledger-tracked schema migrations; no Google calls
+npm run db:migrate
 
-# 2. Preview cost and missing local images
+# 2. Deterministic chunk/image metadata backfill; no DDL, no Google calls
+npm run db:backfill:rag-records
+
+# 3. Preview cost and missing local images
 npm run db:embed -- --dry-run
 
-# 3. Generate pending stable text and image vectors
+# 4. Generate pending stable text and image vectors
 npm run db:embed
 ```
 
@@ -301,7 +305,7 @@ npm run typecheck
 npm run lint
 npm run test:run
 npm run build
-node --check scripts/db/migrate-rag-v2.mjs
+node --check scripts/db/backfill-rag-records.mjs
 node --check scripts/db/embed.mjs
 ```
 
