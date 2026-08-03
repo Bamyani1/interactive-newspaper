@@ -1,7 +1,7 @@
 # RAG and Archive Data Pipeline — Final Implementation Plan
 
-Status: **Phases 0–5 locally complete; the backfill cost estimate awaits its
-separate approval before any paid embedding work (2026-08-02)**
+Status: **Phases 0–6 locally complete; the backfill cost estimate and the
+Phase 7 environment approvals are the next gates (2026-08-02)**
 Branch: `rag-enhancement`  
 Starting commit: `652f9fc`  
 Prepared: 2026-08-02
@@ -444,6 +444,28 @@ evaluation-freeze verification, and `git diff --check` all pass.
 
 **Gate:** token-entropy/hash tests, deletion/TTL tests, revision-hydration tests,
 and a staging export manifest proving only approved public tables were copied.
+
+**Phase 6 actuals (2026-08-02):** implemented entirely local. Session tokens
+are now 256-bit (`crypto.randomBytes(32)`, base64url, still matching the
+client contract — no client change); the store hashes tokens with SHA-256 at
+its SQL boundary so plaintext never reaches the database (a capture test
+proves no SQL parameter ever equals the raw token); pre-cutover plaintext
+rows simply stop matching and age out. `DELETE /api/ask/session` reports real
+failures (500) instead of always-204. Feedback citations accept an optional
+validated `contentRevisionId` inside the existing JSONB (no DDL).
+`src/lib/retention.ts` sweeps sessions (30 min), feedback (90 days,
+`FEEDBACK_RETENTION_DAYS` override), and expired rate buckets with injected
+clocks; exposed via `/api/internal/retention` (timing-safe `CRON_SECRET`
+bearer, GET+POST), a new `vercel.json` cron (17:04 UTC daily — pure config,
+inert until the Phase 8 deploy), and the operator script
+`npm run db:retention-sweep`. `scripts/rag/export-public-corpus.ts` exports
+exactly the five public tables (deterministic JSONL + self-hashed manifest
+that affirmatively lists the excluded private tables; import verifies every
+hash before the first write) — Phase 7's isolation proof. 28 net-new tests.
+Gate: 983 tests passed / 12 live-golden skipped, lint, app+test typechecks,
+production build, evaluation-freeze verification, and `git diff --check` all
+pass. Production untouched; the hardened behavior reaches production only at
+the Phase 8 deploy.
 
 ### Phase 7 — Rehearse and compare in isolation
 

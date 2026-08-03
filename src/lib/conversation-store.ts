@@ -13,6 +13,7 @@
  * to zero rather than failing the user's request.
  */
 
+import { createHash, randomBytes } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 import type { CitationSnapshot } from "@/src/types";
@@ -90,9 +91,22 @@ async function hasCitationSnapshotColumn(
 }
 
 export function newSessionId(): string {
-    // Keep the old short-id format for log greppability; uuid would also
-    // work but existing log tooling expects the compact form.
-    return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    // 32 bytes of CSPRNG entropy, base64url-encoded (43 chars). Fits the
+    // client contract (^[A-Za-z0-9_-]{1,128}$) and is unguessable, unlike
+    // the previous Math.random()-derived short id.
+    return randomBytes(32).toString("base64url");
+}
+
+/**
+ * Session tokens are hashed-at-rest: every SQL touchpoint that reads or
+ * writes ask_session_turns.session_id passes this sha256 hex digest, so
+ * the client-held plaintext token never reaches the database. Rows
+ * written before this cutover hold plaintext session ids and simply
+ * stop matching hashed lookups; they age out naturally via the
+ * 30-minute TTL window and the piggybacked retention sweep.
+ */
+function hashSessionToken(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
 }
 
 export async function getConversationHistory(
@@ -103,6 +117,7 @@ export async function getConversationHistory(
     }
     const sql = getSql();
     if (!sql) return [];
+    const sessionKey = hashSessionToken(sessionId);
     const sinceIso = new Date(Date.now() - TTL_MS).toISOString();
     try {
         const rows = (await sql`
@@ -113,7 +128,7 @@ export async function getConversationHistory(
                    ) AS citation_snapshots,
                    created_at
             FROM ask_session_turns
-            WHERE session_id = ${sessionId}
+            WHERE session_id = ${sessionKey}
               AND created_at >= ${sinceIso}
             ORDER BY created_at DESC
             LIMIT ${MAX_TURNS}
@@ -180,6 +195,7 @@ export async function addConversationTurn(
     }
     const sql = getSql();
     if (!sql) return;
+    const sessionKey = hashSessionToken(sessionId);
     const cutoffIso = new Date(Date.now() - TTL_MS).toISOString();
     try {
         const snapshotColumnAvailable = await hasCitationSnapshotColumn(sql);
@@ -188,23 +204,23 @@ export async function addConversationTurn(
                 INSERT INTO ask_session_turns
                   (session_id, question, answer, cited_article_ids, citation_snapshots)
                 VALUES
-                  (${sessionId}, ${question}, ${stored}, ${citedArticleIds}, ${JSON.stringify(citationSnapshots)}::jsonb)
+                  (${sessionKey}, ${question}, ${stored}, ${citedArticleIds}, ${JSON.stringify(citationSnapshots)}::jsonb)
             `
             : sql`
                 INSERT INTO ask_session_turns
                   (session_id, question, answer, cited_article_ids)
                 VALUES
-                  (${sessionId}, ${question}, ${stored}, ${citedArticleIds})
+                  (${sessionKey}, ${question}, ${stored}, ${citedArticleIds})
             `;
         await sql.transaction([
             insert,
             sql`DELETE FROM ask_session_turns WHERE created_at < ${cutoffIso}`,
             sql`
                 DELETE FROM ask_session_turns
-                WHERE session_id = ${sessionId}
+                WHERE session_id = ${sessionKey}
                   AND id NOT IN (
                     SELECT id FROM ask_session_turns
-                    WHERE session_id = ${sessionId}
+                    WHERE session_id = ${sessionKey}
                     ORDER BY created_at DESC
                     LIMIT ${MAX_TURNS}
                   )
@@ -223,36 +239,44 @@ export async function addConversationTurn(
     }
 }
 
+export type DeleteConversationTurnsResult =
+    | { ok: true }
+    | { ok: false; error: string };
+
 /**
  * Wipes every stored turn for a session. Used by the "Clear
  * conversation" button so the server doesn't keep the transcript
- * around until its 30-minute TTL. Best-effort: a DB failure only
- * means the old rows linger and age out naturally.
+ * around until its 30-minute TTL. Never throws; instead reports the
+ * outcome so callers can decide whether to surface a failure. Deleting
+ * zero rows is a success — the session was already gone.
  */
 export async function deleteConversationTurns(
     sessionId: string,
-): Promise<void> {
+): Promise<DeleteConversationTurnsResult> {
     if (isRagEvaluationMode()) {
         evaluationSessions.delete(sessionId);
-        return;
+        return { ok: true };
     }
     const sql = getSql();
-    if (!sql) return;
+    if (!sql) return { ok: true };
     try {
         await sql`
             DELETE FROM ask_session_turns
-            WHERE session_id = ${sessionId}
+            WHERE session_id = ${hashSessionToken(sessionId)}
         `;
+        return { ok: true };
     } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
         console.warn(
             JSON.stringify({
                 level: "warn",
                 module: "conversation-store",
                 op: "deleteConversationTurns",
                 msg: "db delete failed; session will age out via TTL",
-                err: err instanceof Error ? err.message : String(err),
+                err: error,
             }),
         );
+        return { ok: false, error };
     }
 }
 
@@ -272,7 +296,7 @@ export async function sessionHasAnyTurns(sessionId: string): Promise<boolean> {
         const rows = (await sql`
             SELECT 1
             FROM ask_session_turns
-            WHERE session_id = ${sessionId}
+            WHERE session_id = ${hashSessionToken(sessionId)}
             LIMIT 1
         `) as Array<Record<string, unknown>>;
         return rows.length > 0;
