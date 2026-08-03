@@ -7,12 +7,14 @@ import type { PGlite } from "@electric-sql/pglite";
 import type { EmbedContentResponse } from "@google/genai";
 import { runMigrations } from "../../scripts/db/lib/migration-runner";
 import {
+    activateBuild,
     createIndexBuild,
     dryRunReport,
     embedBuildImages,
     embedBuildText,
     finalizeBuild,
     populateBuildRecords,
+    rollbackActivation,
 } from "../../scripts/db/build-rag-index.mjs";
 import { buildArticleChunkRecords } from "../../src/lib/article-chunking";
 import { buildEmbeddingInput } from "../../src/lib/embeddings";
@@ -440,6 +442,40 @@ describe("build-rag-index against PGlite", () => {
         const rebuild = await createIndexBuild(db.executor, BUILD_OPTIONS);
         expect(rebuild).not.toBe(buildA);
         expect(rebuild).toMatch(/^build-/);
+    });
+
+    it("activates a validated build, enforces single-active, and rolls back", async () => {
+        await expect(activateBuild(db.executor, "build-missing")).rejects.toThrow(/Unknown/);
+
+        const activated = await activateBuild(db.executor, buildA);
+        expect(activated.status).toBe("active");
+        const { rows } = await db.pg.query<{ status: string; activated_at: string | null }>(
+            "SELECT status, activated_at FROM rag_index_builds WHERE id = $1",
+            [buildA],
+        );
+        expect(rows[0].status).toBe("active");
+        expect(rows[0].activated_at).not.toBeNull();
+
+        // A second validated build of the same corpus cannot activate on top.
+        const rival = await createIndexBuild(db.executor, BUILD_OPTIONS);
+        await populateBuildRecords(db.executor, rival);
+        await embedBuildText(db.executor, rival, { embedFn: makeEmbedFn() });
+        await finalizeBuild(db.executor, rival);
+        await expect(activateBuild(db.executor, rival)).rejects.toThrow(/already has active build/);
+
+        // Rollback demotes to validated; the rival can then take over.
+        const demoted = await rollbackActivation(db.executor, buildA);
+        expect(demoted.status).toBe("validated");
+        const swapped = await activateBuild(db.executor, rival);
+        expect(swapped.status).toBe("active");
+
+        // 'building' builds can never activate; only 'active' rolls back.
+        const fresh = await createIndexBuild(db.executor, BUILD_OPTIONS);
+        await expect(activateBuild(db.executor, fresh)).rejects.toThrow(/only 'validated'/);
+        await expect(rollbackActivation(db.executor, buildA)).rejects.toThrow(/only 'active'/);
+
+        // Leave no active build behind so later tests see the same world as before.
+        await rollbackActivation(db.executor, rival);
     });
 
     it("per-batch text failure isolation, and finalize reports pending coverage", async () => {
