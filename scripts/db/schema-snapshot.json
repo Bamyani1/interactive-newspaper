@@ -76,14 +76,8 @@
         }
       ],
       "constraints": [
-        "ads_body_not_null NOT NULL body",
         "ads_edition_date_fkey FOREIGN KEY (edition_date) REFERENCES editions(date)",
-        "ads_edition_date_not_null NOT NULL edition_date",
-        "ads_id_not_null NOT NULL id",
-        "ads_image_urls_not_null NOT NULL image_urls",
-        "ads_pkey PRIMARY KEY (id)",
-        "ads_position_not_null NOT NULL \"position\"",
-        "ads_title_not_null NOT NULL title"
+        "ads_pkey PRIMARY KEY (id)"
       ]
     },
     "ai_spend_counter": {
@@ -108,10 +102,7 @@
         }
       ],
       "constraints": [
-        "ai_spend_counter_day_not_null NOT NULL day",
-        "ai_spend_counter_pkey PRIMARY KEY (day)",
-        "ai_spend_counter_spent_usd_not_null NOT NULL spent_usd",
-        "ai_spend_counter_updated_at_not_null NOT NULL updated_at"
+        "ai_spend_counter_pkey PRIMARY KEY (day)"
       ]
     },
     "api_rate_bucket": {
@@ -142,10 +133,6 @@
         }
       ],
       "constraints": [
-        "api_rate_bucket_count_not_null NOT NULL count",
-        "api_rate_bucket_created_at_not_null NOT NULL created_at",
-        "api_rate_bucket_expires_at_not_null NOT NULL expires_at",
-        "api_rate_bucket_key_not_null NOT NULL key",
         "api_rate_bucket_pkey PRIMARY KEY (key)"
       ]
     },
@@ -220,12 +207,7 @@
       ],
       "constraints": [
         "article_chunks_article_id_fkey FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE",
-        "article_chunks_article_id_not_null NOT NULL article_id",
-        "article_chunks_chunk_index_not_null NOT NULL chunk_index",
-        "article_chunks_chunk_text_not_null NOT NULL chunk_text",
         "article_chunks_content_revision_id_fkey FOREIGN KEY (content_revision_id) REFERENCES content_revisions(id)",
-        "article_chunks_embedding_input_hash_not_null NOT NULL embedding_input_hash",
-        "article_chunks_id_not_null NOT NULL id",
         "article_chunks_index_build_id_fkey FOREIGN KEY (index_build_id) REFERENCES rag_index_builds(id)",
         "article_chunks_pkey PRIMARY KEY (id)"
       ]
@@ -301,11 +283,7 @@
       ],
       "constraints": [
         "article_images_article_id_fkey FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE",
-        "article_images_article_id_not_null NOT NULL article_id",
         "article_images_content_revision_id_fkey FOREIGN KEY (content_revision_id) REFERENCES content_revisions(id)",
-        "article_images_id_not_null NOT NULL id",
-        "article_images_image_index_not_null NOT NULL image_index",
-        "article_images_image_url_not_null NOT NULL image_url",
         "article_images_index_build_id_fkey FOREIGN KEY (index_build_id) REFERENCES rag_index_builds(id)",
         "article_images_pkey PRIMARY KEY (id)"
       ]
@@ -440,21 +418,8 @@
         }
       ],
       "constraints": [
-        "articles_body_plain_not_null NOT NULL body_plain",
-        "articles_category_not_null NOT NULL category",
         "articles_edition_date_fkey FOREIGN KEY (edition_date) REFERENCES editions(date)",
-        "articles_edition_date_not_null NOT NULL edition_date",
-        "articles_full_text_not_null NOT NULL full_text",
-        "articles_headline_not_null NOT NULL headline",
-        "articles_id_not_null NOT NULL id",
-        "articles_image_captions_not_null NOT NULL image_captions",
-        "articles_image_urls_not_null NOT NULL image_urls",
-        "articles_is_featured_not_null NOT NULL is_featured",
-        "articles_is_hero_not_null NOT NULL is_hero",
-        "articles_page_not_null NOT NULL page",
-        "articles_pkey PRIMARY KEY (id)",
-        "articles_position_not_null NOT NULL \"position\"",
-        "articles_summary_not_null NOT NULL summary"
+        "articles_pkey PRIMARY KEY (id)"
       ]
     },
     "ask_feedback": {
@@ -521,15 +486,8 @@
         }
       ],
       "constraints": [
-        "ask_feedback_answer_not_null NOT NULL answer",
-        "ask_feedback_citations_not_null NOT NULL citations",
-        "ask_feedback_created_at_not_null NOT NULL created_at",
-        "ask_feedback_id_not_null NOT NULL id",
         "ask_feedback_pkey PRIMARY KEY (id)",
-        "ask_feedback_question_not_null NOT NULL question",
-        "ask_feedback_request_id_not_null NOT NULL request_id",
-        "ask_feedback_vote_check CHECK ((vote = ANY (ARRAY['up'::text, 'down'::text])))",
-        "ask_feedback_vote_not_null NOT NULL vote"
+        "ask_feedback_vote_check CHECK ((vote = ANY (ARRAY['up'::text, 'down'::text])))"
       ]
     },
     "ask_session_turns": {
@@ -578,14 +536,7 @@
         }
       ],
       "constraints": [
-        "ask_session_turns_answer_not_null NOT NULL answer",
-        "ask_session_turns_citation_snapshots_not_null NOT NULL citation_snapshots",
-        "ask_session_turns_cited_article_ids_not_null NOT NULL cited_article_ids",
-        "ask_session_turns_created_at_not_null NOT NULL created_at",
-        "ask_session_turns_id_not_null NOT NULL id",
-        "ask_session_turns_pkey PRIMARY KEY (id)",
-        "ask_session_turns_question_not_null NOT NULL question",
-        "ask_session_turns_session_id_not_null NOT NULL session_id"
+        "ask_session_turns_pkey PRIMARY KEY (id)"
       ]
     },
     "asset_references": {
@@ -629,13 +580,9 @@
       ],
       "constraints": [
         "asset_references_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(sha256)",
-        "asset_references_asset_id_not_null NOT NULL asset_id",
         "asset_references_content_revision_id_fkey FOREIGN KEY (content_revision_id) REFERENCES content_revisions(id)",
-        "asset_references_content_revision_id_not_null NOT NULL content_revision_id",
         "asset_references_pkey PRIMARY KEY (content_revision_id, \"position\")",
-        "asset_references_position_not_null NOT NULL \"position\"",
-        "asset_references_role_check CHECK ((role = ANY (ARRAY['article_image'::text, 'ad_image'::text])))",
-        "asset_references_role_not_null NOT NULL role"
+        "asset_references_role_check CHECK ((role = ANY (ARRAY['article_image'::text, 'ad_image'::text])))"
       ]
     },
     "assets": {
@@ -696,12 +643,7 @@
         }
       ],
       "constraints": [
-        "assets_byte_count_not_null NOT NULL byte_count",
-        "assets_created_at_not_null NOT NULL created_at",
-        "assets_mime_type_not_null NOT NULL mime_type",
-        "assets_pkey PRIMARY KEY (sha256)",
-        "assets_sha256_not_null NOT NULL sha256",
-        "assets_storage_key_not_null NOT NULL storage_key"
+        "assets_pkey PRIMARY KEY (sha256)"
       ]
     },
     "content_identity_conflicts": {
@@ -744,14 +686,9 @@
         }
       ],
       "constraints": [
-        "content_identity_conflicts_candidate_evidence_not_null NOT NULL candidate_evidence",
-        "content_identity_conflicts_candidate_item_ids_not_null NOT NULL candidate_item_ids",
-        "content_identity_conflicts_created_at_not_null NOT NULL created_at",
-        "content_identity_conflicts_id_not_null NOT NULL id",
         "content_identity_conflicts_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES issues(id)",
         "content_identity_conflicts_pkey PRIMARY KEY (id)",
-        "content_identity_conflicts_status_check CHECK ((status = ANY (ARRAY['open'::text, 'resolved'::text])))",
-        "content_identity_conflicts_status_not_null NOT NULL status"
+        "content_identity_conflicts_status_check CHECK ((status = ANY (ARRAY['open'::text, 'resolved'::text])))"
       ]
     },
     "content_items": {
@@ -801,14 +738,8 @@
       ],
       "constraints": [
         "content_items_content_type_check CHECK ((content_type = ANY (ARRAY['article'::text, 'ad'::text, 'other'::text])))",
-        "content_items_content_type_not_null NOT NULL content_type",
-        "content_items_created_at_not_null NOT NULL created_at",
-        "content_items_id_not_null NOT NULL id",
-        "content_items_identity_evidence_not_null NOT NULL identity_evidence",
-        "content_items_identity_key_not_null NOT NULL identity_key",
         "content_items_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES issues(id)",
         "content_items_issue_id_identity_key_key UNIQUE (issue_id, identity_key)",
-        "content_items_issue_id_not_null NOT NULL issue_id",
         "content_items_pkey PRIMARY KEY (id)",
         "fk_content_items_active_revision FOREIGN KEY (active_revision_id) REFERENCES content_revisions(id)"
       ]
@@ -895,20 +826,10 @@
         }
       ],
       "constraints": [
-        "content_revisions_body_plain_not_null NOT NULL body_plain",
-        "content_revisions_category_not_null NOT NULL category",
         "content_revisions_content_item_id_fkey FOREIGN KEY (content_item_id) REFERENCES content_items(id)",
-        "content_revisions_content_item_id_not_null NOT NULL content_item_id",
         "content_revisions_content_item_id_revision_hash_key UNIQUE (content_item_id, revision_hash)",
-        "content_revisions_created_at_not_null NOT NULL created_at",
         "content_revisions_edition_revision_id_fkey FOREIGN KEY (edition_revision_id) REFERENCES edition_revisions(id)",
-        "content_revisions_full_text_not_null NOT NULL full_text",
-        "content_revisions_headline_not_null NOT NULL headline",
-        "content_revisions_id_not_null NOT NULL id",
-        "content_revisions_page_not_null NOT NULL page",
-        "content_revisions_pkey PRIMARY KEY (id)",
-        "content_revisions_revision_hash_not_null NOT NULL revision_hash",
-        "content_revisions_summary_not_null NOT NULL summary"
+        "content_revisions_pkey PRIMARY KEY (id)"
       ]
     },
     "corpus_versions": {
@@ -963,8 +884,6 @@
         }
       ],
       "constraints": [
-        "corpus_versions_created_at_not_null NOT NULL created_at",
-        "corpus_versions_id_not_null NOT NULL id",
         "corpus_versions_pkey PRIMARY KEY (id)"
       ]
     },
@@ -1003,12 +922,9 @@
       ],
       "constraints": [
         "edition_revision_pages_edition_revision_id_fkey FOREIGN KEY (edition_revision_id) REFERENCES edition_revisions(id)",
-        "edition_revision_pages_edition_revision_id_not_null NOT NULL edition_revision_id",
-        "edition_revision_pages_page_number_not_null NOT NULL page_number",
         "edition_revision_pages_pkey PRIMARY KEY (edition_revision_id, page_number)",
         "edition_revision_pages_source_record_id_fkey FOREIGN KEY (source_record_id) REFERENCES source_records(id)",
-        "edition_revision_pages_status_check CHECK ((status = ANY (ARRAY['processed'::text, 'failed'::text, 'missing'::text])))",
-        "edition_revision_pages_status_not_null NOT NULL status"
+        "edition_revision_pages_status_check CHECK ((status = ANY (ARRAY['processed'::text, 'failed'::text, 'missing'::text])))"
       ]
     },
     "edition_revisions": {
@@ -1069,16 +985,10 @@
         }
       ],
       "constraints": [
-        "edition_revisions_created_at_not_null NOT NULL created_at",
         "edition_revisions_created_by_run_fkey FOREIGN KEY (created_by_run) REFERENCES publication_runs(id)",
-        "edition_revisions_failed_pages_not_null NOT NULL failed_pages",
-        "edition_revisions_id_not_null NOT NULL id",
         "edition_revisions_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES issues(id)",
-        "edition_revisions_issue_id_not_null NOT NULL issue_id",
         "edition_revisions_issue_id_revision_hash_key UNIQUE (issue_id, revision_hash)",
-        "edition_revisions_pkey PRIMARY KEY (id)",
-        "edition_revisions_publication_info_not_null NOT NULL publication_info",
-        "edition_revisions_revision_hash_not_null NOT NULL revision_hash"
+        "edition_revisions_pkey PRIMARY KEY (id)"
       ]
     },
     "editions": {
@@ -1109,11 +1019,7 @@
         }
       ],
       "constraints": [
-        "editions_article_count_not_null NOT NULL article_count",
-        "editions_date_not_null NOT NULL date",
-        "editions_page_count_not_null NOT NULL page_count",
-        "editions_pkey PRIMARY KEY (date)",
-        "editions_publication_info_not_null NOT NULL publication_info"
+        "editions_pkey PRIMARY KEY (date)"
       ]
     },
     "issues": {
@@ -1151,9 +1057,6 @@
       ],
       "constraints": [
         "fk_issues_active_edition_revision FOREIGN KEY (active_edition_revision_id) REFERENCES edition_revisions(id)",
-        "issues_canonical_date_not_null NOT NULL canonical_date",
-        "issues_created_at_not_null NOT NULL created_at",
-        "issues_id_not_null NOT NULL id",
         "issues_pkey PRIMARY KEY (id)",
         "issues_source_record_id_fkey FOREIGN KEY (source_record_id) REFERENCES source_records(id)"
       ]
@@ -1187,11 +1090,8 @@
       ],
       "constraints": [
         "legacy_content_aliases_alias_kind_check CHECK ((alias_kind = ANY (ARRAY['article'::text, 'ad'::text])))",
-        "legacy_content_aliases_alias_kind_not_null NOT NULL alias_kind",
         "legacy_content_aliases_content_item_id_fkey FOREIGN KEY (content_item_id) REFERENCES content_items(id)",
-        "legacy_content_aliases_content_item_id_not_null NOT NULL content_item_id",
         "legacy_content_aliases_content_revision_id_fkey FOREIGN KEY (content_revision_id) REFERENCES content_revisions(id)",
-        "legacy_content_aliases_legacy_id_not_null NOT NULL legacy_id",
         "legacy_content_aliases_pkey PRIMARY KEY (legacy_id)"
       ]
     },
@@ -1211,9 +1111,7 @@
         }
       ],
       "constraints": [
-        "legacy_edition_aliases_date_not_null NOT NULL date",
         "legacy_edition_aliases_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES issues(id)",
-        "legacy_edition_aliases_issue_id_not_null NOT NULL issue_id",
         "legacy_edition_aliases_pkey PRIMARY KEY (date)"
       ]
     },
@@ -1257,13 +1155,7 @@
         }
       ],
       "constraints": [
-        "music_artist_not_null NOT NULL artist",
-        "music_month_not_null NOT NULL month",
-        "music_pkey PRIMARY KEY (year, month, rank)",
-        "music_rank_not_null NOT NULL rank",
-        "music_title_not_null NOT NULL title",
-        "music_year_not_null NOT NULL year",
-        "music_youtube_id_not_null NOT NULL youtube_id"
+        "music_pkey PRIMARY KEY (year, month, rank)"
       ]
     },
     "publication_run_events": {
@@ -1306,12 +1198,8 @@
         }
       ],
       "constraints": [
-        "publication_run_events_at_not_null NOT NULL at",
-        "publication_run_events_id_not_null NOT NULL id",
         "publication_run_events_pkey PRIMARY KEY (id)",
-        "publication_run_events_run_id_fkey FOREIGN KEY (run_id) REFERENCES publication_runs(id)",
-        "publication_run_events_run_id_not_null NOT NULL run_id",
-        "publication_run_events_to_state_not_null NOT NULL to_state"
+        "publication_run_events_run_id_fkey FOREIGN KEY (run_id) REFERENCES publication_runs(id)"
       ]
     },
     "publication_runs": {
@@ -1360,14 +1248,9 @@
         }
       ],
       "constraints": [
-        "publication_runs_id_not_null NOT NULL id",
         "publication_runs_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES issues(id)",
-        "publication_runs_metadata_not_null NOT NULL metadata",
         "publication_runs_pkey PRIMARY KEY (id)",
-        "publication_runs_started_at_not_null NOT NULL started_at",
-        "publication_runs_state_check CHECK ((state = ANY (ARRAY['discovered'::text, 'acquired'::text, 'ocr_candidate'::text, 'assets_staged'::text, 'db_revision_staged'::text, 'validated'::text, 'active'::text, 'failed'::text, 'rolled_back'::text])))",
-        "publication_runs_state_not_null NOT NULL state",
-        "publication_runs_updated_at_not_null NOT NULL updated_at"
+        "publication_runs_state_check CHECK ((state = ANY (ARRAY['discovered'::text, 'acquired'::text, 'ocr_candidate'::text, 'assets_staged'::text, 'db_revision_staged'::text, 'validated'::text, 'active'::text, 'failed'::text, 'rolled_back'::text])))"
       ]
     },
     "rag_index_builds": {
@@ -1440,16 +1323,8 @@
         }
       ],
       "constraints": [
-        "rag_index_builds_corpus_version_not_null NOT NULL corpus_version",
-        "rag_index_builds_created_at_not_null NOT NULL created_at",
-        "rag_index_builds_embedding_model_not_null NOT NULL embedding_model",
-        "rag_index_builds_id_not_null NOT NULL id",
-        "rag_index_builds_image_embedding_input_version_not_null NOT NULL image_embedding_input_version",
-        "rag_index_builds_pipeline_version_not_null NOT NULL pipeline_version",
         "rag_index_builds_pkey PRIMARY KEY (id)",
-        "rag_index_builds_status_check CHECK ((status = ANY (ARRAY['building'::text, 'validated'::text, 'active'::text, 'failed'::text, 'retired'::text])))",
-        "rag_index_builds_status_not_null NOT NULL status",
-        "rag_index_builds_text_embedding_input_version_not_null NOT NULL text_embedding_input_version"
+        "rag_index_builds_status_check CHECK ((status = ANY (ARRAY['building'::text, 'validated'::text, 'active'::text, 'failed'::text, 'retired'::text])))"
       ]
     },
     "schema_migrations": {
@@ -1486,11 +1361,7 @@
         }
       ],
       "constraints": [
-        "schema_migrations_applied_at_not_null NOT NULL applied_at",
-        "schema_migrations_checksum_not_null NOT NULL checksum",
-        "schema_migrations_id_not_null NOT NULL id",
-        "schema_migrations_pkey PRIMARY KEY (id)",
-        "schema_migrations_runner_version_not_null NOT NULL runner_version"
+        "schema_migrations_pkey PRIMARY KEY (id)"
       ]
     },
     "source_records": {
@@ -1533,14 +1404,8 @@
         }
       ],
       "constraints": [
-        "source_records_first_seen_at_not_null NOT NULL first_seen_at",
-        "source_records_id_not_null NOT NULL id",
         "source_records_kind_check CHECK ((kind = ANY (ARRAY['issue_parent'::text, 'child_page'::text, 'supplement'::text, 'duplicate'::text, 'excluded'::text, 'ambiguous'::text])))",
-        "source_records_kind_not_null NOT NULL kind",
-        "source_records_metadata_not_null NOT NULL metadata",
         "source_records_pkey PRIMARY KEY (id)",
-        "source_records_pointer_not_null NOT NULL pointer",
-        "source_records_source_system_not_null NOT NULL source_system",
         "source_records_source_system_pointer_key UNIQUE (source_system, pointer)"
       ]
     },
@@ -1602,11 +1467,7 @@
         }
       ],
       "constraints": [
-        "weather_date_not_null NOT NULL date",
-        "weather_is_estimated_not_null NOT NULL is_estimated",
-        "weather_pkey PRIMARY KEY (date, scope)",
-        "weather_scope_not_null NOT NULL scope",
-        "weather_source_not_null NOT NULL source"
+        "weather_pkey PRIMARY KEY (date, scope)"
       ]
     }
   },

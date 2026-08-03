@@ -172,10 +172,13 @@ export async function introspectSchemaViaExecutor(executor) {
                    ORDER BY column_name`,
             params: [tablename],
         });
+        // contype 'n' (NOT NULL) rows exist only on Postgres 18+ (PGlite);
+        // nullability is captured per-column, so exclude them to keep the
+        // live Postgres 17 (Neon) schema comparable with the snapshot.
         const constraints = await executor.query({
             text: `SELECT conname || ' ' || pg_get_constraintdef(oid) AS def
                    FROM pg_constraint
-                   WHERE conrelid = $1::regclass
+                   WHERE conrelid = $1::regclass AND contype <> 'n'
                    ORDER BY conname`,
             params: [tablename],
         });
