@@ -17,7 +17,7 @@ versioned serving, and the rollback drill.
    user's Vercel decision. The serving flip (step 7) requires the new code
    in production; steps 1–6 are safe under the OLD code (expand-only schema,
    no serving change).
-4. Fresh ADC (`npx tsx scripts/dev/verify-adc.ts`), and `DATABASE_URL` set
+4. Fresh ADC (`npx tsx scripts/google/verify-adc.ts`), and `DATABASE_URL` set
    to production for each command below.
 5. The import artifact directory (chunks/images JSONL + manifest, final
    counts 13,143 / 2,875) is present and hash-verifies:
@@ -33,7 +33,7 @@ Abort at ANY unexpected output; every step is idempotent or reversible.
 | 1 | Drift check | `pg_dump --schema-only` prod, diff vs the rehearsal dump | No new drift beyond the documented legacy `entities`/`article_entities` |
 | 2 | Migrations | `npm run db:migrate` | 0001–0009 applied; `db:migrate:status` clean; legacy tables untouched |
 | 3 | Identity backfill | `npx tsx scripts/db/backfill-identities.mjs --yes` | ~351 issues / 11,692 items / 11,703 revisions / 11,705 aliases, 0 skipped (~31 batched requests) |
-| 4 | Register corpus | `npx tsx -e` one-liner calling `registerCorpusVersion` from `scripts/rag/setup-eval-db.mjs` with the frozen corpus JSON | row `legacy-8b8207373510d69e` in `corpus_versions` |
+| 4 | Register corpus | `npx tsx scripts/db/register-corpus-version.mjs --yes` | row `legacy-8b8207373510d69e` in `corpus_versions` |
 | 5 | Import vectors | `npx tsx scripts/db/import-build-vectors.mjs --dir <export> --yes` | `insertedChunks: 13143, insertedImages: 2875`; build lands **validated** (never active) |
 | 6 | Activate | `npm run rag:index:build -- --activate build-01KZ… --yes` | status `active`; serving is STILL legacy (env unchanged) |
 | 7 | Shadow | Set `RAG_RETRIEVAL_MODE=shadow`, `RAG_ACTIVE_INDEX_BUILD_ID=build-01KZ…`, `RAG_CORPUS_VERSION=legacy-8b8207373510d69e` in Vercel; redeploy | Users still get legacy answers; shadow telemetry populates |

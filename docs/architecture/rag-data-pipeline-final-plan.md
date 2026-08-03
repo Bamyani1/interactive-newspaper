@@ -28,7 +28,7 @@ one irreversible change.
 
 - Use Application Default Credentials only. Do not use `GOOGLE_API_KEY` or
   `GEMINI_API_KEY` fallbacks.
-- Authenticated local ADC identity: `anwari.works@gmail.com`.
+- Authenticated local ADC identity: `<operator ADC identity>`.
 - Vertex/quota project: `project-8e59f30d-8ed4-4166-a9d`.
 - Vertex location: `global`; stable API version: `v1`.
 - All RAG generation calls use `gemini-3.5-flash-lite`; no Gemini 3.6 RAG call.
@@ -111,7 +111,7 @@ Verified checkpoint gates on 2026-08-02:
 - full unit suite: 78 files passed, 770 tests passed, 12 live golden tests
   skipped by their explicit environment guard;
 - production build: pass, 364 pages generated;
-- ADC preflight: pass for `anwari.works@gmail.com`, Vertex `global`/`v1`, and
+- ADC preflight: pass for `<operator ADC identity>`, Vertex `global`/`v1`, and
   the enabled `us` Document AI OCR processor; no API keys detected.
 
 Phase 1 measured artifacts:

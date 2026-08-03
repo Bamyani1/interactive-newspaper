@@ -51,22 +51,47 @@ export async function pruneBuild(executor, buildId) {
         );
     }
 
-    const chunks = await executor.query({
-        text: `DELETE FROM article_chunks WHERE index_build_id = $1 RETURNING 1`,
+    // Single-statement prune: the gate CTE re-checks BOTH conditions inside
+    // the same snapshot as the deletes, so a concurrent --activate can never
+    // interleave between the check and the destruction (the earlier SELECTs
+    // above exist only for friendly error messages).
+    const [result] = await executor.query({
+        text: `WITH gate AS (
+                   SELECT 1 FROM rag_index_builds b
+                   WHERE b.id = $1 AND b.status <> 'active'
+                     AND EXISTS (
+                       SELECT 1 FROM rag_index_builds o
+                       WHERE o.corpus_version = b.corpus_version
+                         AND o.status = 'active' AND o.id <> b.id
+                     )
+               ), del_chunks AS (
+                   DELETE FROM article_chunks
+                   WHERE index_build_id = $1 AND EXISTS (SELECT 1 FROM gate)
+                   RETURNING 1
+               ), del_images AS (
+                   DELETE FROM article_images
+                   WHERE index_build_id = $1 AND EXISTS (SELECT 1 FROM gate)
+                   RETURNING 1
+               ), del_build AS (
+                   DELETE FROM rag_index_builds
+                   WHERE id = $1 AND status <> 'active' AND EXISTS (SELECT 1 FROM gate)
+                   RETURNING 1
+               )
+               SELECT (SELECT COUNT(*)::int FROM del_chunks) AS chunks,
+                      (SELECT COUNT(*)::int FROM del_images) AS images,
+                      (SELECT COUNT(*)::int FROM del_build) AS build`,
         params: [buildId],
     });
-    const images = await executor.query({
-        text: `DELETE FROM article_images WHERE index_build_id = $1 RETURNING 1`,
-        params: [buildId],
-    });
-    await executor.query({
-        text: `DELETE FROM rag_index_builds WHERE id = $1 AND status <> 'active'`,
-        params: [buildId],
-    });
+    if (Number(result.build) === 0) {
+        throw new Error(
+            `Prune of ${buildId} aborted at execution time: the build's status or its corpus's ` +
+                `active-build changed concurrently. Nothing was deleted; re-run --list and retry.`,
+        );
+    }
     return {
         buildId,
-        deletedChunks: chunks.length,
-        deletedImages: images.length,
+        deletedChunks: Number(result.chunks),
+        deletedImages: Number(result.images),
         survivingActiveBuild: String(active[0].id),
     };
 }

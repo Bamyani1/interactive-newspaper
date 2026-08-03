@@ -105,6 +105,7 @@ remains Phase 8 scope).
 
 ## Next
 
-Phase 8 (deploy/shadow/canary/promotion) and Phase 9 (cleanup/GC) remain
-fully stopped pending explicit approval. Production rollout can import
-the evacuated vectors instead of re-embedding.
+Written at Phase 7 close, Phase 8/9 were stopped pending approval. Later
+the same day the user approved Phase 8; its database steps were executed
+by importing the evacuated vectors (no re-embedding) — see the execution
+log in `rag-phase8-rollout-runbook.md` for the authoritative state.

@@ -75,7 +75,7 @@ contracts.
 | Concern | Locked value |
 |---|---|
 | Authentication | Application Default Credentials only |
-| Authenticated identity | `anwari.works@gmail.com` |
+| Authenticated identity | `<operator ADC identity>` |
 | Vertex/quota project | `project-8e59f30d-8ed4-4166-a9d` |
 | Vertex location | `global` |
 | Google Gen AI API version | stable `v1` |

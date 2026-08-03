@@ -56,8 +56,8 @@ export async function registerCorpusVersion(executor, corpusPath = CORPUS_FILE) 
 
 async function main() {
     console.warn(
-        "WARNING: corpus-version registration is authorized for LOCAL/TEST databases only. " +
-            "Never point DATABASE_URL at production.",
+        "NOTE: production runs are gated by the Phase 8 rollout runbook " +
+            "(docs/architecture/rag-phase8-rollout-runbook.md); this insert is idempotent.",
     );
     if (!process.env.DATABASE_URL) {
         console.error("ERROR: DATABASE_URL is required.");

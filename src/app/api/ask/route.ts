@@ -612,23 +612,20 @@ async function handleStreamingAsk(params: {
                         requestId,
                     );
                 } catch (err) {
-                    console.error(
+                    // Coverage is supplementary caveat metadata; retrieval
+                    // grounding stands on its own. Degrade instead of turning
+                    // one failed stats query into a dead request.
+                    console.warn(
                         JSON.stringify({
-                            level: "error",
+                            level: "warn",
                             route: "/api/ask",
                             requestId,
                             stage: "coverage",
-                            msg: "archive coverage query failed",
+                            msg: "archive coverage query failed; continuing without coverage",
                             err: err instanceof Error ? err.message : String(err),
                         }),
                     );
-                    send({
-                        type: "error",
-                        stage: "coverage",
-                        message: "Archive coverage could not be verified. Please try again.",
-                        requestId,
-                    });
-                    return;
+                    coverage = undefined;
                 }
                 if (coverage) {
                     send({ type: "stage", name: "coverage", elapsedMs: stageElapsed() });
@@ -1244,6 +1241,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             coverageIntent,
         } = reformulated;
         const filters = resolveRetrievalFilters(body.filters, reformulated);
+        // Coverage is supplementary caveat metadata — a failed stats query
+        // degrades to "no coverage" rather than failing the whole request.
         const coverage = await wrapStage("coverage", () =>
             resolveArchiveCoverage(
                 coverageIntent,
@@ -1251,7 +1250,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 globalController.signal,
                 requestId,
             ),
-        );
+        ).catch((err: unknown) => {
+            console.warn(
+                JSON.stringify({
+                    level: "warn",
+                    route: "/api/ask",
+                    requestId,
+                    stage: "coverage",
+                    msg: "archive coverage query failed; continuing without coverage",
+                    err: err instanceof Error ? err.message : String(err),
+                }),
+            );
+            return undefined;
+        });
 
         // ── Agent path for complex questions ──
         if (complexity === "complex") {

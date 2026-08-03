@@ -404,8 +404,8 @@ export async function backfillIdentities(executor) {
 
 async function main() {
     console.warn(
-        "WARNING: Phase 3 identity backfill is authorized for LOCAL/TEST databases only. " +
-            "Never point DATABASE_URL at production.",
+        "NOTE: production runs of this backfill are gated by the Phase 8 rollout runbook " +
+            "(docs/architecture/rag-phase8-rollout-runbook.md); it is idempotent and alias-preserving.",
     );
     if (!process.env.DATABASE_URL) {
         console.error("ERROR: DATABASE_URL is required.");

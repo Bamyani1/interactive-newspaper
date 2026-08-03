@@ -13,6 +13,7 @@
  *   npm run db:seed              — insert data (skip existing editions)
  *   npm run db:reset             — truncate re-seedable tables and re-seed
  *   npm run db:reset -- --include-runtime — also truncate runtime tables (sessions, feedback, spend, rate limits)
+ *   npm run db:reset -- --include-rag-builds — also allowed when finalized (paid) index builds exist
  *   npm run db:reset -- --unlock — reset WITHOUT restoring locked editions
  *   npm run db:seed -- --date 1960-05-11 --editions-dir public/editions --summary-path ocr/runs/1960-05-11/seed-summary.json
  */
@@ -58,6 +59,7 @@ const MUSIC_ARCHIVE = path.join(ROOT, "public/top-10-music/chart-1950-2010.json"
 const isReset = process.argv.includes("--reset");
 const isUnlock = process.argv.includes("--unlock");
 const includeRuntime = process.argv.includes("--include-runtime");
+const includeRagBuilds = process.argv.includes("--include-rag-builds");
 
 // ─── Locked Editions ────────────────────────────────────────────
 // Locked editions are restored from their gold source on every --reset
@@ -170,6 +172,22 @@ async function restoreLockedEditions(savedData) {
 // re-seedable table (plus runtime tables with --include-runtime) in one
 // statement; the migration ledger is never touched.
 async function truncateSeedTables() {
+  // Finalized index builds carry PAID embedding vectors (and identity/asset
+  // state that takes a multi-step pipeline to rebuild). A plain --reset was
+  // historically cheap — refuse to widen its blast radius silently.
+  const guard = await sql.query(
+    `SELECT id, status FROM rag_index_builds
+     WHERE to_regclass('public.rag_index_builds') IS NOT NULL
+       AND status IN ('validated', 'active')
+     ORDER BY created_at DESC LIMIT 3`,
+  ).catch(() => []);
+  if (guard.length > 0 && !includeRagBuilds) {
+    throw new Error(
+      `Refusing --reset: this database holds ${guard.length}+ finalized index build(s) ` +
+        `(${guard.map((b) => `${b.id}:${b.status}`).join(", ")}) whose embedding vectors cost ` +
+        `real API spend to recreate. Re-run with --include-rag-builds to truncate them anyway.`,
+    );
+  }
   const truncated = CANONICAL_TABLES
     .filter((t) => t.kind === "reseedable" || (includeRuntime && t.kind === "runtime"))
     .map((t) => t.name);
