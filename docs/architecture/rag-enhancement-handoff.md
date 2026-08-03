@@ -7,7 +7,7 @@ current commit
 
 Branch: `rag-enhancement`
 
-Status: Phases 0–3 complete and gated; Phase 4 is next
+Status: Phases 0–4 complete and gated; Phase 5 is next
 
 ## Read this first
 
@@ -197,7 +197,8 @@ pipeline. The RAG implementation commits are:
 | `6c40a6b` | Harden retrieval, grounding, coverage, and provenance |
 | `9063aec` | Phase 0–2 handoff documentation |
 | `c292c71` | Prep fixes: test typechecking, silent script guards |
-| (current) | Phase 3: canonical migrations and immutable identities |
+| `2bf0c6c` | Phase 3: canonical migrations and immutable identities |
+| (current) | Phase 4: resumable versioned publisher |
 
 The branch had not been pushed at the implementation checkpoint; the user
 explicitly chose not to push yet (Vercel preview-deploy risk while vector
@@ -355,6 +356,58 @@ live/paid golden tests skipped, ESLint clean, app and test typechecks clean,
 production build passed, evaluation-freeze verification passed,
 `git diff --check` clean. Production Neon/R2 untouched.
 
+### Phase 4 — Resumable versioned publisher
+
+- `src/server/publisher/state-machine.ts`: publication pipeline
+  `discovered → acquired → ocr_candidate → assets_staged →
+  db_revision_staged → validated → active` (plus `failed`/`rolled_back`) over
+  `publication_runs`/`publication_run_events`. Every transition is one
+  CTE-chained statement inside one non-interactive transaction, so the state
+  change, its event row, and (for activation) the issue pointer are
+  all-or-nothing; mutators re-read after the batch and fail closed on guard
+  misses. `activateRevision` switches `issues.active_edition_revision_id`
+  atomically; `rollbackActiveRevision` switches it back.
+- `src/server/publisher/revision-writer.ts`: stages an edition.json into
+  immutable revisions, preserving expected/processed/failed page lineage,
+  fragment/continuation evidence, and articles, ads, and substantive
+  `other_content` as distinct content types (retrieval policy — not the
+  writer — keeps ads/other out of default RAG). Idempotent re-staging on
+  `(issue_id, revision_hash)`; ambiguous re-OCR matches persist to
+  `content_identity_conflicts` and abort atomically. Ad legacy aliases
+  (`ad:<date>:<position>`, deferred from Phase 3) are minted here. Asset
+  rows/references come from asset-manifest v2 and are stored by ID, never
+  reconstructed from filenames.
+- `src/server/publisher/validate-revision.ts`: read-only pre-activation
+  checks (page lineage, non-empty content, active-revision pointers, alias
+  revision pins, asset existence); embedding readiness truthfully reports
+  not-applicable until a Phase 5 index build exists.
+- `src/server/publisher/acquire.ts`: atomic `.part`-then-rename source
+  acquisition that validates bytes, dimensions, MIME magic, and SHA-256 even
+  when the destination already exists.
+- `scripts/db/publish-edition.mjs` (`npm run db:publish-edition`):
+  stage/validate/activate/rollback/resume; requires `DATABASE_URL` plus
+  `--yes` and is authorized for local/test databases only in this phase.
+- `src/lib/image-url.ts`: content-addressed fork — a bare 64-hex `.webp`
+  filename resolves to `ocr-assets/<sha256>.webp`; every legacy filename
+  keeps `<date>/images/<name>.webp`. All 2,876 current production URLs are
+  legacy-shaped, so behavior for existing data is unchanged.
+- `scripts/db/upload-images.mjs`: asset-manifest schema v2 (adds per-asset
+  `source_sha256` and `mime_type`; optimization/upload logic untouched).
+- The OCR pipeline (`ocr/`, `scripts/ocr/process-edition.sh`) was not
+  modified; the planned optional staging hook was deliberately skipped to
+  keep the locked pipeline untouched — the CLI is invoked manually instead.
+
+Phase 4 verification: 45 new tests (publisher state machine incl. crash/retry
+at every boundary, illegal-transition and concurrent-guard cases, atomic
+activation under injected failure, rollback with both revisions surviving;
+revision-writer contract fixtures incl. the golden proof that staged revisions
+hydrate byte-identically to the legacy adapter output, expand-only row-count
+proof, idempotent re-stage, ambiguity atomicity; validation; acquisition;
+image-URL fork). Full gate: 919 tests passed with 12 live/paid golden tests
+skipped, ESLint clean, app and test typechecks clean, production build passed,
+evaluation-freeze verification passed, `git diff --check` clean. Production
+Neon/R2 untouched.
+
 ## Main implementation files
 
 | Area | Files |
@@ -371,6 +424,7 @@ production build passed, evaluation-freeze verification passed,
 | API orchestration | `src/app/api/ask/route.ts`, `src/app/api/ask/session/route.ts`, `src/app/api/ask/feedback/route.ts` |
 | Canonical migrations | `scripts/db/migrations/`, `scripts/db/lib/migration-runner.ts`, `scripts/db/lib/neon-executor.ts`, `scripts/db/lib/sql-statements.ts`, `scripts/db/migrate.mjs`, `scripts/db/schema-snapshot.json` |
 | Identity and backfills | `src/server/identity/content-identity.ts`, `src/server/identity/ulid.ts`, `scripts/db/backfill-identities.mjs`, `scripts/db/register-corpus-version.mjs` |
+| Versioned publisher | `src/server/publisher/state-machine.ts`, `src/server/publisher/revision-writer.ts`, `src/server/publisher/validate-revision.ts`, `src/server/publisher/acquire.ts`, `scripts/db/publish-edition.mjs` |
 | Data scripts | `scripts/db/seed.mjs`, `scripts/db/backfill-rag-records.mjs`, `scripts/db/embed.mjs` (legacy), `scripts/db/migrate-ask-sessions.mjs` (deprecated) |
 | Isolated DB tests | `tests/db/` (PGlite harness, frozen legacy fixtures, runner/upgrade/seed/identity suites) |
 | Frozen evidence | `evaluation/rag/` |
@@ -458,17 +512,6 @@ As of this handoff:
 The detailed acceptance criteria are in the final plan. The next agent should
 complete these phases sequentially and make one reviewable commit per phase.
 
-### Phase 4 — Resumable versioned publisher
-
-- Implement the publication state machine from discovery through atomic active
-  revision selection.
-- Keep the OCR pipeline unchanged.
-- Preserve manifest canvases, processed/failed pages, continuation lineage,
-  all content types, images, captions, credits, and source provenance.
-- Stage validated content-addressed WebP derivatives and activate only after all
-  checks pass.
-- Add crash/retry and rollback tests at every boundary.
-
 ### Phase 5 — Asset and embedding operations
 
 - Bootstrap the asset registry from current database and R2 references.
@@ -522,8 +565,11 @@ complete these phases sequentially and make one reviewable commit per phase.
 
 1. Confirm the correct worktree, branch, clean status, and freeze hash.
 2. Read the final plan and this handoff completely.
-3. Implement Phase 4 only; do not mix asset-registry/backfill work into its
-   commit.
+3. Implement Phase 5 only; do not mix session/privacy or evaluation work into
+   its commit. Announce the read-only production SELECT + R2 LIST before
+   running the registry bootstrap or the backfill dry-run, and STOP after
+   committing the cost estimate — the full embedding backfill needs its own
+   explicit approval.
 4. Run the smallest relevant tests while editing and the full gate before the
    phase commit.
 5. Record actual results and newly discovered constraints in the final plan and
@@ -535,5 +581,5 @@ complete these phases sequentially and make one reviewable commit per phase.
 8. Do not inspect/tune against blind holdout evidence before candidate output is
    frozen.
 
-The immediate next implementation task is Phase 4, not disabling current RAG
+The immediate next implementation task is Phase 5, not disabling current RAG
 components and not running the blind holdout prematurely.

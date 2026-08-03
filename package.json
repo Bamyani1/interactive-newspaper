@@ -36,7 +36,8 @@
     "test:invariants": "vitest run tests/ocr/pipeline-invariants.test.ts",
     "images:upload": "node scripts/db/upload-images.mjs",
     "images:gc": "node scripts/db/gc-r2-assets.mjs",
-    "test:typecheck": "tsc -p tsconfig.test.json --noEmit"
+    "test:typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "db:publish-edition": "node --import tsx scripts/db/publish-edition.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1030.0",

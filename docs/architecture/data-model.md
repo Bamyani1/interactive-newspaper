@@ -54,7 +54,7 @@ ocr Python pipeline                      (see docs/architecture/ocr-pipeline.md)
         │
         ▼
 public/editions/<date>/edition.json      ← canonical OCR output (OcrEdition shape)
-public/editions/<date>/images/*.jpg      ← raw JPEG scans
+public/editions/<date>/images/*          ← raw scans (legacy) or <sha256>.webp (post-upload)
         │
         ▼
 npm run db:seed  →  scripts/db/seed.mjs
@@ -100,18 +100,21 @@ UPDATE article_chunks/article_images with vector, model, version, and hash
 ### C. Image CDN path
 
 ```
-public/editions/<date>/images/*.jpg
+public/editions/<date>/images/*
         │
 npm run images:upload
         ▼
 scripts/db/upload-images.mjs
-  sharp: JPEG → WebP (quality 85)
-  S3Client PUT → R2 bucket key: <date>/images/<file>.webp
+  sharp: source → WebP (quality ladder; see ocr-pipeline.md)
+  rename to <sha256-of-webp-bytes>.webp; rewrite edition.json references
+  S3Client PUT → R2 bucket key: ocr-assets/<sha256>.webp
+  write asset-manifest.json (schema_version 2)
         │
         ▼
-CDN: IMAGE_BASE_URL/<date>/images/<file>.webp   (production)
+CDN: IMAGE_BASE_URL/ocr-assets/<sha256>.webp    (hash-shaped filenames)
+     IMAGE_BASE_URL/<date>/images/<file>.webp   (all other filenames)
                   OR
-/api/editions/<date>/images/<file>              (dev proxy)
+/api/editions/<date>/images/<file>              (dev proxy, both shapes)
 ```
 
 ### D. Query paths
@@ -352,7 +355,7 @@ Source: `scripts/db/migrations/0002_legacy_core.sql:85-93`. Composite PK `(year,
 
 ### Phase 3 identity and publication tables
 
-Created by migrations `0004` and `0006`–`0009`. Column-by-column detail lives in those migration files, deliberately not duplicated here. Nothing in the runtime writes these yet; `backfill-identities.mjs` and `register-corpus-version.mjs` (data-only, `--yes`-gated, local/test databases only in this phase) are the only writers so far.
+Created by migrations `0004` and `0006`–`0009`. Column-by-column detail lives in those migration files, deliberately not duplicated here. Nothing in the runtime writes these yet; the writers are `backfill-identities.mjs`, `register-corpus-version.mjs`, and the Phase 4 publisher below (all data-only, `--yes`-gated, local/test databases only in this phase).
 
 | Table | Purpose |
 |---|---|
@@ -373,6 +376,66 @@ Created by migrations `0004` and `0006`–`0009`. Column-by-column detail lives 
 | `publication_run_events` | Append-only transition log per run |
 | `corpus_versions` | Corpus version registry; the frozen legacy snapshot row is registered by `register-corpus-version.mjs`, never by migrations |
 
+### Versioned publisher (Phase 4)
+
+`src/server/publisher/` drives publication over the Phase 3 tables. It never
+writes the legacy tables (`editions`/`articles`/`ads`); those still come from
+`db:seed`.
+
+**State machine** (`state-machine.ts`). Each `publication_runs` row advances
+one step at a time along `discovered` → `acquired` → `ocr_candidate` →
+`assets_staged` → `db_revision_staged` → `validated` → `active`; any
+non-terminal state may move to `failed`, and `active` may move to
+`rolled_back`. Every transition is one CTE statement in which the
+`publication_run_events` INSERT selects from the guarded run UPDATE's
+RETURNING set, so the event ledger and run row can never disagree.
+`activateRevision` extends the same chain to flip
+`issues.active_edition_revision_id` atomically with the `validated` → `active`
+move — all three writes or none; `rollbackActiveRevision` repoints the issue
+at a prior revision the same way. `resumeRun` is a pure read that tells a
+driver what to re-verify and do next from the run's current state; a crashed
+run resumes instead of restarting.
+
+**Revision writer** (`revision-writer.ts`). Maps one `edition.json` through
+the existing ocr-adapter (never reimplementing its rules) onto immutable rows:
+`edition_revisions` + `edition_revision_pages`, plus `content_items` /
+`content_revisions` for articles, ads, and substantive `other_content`
+(entries with a non-empty body — the legacy seed path still drops all
+`other_content`). Everything is planned in memory, then written in one
+transaction. Re-staging identical input is idempotent: an existing
+`(issue_id, revision_hash)` returns the existing revision and writes nothing.
+An ambiguous identity match writes `content_identity_conflicts` review rows
+and throws before any content write. Asset rows and per-revision
+`asset_references` come from the v2 asset manifest (see
+[Image storage](#image-storage)).
+
+`edition_revisions` carries the page lineage the legacy tables drop —
+`expected_pages`, `processed_pages`, `failed_pages`, and per-page status rows
+— while legacy `editions.page_count` is untouched.
+
+**Ad aliases.** Ads now get `legacy_content_aliases` rows keyed
+`'ad:{date}:{position}'` (position = index in the adapter's `transformAds`
+output). The key is regenerated per staging and is not stable across differing
+inputs — an ad added mid-list shifts later positions. It exists so ads,
+deferred from Phase 3, still land in the alias table with a queryable handle.
+
+**Validation** (`validate-revision.ts`). Read-only pre-activation checks:
+page-row count vs `expected_pages`, at least one content item, no unpointed
+`active_revision_id`, no alias without a revision pin, no `asset_references`
+row pointing at an unregistered asset. Embedding readiness is reported
+truthfully as `not_applicable_no_index_build` until a Phase 5 index build
+exists — never passed.
+
+**CLI.** `npm run db:publish-edition` (`scripts/db/publish-edition.mjs`) runs
+`--stage <date>` / `--validate <revId>` / `--activate <revId> --run <id>` /
+`--rollback-to <revId> --run <id>` / `--resume <id>`. Requires `DATABASE_URL`
+and `--yes`; like the other identity writers, it authorizes local/test
+databases only until the Phase 8 rollout approval. `acquire.ts` covers the
+`discovered` → `acquired` step for runs that fetch source pages: downloads
+stream to a `.part` file and only an atomic rename creates the destination,
+and size/MIME/sha256 validation applies even when the destination already
+exists — a passing file short-circuits, a failing one is re-downloaded.
+
 ---
 
 ## The `edition.json` contract
@@ -390,7 +453,7 @@ TypeScript mirror: `src/types/index.ts:147-155` (`OcrEdition`).
 | `ads` | `Ad[]` | no | raw, no enrichment |
 | `enriched_ads` | `EnrichedAd[]` | no | added by Phase 4; adapter prefers this over `ads` |
 | `categories` | `string[]` | no | parallel to `articles[]`; optional classification override; adapter checks it before falling back to `article.category` then heuristics |
-| `other_content` | `{title, body}[]` | no | triage rejects — not written to DB |
+| `other_content` | `{title, body}[]` | no | triage rejects — not written to the legacy tables; the Phase 4 revision writer stages substantive entries (non-empty body) as versioned content |
 
 ### `MergedArticle` per item
 
@@ -651,26 +714,51 @@ The seed does not delete and recreate current articles. For every active vector 
 
 ## Image storage
 
-Local path: `public/editions/<date>/images/<filename>.(jpg|jpeg|png|gif|tif|tiff)`
+Local path: `public/editions/<date>/images/<filename>`
 
-R2 CDN path: `{IMAGE_BASE_URL}/<date>/images/<filename>.webp`
+Two R2 namespaces:
+
+- **Content-addressed** (current uploads): `ocr-assets/<sha256>.webp`, where
+  the hash is the SHA-256 of the final WebP bytes. Shared across editions —
+  no date segment; identical bytes upload once.
+- **Legacy** (frozen): `<date>/images/<filename>.webp`. Existing objects stay;
+  nothing writes here anymore.
 
 ### Upload flow
 
-`scripts/db/upload-images.mjs`:
+`scripts/db/upload-images.mjs` (`npm run images:upload`):
 
-1. Iterate the local images directory
-2. For each file, convert to WebP at quality 85 using `sharp`
-3. Upload to Cloudflare R2 via the AWS S3 SDK (key: `<date>/images/<filename>.webp`)
-4. Idempotent: HEAD check before PUT unless `--force`
-5. Write `upload-manifest.json` to the edition directory
+1. Collect only image references from `edition.json` (unreferenced local files are deleted)
+2. Encode to WebP with `sharp` under the size/dimension policy in [ocr-pipeline.md](ocr-pipeline.md) (quality ladder 85/80/75, capped long edge, <500 KiB per asset)
+3. Rename the local file to `<sha256>.webp` and rewrite the `edition.json` references to `images/<sha256>.webp`
+4. Upload to Cloudflare R2 via the AWS S3 SDK (key: `ocr-assets/<sha256>.webp`); HEAD check before PUT unless `--force`
+5. Write `asset-manifest.json` to the edition directory
+
+### Asset manifest v2
+
+`asset-manifest.json` is `{schema_version: 2, date, total_bytes, assets[]}`.
+Each entry (built by `buildAssetManifestEntry`, exported for unit tests):
+`hash` (SHA-256 of the uploaded WebP bytes — the asset's identity),
+`public_path` (`images/<hash>.webp`), `r2_key` (`ocr-assets/<hash>.webp`),
+`size_bytes`, `width`, `height`, `quality`, `source_sha256` (SHA-256 of the
+original source bytes, pre-`sharp`), `mime_type` (`image/webp`), and upload
+`status`. The Phase 4 revision writer turns these entries into `assets` and
+`asset_references` rows, so the manifest is the provenance link between a
+content revision's images and the R2 objects behind them.
 
 ### URL resolution
 
-`src/lib/image-url.ts :: resolveImageUrl(date, filename)`:
+`src/lib/image-url.ts :: resolveImageUrl(date, filename)` forks on filename
+shape:
 
-- If `IMAGE_BASE_URL` is set (production): returns `${IMAGE_BASE_URL}/<date>/images/<file>.webp`
-- Otherwise (dev): returns `/api/editions/<date>/images/<file>`
+- Hash-shaped filename (lowercase 64-hex `<sha256>.webp`, optionally prefixed
+  `images/`) with `IMAGE_BASE_URL` set: returns `${IMAGE_BASE_URL}/ocr-assets/<sha256>.webp` — no date segment
+- Any other filename with `IMAGE_BASE_URL` set: returns `${IMAGE_BASE_URL}/<date>/images/<file>.webp` (legacy namespace)
+- Without `IMAGE_BASE_URL` (dev): returns `/api/editions/<date>/images/<file>` for both shapes — the proxy is unchanged
+
+All 2,876 current production image URLs are legacy-shaped, so the
+content-addressed branch is forward-looking: it serves editions published
+through the current upload flow, not a migration of existing data.
 
 Called in `article-transform.ts` and `ad-transform.ts` at seed time.
 
@@ -732,7 +820,7 @@ Accepted tradeoffs. These are intentional, not TODOs.
 
 1. **Schema and online backfill are separate operations.** `db:migrate` and `db:backfill:rag-records` never call Google; `db:embed` is the explicit, resumable online step. During the gap, chunk FTS works while current-model vector coverage is incomplete.
 2. **Embedding fingerprints are intentionally exact.** A normalization or chunking change invalidates affected hashes. This may require a broad re-embed, but it prevents stale vectors from being silently reused.
-3. **Ads use SERIAL PK and can't be upserted.** Every re-seed does a DELETE + INSERT; ad IDs change across seeds. **Accepted because** ads have no cross-reference surface (no URLs, no deep links). If they ever do, this needs rethinking.
+3. **Ads use SERIAL PK and can't be upserted.** Every re-seed does a DELETE + INSERT; ad IDs change across seeds. **Accepted because** the legacy tables give ads no cross-reference surface (no URLs, no deep links). The Phase 4 publisher now gives ads a versioned identity (`content_items` plus `'ad:{date}:{position}'` aliases — positional, regenerated per staging, unrelated to the SERIAL ids), but nothing in the runtime serves it yet; if legacy ad IDs ever grow a reference surface, this needs rethinking.
 4. **Per-instance rate-limit fallback under-counts across Vercel instances.** During Neon outages, effective per-IP limit is `N × instance_count`. **Accepted because** the primary path (Neon-backed) handles correctness; the fallback only fires during infrastructure failure.
 5. **Neon cancellation is HTTP-driver dependent.** Every hot-path transaction receives `fetchOptions.signal`, and the caller also races the abort event. This guarantees request completion; server-side cancellation still depends on Neon honoring the signal.
 6. **Gold edition `locked-editions.json` is the only dated-article protection mechanism.** Any other edition can be destroyed by `db:reset --unlock`. **Accepted because** all other editions are reproducible from `edition.json` on disk; only the gold regression baseline matters for verification.
