@@ -31,6 +31,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { neonConfig } from "@neondatabase/serverless";
 import {
     computeRunTotals,
     finalizeRunFile,
@@ -369,6 +370,7 @@ interface CliArgs {
     yes: boolean;
     bands: string | null;
     receipt: string | null;
+    limit: number | null;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -380,6 +382,7 @@ function parseArgs(argv: string[]): CliArgs {
         yes: false,
         bands: null,
         receipt: null,
+        limit: null,
     };
     for (let i = 0; i < argv.length; i += 1) {
         const flag = argv[i];
@@ -418,6 +421,14 @@ function parseArgs(argv: string[]): CliArgs {
             case "--receipt":
                 args.receipt = next();
                 break;
+            case "--limit": {
+                const value = Number(next());
+                if (!Number.isInteger(value) || value < 1) {
+                    throw new Error(`--limit must be a positive integer, got ${value}`);
+                }
+                args.limit = value;
+                break;
+            }
             case "--yes":
                 args.yes = true;
                 break;
@@ -487,6 +498,14 @@ async function main(): Promise<void> {
     // The in-process route reads DATABASE_URL; evaluation runs point it at
     // the dedicated evaluation database. Guarded main()-only usage.
     process.env.DATABASE_URL = evalDatabaseUrl;
+    // Local eval bridge: neonConfig must come from the SAME module instance
+    // the app code resolves (static import → CJS build under tsx). A dynamic
+    // import() here loads the driver's ESM copy, whose neonConfig the app's
+    // clients never read — the setting would silently not apply.
+    const shimUrl = process.env.NEON_HTTP_SHIM_URL?.trim();
+    if (shimUrl) {
+        neonConfig.fetchEndpoint = shimUrl;
+    }
     process.env.RAG_RETRIEVAL_MODE = args.mode;
     if (args.build) process.env.RAG_ACTIVE_INDEX_BUILD_ID = args.build;
 
@@ -506,6 +525,12 @@ async function main(): Promise<void> {
             ? path.resolve("tests/api/rag-golden-questions.json")
             : path.resolve("evaluation/rag/holdout/rag-holdout-v1.json");
     const catalog = loadBlindQuestions(datasetPath);
+    // Smoke passes: --limit truncates by question COUNT in catalog order.
+    // Only the blind-safe identity fields are ever touched, so the
+    // blindness boundary is unchanged.
+    if (args.limit !== null) {
+        catalog.questions = catalog.questions.slice(0, args.limit);
+    }
 
     if (args.dataset === "holdout") {
         if (!args.bands || !args.receipt) {

@@ -711,3 +711,16 @@ complete these phases sequentially and make one reviewable commit per phase.
 The immediate next implementation task is Phase 6 (after the Phase 5 approval
 gate), not disabling current RAG components and not running the blind holdout
 prematurely.
+
+## Phase 7 execution actuals (2026-08-03)
+
+Phase 7 ran to completion; see
+`docs/architecture/rag-phase7-evaluation-report.md` for the full report.
+Headline: candidate `build-01KZ43MP8XEGE3J7RAJH3K7W45` **passed all locked
+acceptance bands on the blind holdout** (recall@8 1.000, nDCG@8 0.974,
+injection resistance 1.0); the legacy baseline failed two bands. Neon's
+free-tier allowance was exhausted mid-phase; the eval environment moved to
+local PostgreSQL 17 + pgvector behind `scripts/db/lib/neon-http-shim.mjs`
+with the paid vectors evacuated and restored intact (SHA-256 manifest).
+Freeze artifacts and run records are committed under `evaluation/rag/`.
+Phase 8/9 remain stopped pending explicit approval.

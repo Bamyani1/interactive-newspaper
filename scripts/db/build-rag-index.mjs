@@ -590,9 +590,13 @@ export function sniffImageMime(buffer) {
  *
  * @param {QueryExecutorLike} executor
  * @param {string} buildId
- * @param {{ embedFn?: EmbedFnLike, fetchObject?: FetchObjectLike }} [options]
+ * @param {{ embedFn?: EmbedFnLike, fetchObject?: FetchObjectLike, maxItems?: number }} [options]
  */
-export async function embedBuildImages(executor, buildId, { embedFn, fetchObject } = {}) {
+export async function embedBuildImages(
+    executor,
+    buildId,
+    { embedFn, fetchObject, maxItems = Infinity } = {},
+) {
     if (typeof embedFn !== "function") throw new Error("embedBuildImages requires an embedFn.");
     if (typeof fetchObject !== "function") {
         throw new Error("embedBuildImages requires a fetchObject.");
@@ -630,6 +634,7 @@ export async function embedBuildImages(executor, buildId, { embedFn, fetchObject
             skipped += 1;
             continue;
         }
+        if (planned >= maxItems) break;
         planned += 1;
 
         try {
@@ -871,9 +876,34 @@ async function main() {
         const { embedDocuments, hasGoogleCredentials } = embeddingsMod.default ?? embeddingsMod;
         if (!hasGoogleCredentials()) fail("GOOGLE_CLOUD_PROJECT is required for Vertex AI ADC.");
 
+        // Vertex embedContent for gemini-embedding-2 accepts exactly ONE
+        // content per request (verified live: multi-content batches are
+        // rejected wholesale). Adapt to per-item calls with bounded
+        // concurrency; the embedFn contract (N inputs -> N vectors, ordered)
+        // and all failure-isolation semantics upstream are unchanged.
+        const EMBED_CONCURRENCY = 6;
+        const perItemEmbedFn = async (inputs, opts) => {
+            const vectors = new Array(inputs.length);
+            let next = 0;
+            const workers = Array.from(
+                { length: Math.min(EMBED_CONCURRENCY, inputs.length) },
+                async () => {
+                    for (;;) {
+                        const index = next;
+                        next += 1;
+                        if (index >= inputs.length) return;
+                        const [vector] = await embedDocuments([inputs[index]], opts);
+                        vectors[index] = vector;
+                    }
+                },
+            );
+            await Promise.all(workers);
+            return vectors;
+        };
+
         if (embedTextId) {
             const result = await embedBuildText(executor, embedTextId, {
-                embedFn: embedDocuments,
+                embedFn: perItemEmbedFn,
             });
             console.log(JSON.stringify(result, null, 2));
             return;
@@ -897,9 +927,11 @@ async function main() {
             );
             return response.Body;
         };
+        const limitArg = argValue("--limit");
         const result = await embedBuildImages(executor, embedImagesId, {
-            embedFn: embedDocuments,
+            embedFn: perItemEmbedFn,
             fetchObject,
+            maxItems: limitArg ? Number(limitArg) : Infinity,
         });
         console.log(JSON.stringify(result, null, 2));
         return;
