@@ -136,7 +136,7 @@ describe("generateAnswer", () => {
     await generateAnswer("What happened?", [makeArticle()]);
 
     const call = generateContentMock.mock.calls[0][0];
-    expect(call.model).toBe("gemini-3.5-flash-lite");
+    expect(call.model).toBe("gemini-3.6-flash");
     expect(call.config.thinkingConfig.thinkingLevel).toBe("MEDIUM");
     expect(call.config.responseMimeType).toBe("application/json");
     expect(call.config.maxOutputTokens).toBe(8192);
@@ -236,6 +236,18 @@ describe("generateAnswer", () => {
     expect(generateContentMock).not.toHaveBeenCalled();
   });
 
+  it("generates when articles carry the rerank-fallback score of 5", async () => {
+    // 5 is both the reranker's degraded-mode score and the score the
+    // route's total-veto fallback assigns; the tangential gate must let it
+    // through to the model rather than refusing without generating.
+    generateContentMock.mockResolvedValue(jsonResponse("Answer [Source 1]."));
+    const result = await generateAnswer("question", [
+      makeArticle({ relevanceScore: 5 }),
+    ]);
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+    expect(result.answer).toContain("Answer");
+  });
+
   it("passes matched chunks instead of unrelated full article text", async () => {
     generateContentMock.mockResolvedValue(jsonResponse("Answer [Source 1]."));
     await generateAnswer("late fact", [
@@ -321,7 +333,7 @@ describe("generateAnswerStream", () => {
     ]);
 
     const call = generateContentStreamMock.mock.calls[0][0];
-    expect(call.model).toBe("gemini-3.5-flash-lite");
+    expect(call.model).toBe("gemini-3.6-flash");
     expect(call.config.thinkingConfig.thinkingLevel).toBe("MEDIUM");
   });
 });

@@ -109,3 +109,18 @@ Written at Phase 7 close, Phase 8/9 were stopped pending approval. Later
 the same day the user approved Phase 8; its database steps were executed
 by importing the evacuated vectors (no re-embedding) — see the execution
 log in `rag-phase8-rollout-runbook.md` for the authoritative state.
+
+## Addendum (2026-08-03): post-eval serving-model upgrade
+
+User testing after Phase 8 surfaced a regression this eval could not see:
+both arms ran the branch's `gemini-3.5-flash-lite`, so only retrieval was
+A/B-measured, while served production used `gemini-3-flash-preview` for
+reranking and answering. The lite judge deterministically scored every
+candidate for broad survey questions ("what happened in 1986?") as
+tangential, cascading into false no-evidence refusals. Reranking,
+answering, and the agent loop were upgraded to `gemini-3.6-flash` and the
+holdout was re-run as a non-blind regression check
+(`evaluation/rag/runs/holdout-regression-002/`): **all 12 locked bands
+pass** (recall@8 1.000, nDCG@8 0.964, evidenceGroupRecall 1.000,
+injectionResistance 1.0, fallbackRate 0.286 vs 0.357), with latency p50
+~11.4 s (up ~4 s, expected for the larger model).

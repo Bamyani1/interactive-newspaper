@@ -22,6 +22,7 @@ import type {
     GenerateContentResponseUsageMetadata,
 } from "@google/genai";
 import {
+    RAG_ANSWER_MODEL,
     RAG_EMBEDDING_MODEL,
     RAG_GENERATION_MODEL,
 } from "@/src/lib/rag-model-config";
@@ -30,11 +31,12 @@ import { getRagEvaluationConfig } from "@/src/lib/rag-evaluation";
 // USD per 1,000,000 tokens for standard online requests at global.
 const PRICE_PER_MTOKEN: Record<string, { input: number; output: number }> = {
     [RAG_GENERATION_MODEL]: { input: 0.3, output: 2.5 },
+    [RAG_ANSWER_MODEL]: { input: 1.5, output: 7.5 },
     [RAG_EMBEDDING_MODEL]: { input: 0.2, output: 0 },
 };
 const GEMINI_EMBEDDING_2_IMAGE_USD = 0.00012;
 
-let DAILY_BUDGET_USD = 0.5;
+let DAILY_BUDGET_USD = 2;
 let evaluationRunId: string | null = null;
 let evaluationSpendUsd = 0;
 let evaluationReservationSequence = 0;

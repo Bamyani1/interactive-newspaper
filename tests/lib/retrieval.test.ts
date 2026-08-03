@@ -261,6 +261,23 @@ describe("canonical RAG retrieval", () => {
     expect(result[0].relevanceScore).toBe(7);
   });
 
+  it("falls back to fused order at score 5 when both rerank passes keep nothing", async () => {
+    rerankArticlesMock.mockResolvedValue([]);
+    const result = await rerankWithCorrectiveRetry({
+      question: "what happened in 1965?",
+      articles: [ftsCandidate],
+      mode: "text",
+      maxArticles: 5,
+      retrievalLimit: 20,
+      vectorWeight: 0.6,
+      onlyWithImages: false,
+    });
+
+    expect(rerankArticlesMock).toHaveBeenCalledTimes(2);
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0].relevanceScore).toBe(5);
+  });
+
   it("uses the same service for agent searches and visual retrieval", async () => {
     reformulateQueryMock.mockResolvedValue({
       embeddingQuery: "homecoming photographs",

@@ -66,9 +66,14 @@ export {
     _computeRerankSignalsForTests,
 };
 
+// Vercel function ceiling; must stay above GLOBAL_DEADLINE_MS so the
+// platform never kills a request our own deadline machinery would have
+// finished or failed gracefully.
+export const maxDuration = 60;
+
 const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
-const GLOBAL_DEADLINE_MS = 30_000;
+const GLOBAL_DEADLINE_MS = 55_000;
 
 const askRateLimiter = createRateLimiter({ bucket: "ask", limit: 10, windowMs: 60_000 });
 
@@ -374,8 +379,10 @@ async function rerankWithCragRetry(params: {
     // questions score poorly per-article) than a true no-evidence state —
     // and downstream, zero kept articles becomes a categorical "no matching
     // evidence" refusal that is simply false. Fall back to fused retrieval
-    // order at relevanceScore 0 so citation allowlisting and the generator's
-    // own confidence machinery stay in charge of honesty.
+    // order at relevanceScore 5 — the reranker's own degraded-mode score, and
+    // the minimum the generator will engage with (below RERANK_TANGENTIAL it
+    // refuses without ever calling the model) — so citation allowlisting and
+    // the generator's own confidence machinery stay in charge of honesty.
     if (ranked.length === 0 && params.articles.length > 0 && !params.signal.aborted) {
         console.warn(
             JSON.stringify({
@@ -389,7 +396,7 @@ async function rerankWithCragRetry(params: {
         );
         return params.articles
             .slice(0, params.keepTopK)
-            .map((article) => ({ ...article, relevanceScore: 0 }));
+            .map((article) => ({ ...article, relevanceScore: 5 }));
     }
 
     return ranked;

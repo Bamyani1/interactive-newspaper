@@ -7,12 +7,12 @@ This document describes the `/api/ask` pipeline and the isolated RAG-v2 candidat
 | Work | Model | Thinking | Output |
 |---|---|---|---|
 | Query reformulation and intent classification | `gemini-3.5-flash-lite` | `MINIMAL` | Structured JSON |
-| Candidate reranking | `gemini-3.5-flash-lite` | `MINIMAL` | Structured JSON |
-| Grounded answer generation | `gemini-3.5-flash-lite` | `MEDIUM` | Structured JSON |
-| Complex-question agent loop | `gemini-3.5-flash-lite` | `MEDIUM` | Text plus function calls |
+| Candidate reranking | `gemini-3.6-flash` | `MINIMAL` | Structured JSON |
+| Grounded answer generation | `gemini-3.6-flash` | `MEDIUM` | Structured JSON |
+| Complex-question agent loop | `gemini-3.6-flash` | `MEDIUM` | Text plus function calls |
 | Text and image embeddings | `gemini-embedding-2` | N/A | 768-dimensional vectors |
 
-All Gemini clients use Vertex AI, Application Default Credentials, the stable `v1` endpoint, and `GOOGLE_CLOUD_LOCATION` (default `global`). The RAG path has no API-key fallback and no Gemini 3.6 generation call. Gemini 3 requests omit `temperature`, `topP`, and `topK`.
+All Gemini clients use Vertex AI, Application Default Credentials, the stable `v1` endpoint, and `GOOGLE_CLOUD_LOCATION` (default `global`). The RAG path has no API-key fallback. Gemini 3 requests omit `temperature`, `topP`, and `topK`. Reranking and answering deliberately run on the full Flash tier: the lite model consistently judged every candidate for broad survey questions as tangential (a total-veto that surfaced as false no-evidence refusals) and wrote weaker prose than the previously served `gemini-3-flash-preview`.
 
 The model and thinking configuration lives in `src/lib/rag-model-config.ts`. `RAG_PIPELINE_VERSION` participates in answer and retrieval cache keys so incompatible results cannot survive a pipeline upgrade.
 
@@ -250,11 +250,12 @@ Standard global rates represented by `src/lib/cost-tracker.ts`:
 | Model | Input | Output/reasoning | Image input |
 |---|---:|---:|---:|
 | `gemini-3.5-flash-lite` | $0.30/M tokens | $2.50/M tokens | N/A |
+| `gemini-3.6-flash` | $1.50/M tokens | $7.50/M tokens | N/A |
 | `gemini-embedding-2` | $0.20/M text tokens | N/A | $0.00012/image |
 
 `toolUsePromptTokenCount` is counted as input and `thoughtsTokenCount` as output. Embedding telemetry uses per-embedding token statistics when available and billable-character estimation otherwise.
 
-The application keeps its existing `$0.50` daily software guard. Isolated live
+The application's daily software guard is `$2` (raised from `$0.50` with the full-Flash upgrade; roughly 50 questions/day). Isolated live
 evaluation uses a separate ledger with a hard `$10` aggregate stop limit. These
 counters are application safety controls, not Google Cloud billing
 reconciliation; promotional-credit usage must be verified in Cloud Billing.

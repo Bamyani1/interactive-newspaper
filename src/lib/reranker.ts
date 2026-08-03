@@ -44,6 +44,8 @@ Given a user question and a list of article summaries, rate each article's relev
 - 7: Relevant
 - 10: Directly answers the question
 
+For broad survey questions (a year in review, "what happened in ...", a topic or era overview), no single article can directly answer on its own; any substantive article within the asked-about scope is relevant material for the survey (5-8). Reserve 0-3 for content genuinely outside the question's scope.
+
 For a visual search, judge whether the listed image captions describe the requested visual. A direct caption match is strong evidence (7-10); article prose that mentions the subject does not make an unrelated image relevant.
 
 Judge whether a source helps answer the question, not whether it confirms the question's premise. A source that directly says a supposed visit, event, plan, or claim did not happen is highly relevant (7-10), because correcting the false premise is the answer.

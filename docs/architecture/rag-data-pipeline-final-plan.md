@@ -31,7 +31,7 @@ one irreversible change.
 - Authenticated local ADC identity: `<operator ADC identity>`.
 - Vertex/quota project: `project-8e59f30d-8ed4-4166-a9d`.
 - Vertex location: `global`; stable API version: `v1`.
-- All RAG generation calls use `gemini-3.5-flash-lite`; no Gemini 3.6 RAG call.
+- Reformulation uses `gemini-3.5-flash-lite`; reranking, answering, and the agent loop use `gemini-3.6-flash` (upgraded 2026-08-03 after the lite judge caused false no-evidence refusals on broad questions).
 - Keep `gemini-embedding-2` for text and image embeddings.
 - Keep the already selected RAG thinking levels:
   - reformulation: `MINIMAL`;

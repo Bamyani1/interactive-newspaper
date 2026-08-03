@@ -79,7 +79,8 @@ contracts.
 | Vertex/quota project | `project-8e59f30d-8ed4-4166-a9d` |
 | Vertex location | `global` |
 | Google Gen AI API version | stable `v1` |
-| All RAG generation calls | `gemini-3.5-flash-lite` |
+| Reformulation | `gemini-3.5-flash-lite` |
+| Reranking, answering, agent loop | `gemini-3.6-flash` |
 | Reformulation thinking | `MINIMAL` |
 | Reranking thinking | `MINIMAL` |
 | Answer thinking | `MEDIUM` |
