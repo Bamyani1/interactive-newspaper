@@ -31,6 +31,55 @@ import { fileURLToPath } from "node:url";
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // refuse absurd objects; images are <500KiB by policy
 const FALLBACK_IMAGE_CAPTION = "Untitled archival newspaper image";
 
+// Neon HTTP responses cap at 64 MiB and each round-trip costs ~150-300ms, so
+// large table reads use keyset pagination and inserts use multi-row VALUES
+// statements grouped into transactionBatch calls (one HTTP request each).
+const ARTICLE_PAGE_SIZE = 500; // article rows carry full bodies
+const ALIAS_PAGE_SIZE = 5000; // legacy_content_aliases rows are tiny
+const PENDING_CHUNK_PAGE_SIZE = 1000; // chunk rows are <= ~3.2KB of text each
+const CHUNK_INSERT_ROWS = 150; // article_chunks rows carry chunk text
+const IMAGE_INSERT_ROWS = 500; // article_images rows are small
+const STATEMENTS_PER_BATCH = 12;
+
+function chunkArray(items, size) {
+    const chunks = [];
+    for (let offset = 0; offset < items.length; offset += size) {
+        chunks.push(items.slice(offset, offset + size));
+    }
+    return chunks;
+}
+
+/** Builds one multi-row `INSERT ... VALUES (...), (...) <suffix>` statement. */
+function multiRowInsert(prefix, rows, suffix) {
+    const params = [];
+    const tuples = rows.map((row) => {
+        const placeholders = row.map((value) => {
+            params.push(value);
+            return `$${params.length}`;
+        });
+        return `(${placeholders.join(", ")})`;
+    });
+    return { text: `${prefix} VALUES ${tuples.join(", ")} ${suffix}`, params };
+}
+
+/** Keyset-paginated read of the article columns the chunk/image plans need. */
+async function readArticlesPaged(executor, columns, pageSize, onPage) {
+    let lastId = null;
+    for (;;) {
+        const pageRows = await executor.query({
+            text: `SELECT ${columns}
+                   FROM articles
+                   ${lastId === null ? "" : "WHERE id > $1"}
+                   ORDER BY id
+                   LIMIT ${pageSize}`,
+            params: lastId === null ? [] : [lastId],
+        });
+        await onPage(pageRows);
+        if (pageRows.length < pageSize) return;
+        lastId = String(pageRows[pageRows.length - 1].id);
+    }
+}
+
 /**
  * @typedef {{ text: string, params?: unknown[] }} SqlStatementLike
  * @typedef {{
@@ -174,52 +223,61 @@ export async function createIndexBuild(executor, options = {}) {
  * Every INSERT is ON CONFLICT (id) DO NOTHING, so re-running after a crash
  * converges without rewriting existing rows. Returned counts are the planned
  * record totals for the build (equal to inserted rows on a clean first run).
+ *
+ * batchSize is the keyset page of articles read (and written) per iteration;
+ * inserts are multi-row VALUES statements grouped into transactionBatch calls.
  */
-export async function populateBuildRecords(executor, buildId, { batchSize = 100 } = {}) {
+export async function populateBuildRecords(executor, buildId, { batchSize = ARTICLE_PAGE_SIZE } = {}) {
     const deps = await loadDeps();
     await requireBuildingBuild(executor, buildId);
 
-    const aliasRows = await executor.query({
-        text: "SELECT legacy_id, content_revision_id FROM legacy_content_aliases",
-    });
-    const revisionByLegacyId = new Map(
-        aliasRows.map((row) => [String(row.legacy_id), row.content_revision_id ?? null]),
-    );
+    // Alias map in one keyset-paginated pass (rows are tiny but unbounded).
+    const revisionByLegacyId = new Map();
+    let lastAliasId = null;
+    for (;;) {
+        const aliasRows = await executor.query({
+            text: `SELECT legacy_id, content_revision_id FROM legacy_content_aliases
+                   ${lastAliasId === null ? "" : "WHERE legacy_id > $1"}
+                   ORDER BY legacy_id
+                   LIMIT ${ALIAS_PAGE_SIZE}`,
+            params: lastAliasId === null ? [] : [lastAliasId],
+        });
+        for (const row of aliasRows) {
+            revisionByLegacyId.set(String(row.legacy_id), row.content_revision_id ?? null);
+        }
+        if (aliasRows.length < ALIAS_PAGE_SIZE) break;
+        lastAliasId = String(aliasRows[aliasRows.length - 1].legacy_id);
+    }
 
-    const articles = await executor.query({
-        text: `SELECT id, headline, byline, body_plain, edition_date, category, summary,
-                      image_urls, image_caption, image_captions
-               FROM articles ORDER BY id`,
-    });
-
+    let articleCount = 0;
     let chunkCount = 0;
     let imageCount = 0;
 
-    for (let offset = 0; offset < articles.length; offset += batchSize) {
-        const batch = articles.slice(offset, offset + batchSize);
-        const statements = [];
+    await readArticlesPaged(
+        executor,
+        `id, headline, byline, body_plain, edition_date, category, summary,
+                          image_urls, image_caption, image_captions`,
+        batchSize,
+        async (articles) => {
+            articleCount += articles.length;
+            const chunkRows = [];
+            const imageRows = [];
 
-        for (const article of batch) {
-            const articleId = String(article.id);
-            const contentRevisionId = revisionByLegacyId.get(articleId) ?? null;
+            for (const article of articles) {
+                const articleId = String(article.id);
+                const contentRevisionId = revisionByLegacyId.get(articleId) ?? null;
 
-            const chunkRecords = deps.buildArticleChunkRecords({
-                id: articleId,
-                headline: article.headline,
-                byline: article.byline,
-                body_plain: article.body_plain,
-                edition_date: article.edition_date,
-                category: article.category,
-                summary: article.summary,
-            });
-            for (const record of chunkRecords) {
-                statements.push({
-                    text: `INSERT INTO article_chunks
-                               (id, index_build_id, article_id, chunk_index, chunk_text,
-                                embedding_input_hash, content_revision_id)
-                           VALUES ($1, $2, $3, $4, $5, $6, $7)
-                           ON CONFLICT (id) DO NOTHING`,
-                    params: [
+                const chunkRecords = deps.buildArticleChunkRecords({
+                    id: articleId,
+                    headline: article.headline,
+                    byline: article.byline,
+                    body_plain: article.body_plain,
+                    edition_date: article.edition_date,
+                    category: article.category,
+                    summary: article.summary,
+                });
+                for (const record of chunkRecords) {
+                    chunkRows.push([
                         `${buildId}:${record.id}`,
                         buildId,
                         articleId,
@@ -227,24 +285,17 @@ export async function populateBuildRecords(executor, buildId, { batchSize = 100 
                         record.chunkText,
                         record.embeddingInputHash,
                         contentRevisionId,
-                    ],
-                });
-            }
-            chunkCount += chunkRecords.length;
+                    ]);
+                }
+                chunkCount += chunkRecords.length;
 
-            const imageUrls = jsonArray(article.image_urls);
-            const imageCaptions = jsonArray(article.image_captions);
-            imageUrls.forEach((imageUrl, imageIndex) => {
-                const caption =
-                    imageCaptions[imageIndex] ??
-                    (imageIndex === 0 ? article.image_caption : null);
-                statements.push({
-                    text: `INSERT INTO article_images
-                               (id, index_build_id, article_id, image_index, image_url,
-                                caption, content_revision_id)
-                           VALUES ($1, $2, $3, $4, $5, $6, $7)
-                           ON CONFLICT (id) DO NOTHING`,
-                    params: [
+                const imageUrls = jsonArray(article.image_urls);
+                const imageCaptions = jsonArray(article.image_captions);
+                imageUrls.forEach((imageUrl, imageIndex) => {
+                    const caption =
+                        imageCaptions[imageIndex] ??
+                        (imageIndex === 0 ? article.image_caption : null);
+                    imageRows.push([
                         `${buildId}:${articleId}:image:${String(imageIndex).padStart(3, "0")}`,
                         buildId,
                         articleId,
@@ -252,16 +303,41 @@ export async function populateBuildRecords(executor, buildId, { batchSize = 100 
                         imageUrl,
                         caption ?? null,
                         contentRevisionId,
-                    ],
+                    ]);
                 });
-            });
-            imageCount += imageUrls.length;
-        }
+                imageCount += imageUrls.length;
+            }
 
-        if (statements.length > 0) await executor.transactionBatch(statements);
-    }
+            const statements = [];
+            for (const rows of chunkArray(chunkRows, CHUNK_INSERT_ROWS)) {
+                statements.push(
+                    multiRowInsert(
+                        `INSERT INTO article_chunks
+                             (id, index_build_id, article_id, chunk_index, chunk_text,
+                              embedding_input_hash, content_revision_id)`,
+                        rows,
+                        "ON CONFLICT (id) DO NOTHING",
+                    ),
+                );
+            }
+            for (const rows of chunkArray(imageRows, IMAGE_INSERT_ROWS)) {
+                statements.push(
+                    multiRowInsert(
+                        `INSERT INTO article_images
+                             (id, index_build_id, article_id, image_index, image_url,
+                              caption, content_revision_id)`,
+                        rows,
+                        "ON CONFLICT (id) DO NOTHING",
+                    ),
+                );
+            }
+            for (const group of chunkArray(statements, STATEMENTS_PER_BATCH)) {
+                await executor.transactionBatch(group);
+            }
+        },
+    );
 
-    return { articles: articles.length, chunks: chunkCount, images: imageCount };
+    return { articles: articleCount, chunks: chunkCount, images: imageCount };
 }
 
 function chunkTextInput(deps, row) {
@@ -307,17 +383,32 @@ export async function embedBuildText(executor, buildId, { embedFn, batchSize = 5
     });
     const total = Number(totalRows[0].n);
 
-    const pending = await executor.query({
-        text: `SELECT c.id, c.chunk_index, c.chunk_text, c.embedding_input_hash,
-                      a.headline, a.byline, a.edition_date, a.category, a.summary
-               FROM article_chunks c JOIN articles a ON a.id = c.article_id
-               WHERE c.index_build_id = $1
-                 AND (c.embedding IS NULL
-                      OR c.embedding_model IS DISTINCT FROM $2
-                      OR c.embedding_input_version IS DISTINCT FROM $3)
-               ORDER BY c.id`,
-        params: [buildId, expectedModel, expectedVersion],
-    });
+    // Keyset-paginated pending read (chunk text over a whole build can exceed
+    // the 64 MiB HTTP response cap); collected fully before embedding so the
+    // embed batches are cut exactly as before.
+    const pending = [];
+    let lastPendingId = null;
+    for (;;) {
+        const pageRows = await executor.query({
+            text: `SELECT c.id, c.chunk_index, c.chunk_text, c.embedding_input_hash,
+                          a.headline, a.byline, a.edition_date, a.category, a.summary
+                   FROM article_chunks c JOIN articles a ON a.id = c.article_id
+                   WHERE c.index_build_id = $1
+                     AND (c.embedding IS NULL
+                          OR c.embedding_model IS DISTINCT FROM $2
+                          OR c.embedding_input_version IS DISTINCT FROM $3)
+                     ${lastPendingId === null ? "" : "AND c.id > $4"}
+                   ORDER BY c.id
+                   LIMIT ${PENDING_CHUNK_PAGE_SIZE}`,
+            params:
+                lastPendingId === null
+                    ? [buildId, expectedModel, expectedVersion]
+                    : [buildId, expectedModel, expectedVersion, lastPendingId],
+        });
+        pending.push(...pageRows);
+        if (pageRows.length < PENDING_CHUNK_PAGE_SIZE) break;
+        lastPendingId = String(pageRows[pageRows.length - 1].id);
+    }
 
     const planned = pending.length;
     const skipped = total - planned;
@@ -345,6 +436,7 @@ export async function embedBuildText(executor, buildId, { embedFn, batchSize = 5
         }
 
         const updates = [];
+        const updateIds = [];
         let batchTokens = 0;
         for (let index = 0; index < batch.length; index += 1) {
             const row = batch[index];
@@ -374,11 +466,27 @@ export async function embedBuildText(executor, buildId, { embedFn, batchSize = 5
                     inputHash,
                 ],
             });
+            updateIds.push(String(row.id));
             batchTokens += Math.ceil(input.text.length / 4);
         }
-        if (updates.length > 0) await executor.transactionBatch(updates);
-        embedded += updates.length;
+        // The model was already called for this batch, so its tokens count
+        // toward cost even if persisting the vectors fails below.
         textTokens += batchTokens;
+        if (updates.length === 0) continue;
+        try {
+            // ONE transactionBatch per embed batch: all vector UPDATEs land in
+            // a single HTTP request instead of one request per row.
+            await executor.transactionBatch(updates);
+            embedded += updates.length;
+        } catch (error) {
+            // Isolate the failed UPDATE batch: record its ids and keep going.
+            for (const id of updateIds) {
+                failed.push({
+                    id,
+                    reason: `vector UPDATE batch failed: ${errorMessage(error)}`,
+                });
+            }
+        }
     }
 
     const costUsd = deps.computeEmbeddingCostUsd(
@@ -648,28 +756,36 @@ export async function finalizeBuild(executor, buildId) {
  */
 export async function dryRunReport(executor, { corpusVersion } = {}) {
     const deps = await loadDeps();
-    const articles = await executor.query({
-        text: `SELECT id, headline, byline, body_plain, edition_date, category, summary, image_urls
-               FROM articles ORDER BY id`,
-    });
 
+    let articleCount = 0;
     let chunks = 0;
     let chunkChars = 0;
     let images = 0;
-    for (const article of articles) {
-        const records = deps.buildArticleChunkRecords({
-            id: String(article.id),
-            headline: article.headline,
-            byline: article.byline,
-            body_plain: article.body_plain,
-            edition_date: article.edition_date,
-            category: article.category,
-            summary: article.summary,
-        });
-        chunks += records.length;
-        chunkChars += records.reduce((sum, record) => sum + record.embeddingInput.text.length, 0);
-        images += jsonArray(article.image_urls).length;
-    }
+    await readArticlesPaged(
+        executor,
+        "id, headline, byline, body_plain, edition_date, category, summary, image_urls",
+        ARTICLE_PAGE_SIZE,
+        async (articles) => {
+            articleCount += articles.length;
+            for (const article of articles) {
+                const records = deps.buildArticleChunkRecords({
+                    id: String(article.id),
+                    headline: article.headline,
+                    byline: article.byline,
+                    body_plain: article.body_plain,
+                    edition_date: article.edition_date,
+                    category: article.category,
+                    summary: article.summary,
+                });
+                chunks += records.length;
+                chunkChars += records.reduce(
+                    (sum, record) => sum + record.embeddingInput.text.length,
+                    0,
+                );
+                images += jsonArray(article.image_urls).length;
+            }
+        },
+    );
 
     const estTextTokens = Math.ceil(chunkChars / 4);
     const estTextUsd = deps.computeEmbeddingCostUsd(
@@ -679,7 +795,7 @@ export async function dryRunReport(executor, { corpusVersion } = {}) {
     const estImageUsd = deps.computeEmbeddingCostUsd(deps.RAG_EMBEDDING_MODEL, {}, { imageCount: images });
     return {
         corpusVersion: corpusVersion ?? null,
-        articles: articles.length,
+        articles: articleCount,
         chunks,
         chunkChars,
         estTextTokens,

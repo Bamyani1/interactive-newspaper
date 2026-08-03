@@ -366,17 +366,39 @@ export async function importPublicCorpus(
         const rows = rowsByTable.get(table);
         if (!rows) continue;
         inserted[table] = 0;
-        for (const row of rows) {
-            const columns = Object.keys(row).sort();
+        if (rows.length > 0) {
+            // Multi-row INSERTs: one round-trip per chunk instead of per row
+            // (a per-row loop costs ~150-300ms × 37k rows against Neon).
+            // Every exported row of a table shares the same column set.
+            const columns = Object.keys(rows[0]).sort();
             columns.forEach(assertIdentifier);
-            const placeholders = columns.map((_, index) => `$${index + 1}`);
-            const result = await executor.query({
-                text:
-                    `INSERT INTO ${table} (${columns.join(", ")}) ` +
-                    `VALUES (${placeholders.join(", ")}) ON CONFLICT DO NOTHING RETURNING 1 AS inserted`,
-                params: columns.map((column) => toParam(row[column])),
-            });
-            inserted[table] += result.length;
+            for (const row of rows) {
+                const keys = Object.keys(row).sort();
+                if (keys.length !== columns.length || keys.some((key, i) => key !== columns[i])) {
+                    throw new Error(
+                        `Refusing to import ${table}: inconsistent column set across exported rows.`,
+                    );
+                }
+            }
+            const rowsPerStatement = table === "articles" ? 100 : 400;
+            for (let offset = 0; offset < rows.length; offset += rowsPerStatement) {
+                const chunk = rows.slice(offset, offset + rowsPerStatement);
+                const params: unknown[] = [];
+                const tuples = chunk.map((row) => {
+                    const placeholders = columns.map((column) => {
+                        params.push(toParam(row[column]));
+                        return `$${params.length}`;
+                    });
+                    return `(${placeholders.join(", ")})`;
+                });
+                const result = await executor.query({
+                    text:
+                        `INSERT INTO ${table} (${columns.join(", ")}) ` +
+                        `VALUES ${tuples.join(", ")} ON CONFLICT DO NOTHING RETURNING 1 AS inserted`,
+                    params,
+                });
+                inserted[table] += result.length;
+            }
         }
         if (table === "ads" && rows.length > 0) {
             // ads.id is SERIAL; advance the sequence past the imported ids.
