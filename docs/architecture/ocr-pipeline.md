@@ -80,9 +80,13 @@ and performs the transaction:
 8. Validate the public result and delete the rollback directory.
 
 If promotion fails, the wrapper restores the previous public edition. Database
-seeding is a separate opt-in operation after promotion. A publication repair
-can re-run upload or seeding only from an already validated public artifact;
-there is no OCR-stage resume mode.
+seeding is a separate opt-in operation after promotion. So is the Phase 4
+versioned DB publication (`npm run db:publish-edition`), which stages the
+promoted artifact into immutable revision tables under a resumable publication
+run; see [data-model.md](data-model.md). A publication repair can re-run
+upload or seeding only from an already validated public artifact; there is no
+OCR-stage resume mode — the versioned publisher's `--resume` resumes only
+database-side publication runs.
 
 ## Ingestion and image branches
 

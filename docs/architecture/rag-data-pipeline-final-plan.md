@@ -1,6 +1,6 @@
 # RAG and Archive Data Pipeline — Final Implementation Plan
 
-Status: **Phases 0–3 locally complete; Phase 3 gate passed and review is required before Phase 4 (2026-08-02)**
+Status: **Phases 0–4 locally complete; Phase 4 gate passed and review is required before Phase 5 (2026-08-02)**
 Branch: `rag-enhancement`  
 Starting commit: `652f9fc`  
 Prepared: 2026-08-02
@@ -345,6 +345,33 @@ R2, and Neon:
 
 **Gate:** crash/retry tests at every state boundary prove no partial revision or
 asset becomes active and pointer rollback restores the prior corpus.
+
+**Phase 4 actuals (2026-08-02):** implemented as designed, entirely local; the
+OCR pipeline was not modified. `src/server/publisher/` provides the state
+machine over `publication_runs` (CTE-guarded transitions so state, event, and
+pointer writes are all-or-nothing within one non-interactive transaction;
+atomic `activateRevision`/`rollbackActiveRevision` pointer switches), the
+revision writer (immutable edition/content revisions for articles, ads, and
+substantive `other_content`; page lineage with expected/processed/failed
+status; asset rows from manifest v2; idempotent re-staging keyed by
+`(issue_id, revision_hash)`; ambiguity persists to
+`content_identity_conflicts` and stops atomically), read-only pre-activation
+validation (page lineage, content pointers, alias pins, asset existence;
+embedding readiness truthfully reported as not-applicable until an index build
+exists), and atomic source acquisition with re-validation of existing files.
+`npm run db:publish-edition` drives stage/validate/activate/rollback/resume
+and is guarded to local/test databases. `src/lib/image-url.ts` now resolves
+64-hex content-addressed filenames to `ocr-assets/<sha256>.webp` while every
+legacy filename keeps its `<date>/images/` resolution (all 2,876 production
+URLs are legacy-shaped; the fork is forward-looking). `upload-images.mjs`
+emits asset-manifest schema v2 with per-asset source/derivative hashes and
+MIME type. Ad aliases (`ad:<date>:<position>`) landed here as deferred from
+Phase 3. Crash/retry is proven at every state boundary, activation is proven
+atomic under injected failure, and a golden test proves freshly staged
+revisions hydrate byte-identically to the legacy adapter output. Gate: 919
+tests passed / 12 live-golden skipped (45 new), lint, app+test typechecks,
+production build, evaluation-freeze verification, and `git diff --check` all
+pass. Production Neon/R2 untouched.
 
 ### Phase 5 — Repair asset and embedding operations safely
 
