@@ -146,8 +146,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
  * Wipes every stored turn for the session. Called by the "Clear
  * conversation" button so the user's transcript is gone from the
  * server immediately instead of lingering until the 30-min TTL.
- * Always returns 204 on successful dispatch — the underlying delete
- * is best-effort and a DB failure would have logged but not thrown.
+ * Returns 204 on success (including deleting zero rows); if the store
+ * reports a database failure, returns 500 so the client knows the
+ * transcript may still exist server-side.
  */
 export async function DELETE(request: NextRequest): Promise<NextResponse> {
     const ip = getClientIp(request);
@@ -172,6 +173,12 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
         return new NextResponse(null, { status: 204 });
     }
 
-    await deleteConversationTurns(sessionId);
+    const result = await deleteConversationTurns(sessionId);
+    if (!result.ok) {
+        return NextResponse.json(
+            { error: "failed to delete conversation" },
+            { status: 500 },
+        );
+    }
     return new NextResponse(null, { status: 204 });
 }

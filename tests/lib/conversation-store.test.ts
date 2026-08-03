@@ -1,4 +1,5 @@
 /** @vitest-environment node */
+import { createHash } from "node:crypto";
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
 // Mock the Neon SQL tag so tests can control each returned row.
@@ -19,6 +20,8 @@ beforeAll(() => {
 import {
     getConversationHistory,
     addConversationTurn,
+    deleteConversationTurns,
+    sessionHasAnyTurns,
     newSessionId,
     formatHistoryForPrompt,
     _clearSessionsForTests,
@@ -37,6 +40,57 @@ describe("conversation-store", () => {
         const b = newSessionId();
         expect(a).not.toBe(b);
         expect(a.length).toBeGreaterThan(8);
+    });
+
+    it("generates 43-char base64url session tokens", () => {
+        const a = newSessionId();
+        const b = newSessionId();
+        expect(a).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(b).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(a).not.toBe(b);
+    });
+
+    it("never sends the raw session token to the database — only its sha256 hex", async () => {
+        const rawToken = "raw-session-token-for-capture-test";
+        const hashed = createHash("sha256").update(rawToken).digest("hex");
+
+        sqlMock.mockResolvedValue([]);
+        sqlMock.transaction.mockResolvedValue(undefined);
+
+        await getConversationHistory(rawToken);
+        await addConversationTurn(rawToken, "Q", "A", ["art-1"]);
+        await deleteConversationTurns(rawToken);
+        await sessionHasAnyTurns(rawToken);
+
+        const allParams = sqlMock.mock.calls.flatMap((call) => call.slice(1));
+        expect(allParams.length).toBeGreaterThan(0);
+        expect(allParams).not.toContain(rawToken);
+        for (const param of allParams) {
+            if (typeof param === "string") {
+                expect(param.includes(rawToken)).toBe(false);
+            }
+        }
+        expect(allParams).toContain(hashed);
+
+        // Every session_id-bearing query keys on the hash: the SELECT,
+        // the INSERT, the per-session trim, the DELETE, and the probe.
+        const hashCount = allParams.filter((p) => p === hashed).length;
+        expect(hashCount).toBeGreaterThanOrEqual(4);
+    });
+
+    it("reports { ok: true } when a delete matches zero rows", async () => {
+        sqlMock.mockResolvedValueOnce([]);
+        await expect(deleteConversationTurns("no-such-session")).resolves.toEqual({
+            ok: true,
+        });
+    });
+
+    it("reports { ok: false, error } without throwing when the delete fails", async () => {
+        sqlMock.mockRejectedValueOnce(new Error("neon down"));
+        await expect(deleteConversationTurns("sid")).resolves.toEqual({
+            ok: false,
+            error: "neon down",
+        });
     });
 
     it("returns empty history when the DB returns no rows", async () => {

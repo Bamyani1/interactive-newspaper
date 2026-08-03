@@ -91,6 +91,7 @@ scripts/dev/data/
 public/GOPR0363 copy.png
 !package.json
 !package-lock.json
+!vercel.json
 !tsconfig.json
 !tsconfig.test.json
 !scripts/db/schema-snapshot.json
