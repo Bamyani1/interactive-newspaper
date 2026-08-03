@@ -750,6 +750,62 @@ export async function finalizeBuild(executor, buildId) {
 }
 
 /**
+ * Promote a validated build to 'active'. Single-active-per-corpus is
+ * enforced twice: this guard produces a clear error, and migration 0004's
+ * partial unique index makes any concurrent race lose at the database.
+ * Serving only switches when RAG_RETRIEVAL_MODE selects the build — this
+ * transition alone never changes what production serves.
+ */
+export async function activateBuild(executor, buildId) {
+    const build = await getBuild(executor, buildId);
+    if (!build) throw new Error(`Unknown index build ${buildId}.`);
+    if (build.status !== "validated") {
+        throw new Error(
+            `Index build ${buildId} is '${build.status}'; only 'validated' builds can be activated.`,
+        );
+    }
+    const active = await executor.query({
+        text: `SELECT id FROM rag_index_builds
+               WHERE corpus_version = $1 AND status = 'active' AND id <> $2`,
+        params: [build.corpus_version, buildId],
+    });
+    if (active.length > 0) {
+        throw new Error(
+            `Corpus ${build.corpus_version} already has active build ${active[0].id}; ` +
+                `run --rollback-activation ${active[0].id} first.`,
+        );
+    }
+    await executor.query({
+        text: `UPDATE rag_index_builds SET status = 'active', activated_at = now()
+               WHERE id = $1 AND status = 'validated'`,
+        params: [buildId],
+    });
+    return { buildId, status: "active", corpusVersion: String(build.corpus_version) };
+}
+
+/**
+ * Demote an active build back to 'validated'. Order matters during an
+ * incident: flip RAG_RETRIEVAL_MODE to legacy FIRST (instant,
+ * serving-safe), then demote — a versioned-mode config pointing at a
+ * non-active build fails its readiness check by design.
+ */
+export async function rollbackActivation(executor, buildId) {
+    const build = await getBuild(executor, buildId);
+    if (!build) throw new Error(`Unknown index build ${buildId}.`);
+    if (build.status !== "active") {
+        throw new Error(
+            `Index build ${buildId} is '${build.status}'; only 'active' builds can be rolled back.`,
+        );
+    }
+    await executor.query({
+        text: `UPDATE rag_index_builds SET status = 'validated'
+               WHERE id = $1 AND status = 'active'`,
+        params: [buildId],
+    });
+    return { buildId, status: "validated" };
+}
+
+/**
  * Read-only build plan and cost estimate: NO writes, NO model calls.
  * chunkChars sums the exact embedding-input text per chunk (chunk characters
  * plus the title/context header overhead buildEmbeddingInput adds).
@@ -943,6 +999,20 @@ async function main() {
         return;
     }
 
+    const activateId = argValue("--activate");
+    if (activateId) {
+        console.log(JSON.stringify(await activateBuild(executor, activateId), null, 2));
+        return;
+    }
+
+    const rollbackActivationId = argValue("--rollback-activation");
+    if (rollbackActivationId) {
+        console.log(
+            JSON.stringify(await rollbackActivation(executor, rollbackActivationId), null, 2),
+        );
+        return;
+    }
+
     if (process.argv.includes("--dry-run")) {
         const report = await dryRunReport(executor, { corpusVersion: argValue("--corpus") });
         console.log(JSON.stringify(report, null, 2));
@@ -976,8 +1046,8 @@ async function main() {
     }
 
     fail(
-        "One of --create, --populate, --embed-text, --embed-images, --finalize, --dry-run, " +
-            "--status is required.",
+        "One of --create, --populate, --embed-text, --embed-images, --finalize, --activate, " +
+            "--rollback-activation, --dry-run, --status is required.",
     );
 }
 

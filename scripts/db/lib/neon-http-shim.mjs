@@ -37,7 +37,35 @@ if (!TARGET) {
   process.exit(1);
 }
 
-const pool = new pg.Pool({ connectionString: TARGET, max: 8 });
+// Requests are routed to the LOCAL database named in the connection string,
+// but only names in the allowlist are served (default: the database of
+// SHIM_TARGET_DATABASE_URL). This keeps two isolated local databases (e.g.
+// the eval DB and a production-mirror rehearsal DB) from ever cross-writing.
+const targetUrl = new URL(TARGET);
+const defaultDatabase = targetUrl.pathname.replace(/^\//, "");
+const ALLOWED_DATABASES = new Set(
+  (process.env.SHIM_ALLOWED_DATABASES ?? defaultDatabase)
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean),
+);
+
+const pools = new Map();
+function poolFor(database) {
+  if (!ALLOWED_DATABASES.has(database)) {
+    throw new Error(
+      `neon-http-shim refuses database "${database}"; allowed: ${[...ALLOWED_DATABASES].join(", ")}.`,
+    );
+  }
+  let pool = pools.get(database);
+  if (!pool) {
+    const url = new URL(TARGET);
+    url.pathname = `/${database}`;
+    pool = new pg.Pool({ connectionString: url.toString(), max: 8 });
+    pools.set(database, pool);
+  }
+  return pool;
+}
 // Identity parsers: keep every value as the raw text Postgres sent.
 const rawText = { getTypeParser: () => (value) => value };
 
@@ -79,7 +107,7 @@ function queryConfig(q) {
   };
 }
 
-async function runBatch(queries, headers) {
+async function runBatch(pool, queries, headers) {
   const client = await pool.connect();
   try {
     const isolation = ISOLATION_LEVELS[headers["neon-batch-isolation-level"]] ?? null;
@@ -102,11 +130,12 @@ async function runBatch(queries, headers) {
   }
 }
 
-function hostOf(connectionString) {
+function parseConnection(connectionString) {
   try {
-    return new URL(connectionString).hostname;
+    const url = new URL(connectionString);
+    return { host: url.hostname, database: url.pathname.replace(/^\//, "") };
   } catch {
-    return null;
+    return { host: null, database: null };
   }
 }
 
@@ -124,18 +153,19 @@ const server = http.createServer((req, res) => {
   });
   req.on("end", async () => {
     try {
-      const connHost = hostOf(req.headers["neon-connection-string"] ?? "");
-      if (connHost !== EXPECTED_HOST) {
+      const conn = parseConnection(req.headers["neon-connection-string"] ?? "");
+      if (conn.host !== EXPECTED_HOST) {
         res.writeHead(400, { "content-type": "application/json" });
         res.end(JSON.stringify({
-          message: `neon-http-shim refuses host "${connHost}"; expected "${EXPECTED_HOST}". This shim only serves the local eval database.`,
+          message: `neon-http-shim refuses host "${conn.host}"; expected "${EXPECTED_HOST}". This shim only serves allowlisted local databases.`,
         }));
         return;
       }
+      const pool = poolFor(conn.database);
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       let payload;
       if (Array.isArray(body.queries)) {
-        payload = { results: await runBatch(body.queries, req.headers) };
+        payload = { results: await runBatch(pool, body.queries, req.headers) };
       } else {
         payload = toResult(await pool.query(queryConfig(body)));
       }

@@ -241,6 +241,33 @@ function describeValue(value) {
     return String(text);
 }
 
+
+/**
+ * Objects that exist in PRODUCTION but are intentionally NOT canonical: an
+ * abandoned entity-extraction experiment with no code references. Rollout
+ * policy is expand-only — these are never dropped, never migrated, and are
+ * excluded from schema equality. Any OTHER unexpected live object still
+ * fails verification.
+ */
+export const KNOWN_LEGACY_SCHEMA_OBJECTS = {
+    tables: ["article_entities", "entities"],
+    indexes: [
+        "article_entities_pkey",
+        "entities_pkey",
+        "idx_article_entities_entity",
+        "idx_entities_type_name",
+        "idx_entities_type_normalized",
+    ],
+};
+
+/** Returns a copy of a live snapshot with known legacy objects removed. */
+export function stripKnownLegacySchemaObjects(snapshot) {
+    const copy = { ...snapshot, tables: { ...snapshot.tables }, indexes: { ...snapshot.indexes } };
+    for (const table of KNOWN_LEGACY_SCHEMA_OBJECTS.tables) delete copy.tables[table];
+    for (const index of KNOWN_LEGACY_SCHEMA_OBJECTS.indexes) delete copy.indexes[index];
+    return copy;
+}
+
 /** Collects human-readable paths where two JSON-shaped values differ. */
 function collectSchemaDiffs(expected, actual, at, out) {
     if (out.length >= MAX_SCHEMA_DIFFS || expected === actual) return;
@@ -332,7 +359,7 @@ export async function setupEvalDb(executor, options) {
 
     // (2) Schema verification against the committed snapshot.
     const committedSnapshot = JSON.parse(readFileSync(schemaSnapshotPath, "utf8"));
-    const liveSnapshot = await introspect(executor);
+    const liveSnapshot = stripKnownLegacySchemaObjects(await introspect(executor));
     const schemaDiffs = [];
     collectSchemaDiffs(committedSnapshot, liveSnapshot, "", schemaDiffs);
     if (schemaDiffs.length > 0) {
