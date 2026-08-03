@@ -198,7 +198,7 @@ describe("transformArticles", () => {
 
   it("returns empty array for null articles", () => {
     const edition = makeEdition();
-    (edition as Record<string, unknown>).articles = null;
+    (edition as unknown as Record<string, unknown>).articles = null;
     expect(transformArticles(edition)).toEqual([]);
   });
 
@@ -778,15 +778,15 @@ describe("transformAds", () => {
 
   it("returns empty array when ads/enriched_ads missing", () => {
     const edition = makeEdition();
-    (edition as Record<string, unknown>).ads = undefined;
-    (edition as Record<string, unknown>).enriched_ads = undefined;
+    (edition as unknown as Record<string, unknown>).ads = undefined;
+    (edition as unknown as Record<string, unknown>).enriched_ads = undefined;
     expect(transformAds(edition)).toEqual([]);
   });
 
   it("returns empty array when source is not an array", () => {
     const edition = makeEdition();
-    (edition as Record<string, unknown>).ads = "not-an-array";
-    (edition as Record<string, unknown>).enriched_ads = undefined;
+    (edition as unknown as Record<string, unknown>).ads = "not-an-array";
+    (edition as unknown as Record<string, unknown>).enriched_ads = undefined;
     expect(transformAds(edition)).toEqual([]);
   });
 });

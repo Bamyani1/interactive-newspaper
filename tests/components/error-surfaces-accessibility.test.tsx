@@ -1,8 +1,8 @@
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import GlobalError from "@/app/error";
-import EditionError from "@/app/edition/error";
+import GlobalError from "@/src/app/error";
+import EditionError from "@/src/app/edition/error";
 import { ErrorBoundary } from "@/shared";
 
 function ThrowDuringRender(): React.ReactNode {

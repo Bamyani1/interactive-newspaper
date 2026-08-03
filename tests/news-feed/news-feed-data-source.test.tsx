@@ -3,8 +3,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { NewsFeed } from "../../src/features/news-feed/components/NewsFeed";
-import type { Article } from "@/src/types";
-import type { SectionId } from "../../src/features/news-feed";
+import type { Article, SectionId } from "@/src/types";
 
 vi.mock("next/link", () => ({
     default: ({

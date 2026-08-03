@@ -1,4 +1,5 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { GoogleAuth } from "google-auth-library";
 import { loadLocalEnv } from "../lib/local-env";
 
@@ -191,7 +192,7 @@ async function main(): Promise<void> {
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
-if (invokedPath === path.resolve(new URL(import.meta.url).pathname)) {
+if (invokedPath === path.resolve(fileURLToPath(import.meta.url))) {
   main().catch((error) => {
     console.error(
       JSON.stringify(

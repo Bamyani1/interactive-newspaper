@@ -6,7 +6,7 @@ import {
 
 describe("RAG retrieval configuration", () => {
   it("defaults to legacy with no index identity", () => {
-    expect(getRagRetrievalConfig({})).toEqual({
+    expect(getRagRetrievalConfig({} as NodeJS.ProcessEnv)).toEqual({
       mode: "legacy",
       activeIndexBuildId: null,
       corpusVersion: "legacy-unversioned",
@@ -20,10 +20,10 @@ describe("RAG retrieval configuration", () => {
 
   it("requires an immutable build id for shadow and versioned modes", () => {
     expect(() =>
-      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "shadow" }),
+      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "shadow" } as unknown as NodeJS.ProcessEnv),
     ).toThrow(/RAG_ACTIVE_INDEX_BUILD_ID/);
     expect(() =>
-      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "versioned" }),
+      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "versioned" } as unknown as NodeJS.ProcessEnv),
     ).toThrow(/RAG_ACTIVE_INDEX_BUILD_ID/);
   });
 
@@ -32,7 +32,7 @@ describe("RAG retrieval configuration", () => {
       RAG_RETRIEVAL_MODE: "versioned",
       RAG_ACTIVE_INDEX_BUILD_ID: "build-2026-08-02",
       RAG_CORPUS_VERSION: "corpus-a",
-    };
+    } as unknown as NodeJS.ProcessEnv;
     expect(getRagRetrievalConfig(env)).toEqual({
       mode: "versioned",
       activeIndexBuildId: "build-2026-08-02",
@@ -50,7 +50,7 @@ describe("RAG retrieval configuration", () => {
 
   it("rejects unknown modes rather than guessing", () => {
     expect(() =>
-      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "auto" }),
+      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "auto" } as unknown as NodeJS.ProcessEnv),
     ).toThrow(/Invalid RAG_RETRIEVAL_MODE/);
   });
 });
