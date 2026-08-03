@@ -2,12 +2,13 @@
 
 Last verified: 2026-08-02
 
-Implementation checkpoint: `6c40a6b` (Phase 2); Phase 3 completed in the
-current commit
+Implementation checkpoint: `6c40a6b` (Phase 2); Phases 3–5 completed in the
+commits listed below
 
 Branch: `rag-enhancement`
 
-Status: Phases 0–4 complete and gated; Phase 5 is next
+Status: Phases 0–5 complete and gated; the next step is the approval gate for
+read-only production access and the paid backfill, then Phase 6
 
 ## Read this first
 
@@ -198,7 +199,8 @@ pipeline. The RAG implementation commits are:
 | `9063aec` | Phase 0–2 handoff documentation |
 | `c292c71` | Prep fixes: test typechecking, silent script guards |
 | `2bf0c6c` | Phase 3: canonical migrations and immutable identities |
-| (current) | Phase 4: resumable versioned publisher |
+| `2895111` | Phase 4: resumable versioned publisher |
+| (current) | Phase 5: asset registry and build-scoped embedding operations |
 
 The branch had not been pushed at the implementation checkpoint; the user
 explicitly chose not to push yet (Vercel preview-deploy risk while vector
@@ -397,6 +399,48 @@ production build passed, evaluation-freeze verification passed,
   modified; the planned optional staging hook was deliberately skipped to
   keep the locked pipeline untouched — the CLI is invoked manually instead.
 
+### Phase 5 — Asset registry and build-scoped embedding operations
+
+- `scripts/db/build-rag-index.mjs` (`npm run rag:index:build`) — the first
+  writer of `rag_index_builds` anywhere. Lifecycle: create (`building`) →
+  populate build-scoped chunk/image rows (build-prefixed IDs;
+  `content_revision_id` attached via legacy aliases) → resumable text/image
+  embedding keyed by exact `(model, input version, input hash)` with
+  per-item/per-batch failure isolation → finalize to `validated` only on
+  full text coverage. Image gaps are recorded, never fatal, and never block
+  text indexing. Images stream from R2 one at a time (both key layouts,
+  10 MiB cap, magic-byte validation, per-iteration buffer release). No
+  `--force` exists: a changed input, model, or version means a new immutable
+  build.
+- `scripts/db/embed.mjs` fenced to legacy rows only: requires
+  `--legacy-unversioned`, every statement carries `index_build_id IS NULL`,
+  and `--force` was removed (`db:embed:force` script deleted).
+- `scripts/db/bootstrap-asset-registry.mjs` (`npm run assets:bootstrap`) —
+  builds a deterministic, self-hashed registry artifact from database image
+  references plus listings of BOTH R2 namespaces; reports matched/orphan/
+  missing/unknown; artifacts are immutable; `--apply` (double-flag-guarded)
+  writes `assets` rows for content-addressed objects only.
+- `scripts/db/gc-r2-assets.mjs` reworked: refuses to run without a verified
+  registry artifact (self-hash, non-empty references, no known-missing
+  objects); protects the union of artifact and live database references
+  across both namespaces; compare-and-swap guard on the grace ledger;
+  `--apply` additionally requires `GC_APPROVAL_TOKEN`. GC still never runs
+  before Phase 9.
+- `docs/architecture/embedding-backfill-cost-estimate.md` — the written cost
+  estimate (central ≈ $1.7 text-only / ≈ $2.2 with images per pass; worst
+  case ≈ $7 across eval + production passes; exact figures pending the
+  approval-gated read-only dry-run).
+- No production Neon or R2 contact of any kind occurred in this phase.
+
+Phase 5 verification: 36 new tests (build lifecycle, exact-hash no-op
+resumption, failure isolation, image streaming with missing-object handling,
+concurrent-build disjointness, legacy-row isolation, dry-run cost math pinned
+to cost-tracker constants; registry parsing/pagination/join/immutability/
+apply; GC refusal matrix, partial-world protection, CAS conflict). Full gate:
+955 tests passed with 12 live/paid golden tests skipped, ESLint clean, app
+and test typechecks clean, production build passed, evaluation-freeze
+verification passed, `git diff --check` clean.
+
 Phase 4 verification: 45 new tests (publisher state machine incl. crash/retry
 at every boundary, illegal-transition and concurrent-guard cases, atomic
 activation under injected failure, rollback with both revisions surviving;
@@ -512,15 +556,15 @@ As of this handoff:
 The detailed acceptance criteria are in the final plan. The next agent should
 complete these phases sequentially and make one reviewable commit per phase.
 
-### Phase 5 — Asset and embedding operations
+### Pending Phase 5 follow-ups (approval-gated)
 
-- Bootstrap the asset registry from current database and R2 references.
-- Repair the known missing live image against source evidence.
-- Implement bounded, streaming, resumable text/image backfills keyed by exact
-  model-input hashes.
-- Record failures per item without aborting unrelated text indexing.
-- Write the cost estimate before any full embedding backfill.
-- Do not run destructive R2 garbage collection.
+- Run the read-only production SELECT + R2 LIST (registry bootstrap) and the
+  read-only backfill dry-run to replace the bracketed cost estimate with
+  exact figures. Requires explicit user approval for the production access.
+- Audit the known missing live image against source evidence
+  (`assets:bootstrap` reports it; repair remains a separately approved
+  action).
+- The paid backfill itself requires approval of the written estimate.
 
 ### Phase 6 — Session, feedback, and privacy hardening
 
@@ -565,11 +609,10 @@ complete these phases sequentially and make one reviewable commit per phase.
 
 1. Confirm the correct worktree, branch, clean status, and freeze hash.
 2. Read the final plan and this handoff completely.
-3. Implement Phase 5 only; do not mix session/privacy or evaluation work into
-   its commit. Announce the read-only production SELECT + R2 LIST before
-   running the registry bootstrap or the backfill dry-run, and STOP after
-   committing the cost estimate — the full embedding backfill needs its own
-   explicit approval.
+3. Implement Phase 6 only; do not mix evaluation work into
+   its commit. The Phase 5 read-only production access and paid backfill each
+   still require their own explicit approvals before running; nothing in
+   Phase 6 depends on them.
 4. Run the smallest relevant tests while editing and the full gate before the
    phase commit.
 5. Record actual results and newly discovered constraints in the final plan and
@@ -581,5 +624,6 @@ complete these phases sequentially and make one reviewable commit per phase.
 8. Do not inspect/tune against blind holdout evidence before candidate output is
    frozen.
 
-The immediate next implementation task is Phase 5, not disabling current RAG
-components and not running the blind holdout prematurely.
+The immediate next implementation task is Phase 6 (after the Phase 5 approval
+gate), not disabling current RAG components and not running the blind holdout
+prematurely.
