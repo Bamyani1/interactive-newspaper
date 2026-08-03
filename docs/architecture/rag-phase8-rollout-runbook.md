@@ -57,3 +57,15 @@ build. Env flip first, demotion second.
 Garbage collection of superseded artifacts runs ONLY after promotion is
 verified stable and ONLY via the gated GC tool (dry-run by default). Legacy
 retrieval code paths stay until a separately approved cleanup change.
+
+## Execution log (2026-08-03)
+
+Steps 1–6 executed against production (user-run commands, each verified):
+drift check clean; migrations 0001–0009 applied; identities 351/11,692/
+11,703/11,705 (0 skipped); corpus registered; vectors imported
+13,143 + 2,875 with manifest counts matching; build activated. Safety
+branch `pre-phase8-backup` (br-young-water-ae0vtuki) created beforehand;
+`eval-rag` branch deleted after full local evacuation. Post-verification:
+build active, full vector coverage, 2 HNSW indexes, legacy serving
+untouched. Remaining: steps 7–9 (deploy + shadow → canary → rollback
+drill readiness) — blocked on the user's push/deploy decision.
