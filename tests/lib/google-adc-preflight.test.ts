@@ -7,7 +7,7 @@ const validEnv = {
   DOCUMENT_AI_LOCATION: "us",
   DOCUMENT_AI_PROCESSOR_ID: "processor-id",
   GOOGLE_ADC_EXPECTED_PRINCIPAL: "owner@example.com",
-};
+} as unknown as NodeJS.ProcessEnv;
 
 describe("Google ADC preflight configuration", () => {
   it("accepts the locked Vertex and Document AI configuration", () => {

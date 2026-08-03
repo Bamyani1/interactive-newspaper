@@ -92,6 +92,7 @@ public/GOPR0363 copy.png
 !package.json
 !package-lock.json
 !tsconfig.json
+!tsconfig.test.json
 credentials/
 
 # Lint output files

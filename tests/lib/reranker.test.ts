@@ -170,7 +170,7 @@ describe("rerankArticles", () => {
   it.each([
     [new Error("API error"), "api error"],
     [null, "malformed response"],
-  ])("falls back to capped neutral scores on %s", async (error) => {
+  ])("falls back to capped neutral scores on %s", async (error, _label) => {
     if (error) generateContentMock.mockRejectedValue(error);
     else generateContentMock.mockResolvedValue({ text: "not-json" });
     const articles = [

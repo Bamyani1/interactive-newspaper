@@ -151,7 +151,8 @@ async function readSseEvents(
   for (const frame of buf.split("\n\n")) {
     const trimmed = frame.trim();
     if (!trimmed) continue;
-    const dataMatch = trimmed.match(/^data:\s*(.*)$/s);
+    // Literal /s regex flag needs an ES2018+ tsc target; RegExp form is identical at runtime.
+    const dataMatch = trimmed.match(new RegExp("^data:\\s*(.*)$", "s"));
     if (!dataMatch) continue;
     try {
       events.push(JSON.parse(dataMatch[1]) as Record<string, unknown>);

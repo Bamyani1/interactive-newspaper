@@ -9,22 +9,22 @@ describe("RAG evaluation configuration", () => {
     afterEach(() => vi.unstubAllEnvs());
 
     it("is disabled unless explicitly selected", () => {
-        expect(isRagEvaluationMode({})).toBe(false);
-        expect(getRagEvaluationConfig({})).toMatchObject({
+        expect(isRagEvaluationMode({} as NodeJS.ProcessEnv)).toBe(false);
+        expect(getRagEvaluationConfig({} as NodeJS.ProcessEnv)).toMatchObject({
             enabled: false,
             runId: null,
         });
     });
 
     it("requires a run and frozen corpus identity", () => {
-        expect(() => getRagEvaluationConfig({ RAG_EVALUATION_MODE: "1" })).toThrow(
+        expect(() => getRagEvaluationConfig({ RAG_EVALUATION_MODE: "1" } as unknown as NodeJS.ProcessEnv)).toThrow(
             /RAG_EVALUATION_RUN_ID/,
         );
         expect(() =>
             getRagEvaluationConfig({
                 RAG_EVALUATION_MODE: "1",
                 RAG_EVALUATION_RUN_ID: "run-1",
-            }),
+            } as unknown as NodeJS.ProcessEnv),
         ).toThrow(/RAG_CORPUS_VERSION/);
     });
 
@@ -35,7 +35,7 @@ describe("RAG evaluation configuration", () => {
                 RAG_EVALUATION_RUN_ID: "holdout-v1-run-001",
                 RAG_CORPUS_VERSION: "legacy-8b8207373510d69e",
                 RAG_EVALUATION_SPEND_CAP_USD: "2.50",
-            }),
+            } as unknown as NodeJS.ProcessEnv),
         ).toEqual({
             enabled: true,
             runId: "holdout-v1-run-001",
@@ -52,12 +52,12 @@ describe("RAG evaluation configuration", () => {
                 RAG_EVALUATION_RUN_ID: "run-1",
                 RAG_CORPUS_VERSION: "legacy-test",
                 RAG_EVALUATION_SPEND_CAP_USD: "10.01",
-            }),
+            } as unknown as NodeJS.ProcessEnv),
         ).toThrow(/no more than \$10/);
     });
 
     it("rejects ambiguous flag values", () => {
-        expect(() => isRagEvaluationMode({ RAG_EVALUATION_MODE: "yes" })).toThrow(
+        expect(() => isRagEvaluationMode({ RAG_EVALUATION_MODE: "yes" } as unknown as NodeJS.ProcessEnv)).toThrow(
             /Invalid RAG_EVALUATION_MODE/,
         );
     });

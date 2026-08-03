@@ -42,7 +42,7 @@ describe("TimeControls theme tokens", () => {
         mockedUseRouter.mockReturnValue({
             push: pushSpy,
             prefetch: prefetchSpy,
-        } as ReturnType<typeof useRouter>);
+        } as unknown as ReturnType<typeof useRouter>);
 
         mockedUseArchive.mockReturnValue({
             editions: ["1988-10-05", "1988-10-12"],

@@ -32,7 +32,8 @@
     "rag:verify-evaluation-freeze": "node --import tsx scripts/rag/verify-evaluation-freeze.ts",
     "test:invariants": "vitest run tests/ocr/pipeline-invariants.test.ts",
     "images:upload": "node scripts/db/upload-images.mjs",
-    "images:gc": "node scripts/db/gc-r2-assets.mjs"
+    "images:gc": "node scripts/db/gc-r2-assets.mjs",
+    "test:typecheck": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1030.0",

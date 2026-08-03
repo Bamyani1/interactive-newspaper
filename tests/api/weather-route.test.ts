@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
+import type { WeatherQuery } from "@/src/types";
 
 beforeEach(() => {
   vi.resetModules();
@@ -124,7 +125,7 @@ describe("/api/weather – numeric param parsing via live path", () => {
   }
 
   it("lat=40.5 → query.lat === 40.5", async () => {
-    const spy = vi.fn(async () => ({ query: {}, reason: "NO_DATA", attempts: [], record: null }));
+    const spy = vi.fn(async (_query: WeatherQuery) => ({ query: {}, reason: "NO_DATA", attempts: [], record: null }));
     makeLiveMock(spy);
     const route = await import("../../src/app/api/weather/route");
     await route.GET(makeRequest("http://localhost/api/weather?date=2010-01-01&lat=40.5"));
@@ -133,7 +134,7 @@ describe("/api/weather – numeric param parsing via live path", () => {
   });
 
   it("lat=abc → query.lat === undefined", async () => {
-    const spy = vi.fn(async () => ({ query: {}, reason: "NO_DATA", attempts: [], record: null }));
+    const spy = vi.fn(async (_query: WeatherQuery) => ({ query: {}, reason: "NO_DATA", attempts: [], record: null }));
     makeLiveMock(spy);
     const route = await import("../../src/app/api/weather/route");
     await route.GET(makeRequest("http://localhost/api/weather?date=2010-01-01&lat=abc"));
@@ -142,7 +143,7 @@ describe("/api/weather – numeric param parsing via live path", () => {
   });
 
   it("lat= (empty string) → query.lat === undefined", async () => {
-    const spy = vi.fn(async () => ({ query: {}, reason: "NO_DATA", attempts: [], record: null }));
+    const spy = vi.fn(async (_query: WeatherQuery) => ({ query: {}, reason: "NO_DATA", attempts: [], record: null }));
     makeLiveMock(spy);
     const route = await import("../../src/app/api/weather/route");
     await route.GET(makeRequest("http://localhost/api/weather?date=2010-01-01&lat="));
