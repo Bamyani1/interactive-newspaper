@@ -1,0 +1,6 @@
+{
+  "runId": "holdout-baseline-001",
+  "datasetId": "rag-holdout-v1",
+  "recordCount": 14,
+  "answersSha256": "1b3a1d52f0aa14896ee8f60f79d74ba456687ce305cdb0550cf041a3fb96b0d4"
+}
