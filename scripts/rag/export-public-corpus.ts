@@ -113,6 +113,30 @@ export const EXCLUDED_COLUMNS: ReadonlyArray<{
             "Derived tsvector maintained by articles_search_vector_trig; it does not " +
             "round-trip through JSONL and the trigger regenerates it on import.",
     },
+    {
+        table: "articles",
+        column: "embedding",
+        reason:
+            "Legacy article vectors are gemini-embedding-2-preview or unlabeled; runtime " +
+            "SQL excludes them, so production's effective retrieval is lexical-only and the " +
+            "evaluation baseline matches it exactly without copying ~100 MB of inert vectors. " +
+            "Candidate vectors are built fresh, build-scoped, in the evaluation environment.",
+    },
+    {
+        table: "articles",
+        column: "embedding_model",
+        reason: "Identity metadata for the excluded legacy vector column.",
+    },
+    {
+        table: "articles",
+        column: "embedding_input_hash",
+        reason: "Identity metadata for the excluded legacy vector column.",
+    },
+    {
+        table: "articles",
+        column: "embedding_input_version",
+        reason: "Identity metadata for the excluded legacy vector column.",
+    },
 ]);
 
 export const MANIFEST_HASH_RECIPE =
@@ -187,14 +211,39 @@ function assertIdentifier(name: string): void {
     }
 }
 
+/** Rows fetched per request; bounded so a wide table (articles bodies) stays
+ * far under Neon's 64 MiB HTTP response cap. */
+export const EXPORT_BATCH_SIZE = 2000;
+
 /**
- * The table-export internal: SELECT * from ONE allowlisted table, ordered by
- * its explicit primary key, with the documented excluded columns dropped.
+ * The table-export internal: reads ONE allowlisted table ordered by its
+ * explicit primary key, with the documented excluded columns dropped. Reads
+ * use keyset pagination (row-value comparison on the primary key) so no
+ * single response exceeds the Neon HTTP driver's response-size cap.
  */
 export async function exportTableRows(executor: QueryExecutor, table: string): Promise<Row[]> {
     assertAllowlisted(table);
-    const orderBy = TABLE_PRIMARY_KEYS[table].join(", ");
-    const rows = await executor.query({ text: `SELECT * FROM ${table} ORDER BY ${orderBy}` });
+    const pk = TABLE_PRIMARY_KEYS[table];
+    for (const column of pk) assertIdentifier(column);
+    const orderBy = pk.join(", ");
+    const pkTuple = `(${pk.join(", ")})`;
+
+    const rows: Row[] = [];
+    let lastKey: unknown[] | null = null;
+    for (;;) {
+        const where = lastKey
+            ? `WHERE ${pkTuple} > (${pk.map((_, i) => `$${i + 1}`).join(", ")})`
+            : "";
+        const batch = await executor.query({
+            text: `SELECT * FROM ${table} ${where} ORDER BY ${orderBy} LIMIT ${EXPORT_BATCH_SIZE}`,
+            params: lastKey ?? [],
+        });
+        rows.push(...batch);
+        if (batch.length < EXPORT_BATCH_SIZE) break;
+        const lastRow = batch[batch.length - 1];
+        lastKey = pk.map((column) => lastRow[column]);
+    }
+
     const excluded = new Set(
         EXCLUDED_COLUMNS.filter((entry) => entry.table === table).map((entry) => entry.column),
     );
@@ -367,7 +416,12 @@ async function main(): Promise<void> {
     if (!values.export && !values.import) fail("One of --export <dir> or --import <dir> is required.");
 
     const executor = createNeonExecutor(process.env.DATABASE_URL);
-    await assertMigrationsCurrent(executor);
+    // --export reads only the legacy public tables, which exist on an
+    // unmigrated database (e.g. approved read-only production export).
+    // --import writes and requires a fully migrated target.
+    if (values.import) {
+        await assertMigrationsCurrent(executor);
+    }
 
     if (values.export) {
         console.log(

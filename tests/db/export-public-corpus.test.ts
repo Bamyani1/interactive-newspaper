@@ -146,8 +146,14 @@ describe("export-public-corpus (PGlite)", () => {
         expect(articleLines).toHaveLength(2);
         for (const row of articleLines) {
             expect(row).not.toHaveProperty("search_vector");
+            // Legacy preview/unlabeled vectors are excluded by design: runtime
+            // SQL never serves them, so the eval baseline matches production's
+            // effective lexical-only state without ~100 MB of inert payload.
+            expect(row).not.toHaveProperty("embedding");
+            expect(row).not.toHaveProperty("embedding_model");
+            expect(row).not.toHaveProperty("embedding_input_hash");
+            expect(row).not.toHaveProperty("embedding_input_version");
         }
-        expect(articleLines[0].embedding).toBe(EMBEDDING);
     });
 
     it("is deterministic: a second export yields identical hashes", async () => {
@@ -193,7 +199,8 @@ describe("export-public-corpus (PGlite)", () => {
                        FROM articles WHERE id = 'art-1'`,
             });
             expect(article[0].has_search_vector).toBe(true);
-            expect(article[0].embedding).toBe(EMBEDDING);
+            // The excluded legacy vector arrives as NULL in the eval target.
+            expect(article[0].embedding).toBeNull();
 
             // Re-importing is a no-op thanks to ON CONFLICT DO NOTHING.
             const again = await importPublicCorpus(target.executor, { dir: exported.outDir });
