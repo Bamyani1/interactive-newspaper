@@ -1,8 +1,14 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sha256 } from "./snapshot-corpus";
+import {
+  DEV_DATASET_ID,
+  verifyAcceptanceBands,
+  type AcceptanceBandsFile,
+  type FreezeCandidateReceipt,
+} from "./lib/eval-records";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -284,7 +290,97 @@ function readJson<T>(filePath: string): T {
   return JSON.parse(readFileSync(filePath, "utf8")) as T;
 }
 
+export interface HoldoutScoringGateInput {
+  bandsPath: string;
+  candidateReceiptPath: string;
+  /**
+   * Canonical answersSha256 of the run file about to be scored, or null
+   * for the pre-run form of the gate (run-eval checks bands + receipt
+   * existence before asking any holdout question; the sha match is only
+   * possible once a run file exists).
+   */
+  runFileSha: string | null;
+}
+
+/**
+ * Holdout-scoring gate. Throws unless:
+ *   (a) the acceptance-bands file exists, passes its self-hash, and was
+ *       locked on the development dataset (rag-development-v1); and
+ *   (b) the frozen candidate receipt exists and — when runFileSha is
+ *       provided — its answersSha256 matches it exactly.
+ */
+export function assertHoldoutScoringAllowed(input: HoldoutScoringGateInput): {
+  bandsBasedOnRunId: string;
+  receiptRunId: string;
+  answersSha256: string;
+} {
+  const bandsPath = path.resolve(input.bandsPath);
+  assert(
+    existsSync(bandsPath),
+    `Holdout scoring blocked: acceptance-bands file ${bandsPath} does not exist.`,
+  );
+  const bands = readJson<AcceptanceBandsFile>(bandsPath);
+  const bandsCheck = verifyAcceptanceBands(bands);
+  assert(
+    bandsCheck.ok,
+    `Holdout scoring blocked: acceptance bands failed self-hash verification (expected ${bandsCheck.expected}, actual ${bandsCheck.actual}).`,
+  );
+  assert(
+    bands.datasetId === DEV_DATASET_ID &&
+      typeof bands.basedOnRunId === "string" &&
+      bands.basedOnRunId.length > 0,
+    `Holdout scoring blocked: acceptance bands must be locked on the ${DEV_DATASET_ID} development dataset.`,
+  );
+
+  const receiptPath = path.resolve(input.candidateReceiptPath);
+  assert(
+    existsSync(receiptPath),
+    `Holdout scoring blocked: frozen candidate receipt ${receiptPath} does not exist.`,
+  );
+  const receipt = readJson<FreezeCandidateReceipt>(receiptPath);
+  assert(
+    typeof receipt.answersSha256 === "string" &&
+      /^[0-9a-f]{64}$/.test(receipt.answersSha256) &&
+      typeof receipt.runId === "string" &&
+      receipt.runId.length > 0,
+    "Holdout scoring blocked: candidate receipt is malformed.",
+  );
+  if (input.runFileSha !== null) {
+    assert(
+      receipt.answersSha256 === input.runFileSha,
+      `Holdout scoring blocked: candidate receipt answersSha256 ${receipt.answersSha256} does not match the run file's answer set ${input.runFileSha}.`,
+    );
+  }
+  return {
+    bandsBasedOnRunId: bands.basedOnRunId,
+    receiptRunId: receipt.runId,
+    answersSha256: receipt.answersSha256,
+  };
+}
+
+function argValue(argv: string[], flag: string): string | null {
+  const index = argv.indexOf(flag);
+  if (index === -1 || index + 1 >= argv.length) return null;
+  return argv[index + 1];
+}
+
 async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  if (argv.includes("--check-holdout-gate")) {
+    const bandsPath = argValue(argv, "--bands");
+    const candidateReceiptPath = argValue(argv, "--receipt");
+    assert(
+      bandsPath && candidateReceiptPath,
+      "--check-holdout-gate requires --bands <path> and --receipt <path>.",
+    );
+    const result = assertHoldoutScoringAllowed({
+      bandsPath,
+      candidateReceiptPath,
+      runFileSha: argValue(argv, "--run-file-sha"),
+    });
+    console.log(JSON.stringify({ holdoutScoringAllowed: true, ...result }, null, 2));
+    return;
+  }
   const corpusPath = path.resolve("evaluation/rag/corpus/legacy-8b8207373510d69e.json");
   const inventoryPath = path.resolve(
     "evaluation/rag/source-inventory/contentdm-p15963coll9-6a9d9286b30620f7.json",

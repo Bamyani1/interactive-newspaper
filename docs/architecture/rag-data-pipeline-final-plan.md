@@ -491,6 +491,23 @@ the Phase 8 deploy.
 **Gate:** candidate is non-inferior on the locked holdout acceptance bands,
 passes all hard safety requirements, and stays below the $10 evaluation ceiling.
 
+**Phase 7 tooling actuals (2026-08-02):** the harness is implemented and
+tested without touching any external resource. `rag:setup-eval-db` bootstraps
+the isolated environment (production-URL refusal, canonical migrations,
+schema deep-verify against the committed snapshot, allowlist-only corpus
+import with hash verification, corpus-version registration, identity
+backfill, count verification). `rag:run-eval`/`rag:score-eval` provide the
+in-process driver, self-hashed run files, frozen-candidate receipts, the full
+metric suite with non-inferiority band locking from development data, and a
+mechanized blind-holdout gate in the freeze verifier
+(`--check-holdout-gate`): holdout runs and scoring refuse unless committed
+bands and a matching candidate receipt exist. The runner mechanically strips
+holdout questions to id/question/turn/dependsOn and its source is statically
+proven free of evidence-field references. Remaining Phase 7 execution is
+blocked only on the external approvals: read-only production access for
+exact backfill figures, Neon evaluation environment creation, the paid
+backfill, and then the single pre-authorized ≤$10 holdout run.
+
 ### Phase 8 — Controlled rollout
 
 1. Deploy expand-only code with `legacy` retrieval still active.
