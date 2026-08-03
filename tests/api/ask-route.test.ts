@@ -1158,12 +1158,15 @@ describe("POST /api/ask", () => {
   // 503-class errors during embed, and a streaming generator that throws
   // mid-delta. See the master plan in warm-soaring-willow.md.
 
-  it("returns low-confidence 'not enough info' when reranker filters all articles", async () => {
-    // Retrieval succeeds with 2 articles, but reranker drops them all
-    // (everything scored below minScore=5). route.ts passes the empty
-    // array to generateAnswer, which returns the canned insufficient-info
-    // response with confidence=low. Previously this path had no explicit
-    // test — coverage reached via golden suite only.
+  it("falls back to fused retrieval order when reranker filters all articles", async () => {
+    // Retrieval succeeds with 2 articles, but the reranker (and its CRAG
+    // retry) drop everything below minScore. The total-veto guard now keeps
+    // the fused-order articles at relevanceScore 0 instead of handing the
+    // generator an empty array — an LLM judge discarding every real
+    // candidate is a judging artifact, not proof of no evidence, and the
+    // empty array previously became a false "no matching evidence" refusal
+    // under coverage intents. The generator's own confidence machinery
+    // remains in charge of honesty.
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
       mockArticle,
       { ...mockArticle, id: "1960-01-07-1" },
@@ -1186,15 +1189,18 @@ describe("POST /api/ask", () => {
     expect(body.confidence).toBe("low");
     expect(body.citations).toEqual([]);
     expect(body.answer).toMatch(/don.?t have enough information/i);
-    // sourceArticles should be empty because nothing survived reranking
-    expect(body.sourceArticles).toEqual([]);
-    // generateAnswer must still be called with the empty array so the
-    // canned low-confidence response path is reachable from the route
-    expect(generateAnswer).toHaveBeenCalledWith(
-      "something totally off-topic",
-      [],
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    // The fallback articles reach the generator in fused order (the two
+    // mocks share a contentRevisionId, so fusion dedupes them to one),
+    // flagged with the sentinel relevanceScore 0 — never an empty array.
+    const generatorArticles = (generateAnswer as ReturnType<typeof vi.fn>)
+      .mock.calls[0][1] as Array<{ id: string; relevanceScore: number }>;
+    expect(generatorArticles.length).toBeGreaterThan(0);
+    expect(generatorArticles[0]).toMatchObject({
+      id: mockArticle.id,
+      relevanceScore: 0,
+    });
+    // Both rerank passes ran (initial + retry) before the guard engaged.
+    expect(rerankArticles).toHaveBeenCalledTimes(2);
   });
 
   it("uses full-text retrieval when embedding has a transient 503", async () => {
