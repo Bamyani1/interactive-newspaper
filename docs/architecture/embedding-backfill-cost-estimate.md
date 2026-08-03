@@ -1,8 +1,31 @@
 # Embedding Backfill — Written Cost Estimate
 
-Status: **estimate from corpus statistics; exact figures pending the
-approval-gated read-only dry-run** (`npm run rag:index:build -- --dry-run`)
+Status: **EXACT figures measured by the approved read-only production dry-run
+(2026-08-02)**
 Prepared: 2026-08-02
+
+## Measured figures (read-only production dry-run, 2026-08-02)
+
+| Quantity | Exact value |
+|---|---:|
+| Articles | 11,705 |
+| Planned chunks | 13,143 |
+| Embedded characters | 23,583,138 |
+| Estimated text tokens (chars ÷ 4) | 5,895,785 |
+| **Text cost / pass** | **$1.18** |
+| Images | 2,876 |
+| **Image cost / pass** | **$0.35** |
+| **Total / full pass** | **$1.52** |
+
+The measured total sits below the bracketed central estimate ($1.7–2.2). The
+±25% token-conversion band still applies until the first paid batch confirms
+the API's token accounting: worst case ≈ $1.90/pass. The user approved an
+evaluation-environment backfill conditional on ≤ $3 — satisfied. The registry
+bootstrap also ran (read-only): 5,698 database references, 6,326 R2 objects,
+5,697 matched, exactly 1 missing referenced object (the known missing live
+image, now confirmed empirically), 629 unreferenced orphans (protected until
+Phase 9), 0 unparseable references. Artifact:
+`evaluation/assets/registry-e62a01c47922069f.json`.
 
 This document satisfies the Phase 5 requirement that a full embedding backfill
 have a written cost estimate before its own separate approval. **Nothing here

@@ -714,10 +714,17 @@ async function main() {
 
     const executorModule = await import("./lib/neon-executor.ts");
     const { createNeonExecutor } = executorModule.default ?? executorModule;
-    const runnerModule = await import("./lib/migration-runner.ts");
-    const { assertMigrationsCurrent } = runnerModule.default ?? runnerModule;
     const executor = createNeonExecutor(process.env.DATABASE_URL);
-    await assertMigrationsCurrent(executor);
+
+    // --dry-run reads only legacy tables (articles) and performs zero writes,
+    // so it may target an unmigrated database (e.g. approved read-only
+    // production estimation). Every writing command still requires a fully
+    // migrated target.
+    if (!process.argv.includes("--dry-run")) {
+        const runnerModule = await import("./lib/migration-runner.ts");
+        const { assertMigrationsCurrent } = runnerModule.default ?? runnerModule;
+        await assertMigrationsCurrent(executor);
+    }
 
     const deps = await loadDeps();
 
