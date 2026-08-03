@@ -1,9 +1,11 @@
 /**
- * Deploy-time RAG v2 migration.
+ * Deterministic DML backfill of chunk/image records.
  *
- * Creates chunk/image retrieval tables, repairs FTS weighting, and backfills
- * deterministic records without calling Google APIs. Run `npm run db:embed`
- * afterward to generate stable gemini-embedding-2 vectors.
+ * Rebuilds article_chunks and article_images rows from the articles table
+ * without calling Google APIs. The schema comes from `npm run db:migrate`;
+ * this script never runs DDL and refuses to run against an unmigrated
+ * database. Run `npm run db:embed` afterward to generate stable
+ * gemini-embedding-2 vectors.
  */
 
 import { neon } from "@neondatabase/serverless";
@@ -28,76 +30,12 @@ const sql = neon(process.env.DATABASE_URL);
 const { buildArticleChunkRecords } = await import("../../src/lib/article-chunking.ts");
 const { EMBEDDING_INPUT_VERSION } = await import("../../src/lib/embeddings.ts");
 
-async function createSchema() {
-    await sql`ALTER TABLE articles ADD COLUMN IF NOT EXISTS embedding_input_hash TEXT`;
-    await sql`ALTER TABLE articles ADD COLUMN IF NOT EXISTS embedding_input_version TEXT`;
-    await sql`
-        CREATE TABLE IF NOT EXISTS article_chunks (
-          id TEXT PRIMARY KEY,
-          article_id TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-          chunk_index INTEGER NOT NULL,
-          chunk_text TEXT NOT NULL,
-          search_vector TSVECTOR,
-          embedding VECTOR(768),
-          embedding_model TEXT,
-          embedding_input_version TEXT,
-          embedding_input_hash TEXT NOT NULL,
-          UNIQUE (article_id, chunk_index)
-        )
-    `;
-    await sql`
-        CREATE TABLE IF NOT EXISTS article_images (
-          id TEXT PRIMARY KEY,
-          article_id TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-          image_index INTEGER NOT NULL,
-          image_url TEXT NOT NULL,
-          caption TEXT,
-          embedding VECTOR(768),
-          embedding_model TEXT,
-          embedding_input_version TEXT,
-          embedding_input_hash TEXT,
-          UNIQUE (article_id, image_index)
-        )
-    `;
-    await sql`CREATE INDEX IF NOT EXISTS idx_article_chunks_article ON article_chunks(article_id, chunk_index)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_article_chunks_search ON article_chunks USING gin(search_vector)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_article_chunks_embedding ON article_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 128)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_article_images_article ON article_images(article_id, image_index)`;
-    await sql`CREATE INDEX IF NOT EXISTS idx_article_images_embedding ON article_images USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 128)`;
-
-    await sql`
-        CREATE OR REPLACE FUNCTION article_chunks_search_vector_update() RETURNS trigger AS $$
-        BEGIN
-          NEW.search_vector := to_tsvector('english', coalesce(NEW.chunk_text, ''));
-          RETURN NEW;
-        END $$ LANGUAGE plpgsql
-    `;
-    await sql`DROP TRIGGER IF EXISTS article_chunks_search_vector_trig ON article_chunks`;
-    await sql`
-        CREATE TRIGGER article_chunks_search_vector_trig
-        BEFORE INSERT OR UPDATE OF chunk_text ON article_chunks
-        FOR EACH ROW EXECUTE FUNCTION article_chunks_search_vector_update()
-    `;
-
-    await sql`
-        CREATE OR REPLACE FUNCTION articles_search_vector_update() RETURNS trigger AS $$
-        BEGIN
-          NEW.search_vector :=
-            setweight(to_tsvector('english', coalesce(NEW.headline, '')), 'A') ||
-            setweight(to_tsvector('english', coalesce(NEW.summary, '')), 'B') ||
-            setweight(to_tsvector('english', coalesce(NEW.byline, '')), 'C') ||
-            setweight(to_tsvector('english', coalesce(NEW.body_plain, '')), 'C');
-          RETURN NEW;
-        END $$ LANGUAGE plpgsql
-    `;
-    await sql`DROP TRIGGER IF EXISTS articles_search_vector_trig ON articles`;
-    await sql`
-        CREATE TRIGGER articles_search_vector_trig
-        BEFORE INSERT OR UPDATE ON articles
-        FOR EACH ROW EXECUTE FUNCTION articles_search_vector_update()
-    `;
-    await sql`UPDATE articles SET headline = headline`;
-}
+// .mjs importing .ts named exports needs the default-interop pattern (tsx
+// compiles .ts to CJS because package.json has no "type":"module").
+const migrationRunnerModule = await import("./lib/migration-runner.ts");
+const { assertMigrationsCurrent } = migrationRunnerModule.default ?? migrationRunnerModule;
+const neonExecutorModule = await import("./lib/neon-executor.ts");
+const { createNeonExecutor } = neonExecutorModule.default ?? neonExecutorModule;
 
 async function backfillRecords() {
     const articles = await sql`
@@ -208,8 +146,8 @@ async function backfillRecords() {
 }
 
 async function main() {
-    console.log("RAG v2 schema migration (no model calls)\n");
-    await createSchema();
+    console.log("RAG chunk/image record backfill (no model calls, no DDL)\n");
+    await assertMigrationsCurrent(createNeonExecutor(process.env.DATABASE_URL));
     const counts = await backfillRecords();
     await sql`ANALYZE articles`;
     await sql`ANALYZE article_chunks`;
@@ -219,6 +157,6 @@ async function main() {
 }
 
 main().catch((error) => {
-    console.error("RAG v2 migration failed:", error);
+    console.error("RAG record backfill failed:", error);
     process.exit(1);
 });

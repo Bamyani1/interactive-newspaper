@@ -289,7 +289,7 @@ When the reformulator flags a query as visual:
 
 ## Database Schema
 
-Designed for Neon serverless Postgres. Full schema in [scripts/db/schema.sql](./scripts/db/schema.sql); column-by-column details in [docs/architecture/data-model.md](./docs/architecture/data-model.md).
+Designed for Neon serverless Postgres. Canonical DDL lives in [scripts/db/migrations/](./scripts/db/migrations) (applied with `npm run db:migrate`); column-by-column details in [docs/architecture/data-model.md](./docs/architecture/data-model.md).
 
 ```sql
 -- Core content
@@ -405,9 +405,10 @@ cp .env.example .env.local
 # Edit .env.local and fill in DATABASE_URL and the Google Cloud project/location.
 gcloud auth application-default login
 
-# 3. Seed the database
-npm run db:seed          # creates tables + loads existing edition.json files
-npm run db:migrate:rag-v2 # creates/backfills chunk and image metadata (no model calls)
+# 3. Migrate and seed the database
+npm run db:migrate       # applies canonical migrations (creates all tables)
+npm run db:seed          # loads existing edition.json files (data only)
+npm run db:backfill:rag-records # backfills chunk and image metadata (no model calls)
 npm run db:embed -- --dry-run
 npm run db:embed          # generates pending text-chunk and image vectors
 
@@ -443,7 +444,7 @@ python download.py            # grab TIFs into ocr/inbox/
 
 ### Running migrations
 
-All migrations are idempotent (`IF NOT EXISTS`) and safe to run multiple times. Core tables are created by `scripts/db/schema.sql` (applied automatically on `db:seed`). For an existing database, `db:migrate:rag-v2` creates and backfills deterministic chunk/image metadata without model calls; preview cost with `db:embed -- --dry-run` before authorizing the online vector backfill. See [data-model.md § Migrations](./docs/architecture/data-model.md#migrations).
+Schema changes live in `scripts/db/migrations/` and are applied with `npm run db:migrate`, which records each file in a `schema_migrations` ledger under an advisory lock; applied migrations are checksum-immutable. `db:seed` is data-only and refuses an unmigrated database. For an existing database, `db:backfill:rag-records` backfills deterministic chunk/image metadata without model calls; preview cost with `db:embed -- --dry-run` before authorizing the online vector backfill. See [data-model.md § Migrations](./docs/architecture/data-model.md#migrations).
 
 ---
 
