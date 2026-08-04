@@ -12,6 +12,7 @@ import {
     extractInlineImageUrls,
     indexImagesByUrl,
 } from "../lib/dedup-source-images";
+import { trimIncompleteMarkdown } from "../lib/trim-incomplete-markdown";
 import {
     AnswerImageContext,
     type AnswerImageContextValue,
@@ -74,6 +75,18 @@ export const Turn: React.FC<TurnProps> = ({
     const isStreaming = turn.status === "streaming";
     const hasText = turn.answer.trim().length > 0;
     const showStagePill = isStreaming && !hasText;
+
+    // While streaming, hold back half-arrived markdown (a partial image
+    // URL, a dangling "[Source", an unclosed "**") so raw syntax never
+    // flashes. The reducer keeps the full text; done renders untrimmed.
+    const displayAnswer = isStreaming
+        ? trimIncompleteMarkdown(turn.answer)
+        : turn.answer;
+
+    // Sources arrive with the metadata event, several seconds before the
+    // first answer token — show them immediately so the wait is spent
+    // reading evidence, not watching dots.
+    const showSources = turn.sourceArticles.length > 0;
 
     // Photos the LLM already embedded inline shouldn't re-appear in
     // the "More pictures" grid, otherwise the reader sees the same
@@ -162,14 +175,14 @@ export const Turn: React.FC<TurnProps> = ({
                                         <Markdown
                                             articleIdIndex={articleIdIndex}
                                         >
-                                            {turn.answer}
+                                            {displayAnswer}
                                         </Markdown>
                                     </AnswerImageContext.Provider>
                                 </div>
                             </>
                         ) : null}
 
-                        {!isStreaming && turn.status === "done" ? (
+                        {turn.status === "done" ? (
                             <>
                                 <LowConfidenceCaveat
                                     confidence={turn.confidence}
@@ -180,21 +193,26 @@ export const Turn: React.FC<TurnProps> = ({
                                         onOpenUrl={openLightbox}
                                     />
                                 ) : null}
-                                <SourceList
-                                    sources={turn.sourceArticles}
-                                    defaultExpanded={exportMode}
-                                    interactive={!exportMode}
-                                />
-                                {!exportMode &&
-                                turn.followUpQuestions &&
-                                turn.followUpQuestions.length > 0 ? (
-                                    <FollowUpQuestions
-                                        questions={turn.followUpQuestions}
-                                        onSelect={onFollowUp}
-                                        disabled={false}
-                                    />
-                                ) : null}
                             </>
+                        ) : null}
+
+                        {showSources ? (
+                            <SourceList
+                                sources={turn.sourceArticles}
+                                defaultExpanded={exportMode}
+                                interactive={!exportMode}
+                            />
+                        ) : null}
+
+                        {turn.status === "done" &&
+                        !exportMode &&
+                        turn.followUpQuestions &&
+                        turn.followUpQuestions.length > 0 ? (
+                            <FollowUpQuestions
+                                questions={turn.followUpQuestions}
+                                onSelect={onFollowUp}
+                                disabled={false}
+                            />
                         ) : null}
                     </>
                 )}

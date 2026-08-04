@@ -98,3 +98,60 @@ describe("Markdown renderer", () => {
         expect(link).toHaveAttribute("rel", "noopener noreferrer");
     });
 });
+
+describe("splitMarkdownBlocks", () => {
+    it("splits paragraphs and headings on blank lines", async () => {
+        const { splitMarkdownBlocks } = await import(
+            "@/features/ask-archive/components/Markdown"
+        );
+        expect(splitMarkdownBlocks("## Head\n\nPara one.\n\nPara two.")).toEqual([
+            "## Head",
+            "Para one.",
+            "Para two.",
+        ]);
+    });
+
+    it("keeps a fenced code block with internal blank lines intact", async () => {
+        const { splitMarkdownBlocks } = await import(
+            "@/features/ask-archive/components/Markdown"
+        );
+        const text = "Intro\n\n```\nline\n\nline after gap\n```\n\nOutro";
+        const blocks = splitMarkdownBlocks(text);
+        expect(blocks).toEqual([
+            "Intro",
+            "```\nline\n\nline after gap\n```",
+            "Outro",
+        ]);
+    });
+
+    it("keeps a loose ordered list in one block so numbering survives", async () => {
+        const { splitMarkdownBlocks } = await import(
+            "@/features/ask-archive/components/Markdown"
+        );
+        const blocks = splitMarkdownBlocks("1. first\n\n2. second\n\n3. third");
+        expect(blocks).toEqual(["1. first\n\n2. second\n\n3. third"]);
+    });
+
+    it("renders a loose ordered list with continuous numbering", () => {
+        const { container } = render(
+            <Markdown>{"1. first\n\n2. second"}</Markdown>,
+        );
+        const lists = container.querySelectorAll("ol");
+        expect(lists.length).toBe(1);
+        expect(lists[0].querySelectorAll("li").length).toBe(2);
+    });
+});
+
+describe("splitMarkdownBlocks separator fidelity", () => {
+    it("preserves blank-line runs inside fenced code verbatim", async () => {
+        const { splitMarkdownBlocks } = await import(
+            "@/features/ask-archive/components/Markdown"
+        );
+        const text = "Intro\n\n```\ndef foo():\n    pass\n\n\ndef bar():\n    pass\n```";
+        const blocks = splitMarkdownBlocks(text);
+        expect(blocks).toEqual([
+            "Intro",
+            "```\ndef foo():\n    pass\n\n\ndef bar():\n    pass\n```",
+        ]);
+    });
+});
