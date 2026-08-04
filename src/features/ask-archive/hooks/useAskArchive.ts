@@ -165,32 +165,55 @@ type StreamEvent =
           requestId?: string;
       };
 
-// When the backend answer arrives as one payload (agent path + cache path
-// both emit a single `done` event instead of per-token deltas), replay it
-// as a stream of small chunks so the reader still sees words appearing.
-// Purely presentation-layer — no pipeline or network change.
-async function replayAnswerAsDeltas(
-    id: string,
-    answer: string,
-    dispatch: (action: {
-        type: "TURN_DELTA";
-        id: string;
-        text: string;
-    }) => void,
-    signal: AbortSignal,
-): Promise<void> {
-    const tokens = answer.split(/(\s+)/);
-    const chunkSize = 2;
-    const chunkDelay = 16;
-    for (let i = 0; i < tokens.length; i += chunkSize) {
-        if (signal.aborted) return;
-        const text = tokens.slice(i, i + chunkSize).join("");
-        if (text.length > 0) {
-            dispatch({ type: "TURN_DELTA", id, text });
+// Smooths incoming answer text into a steady character flow. Real SSE
+// deltas arrive as multi-word bursts every ~100-300ms; queueing them and
+// draining a few characters per tick renders the classic typewriter effect.
+// The drain rate adapts to the backlog so the display never lags the
+// stream by more than roughly TYPE_CATCHUP_TICKS ticks — single-payload
+// answers (cache hits, agent path) start fast and settle to a crawl.
+const TYPE_TICK_MS = 16;
+const TYPE_CATCHUP_TICKS = 24;
+const TYPE_MIN_CHARS_PER_TICK = 3;
+
+class DeltaTypewriter {
+    private queue = "";
+    private draining: Promise<void> | null = null;
+
+    constructor(
+        private readonly emit: (text: string) => void,
+        private readonly signal: AbortSignal,
+    ) {}
+
+    push(text: string): void {
+        if (!text) return;
+        this.queue += text;
+        if (!this.draining) this.draining = this.drain();
+    }
+
+    /** Resolves once everything pushed so far has been emitted. */
+    async settle(): Promise<void> {
+        while (this.draining) await this.draining;
+    }
+
+    private async drain(): Promise<void> {
+        while (this.queue.length > 0) {
+            if (this.signal.aborted) {
+                this.queue = "";
+                break;
+            }
+            const take = Math.max(
+                TYPE_MIN_CHARS_PER_TICK,
+                Math.ceil(this.queue.length / TYPE_CATCHUP_TICKS),
+            );
+            this.emit(this.queue.slice(0, take));
+            this.queue = this.queue.slice(take);
+            if (this.queue.length > 0) {
+                await new Promise((resolve) =>
+                    setTimeout(resolve, TYPE_TICK_MS),
+                );
+            }
         }
-        if (i + chunkSize < tokens.length) {
-            await new Promise((resolve) => setTimeout(resolve, chunkDelay));
-        }
+        this.draining = null;
     }
 }
 
@@ -500,11 +523,16 @@ export function useAskArchive(): UseAskArchiveReturn {
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 let buf = "";
-                // Track whether we've seen any delta events. If `done`
-                // fires without any preceding deltas (agent / cache path),
-                // replay the final answer as chunks so the reader sees it
-                // type on instead of dump-paste.
+                // All answer text renders through the typewriter — live
+                // generation deltas and single-payload answers (agent /
+                // cache path, tracked via receivedDelta) alike — so every
+                // path types on instead of dump-pasting.
                 let receivedDelta = false;
+                const typewriter = new DeltaTypewriter(
+                    (text) =>
+                        dispatch({ type: "TURN_DELTA", id: turnId, text }),
+                    controller.signal,
+                );
                 while (true) {
                     const { done, value } = await reader.read();
                     if (value) buf += decoder.decode(value, { stream: true });
@@ -543,20 +571,15 @@ export function useAskArchive(): UseAskArchiveReturn {
                             });
                         } else if (event.type === "delta") {
                             receivedDelta = true;
-                            dispatch({
-                                type: "TURN_DELTA",
-                                id: turnId,
-                                text: event.text,
-                            });
+                            typewriter.push(event.text);
                         } else if (event.type === "done") {
                             if (!receivedDelta && event.answer) {
-                                await replayAnswerAsDeltas(
-                                    turnId,
-                                    event.answer,
-                                    dispatch,
-                                    controller.signal,
-                                );
+                                typewriter.push(event.answer);
                             }
+                            // Let the queued text finish typing before the
+                            // turn freezes — TURN_DONE replaces the answer
+                            // with the authoritative final text.
+                            await typewriter.settle();
                             dispatch({
                                 type: "TURN_DONE",
                                 id: turnId,
