@@ -1,5 +1,8 @@
 /** @vitest-environment node */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { PGlite } from "@electric-sql/pglite";
 import { runMigrations } from "../../scripts/db/lib/migration-runner";
 import { backfillIdentities } from "../../scripts/db/backfill-identities.mjs";
@@ -414,9 +417,24 @@ describe("identity backfill and compat against PGlite", () => {
         expect(hits.map((row) => row.id)).toEqual(["1950-01-11-0"]);
     });
 
-    it("registers the frozen legacy corpus version idempotently", async () => {
-        const first = await registerCorpusVersion(db.executor);
-        const second = await registerCorpusVersion(db.executor);
+    it("registers a corpus version idempotently from a snapshot file", async () => {
+        // The frozen production corpus JSON was removed from the repo, so this
+        // drives registerCorpusVersion against a synthetic snapshot — it still
+        // exercises the idempotent insert and the hash/count propagation.
+        const corpusPath = join(mkdtempSync(join(tmpdir(), "corpus-")), "corpus.json");
+        writeFileSync(
+            corpusPath,
+            JSON.stringify({
+                corpusVersion: "test-corpus-abc123",
+                corpusSha256: "a".repeat(64),
+                retrievalMode: "legacy",
+                generatedAt: "2026-01-01T00:00:00Z",
+                counts: { editions: 3, articles: 42, ads: 7, images: 0 },
+            }),
+        );
+
+        const first = await registerCorpusVersion(db.executor, corpusPath);
+        const second = await registerCorpusVersion(db.executor, corpusPath);
         expect(first.inserted).toBe(true);
         expect(second).toEqual({ id: first.id, inserted: false });
 
@@ -432,11 +450,11 @@ describe("identity backfill and compat against PGlite", () => {
              FROM corpus_versions`,
         );
         expect(rows).toHaveLength(1);
-        expect(rows[0].id).toBe("legacy-8b8207373510d69e");
-        expect(rows[0].manifest_hash).toMatch(/^[0-9a-f]{64}$/);
-        expect(rows[0].edition_count).toBe(351);
-        expect(rows[0].article_count).toBe(11705);
-        expect(rows[0].ad_count).toBe(6846);
+        expect(rows[0].id).toBe("test-corpus-abc123");
+        expect(rows[0].manifest_hash).toBe("a".repeat(64));
+        expect(rows[0].edition_count).toBe(3);
+        expect(rows[0].article_count).toBe(42);
+        expect(rows[0].ad_count).toBe(7);
         expect(rows[0].image_count).toBe(0);
     });
 });
