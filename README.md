@@ -164,7 +164,7 @@ The three docs cross-reference each other and share a glossary. Read them in ord
 
 **AI / Machine Learning**
 
-- **Google Gemini** (`@google/genai`) — OCR structuring, embeddings (`gemini-embedding-2-preview`, 768-dim), reranking, RAG answer generation, and agent-loop function calling
+- **Google Gemini on Vertex AI** (`@google/genai`) — ADC-authenticated RAG generation (`gemini-3.5-flash-lite` only) and stable 768-dimensional embeddings (`gemini-embedding-2`), plus the independently configured OCR stages
 - **Google Document AI** — layout parser for character-level OCR with confidence scoring
 - **DocLayout-YOLO** — photo/illustration region detection on scanned pages
 
@@ -193,23 +193,23 @@ For the full end-to-end deep-dive — error taxonomy, dedup, caching, agent tool
 
 Modern user queries don't match 1960s newspaper language. "What did students think about the Vietnam War?" against text that uses "the war in Indochina" or "the conflict in Southeast Asia" hurts both vector and FTS retrieval.
 
-`query-reformulator.ts` uses Gemini to rewrite the question into period-appropriate vocabulary, detect text-vs-visual intent, produce separate `embeddingQuery` and `ftsQuery` outputs, and classify complexity (simple vs complex). Era-specific synonym expansion is baked into the prompt (e.g., `basketball → cagers OR hoopsters`). On timeout, falls back to the original question.
+`query-reformulator.ts` uses Gemini to rewrite the question into period-appropriate vocabulary, detect text-vs-visual intent, produce separate `embeddingQuery` and `ftsQuery` outputs, infer database date filters only from explicit years/decades/ranges, and classify complexity. Semantic expansion stays in `embeddingQuery`; `ftsQuery` is deliberately limited to 1–3 essential names/nouns with no generated `OR` chain. Broad one-topic synthesis remains on the simple path. On timeout, the original question is used.
 
 ### Embedding & retrieval
 
-`embeddings.ts` produces 768-dim vectors via `gemini-embedding-2-preview`. LRU cache with 5-min TTL. Quota-aware backoff. `db.ts :: hybridSearch` runs vector (HNSW, `hnsw.ef_search=100`) and FTS (`ts_rank_cd`) in parallel, then merges via Reciprocal Rank Fusion with mode-specific weights (0.7/0.3 for visual, 0.6/0.4 for text).
+`embeddings.ts` produces 768-dimensional vectors via stable `gemini-embedding-2`. Article text is indexed as deterministic overlapping chunks, while every image receives its own vector. A five-minute query LRU avoids duplicate calls. `db.ts :: hybridSearch` runs HNSW vector and chunk-aware FTS retrieval in parallel, then merges them with Reciprocal Rank Fusion using mode-specific weights (0.7/0.3 for visual, 0.6/0.4 for text).
 
 ### Reranking with CRAG
 
-Retrieved articles go to Gemini with explicit score anchors (0–10). Scores ≥4 (text) / ≥3 (visual) survive. On zero-result ranking, **one corrective retrieval retry** runs with broader search terms — a single-pass CRAG.
+Retrieved articles go to Gemini with explicit score anchors (0–10). Scores ≥4 (text) / ≥3 (visual) survive. The judge receives matched passages and image captions; it treats evidence that corrects a false premise as relevant, and in visual mode distinguishes a relevant pictured subject from an article that merely mentions that subject beside an unrelated image. On zero-result ranking, **one corrective retrieval retry** runs with broader search terms — a single-pass CRAG.
 
 ### Answer generation
 
-The answer generator receives the **original** user question plus reranked articles. A skip-Gemini guard fires for clearly off-topic retrieval (avg distance > 0.3 AND reranker score < 5), returning a canned "not enough information" answer without burning tokens. Empirically calibrated confidence thresholds (low/medium/high) drive downstream caching and UI.
+The answer generator receives the **original** user question plus the matched passages from reranked articles. A skip-Gemini guard fires when reranker evidence is tangential (average score below 5). The output ceiling leaves room for MEDIUM thinking plus the structured JSON answer, and malformed structured envelopes are never shown as raw UI text. Confidence is based on verified visible citations and the model-independent 0–10 reranker rubric, not embedding-distance constants.
 
 ### Agent loop for complex questions
 
-`agent-loop.ts` — constrained Gemini function-calling loop with three tools (`search_archive`, `read_article`, `list_editions`). `MAX_ROUNDS = 8`, AbortSignal-aware, tool result truncation to bound context size. Agent responses skip caching and dedup since their context is query-specific.
+`agent-loop.ts` — constrained Gemini function-calling loop with three tools (`search_archive`, `read_article`, `list_editions`). It permits at most three tool rounds, then makes one mandatory synthesis call under a dedicated final-answer instruction with function calling explicitly set to `NONE`. The final call starts fresh from a deduplicated packet of returned article evidence, avoiding prior tool-call turns that can condition the model to keep searching. It is AbortSignal-aware and backed by the same canonical retrieval/reranking/CRAG service as the simple path. Relevant passages and `read_article` evidence reach synthesis; UI snippets alone are truncated. Agent responses skip answer caching because their context is query-specific.
 
 ### Conversation threading
 
@@ -221,7 +221,7 @@ The answer generator receives the **original** user question plus reranked artic
 - **Daily budget**: $0.50/day hard stop via `ai_spend_counter` table (`cost-tracker.ts`)
 - **Concurrent dedup**: identical in-flight (ip, question, filters, sessionId) requests share one pipeline run (JSON path only)
 - **Global deadline**: `GLOBAL_DEADLINE_MS = 30_000`; all stages race against it
-- **Prompt-injection defense**: user input wrapped in XML delimiters before prompting
+- **Prompt-injection defense**: user questions are encoded as JSON strings, model outputs use schemas, and citations are accepted only for evidence actually returned by retrieval/tools
 
 ---
 
@@ -255,7 +255,7 @@ For the full seven-phase walkthrough, LLM retry policy, diagnostics, and gotchas
 
 ### Gotchas worth knowing
 
-- **Retry model swap**: every retry uses `gemini-3-flash-preview` regardless of the original model request. A failed Pro merge will retry on Flash with different quality.
+- **Retry identity**: OCR retries keep the same stage model and configuration; see the OCR architecture document for its independently locked routing.
 - **RECITATION handling**: Gemini's content filter blocks verbatim text reproduction from system instructions; the page extractor moves OCR text to user contents on RECITATION.
 - **Atomic writes**: Phases 4 and 5 use `tempfile.mkstemp` + `os.replace` to prevent file-name collisions if two processes hit the same edition.
 - **`MERGE_MIN_CONFIDENCE=1.0`** disables LLM merges, leaving only deterministic continuation stitching — useful for debugging bad merges.
@@ -271,14 +271,14 @@ The goal: *"show me photos of the homecoming parade"* should actually surface ar
 
 ### Embed-time
 
-`scripts/db/embed.mjs` loads each article's primary image at embed time and sends it to `gemini-embedding-2-preview` *alongside* the article text as a single multimodal embedding call. The resulting 768-dim vector lives in `articles.embedding`. Text and image share one embedding space, so a single vector search can match both modalities.
+`scripts/db/embed.mjs` backfills two separate indexes with `gemini-embedding-2`: sentence-aware text records in `article_chunks`, and one multimodal vector per visual in `article_images`. This keeps late-article facts retrievable and prevents a primary image from diluting the article's only text vector.
 
 ### Query-time
 
 When the reformulator flags a query as visual:
 
-- Hybrid search increases the candidate limit (more results to consider for visual relevance).
-- The reranker is instructed that photo quality and captions matter.
+- Hybrid search queries `article_images` directly and increases the candidate limit.
+- The reranker receives image captions and scores whether the pictured subject—not merely article prose—matches the request.
 - The generator returns `mode: "visual"` and a curated `imageUrls[]` from the reranked articles.
 
 ### Rendering
@@ -289,7 +289,7 @@ When the reformulator flags a query as visual:
 
 ## Database Schema
 
-Designed for Neon serverless Postgres. Full schema in [scripts/db/schema.sql](./scripts/db/schema.sql); column-by-column details in [docs/architecture/data-model.md](./docs/architecture/data-model.md).
+Designed for Neon serverless Postgres. Canonical DDL lives in [scripts/db/migrations/](./scripts/db/migrations) (applied with `npm run db:migrate`); column-by-column details in [docs/architecture/data-model.md](./docs/architecture/data-model.md).
 
 ```sql
 -- Core content
@@ -302,9 +302,17 @@ articles (
   writer_position, is_hero, is_featured,
   image_urls JSONB, image_caption, image_captions JSONB,
   search_vector TSVECTOR,                -- auto-maintained via trigger
-  embedding VECTOR(768),                 -- multimodal (text + image)
-  embedding_model TEXT                   -- model provenance
+  embedding VECTOR(768),                 -- legacy vector retained during migration
+  embedding_model TEXT, embedding_input_hash TEXT, embedding_input_version TEXT
 )
+
+article_chunks (id, article_id FK, chunk_index, chunk_text, search_vector,
+                embedding VECTOR(768), embedding_model, embedding_input_version,
+                embedding_input_hash)
+
+article_images (id, article_id FK, image_index, image_url, caption,
+                embedding VECTOR(768), embedding_model, embedding_input_version,
+                embedding_input_hash)
 
 ads (id, edition_date FK, position, title, body, category, ad_type,
      display_text, phone, address, price, image_urls JSONB)
@@ -324,13 +332,13 @@ Indexes:
 
 - B-tree on `articles.edition_date`, `articles.category`, `articles.byline (WHERE NOT NULL)`
 - GIN on `articles.search_vector`
-- HNSW on `articles.embedding` with `m=16, ef_construction=128`; queries use `hnsw.ef_search=100`
+- HNSW on `article_chunks.embedding` and `article_images.embedding` with `m=16, ef_construction=128`; queries use `hnsw.ef_search=100` plus iterative scan
 
 A plpgsql trigger auto-maintains `articles.search_vector` with weights headline(A) > summary(B) > byline=body_plain(C).
 
-### Embedding preservation
+### Embedding identity and preservation
 
-The seed script snapshots embeddings by content fingerprint (`JSON.stringify([headline, byline, body_plain, category])`) before each delete-and-reinsert cycle, then restores matching ones. This means re-seeding an unchanged edition preserves all embeddings without re-billing the Gemini API. See [data-model.md § Embedding preservation](./docs/architecture/data-model.md#embedding-preservation--the-fingerprint-mechanism).
+The seed and migration paths update records in place. A SHA-256 fingerprint covers the exact model, input version, text, and (for visual vectors) image bytes. Unchanged vectors survive a reseed; changed inputs invalidate only their own vector, and removed records are deleted. See [data-model.md § Embeddings](./docs/architecture/data-model.md#embeddings).
 
 ---
 
@@ -341,11 +349,11 @@ A representative sample of commits that each address a real failure mode discove
 | Commit | Area | What was wrong |
 |---|---|---|
 | `18056ce` | Rate limiting | `/api/ask` had no rate limiter; a single user could exhaust the Gemini quota in minutes. Now 10 req/min per IP, durable. |
-| `bd0cb13` | Prompt injection | User input was interpolated raw into the generator prompt. Now wrapped in XML delimiters and escaped. |
+| `bd0cb13` | Prompt injection | User input was interpolated raw into the generator prompt. Current prompts encode questions as JSON strings and validate structured responses/citations. |
 | `a2c8c2c` | Token limits | Long articles could push embedding input past the token cap. Now a pre-flight count trims at a sentence boundary. |
 | `74d0a50` | FTS correctness | Article updates left `search_vector` stale. Added a plpgsql trigger that auto-maintains on INSERT/UPDATE. |
 | `fd0470b` | Retry backoff | Backoff was indexed by batch position rather than retry count. Fixed. |
-| `744e79e` | Fallback timeouts | Vector-only fallback reused the tail of the rerank timeout. Now creates a fresh timeout. |
+| `744e79e` | Fallback timeouts | Retrieval could orphan work after a deadline. Neon fetches now receive real cancellation, and timeout/abort never starts a second fallback query. |
 | `964d6af` | Reranker parsing | Reranker rejected decimal scores (`9.5`). Now parses floats. |
 | `a3c8c88` | Ad deduplication | Restoring locked editions double-inserted ads. Added dedup on restore. |
 | `ddab849` | Conversation durability | `done` event could fire before the turn was persisted. Added `persistTurnBounded` 1.5s cap. |
@@ -353,7 +361,7 @@ A representative sample of commits that each address a real failure mode discove
 | `0b04000` | Reranker bounds | Reranker fallback could exceed `maxArticles`. Capped. |
 | `35139f7` | Cache correctness | Answer cache was serving context-flavored answers across sessions. Now bypassed when conversation history is non-empty. |
 
-Every pipeline step has a timeout, a typed error envelope with a `kind` discriminator, and a graceful fallback. Every LLM call has retry with model fallback.
+Every pipeline step has a timeout and a typed error envelope with a `kind` discriminator. Generation stays on Gemini 3.5 Flash-Lite; retries never switch to 3.6.
 
 ---
 
@@ -363,7 +371,7 @@ Every pipeline step has a timeout, a typed error envelope with a `kind` discrimi
 
 - **Lib tests** — `embeddings.test.ts`, `query-reformulator.test.ts`, `reranker.test.ts`, `answer-generator.test.ts`, `db-vector-search.test.ts`, `agent-loop.test.ts`, `agent-tools.test.ts`, `answer-cache.test.ts`, `rate-limit.test.ts`
 - **API tests** — `ask-route.test.ts` (70 tests) covers the full `/api/ask` pipeline, streaming, dedup, and error taxonomy with mocked Gemini
-- **Golden RAG regression** — `rag-golden-questions.test.ts` with baseline drift detection against `rag-golden-baseline.json`; hard regressions (status change, confidence drop ≥2, citations halved) fail CI
+- **Golden RAG regression** — opt-in `rag-golden-questions.test.ts`; frozen source/fact and security assertions determine correctness, while citation-count/confidence drift is reported as telemetry
 - **Component tests** — `ask-archive`, `news-feed` variants
 - **Runner** — `npm run test:run` (CI) or `npm run test` (watch)
 
@@ -384,7 +392,7 @@ Every pipeline step has a timeout, a typed error envelope with a `kind` discrimi
 
 ## Getting Started
 
-**Prerequisites:** Node.js 20+, Python 3.12, a Neon Postgres database (or any Postgres with `pgvector`), a Google Cloud project with Document AI enabled, and a Google Gemini API key.
+**Prerequisites:** Node.js 20+, Python 3.12, a Neon Postgres database (or any Postgres with `pgvector`), a Google Cloud project with Vertex AI and Document AI enabled, and working Application Default Credentials.
 
 ```bash
 # 1. Clone and install
@@ -394,11 +402,15 @@ npm install
 
 # 2. Configure environment
 cp .env.example .env.local
-# Edit .env.local and fill in DATABASE_URL, GOOGLE_API_KEY, etc.
+# Edit .env.local and fill in DATABASE_URL and the Google Cloud project/location.
+gcloud auth application-default login
 
-# 3. Seed the database
-npm run db:seed          # creates tables + loads existing edition.json files
-npm run db:embed         # generates 768-dim vector embeddings for all articles
+# 3. Migrate and seed the database
+npm run db:migrate       # applies canonical migrations (creates all tables)
+npm run db:seed          # loads existing edition.json files (data only)
+npm run db:backfill:rag-records # backfills chunk and image metadata (no model calls)
+npm run db:embed -- --dry-run
+npm run db:embed          # generates pending text-chunk and image vectors
 
 # 4. Run the app
 npm run dev              # http://localhost:3000
@@ -432,7 +444,7 @@ python download.py            # grab TIFs into ocr/inbox/
 
 ### Running migrations
 
-All migrations are idempotent (`IF NOT EXISTS`) and safe to run multiple times. Core tables are created by `scripts/db/schema.sql` (applied automatically on `db:seed`). The `ask_session_turns`, `ai_spend_counter`, and `api_rate_bucket` tables are also created by `schema.sql`. The `migrate-rag-improvements.mjs` script has a **mandatory follow-up** — see [data-model.md § Migrations](./docs/architecture/data-model.md#migrations).
+Schema changes live in `scripts/db/migrations/` and are applied with `npm run db:migrate`, which records each file in a `schema_migrations` ledger under an advisory lock; applied migrations are checksum-immutable. `db:seed` is data-only and refuses an unmigrated database. For an existing database, `db:backfill:rag-records` backfills deterministic chunk/image metadata without model calls; preview cost with `db:embed -- --dry-run` before authorizing the online vector backfill. See [data-model.md § Migrations](./docs/architecture/data-model.md#migrations).
 
 ---
 
@@ -443,8 +455,12 @@ Create `.env.local` from `.env.example`:
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | Yes | Neon Postgres connection string |
-| `GOOGLE_API_KEY` | Yes | Gemini — OCR structuring, embeddings, RAG generation |
-| `GOOGLE_CLOUD_PROJECT` | Yes (OCR) | Document AI project ID |
+| `GOOGLE_CLOUD_PROJECT` | Yes | Vertex AI/Document AI project used with ADC |
+| `GOOGLE_CLOUD_LOCATION` | Yes | Vertex AI location; use `global` for current RAG models |
+| `GOOGLE_ADC_EXPECTED_PRINCIPAL` | Recommended locally | Optional identity assertion used by the read-only ADC preflight |
+| `RAG_CORPUS_VERSION` | Recommended | Cache namespace; bump after a corpus/index deployment |
+| `RAG_RETRIEVAL_MODE` | Yes | Retrieval selector; defaults to and should remain `legacy` until a validated index is approved |
+| `RAG_ACTIVE_INDEX_BUILD_ID` | Candidate only | Required immutable build identity for `shadow` or `versioned` retrieval |
 | `DOCUMENT_AI_PROCESSOR_ID` | Yes (OCR) | Document AI layout parser processor |
 | `DOCUMENT_AI_LOCATION` | Yes (OCR) | Typically `us` |
 | `LAYOUT_PARSER_PROCESSOR_ID` | Optional | Secondary layout processor |
@@ -473,6 +489,7 @@ Create `.env.local` from `.env.example`:
 | `npm run test` | Vitest watch mode |
 | `npm run test:run` | Vitest run (CI mode) |
 | `npm run test:invariants` | OCR pipeline invariant tests |
+| `npm run google:verify-adc` | Read-only verification of ADC identity, project/quota project, required Google APIs, and OCR processor |
 | `npm run db:seed` | Seed editions into Neon Postgres |
 | `npm run db:reset` | Drop + recreate tables, then seed |
 | `npm run db:embed` | Generate vector embeddings for articles (incremental) |
@@ -511,8 +528,11 @@ Create `.env.local` from `.env.example`:
 │   ├── cost-tracker.ts           # Daily budget kill switch
 │   ├── db.ts                     # Hybrid search, vector search, FTS
 │   ├── editions-server.ts        # Cached edition list + prod DB-outage guard
-│   ├── embeddings.ts             # gemini-embedding-2-preview + LRU
+│   ├── article-chunking.ts       # deterministic sentence-aware chunk records
+│   ├── embeddings.ts             # stable gemini-embedding-2 + LRU
 │   ├── gemini-client.ts          # Shared client factory
+│   ├── rag-model-config.ts       # Flash-Lite-only RAG model/thinking routing
+│   ├── retrieval.ts              # canonical retrieve/rerank/CRAG service
 │   ├── gold-edition.ts           # Gold fallback loader
 │   ├── image-url.ts              # R2 CDN ↔ dev API proxy URL resolver
 │   ├── ocr-adapter.ts            # Re-export shim for src/server/ocr-adapter
@@ -596,10 +616,10 @@ Create `.env.local` from `.env.example`:
 
 - Retrieval-augmented generation end-to-end: query reformulation, hybrid search with RRF, LLM reranking with CRAG, cited generation
 - Constrained Gemini function-calling agent for complex multi-hop queries (bounded rounds, AbortSignal-aware)
-- Multimodal embeddings (text + image → single 768-dim vector)
-- Empirically calibrated confidence thresholds tied to a golden regression suite with drift detection
+- Separate text-chunk and per-image multimodal embeddings in one 768-dimensional retrieval space
+- Citation-verified confidence based on reranker evidence, with golden source/fact regression checks
 - Prompt engineering for extraction, structuring, classification, reranking, generation, and tool-calling — each prompt tuned for its task
-- Hardening against real production failure modes: rate limiting, prompt injection, token truncation, graceful fallbacks, retry logic with model fallback
+- Hardening against real production failure modes: rate limiting, prompt injection, token truncation, bounded corrective retrieval, and cancellable database work
 
 </details>
 

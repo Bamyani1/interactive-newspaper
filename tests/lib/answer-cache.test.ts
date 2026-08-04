@@ -28,6 +28,7 @@ function makeResponse(overrides: Partial<AskResponse> = {}): AskResponse {
 
 describe("answer-cache", () => {
     beforeEach(() => {
+        vi.unstubAllEnvs();
         clearAnswerCache();
     });
 
@@ -101,6 +102,24 @@ describe("answer-cache", () => {
         expect(getCachedAnswer("complex question", {})).toBeNull();
     });
 
+    it("bypasses reads and writes during an isolated evaluation", () => {
+        const response = makeResponse({ answer: "production cache" });
+        setCachedAnswer("same question", {}, response);
+        expect(getCachedAnswer("same question", {})).not.toBeNull();
+
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        expect(getCachedAnswer("same question", {})).toBeNull();
+        setCachedAnswer(
+            "evaluation-only question",
+            {},
+            makeResponse({ answer: "must not persist" }),
+        );
+
+        vi.stubEnv("RAG_EVALUATION_MODE", "0");
+        expect(getCachedAnswer("same question", {})?.answer).toBe("production cache");
+        expect(getCachedAnswer("evaluation-only question", {})).toBeNull();
+    });
+
     it("different filters produce different keys", () => {
         const r1 = makeResponse({ answer: "no filter" });
         const r2 = makeResponse({ answer: "with filter" });
@@ -108,6 +127,15 @@ describe("answer-cache", () => {
         setCachedAnswer("same question", { category: "News" }, r2);
         expect(getCachedAnswer("same question", {})!.answer).toBe("no filter");
         expect(getCachedAnswer("same question", { category: "News" })!.answer).toBe("with filter");
+    });
+
+    it("does not reuse answers across retrieval index builds", () => {
+        vi.stubEnv("RAG_RETRIEVAL_MODE", "versioned");
+        vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "build-a");
+        setCachedAnswer("same question", {}, makeResponse({ answer: "build a" }));
+
+        vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "build-b");
+        expect(getCachedAnswer("same question", {})).toBeNull();
     });
 
     it("MRU promotion: accessed entries survive eviction", () => {

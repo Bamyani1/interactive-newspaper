@@ -1,0 +1,1550 @@
+{
+  "tables": {
+    "ads": {
+      "columns": [
+        {
+          "name": "ad_type",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "address",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "body",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "category",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "display_text",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "edition_date",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "dataType": "integer",
+          "nullable": false,
+          "default": "nextval('ads_id_seq'::regclass)"
+        },
+        {
+          "name": "image_urls",
+          "dataType": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "phone",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "position",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "price",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "title",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        }
+      ],
+      "constraints": [
+        "ads_edition_date_fkey FOREIGN KEY (edition_date) REFERENCES editions(date)",
+        "ads_pkey PRIMARY KEY (id)"
+      ]
+    },
+    "ai_spend_counter": {
+      "columns": [
+        {
+          "name": "day",
+          "dataType": "date",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "spent_usd",
+          "dataType": "numeric",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "updated_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "constraints": [
+        "ai_spend_counter_pkey PRIMARY KEY (day)"
+      ]
+    },
+    "api_rate_bucket": {
+      "columns": [
+        {
+          "name": "count",
+          "dataType": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "expires_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "key",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "api_rate_bucket_pkey PRIMARY KEY (key)"
+      ]
+    },
+    "article_chunks": {
+      "columns": [
+        {
+          "name": "article_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "chunk_index",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "chunk_text",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "content_revision_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding",
+          "dataType": "vector",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding_input_hash",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "embedding_input_version",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding_model",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "index_build_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "search_vector",
+          "dataType": "tsvector",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "article_chunks_article_id_fkey FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE",
+        "article_chunks_content_revision_id_fkey FOREIGN KEY (content_revision_id) REFERENCES content_revisions(id)",
+        "article_chunks_index_build_id_fkey FOREIGN KEY (index_build_id) REFERENCES rag_index_builds(id)",
+        "article_chunks_pkey PRIMARY KEY (id)"
+      ]
+    },
+    "article_images": {
+      "columns": [
+        {
+          "name": "article_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "caption",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "content_revision_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding",
+          "dataType": "vector",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding_input_hash",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding_input_version",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding_model",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "image_index",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "image_url",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "index_build_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "article_images_article_id_fkey FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE",
+        "article_images_content_revision_id_fkey FOREIGN KEY (content_revision_id) REFERENCES content_revisions(id)",
+        "article_images_index_build_id_fkey FOREIGN KEY (index_build_id) REFERENCES rag_index_builds(id)",
+        "article_images_pkey PRIMARY KEY (id)"
+      ]
+    },
+    "articles": {
+      "columns": [
+        {
+          "name": "body_plain",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "byline",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "category",
+          "dataType": "text",
+          "nullable": false,
+          "default": "'News'::text"
+        },
+        {
+          "name": "edition_date",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "embedding",
+          "dataType": "vector",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding_input_hash",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding_input_version",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding_model",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "full_text",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "headline",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "image_caption",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "image_captions",
+          "dataType": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "image_urls",
+          "dataType": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "is_featured",
+          "dataType": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "is_hero",
+          "dataType": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "page",
+          "dataType": "integer",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "position",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "search_vector",
+          "dataType": "tsvector",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "summary",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "writer_position",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "articles_edition_date_fkey FOREIGN KEY (edition_date) REFERENCES editions(date)",
+        "articles_pkey PRIMARY KEY (id)"
+      ]
+    },
+    "ask_feedback": {
+      "columns": [
+        {
+          "name": "answer",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "citations",
+          "dataType": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "comment",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "confidence",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "dataType": "bigint",
+          "nullable": false,
+          "default": "nextval('ask_feedback_id_seq'::regclass)"
+        },
+        {
+          "name": "mode",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "question",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "request_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "vote",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "ask_feedback_pkey PRIMARY KEY (id)",
+        "ask_feedback_vote_check CHECK ((vote = ANY (ARRAY['up'::text, 'down'::text])))"
+      ]
+    },
+    "ask_session_turns": {
+      "columns": [
+        {
+          "name": "answer",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "citation_snapshots",
+          "dataType": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "cited_article_ids",
+          "dataType": "ARRAY",
+          "nullable": false,
+          "default": "'{}'::text[]"
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "dataType": "bigint",
+          "nullable": false,
+          "default": "nextval('ask_session_turns_id_seq'::regclass)"
+        },
+        {
+          "name": "question",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "session_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "ask_session_turns_pkey PRIMARY KEY (id)"
+      ]
+    },
+    "asset_references": {
+      "columns": [
+        {
+          "name": "asset_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "content_revision_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "credit",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "position",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "printed_caption",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "role",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "asset_references_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES assets(sha256)",
+        "asset_references_content_revision_id_fkey FOREIGN KEY (content_revision_id) REFERENCES content_revisions(id)",
+        "asset_references_pkey PRIMARY KEY (content_revision_id, \"position\")",
+        "asset_references_role_check CHECK ((role = ANY (ARRAY['article_image'::text, 'ad_image'::text])))"
+      ]
+    },
+    "assets": {
+      "columns": [
+        {
+          "name": "byte_count",
+          "dataType": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "height",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "legacy_key",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "mime_type",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "sha256",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "source_sha256",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "storage_key",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "width",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "assets_pkey PRIMARY KEY (sha256)"
+      ]
+    },
+    "content_identity_conflicts": {
+      "columns": [
+        {
+          "name": "candidate_evidence",
+          "dataType": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "candidate_item_ids",
+          "dataType": "ARRAY",
+          "nullable": false,
+          "default": "'{}'::text[]"
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "dataType": "bigint",
+          "nullable": false,
+          "default": "nextval('content_identity_conflicts_id_seq'::regclass)"
+        },
+        {
+          "name": "issue_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "status",
+          "dataType": "text",
+          "nullable": false,
+          "default": "'open'::text"
+        }
+      ],
+      "constraints": [
+        "content_identity_conflicts_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES issues(id)",
+        "content_identity_conflicts_pkey PRIMARY KEY (id)",
+        "content_identity_conflicts_status_check CHECK ((status = ANY (ARRAY['open'::text, 'resolved'::text])))"
+      ]
+    },
+    "content_items": {
+      "columns": [
+        {
+          "name": "active_revision_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "content_type",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "identity_evidence",
+          "dataType": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "identity_key",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "issue_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "content_items_content_type_check CHECK ((content_type = ANY (ARRAY['article'::text, 'ad'::text, 'other'::text])))",
+        "content_items_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES issues(id)",
+        "content_items_issue_id_identity_key_key UNIQUE (issue_id, identity_key)",
+        "content_items_pkey PRIMARY KEY (id)",
+        "fk_content_items_active_revision FOREIGN KEY (active_revision_id) REFERENCES content_revisions(id)"
+      ]
+    },
+    "content_revisions": {
+      "columns": [
+        {
+          "name": "body_plain",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "byline",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "category",
+          "dataType": "text",
+          "nullable": false,
+          "default": "'News'::text"
+        },
+        {
+          "name": "content_item_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "edition_revision_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "full_text",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "headline",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "page",
+          "dataType": "integer",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "revision_hash",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "summary",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "writer_position",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "content_revisions_content_item_id_fkey FOREIGN KEY (content_item_id) REFERENCES content_items(id)",
+        "content_revisions_content_item_id_revision_hash_key UNIQUE (content_item_id, revision_hash)",
+        "content_revisions_edition_revision_id_fkey FOREIGN KEY (edition_revision_id) REFERENCES edition_revisions(id)",
+        "content_revisions_pkey PRIMARY KEY (id)"
+      ]
+    },
+    "corpus_versions": {
+      "columns": [
+        {
+          "name": "ad_count",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "article_count",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "description",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "edition_count",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "image_count",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "manifest_hash",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "corpus_versions_pkey PRIMARY KEY (id)"
+      ]
+    },
+    "edition_revision_pages": {
+      "columns": [
+        {
+          "name": "edition_revision_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "iiif_canvas_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "page_number",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "source_record_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "status",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "edition_revision_pages_edition_revision_id_fkey FOREIGN KEY (edition_revision_id) REFERENCES edition_revisions(id)",
+        "edition_revision_pages_pkey PRIMARY KEY (edition_revision_id, page_number)",
+        "edition_revision_pages_source_record_id_fkey FOREIGN KEY (source_record_id) REFERENCES source_records(id)",
+        "edition_revision_pages_status_check CHECK ((status = ANY (ARRAY['processed'::text, 'failed'::text, 'missing'::text])))"
+      ]
+    },
+    "edition_revisions": {
+      "columns": [
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by_run",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "expected_pages",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "failed_pages",
+          "dataType": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "issue_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "processed_pages",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "publication_info",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "revision_hash",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "edition_revisions_created_by_run_fkey FOREIGN KEY (created_by_run) REFERENCES publication_runs(id)",
+        "edition_revisions_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES issues(id)",
+        "edition_revisions_issue_id_revision_hash_key UNIQUE (issue_id, revision_hash)",
+        "edition_revisions_pkey PRIMARY KEY (id)"
+      ]
+    },
+    "editions": {
+      "columns": [
+        {
+          "name": "article_count",
+          "dataType": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "date",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "page_count",
+          "dataType": "integer",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "publication_info",
+          "dataType": "text",
+          "nullable": false,
+          "default": "''::text"
+        }
+      ],
+      "constraints": [
+        "editions_pkey PRIMARY KEY (date)"
+      ]
+    },
+    "issues": {
+      "columns": [
+        {
+          "name": "active_edition_revision_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "canonical_date",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "source_record_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "fk_issues_active_edition_revision FOREIGN KEY (active_edition_revision_id) REFERENCES edition_revisions(id)",
+        "issues_pkey PRIMARY KEY (id)",
+        "issues_source_record_id_fkey FOREIGN KEY (source_record_id) REFERENCES source_records(id)"
+      ]
+    },
+    "legacy_content_aliases": {
+      "columns": [
+        {
+          "name": "alias_kind",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "content_item_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "content_revision_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "legacy_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "legacy_content_aliases_alias_kind_check CHECK ((alias_kind = ANY (ARRAY['article'::text, 'ad'::text])))",
+        "legacy_content_aliases_content_item_id_fkey FOREIGN KEY (content_item_id) REFERENCES content_items(id)",
+        "legacy_content_aliases_content_revision_id_fkey FOREIGN KEY (content_revision_id) REFERENCES content_revisions(id)",
+        "legacy_content_aliases_pkey PRIMARY KEY (legacy_id)"
+      ]
+    },
+    "legacy_edition_aliases": {
+      "columns": [
+        {
+          "name": "date",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "issue_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "legacy_edition_aliases_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES issues(id)",
+        "legacy_edition_aliases_pkey PRIMARY KEY (date)"
+      ]
+    },
+    "music": {
+      "columns": [
+        {
+          "name": "artist",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "month",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "rank",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "title",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "year",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "youtube_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "music_pkey PRIMARY KEY (year, month, rank)"
+      ]
+    },
+    "publication_run_events": {
+      "columns": [
+        {
+          "name": "at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "from_state",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "id",
+          "dataType": "bigint",
+          "nullable": false,
+          "default": "nextval('publication_run_events_id_seq'::regclass)"
+        },
+        {
+          "name": "note",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "run_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "to_state",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "publication_run_events_pkey PRIMARY KEY (id)",
+        "publication_run_events_run_id_fkey FOREIGN KEY (run_id) REFERENCES publication_runs(id)"
+      ]
+    },
+    "publication_runs": {
+      "columns": [
+        {
+          "name": "failure_reason",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "issue_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "metadata",
+          "dataType": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "started_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "state",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "constraints": [
+        "publication_runs_issue_id_fkey FOREIGN KEY (issue_id) REFERENCES issues(id)",
+        "publication_runs_pkey PRIMARY KEY (id)",
+        "publication_runs_state_check CHECK ((state = ANY (ARRAY['discovered'::text, 'acquired'::text, 'ocr_candidate'::text, 'assets_staged'::text, 'db_revision_staged'::text, 'validated'::text, 'active'::text, 'failed'::text, 'rolled_back'::text])))"
+      ]
+    },
+    "rag_index_builds": {
+      "columns": [
+        {
+          "name": "activated_at",
+          "dataType": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "corpus_version",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "embedding_model",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "failure_reason",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "image_embedding_input_version",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "pipeline_version",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "text_embedding_input_version",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "validated_at",
+          "dataType": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "rag_index_builds_pkey PRIMARY KEY (id)",
+        "rag_index_builds_status_check CHECK ((status = ANY (ARRAY['building'::text, 'validated'::text, 'active'::text, 'failed'::text, 'retired'::text])))"
+      ]
+    },
+    "schema_migrations": {
+      "columns": [
+        {
+          "name": "applied_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "checksum",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "duration_ms",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "runner_version",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "schema_migrations_pkey PRIMARY KEY (id)"
+      ]
+    },
+    "source_records": {
+      "columns": [
+        {
+          "name": "first_seen_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "kind",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "metadata",
+          "dataType": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "pointer",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "source_system",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "source_records_kind_check CHECK ((kind = ANY (ARRAY['issue_parent'::text, 'child_page'::text, 'supplement'::text, 'duplicate'::text, 'excluded'::text, 'ambiguous'::text])))",
+        "source_records_pkey PRIMARY KEY (id)",
+        "source_records_source_system_pointer_key UNIQUE (source_system, pointer)"
+      ]
+    },
+    "weather": {
+      "columns": [
+        {
+          "name": "date",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "is_estimated",
+          "dataType": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "precip_mm",
+          "dataType": "real",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "quality_flag",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "scope",
+          "dataType": "text",
+          "nullable": false,
+          "default": "'delaware'::text"
+        },
+        {
+          "name": "source",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "source_station_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "tmax_c",
+          "dataType": "real",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "tmin_c",
+          "dataType": "real",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "weather_pkey PRIMARY KEY (date, scope)"
+      ]
+    }
+  },
+  "indexes": {
+    "ads_pkey": "CREATE UNIQUE INDEX ads_pkey ON public.ads USING btree (id)",
+    "ai_spend_counter_pkey": "CREATE UNIQUE INDEX ai_spend_counter_pkey ON public.ai_spend_counter USING btree (day)",
+    "api_rate_bucket_pkey": "CREATE UNIQUE INDEX api_rate_bucket_pkey ON public.api_rate_bucket USING btree (key)",
+    "article_chunks_pkey": "CREATE UNIQUE INDEX article_chunks_pkey ON public.article_chunks USING btree (id)",
+    "article_images_pkey": "CREATE UNIQUE INDEX article_images_pkey ON public.article_images USING btree (id)",
+    "articles_pkey": "CREATE UNIQUE INDEX articles_pkey ON public.articles USING btree (id)",
+    "ask_feedback_pkey": "CREATE UNIQUE INDEX ask_feedback_pkey ON public.ask_feedback USING btree (id)",
+    "ask_session_turns_pkey": "CREATE UNIQUE INDEX ask_session_turns_pkey ON public.ask_session_turns USING btree (id)",
+    "asset_references_pkey": "CREATE UNIQUE INDEX asset_references_pkey ON public.asset_references USING btree (content_revision_id, \"position\")",
+    "assets_pkey": "CREATE UNIQUE INDEX assets_pkey ON public.assets USING btree (sha256)",
+    "content_identity_conflicts_pkey": "CREATE UNIQUE INDEX content_identity_conflicts_pkey ON public.content_identity_conflicts USING btree (id)",
+    "content_items_issue_id_identity_key_key": "CREATE UNIQUE INDEX content_items_issue_id_identity_key_key ON public.content_items USING btree (issue_id, identity_key)",
+    "content_items_pkey": "CREATE UNIQUE INDEX content_items_pkey ON public.content_items USING btree (id)",
+    "content_revisions_content_item_id_revision_hash_key": "CREATE UNIQUE INDEX content_revisions_content_item_id_revision_hash_key ON public.content_revisions USING btree (content_item_id, revision_hash)",
+    "content_revisions_pkey": "CREATE UNIQUE INDEX content_revisions_pkey ON public.content_revisions USING btree (id)",
+    "corpus_versions_pkey": "CREATE UNIQUE INDEX corpus_versions_pkey ON public.corpus_versions USING btree (id)",
+    "edition_revision_pages_pkey": "CREATE UNIQUE INDEX edition_revision_pages_pkey ON public.edition_revision_pages USING btree (edition_revision_id, page_number)",
+    "edition_revisions_issue_id_revision_hash_key": "CREATE UNIQUE INDEX edition_revisions_issue_id_revision_hash_key ON public.edition_revisions USING btree (issue_id, revision_hash)",
+    "edition_revisions_pkey": "CREATE UNIQUE INDEX edition_revisions_pkey ON public.edition_revisions USING btree (id)",
+    "editions_pkey": "CREATE UNIQUE INDEX editions_pkey ON public.editions USING btree (date)",
+    "idx_ads_edition": "CREATE INDEX idx_ads_edition ON public.ads USING btree (edition_date)",
+    "idx_api_rate_bucket_expires": "CREATE INDEX idx_api_rate_bucket_expires ON public.api_rate_bucket USING btree (expires_at)",
+    "idx_article_chunks_article": "CREATE INDEX idx_article_chunks_article ON public.article_chunks USING btree (index_build_id, article_id, chunk_index)",
+    "idx_article_chunks_content_revision": "CREATE INDEX idx_article_chunks_content_revision ON public.article_chunks USING btree (content_revision_id) WHERE (content_revision_id IS NOT NULL)",
+    "idx_article_chunks_embedding": "CREATE INDEX idx_article_chunks_embedding ON public.article_chunks USING hnsw (embedding vector_cosine_ops) WITH (m='16', ef_construction='128')",
+    "idx_article_chunks_search": "CREATE INDEX idx_article_chunks_search ON public.article_chunks USING gin (search_vector)",
+    "idx_article_images_article": "CREATE INDEX idx_article_images_article ON public.article_images USING btree (index_build_id, article_id, image_index)",
+    "idx_article_images_caption_search": "CREATE INDEX idx_article_images_caption_search ON public.article_images USING gin (to_tsvector('english'::regconfig, COALESCE(caption, ''::text)))",
+    "idx_article_images_content_revision": "CREATE INDEX idx_article_images_content_revision ON public.article_images USING btree (content_revision_id) WHERE (content_revision_id IS NOT NULL)",
+    "idx_article_images_embedding": "CREATE INDEX idx_article_images_embedding ON public.article_images USING hnsw (embedding vector_cosine_ops) WITH (m='16', ef_construction='128')",
+    "idx_articles_byline": "CREATE INDEX idx_articles_byline ON public.articles USING btree (byline) WHERE (byline IS NOT NULL)",
+    "idx_articles_category": "CREATE INDEX idx_articles_category ON public.articles USING btree (category)",
+    "idx_articles_edition": "CREATE INDEX idx_articles_edition ON public.articles USING btree (edition_date)",
+    "idx_articles_embedding": "CREATE INDEX idx_articles_embedding ON public.articles USING hnsw (embedding vector_cosine_ops) WITH (m='16', ef_construction='128')",
+    "idx_articles_search": "CREATE INDEX idx_articles_search ON public.articles USING gin (search_vector)",
+    "idx_ask_feedback_created": "CREATE INDEX idx_ask_feedback_created ON public.ask_feedback USING btree (created_at DESC)",
+    "idx_ask_feedback_request": "CREATE INDEX idx_ask_feedback_request ON public.ask_feedback USING btree (request_id)",
+    "idx_ask_session_turns_created": "CREATE INDEX idx_ask_session_turns_created ON public.ask_session_turns USING btree (created_at DESC)",
+    "idx_ask_session_turns_session_created": "CREATE INDEX idx_ask_session_turns_session_created ON public.ask_session_turns USING btree (session_id, created_at DESC)",
+    "idx_asset_references_asset": "CREATE INDEX idx_asset_references_asset ON public.asset_references USING btree (asset_id)",
+    "idx_issues_canonical_date": "CREATE INDEX idx_issues_canonical_date ON public.issues USING btree (canonical_date)",
+    "idx_legacy_content_aliases_item": "CREATE INDEX idx_legacy_content_aliases_item ON public.legacy_content_aliases USING btree (content_item_id)",
+    "idx_publication_run_events_run": "CREATE INDEX idx_publication_run_events_run ON public.publication_run_events USING btree (run_id)",
+    "idx_publication_runs_issue": "CREATE INDEX idx_publication_runs_issue ON public.publication_runs USING btree (issue_id)",
+    "idx_rag_index_builds_one_active_per_corpus": "CREATE UNIQUE INDEX idx_rag_index_builds_one_active_per_corpus ON public.rag_index_builds USING btree (corpus_version) WHERE (status = 'active'::text)",
+    "issues_pkey": "CREATE UNIQUE INDEX issues_pkey ON public.issues USING btree (id)",
+    "legacy_content_aliases_pkey": "CREATE UNIQUE INDEX legacy_content_aliases_pkey ON public.legacy_content_aliases USING btree (legacy_id)",
+    "legacy_edition_aliases_pkey": "CREATE UNIQUE INDEX legacy_edition_aliases_pkey ON public.legacy_edition_aliases USING btree (date)",
+    "music_pkey": "CREATE UNIQUE INDEX music_pkey ON public.music USING btree (year, month, rank)",
+    "publication_run_events_pkey": "CREATE UNIQUE INDEX publication_run_events_pkey ON public.publication_run_events USING btree (id)",
+    "publication_runs_pkey": "CREATE UNIQUE INDEX publication_runs_pkey ON public.publication_runs USING btree (id)",
+    "rag_index_builds_pkey": "CREATE UNIQUE INDEX rag_index_builds_pkey ON public.rag_index_builds USING btree (id)",
+    "schema_migrations_pkey": "CREATE UNIQUE INDEX schema_migrations_pkey ON public.schema_migrations USING btree (id)",
+    "source_records_pkey": "CREATE UNIQUE INDEX source_records_pkey ON public.source_records USING btree (id)",
+    "source_records_source_system_pointer_key": "CREATE UNIQUE INDEX source_records_source_system_pointer_key ON public.source_records USING btree (source_system, pointer)",
+    "uq_article_chunks_build": "CREATE UNIQUE INDEX uq_article_chunks_build ON public.article_chunks USING btree (index_build_id, article_id, chunk_index) WHERE (index_build_id IS NOT NULL)",
+    "uq_article_chunks_legacy": "CREATE UNIQUE INDEX uq_article_chunks_legacy ON public.article_chunks USING btree (article_id, chunk_index) WHERE (index_build_id IS NULL)",
+    "uq_article_images_build": "CREATE UNIQUE INDEX uq_article_images_build ON public.article_images USING btree (index_build_id, article_id, image_index) WHERE (index_build_id IS NOT NULL)",
+    "uq_article_images_legacy": "CREATE UNIQUE INDEX uq_article_images_legacy ON public.article_images USING btree (article_id, image_index) WHERE (index_build_id IS NULL)",
+    "weather_pkey": "CREATE UNIQUE INDEX weather_pkey ON public.weather USING btree (date, scope)"
+  },
+  "triggers": {
+    "article_chunks_search_vector_trig": "CREATE TRIGGER article_chunks_search_vector_trig BEFORE INSERT OR UPDATE OF chunk_text ON public.article_chunks FOR EACH ROW EXECUTE FUNCTION article_chunks_search_vector_update()",
+    "articles_search_vector_trig": "CREATE TRIGGER articles_search_vector_trig BEFORE INSERT OR UPDATE ON public.articles FOR EACH ROW EXECUTE FUNCTION articles_search_vector_update()",
+    "content_revisions_immutable_trig": "CREATE TRIGGER content_revisions_immutable_trig BEFORE UPDATE ON public.content_revisions FOR EACH ROW EXECUTE FUNCTION content_revisions_immutable()"
+  },
+  "functions": {
+    "article_chunks_search_vector_update": "CREATE OR REPLACE FUNCTION public.article_chunks_search_vector_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  NEW.search_vector := to_tsvector('english', coalesce(NEW.chunk_text, ''));\n  RETURN NEW;\nEND $function$\n",
+    "articles_search_vector_update": "CREATE OR REPLACE FUNCTION public.articles_search_vector_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  NEW.search_vector :=\n    setweight(to_tsvector('english', coalesce(NEW.headline, '')), 'A') ||\n    setweight(to_tsvector('english', coalesce(NEW.summary, '')), 'B') ||\n    setweight(to_tsvector('english', coalesce(NEW.byline, '')), 'C') ||\n    setweight(to_tsvector('english', coalesce(NEW.body_plain, '')), 'C');\n  RETURN NEW;\nEND $function$\n",
+    "content_revisions_immutable": "CREATE OR REPLACE FUNCTION public.content_revisions_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'content_revisions rows are immutable; write a new revision instead';\nEND $function$\n"
+  },
+  "extensions": [
+    "plpgsql",
+    "vector"
+  ]
+}

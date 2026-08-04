@@ -1,13 +1,13 @@
 /**
- * Embedding Script
+ * RAG embedding backfill
  *
- * Generates semantic embeddings for all articles in the database that don't
- * have one yet. Uses gemini-embedding-2-preview via the shared embeddings utility.
+ * Text and visual evidence are intentionally stored separately:
+ *   - article_chunks: sentence-aware text chunks
+ *   - article_images: one vector per image
  *
  * Usage:
- *   npm run db:embed              — embed articles missing embeddings
- *   npm run db:embed -- --force   — re-embed all articles
- *   npm run db:embed -- --dry-run — estimate cost without calling the API
+ *   npm run db:embed
+ *   npm run db:embed -- --dry-run
  */
 
 import { neon } from "@neondatabase/serverless";
@@ -15,7 +15,6 @@ import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Load .env.local
 const __dirnameEnv = path.dirname(fileURLToPath(import.meta.url));
 const envPath = path.resolve(__dirnameEnv, "../../.env.local");
 if (existsSync(envPath)) {
@@ -25,256 +24,227 @@ if (existsSync(envPath)) {
     }
 }
 
-// Dynamic import: tsx transpiles .ts → CJS at runtime; static named imports
-// from .ts files don't work in .mjs because Node resolves exports before tsx runs.
-const { embedDocuments, buildEmbeddingText, buildEmbeddingInput, hasApiKey, EMBEDDING_DIMS, EMBEDDING_MODEL, QuotaExhaustedError } =
-    await import("../../src/lib/embeddings.ts");
+const {
+    embedDocuments,
+    buildEmbeddingInput,
+    embeddingInputFingerprint,
+    hasGoogleCredentials,
+    EMBEDDING_DIMS,
+    EMBEDDING_MODEL,
+    EMBEDDING_INPUT_VERSION,
+    IMAGE_EMBEDDING_INPUT_VERSION,
+    QuotaExhaustedError,
+} = await import("../../src/lib/embeddings.ts");
 
-const isForce = process.argv.includes("--force");
 const isDryRun = process.argv.includes("--dry-run");
+const BATCH_SIZE = 50;
+const EDITIONS_DIR = path.resolve(__dirnameEnv, "../../public/editions");
 
 if (!process.env.DATABASE_URL) {
     console.error("ERROR: DATABASE_URL environment variable is required.");
     process.exit(1);
 }
-
-if (!isDryRun && !hasApiKey()) {
-    console.error("ERROR: GEMINI_API_KEY or GOOGLE_API_KEY environment variable is required.");
-    console.error(
-        "Set it in .env.local or export it before running this script.",
-    );
+if (!isDryRun && !hasGoogleCredentials()) {
+    console.error("ERROR: GOOGLE_CLOUD_PROJECT is required for Vertex AI ADC.");
     process.exit(1);
 }
 
 const sql = neon(process.env.DATABASE_URL);
 
-const BATCH_SIZE = 50; // articles per embedding API call
-
-const EDITIONS_DIR = path.resolve(__dirnameEnv, "../../public/editions");
-
-// Degradation counters for #0023. Incremented in loadFirstImage() and
-// reported once at the end of main() so operators can see when a
-// production-mirror dev environment is silently falling back to text-only
-// embedding because the local images directory isn't mirrored.
-let imagesExpected = 0;
-let imagesMissing = 0;
-
-/**
- * Load the first image for an article as base64.
- * Returns null if no images or file not found.
- */
-function loadFirstImage(article) {
-    const imageUrls = article.image_urls;
-    if (!imageUrls || imageUrls.length === 0) return null;
-
-    imagesExpected++;
-
-    const firstUrl = imageUrls[0];
-    // Extract date and filename from URL patterns:
-    //   /api/editions/DATE/images/FILE or https://cdn/DATE/images/FILE
-    const match = firstUrl.match(/(\d{4}-\d{2}-\d{2})\/images\/(.+?)$/);
-    if (!match) {
-        imagesMissing++;
-        return null;
+function loadImage(imageUrl) {
+    let pathname = imageUrl;
+    try {
+        pathname = new URL(imageUrl, "http://local.invalid").pathname;
+    } catch {
+        // Continue with the raw path.
     }
+    const match = pathname.match(/(\d{4}-\d{2}-\d{2})\/images\/(.+?)$/);
+    if (!match) return null;
 
-    const [, date, rawName] = match;
-    // Strip .webp extension if present (CDN converts to webp, but local files are jpg)
+    const [, date, encodedName] = match;
+    const rawName = decodeURIComponent(encodedName);
     const baseName = rawName.replace(/\.webp$/i, "");
-
-    // Try common extensions
     for (const ext of [".jpg", ".jpeg", ".png", ""]) {
         const filePath = path.join(EDITIONS_DIR, date, "images", baseName + ext);
-        if (existsSync(filePath)) {
-            try {
-                const buf = readFileSync(filePath);
-                const mimeType = ext === ".png" ? "image/png" : "image/jpeg";
-                return { base64: buf.toString("base64"), mimeType };
-            } catch {
-                imagesMissing++;
-                return null;
-            }
-        }
+        if (!existsSync(filePath)) continue;
+        const bytes = readFileSync(filePath);
+        return {
+            base64: bytes.toString("base64"),
+            mimeType: ext === ".png" ? "image/png" : "image/jpeg",
+        };
     }
-    imagesMissing++;
     return null;
 }
 
-async function main() {
-    const start = Date.now();
+function chunkInput(chunk) {
+    return buildEmbeddingInput({
+        headline: chunk.headline,
+        byline: chunk.byline,
+        body_plain: chunk.chunk_text,
+        edition_date: chunk.edition_date,
+        category: chunk.category,
+        summary: chunk.chunk_index === 0 ? chunk.summary : null,
+    });
+}
 
-    console.log(`\nThe Transcript Archive — Embedding Generator`);
-    console.log(
-        `Mode: ${isForce ? "FORCE (re-embed all)" : isDryRun ? "DRY RUN (estimate only)" : "INCREMENTAL (skip existing)"}\n`,
+function imageInput(image, loaded) {
+    const caption = image.caption?.trim() || "Untitled archival newspaper image";
+    return buildEmbeddingInput({
+        headline: image.headline,
+        byline: image.byline,
+        body_plain: `Image caption: ${caption}`,
+        edition_date: image.edition_date,
+        category: image.category,
+        summary: image.summary,
+        image_caption: caption,
+        imageBase64: loaded.base64,
+        imageMimeType: loaded.mimeType,
+    });
+}
+
+async function loadPendingRecords() {
+    const chunks = await sql`SELECT c.id, c.chunk_index, c.chunk_text,
+                           a.headline, a.byline, a.edition_date, a.category, a.summary
+                    FROM article_chunks c JOIN articles a ON a.id = c.article_id
+                    WHERE c.index_build_id IS NULL
+                      AND (c.embedding IS NULL
+                       OR c.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
+                       OR c.embedding_input_version IS DISTINCT FROM ${EMBEDDING_INPUT_VERSION})
+                    ORDER BY c.id`;
+
+    const images = await sql`SELECT i.id, i.image_url, i.caption,
+                           a.headline, a.byline, a.edition_date, a.category, a.summary
+                    FROM article_images i JOIN articles a ON a.id = i.article_id
+                    WHERE i.index_build_id IS NULL
+                      AND (i.embedding IS NULL
+                       OR i.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
+                       OR i.embedding_input_version IS DISTINCT FROM ${IMAGE_EMBEDDING_INPUT_VERSION})
+                    ORDER BY i.id`;
+    return { chunks, images };
+}
+
+async function embedChunkBatch(batch) {
+    const inputs = batch.map(chunkInput);
+    const vectors = await embedDocuments(inputs, { op: "backfill.embed-chunks" });
+    await sql.transaction(
+        batch.map((chunk, index) => {
+            const vector = `[${vectors[index].join(",")}]`;
+            const inputHash = embeddingInputFingerprint(inputs[index]);
+            return sql`UPDATE article_chunks
+                       SET embedding = ${vector}::vector,
+                           embedding_model = ${EMBEDDING_MODEL},
+                           embedding_input_version = ${EMBEDDING_INPUT_VERSION},
+                           embedding_input_hash = ${inputHash}
+                       WHERE id = ${chunk.id} AND index_build_id IS NULL`;
+        }),
     );
+}
 
-    // Fetch articles that need embedding (include edition_date + category + summary + image_caption for contextual embedding)
-    const articles = isForce
-        ? await sql`SELECT id, headline, byline, body_plain, edition_date, category, summary, image_caption, image_urls FROM articles ORDER BY id`
-        : await sql`SELECT id, headline, byline, body_plain, edition_date, category, summary, image_caption, image_urls FROM articles WHERE embedding IS NULL ORDER BY id`;
-
-    if (articles.length === 0) {
-        console.log("All articles already have embeddings. Nothing to do.");
-        console.log('Use --force to re-embed all articles.');
+async function retryOnce(label, operation) {
+    try {
+        await operation();
         return;
-    }
-
-    // Estimate cost
-    const totalChars = articles.reduce(
-        (sum, a) =>
-            sum +
-            buildEmbeddingText({
-                headline: a.headline,
-                byline: a.byline,
-                body_plain: a.body_plain,
-                edition_date: a.edition_date,
-                category: a.category,
-                summary: a.summary,
-                image_caption: a.image_caption,
-            }).length,
-        0,
-    );
-    const estimatedTokens = Math.ceil(totalChars / 4);
-    const estimatedCost = (estimatedTokens / 1_000_000) * 0.20; // gemini-embedding-2-preview pricing
-
-    console.log(`Articles to embed: ${articles.length}`);
-    console.log(
-        `Estimated tokens: ${estimatedTokens.toLocaleString()} (~${totalChars.toLocaleString()} chars)`,
-    );
-    console.log(`Estimated cost: $${estimatedCost.toFixed(4)}`);
-    console.log(`Embedding dimensions: ${EMBEDDING_DIMS}`);
-    console.log();
-
-    if (isDryRun) {
-        console.log("Dry run complete. No API calls made.");
-        return;
-    }
-
-    // Process in batches
-    let embedded = 0;
-    let errors = 0;
-    let consecutiveFailures = 0;
-    let quotaExhausted = false;
-
-    for (let i = 0; i < articles.length; i += BATCH_SIZE) {
-        const batch = articles.slice(i, i + BATCH_SIZE);
-        const inputs = batch.map((a) => {
-            const img = loadFirstImage(a);
-            return buildEmbeddingInput({
-                headline: a.headline,
-                byline: a.byline,
-                body_plain: a.body_plain,
-                edition_date: a.edition_date,
-                category: a.category,
-                summary: a.summary,
-                image_caption: a.image_caption,
-                imageBase64: img?.base64,
-                imageMimeType: img?.mimeType,
-            });
-        });
-        const imagesInBatch = inputs.filter((i) => i.imageBase64).length;
-
-        try {
-            const vectors = await embedDocuments(inputs);
-
-            // Update each article with its embedding
-            const updateQueries = batch.map((article, idx) => {
-                const vecStr = `[${vectors[idx].join(",")}]`;
-                return sql`UPDATE articles SET embedding = ${vecStr}::vector, embedding_model = ${EMBEDDING_MODEL} WHERE id = ${article.id}`;
-            });
-            await sql.transaction(updateQueries);
-
-            embedded += batch.length;
-            consecutiveFailures = 0;
-            const pct = ((embedded / articles.length) * 100).toFixed(0);
-            console.log(
-                `  Embedded ${embedded}/${articles.length} articles (${pct}%) [${imagesInBatch} with images]`,
-            );
-        } catch (err) {
-            // Hard stop on quota exhaustion. Retrying just burns more API
-            // calls on guaranteed failures. See docs/issues/0028.
-            if (QuotaExhaustedError && err instanceof QuotaExhaustedError) {
-                console.warn(
-                    `  Quota exhausted at batch starting index ${i}; stopping early. Retry after quota reset.`,
-                );
-                quotaExhausted = true;
-                errors += articles.length - embedded;
-                break;
-            }
-
-            errors += batch.length;
-            console.error(
-                `  ERROR embedding batch starting at index ${i}:`,
-                err.message || err,
-            );
-
-            // Retry with exponential backoff
-            consecutiveFailures++;
-            const retryDelay = Math.min(2000 * Math.pow(2, consecutiveFailures - 1), 30000);
-            console.log(`  Retrying in ${retryDelay / 1000}s...`);
-            await new Promise((r) => setTimeout(r, retryDelay));
-
-            try {
-                const vectors = await embedDocuments(inputs);
-                const updateQueries = batch.map((article, idx) => {
-                    const vecStr = `[${vectors[idx].join(",")}]`;
-                    return sql`UPDATE articles SET embedding = ${vecStr}::vector, embedding_model = ${EMBEDDING_MODEL} WHERE id = ${article.id}`;
-                });
-                await sql.transaction(updateQueries);
-
-                embedded += batch.length;
-                errors -= batch.length;
-                consecutiveFailures = 0;
-                console.log(`  Retry succeeded: ${embedded}/${articles.length}`);
-            } catch (retryErr) {
-                // Same early-abort check on the retry path
-                if (QuotaExhaustedError && retryErr instanceof QuotaExhaustedError) {
-                    console.warn(
-                        `  Retry also hit quota exhaustion; stopping early.`,
-                    );
-                    quotaExhausted = true;
-                    errors += articles.length - embedded - batch.length;
-                    break;
-                }
-                console.error(`  Retry also failed:`, retryErr.message || retryErr);
-            }
-        }
-    }
-
-    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    console.log(`\nDone in ${elapsed}s.`);
-    console.log(`  Embedded: ${embedded}`);
-
-    // Surface any silent image-degradation so operators can see when the
-    // production-mirror dev env is embedding text-only because local images
-    // aren't mirrored. Previously this dropped the multimodal embedding
-    // quality silently with zero signal. See docs/issues/0023.
-    if (imagesMissing > 0) {
-        console.warn(
-            `  WARNING: ${imagesMissing}/${imagesExpected} articles had image_urls ` +
-                `but no local mirror — multimodal embedding was skipped for those.`,
-        );
-        console.warn(
-            `  If you expect local images, check that public/editions/<date>/images/ ` +
-                `is populated. The embedding still runs text-only for these articles.`,
-        );
-    }
-
-    if (quotaExhausted) {
-        console.log(`  Status: quota exhausted, stopped early`);
-        throw new Error(
-            `Embedding stopped early due to Gemini quota exhaustion; ${embedded} of ${articles.length} article(s) embedded. Retry after the daily quota reset.`,
-        );
-    }
-    if (errors > 0) {
-        console.log(`  Errors: ${errors}`);
-        throw new Error(
-            `Embedding failed: ${errors} article(s) could not be embedded`,
-        );
+    } catch (error) {
+        if (error instanceof QuotaExhaustedError) throw error;
+        console.warn(`${label} failed; retrying once in 2 seconds: ${error.message || error}`);
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        await operation();
     }
 }
 
-main().catch((err) => {
-    console.error("Embedding failed:", err);
+async function main() {
+    if (!process.argv.includes("--legacy-unversioned")) {
+        console.error(
+            "ERROR: embed.mjs only maintains legacy unversioned rows (index_build_id IS NULL). " +
+                "Re-run with --legacy-unversioned to confirm; versioned index work uses " +
+                "`npm run rag:index:build`.",
+        );
+        process.exit(1);
+    }
+    const started = Date.now();
+    const { chunks, images } = await loadPendingRecords();
+    const preparedImages = images.map((image) => ({ image, loaded: loadImage(image.image_url) }));
+    const availableImages = preparedImages.filter((record) => record.loaded);
+    const missingImages = preparedImages.length - availableImages.length;
+
+    const chunkChars = chunks.reduce((sum, chunk) => sum + chunkInput(chunk).text.length, 0);
+    const imageTextChars = availableImages.reduce(
+        (sum, record) => sum + imageInput(record.image, record.loaded).text.length,
+        0,
+    );
+    const estimatedTextTokens = Math.ceil((chunkChars + imageTextChars) / 4);
+    const estimatedCost =
+        (estimatedTextTokens / 1_000_000) * 0.2 + availableImages.length * 0.00012;
+
+    console.log("\nThe Transcript Archive — RAG Embedding Backfill");
+    console.log(`Mode: ${isDryRun ? "dry-run" : "incremental"}`);
+    console.log(`Model: ${EMBEDDING_MODEL} (${EMBEDDING_DIMS} dimensions)`);
+    console.log(`Text chunks: ${chunks.length}`);
+    console.log(`Images available locally: ${availableImages.length}`);
+    console.log(`Images missing locally: ${missingImages}`);
+    console.log(`Estimated online cost: $${estimatedCost.toFixed(4)}\n`);
+
+    if (isDryRun) return;
+
+    let embeddedChunks = 0;
+    let embeddedImages = 0;
+    const failures = [];
+
+    for (let index = 0; index < chunks.length; index += BATCH_SIZE) {
+        const batch = chunks.slice(index, index + BATCH_SIZE);
+        try {
+            await retryOnce(`Chunk batch ${index / BATCH_SIZE + 1}`, () => embedChunkBatch(batch));
+            embeddedChunks += batch.length;
+            console.log(`  Text: ${embeddedChunks}/${chunks.length}`);
+        } catch (error) {
+            if (error instanceof QuotaExhaustedError) throw error;
+            failures.push(`chunk batch at ${index}: ${error.message || error}`);
+        }
+    }
+
+    for (const { image, loaded } of availableImages) {
+        const input = imageInput(image, loaded);
+        try {
+            await retryOnce(`Image ${image.id}`, async () => {
+                const [vectorValues] = await embedDocuments([input], {
+                    op: "backfill.embed-image",
+                });
+                const vector = `[${vectorValues.join(",")}]`;
+                const inputHash = embeddingInputFingerprint(
+                    input,
+                    IMAGE_EMBEDDING_INPUT_VERSION,
+                );
+                await sql`UPDATE article_images
+                          SET embedding = ${vector}::vector,
+                              embedding_model = ${EMBEDDING_MODEL},
+                              embedding_input_version = ${IMAGE_EMBEDDING_INPUT_VERSION},
+                              embedding_input_hash = ${inputHash}
+                          WHERE id = ${image.id} AND index_build_id IS NULL`;
+            });
+            embeddedImages += 1;
+            if (embeddedImages % 25 === 0 || embeddedImages === availableImages.length) {
+                console.log(`  Images: ${embeddedImages}/${availableImages.length}`);
+            }
+        } catch (error) {
+            if (error instanceof QuotaExhaustedError) throw error;
+            failures.push(`image ${image.id}: ${error.message || error}`);
+        }
+    }
+
+    console.log(`\nCompleted in ${((Date.now() - started) / 1000).toFixed(1)}s.`);
+    console.log(`Embedded ${embeddedChunks} chunks and ${embeddedImages} images.`);
+    if (missingImages > 0) {
+        console.warn(
+            `${missingImages} image vectors remain pending because their local source files were unavailable.`,
+        );
+    }
+    if (failures.length > 0) {
+        for (const failure of failures) console.error(`  ${failure}`);
+        throw new Error(`${failures.length} embedding operation(s) failed.`);
+    }
+}
+
+main().catch((error) => {
+    console.error("Embedding failed:", error);
     process.exit(1);
 });

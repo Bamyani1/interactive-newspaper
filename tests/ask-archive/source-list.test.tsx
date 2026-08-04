@@ -22,7 +22,7 @@ function makeSource(overrides: Partial<SourceArticle> = {}): SourceArticle {
     distance: 0.25,
     imageUrls: [],
     ...overrides,
-  };
+  } as SourceArticle;
 }
 
 describe("SourceList", () => {

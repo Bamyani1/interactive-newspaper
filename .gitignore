@@ -75,6 +75,8 @@ scripts/dev/data/
 !audit-evidence/manifest.json
 !audit-evidence/curated/
 !audit-evidence/curated/**
+!evaluation/rag/**/*.json
+!evaluation/assets/*.json
 !tests/api/rag-golden-questions.json
 # Baseline snapshot for the nightly RAG regression workflow. Must be
 # committed so rag-golden-nightly can compare each run against a stable
@@ -90,7 +92,10 @@ scripts/dev/data/
 public/GOPR0363 copy.png
 !package.json
 !package-lock.json
+!vercel.json
 !tsconfig.json
+!tsconfig.test.json
+!scripts/db/schema-snapshot.json
 credentials/
 
 # Lint output files

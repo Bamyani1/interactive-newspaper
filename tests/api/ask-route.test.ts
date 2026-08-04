@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 // Re-declare QuotaExhaustedError shape inside the mock so tests can throw
 // it without dragging in the real module. vi.hoisted ensures the class is
 // defined when the hoisted vi.mock factory runs.
-const { MockQuotaExhaustedError } = vi.hoisted(() => {
+const { MockQuotaExhaustedError, MockDbTimeoutError } = vi.hoisted(() => {
   class MockQuotaExhaustedError extends Error {
     readonly op: string;
     readonly cause?: unknown;
@@ -15,7 +15,17 @@ const { MockQuotaExhaustedError } = vi.hoisted(() => {
       this.cause = cause;
     }
   }
-  return { MockQuotaExhaustedError };
+  class MockDbTimeoutError extends Error {
+    readonly op: string;
+    readonly timeoutMs: number;
+    constructor(op: string, timeoutMs: number) {
+      super(`Database operation timed out: ${op} after ${timeoutMs}ms`);
+      this.name = "DbTimeoutError";
+      this.op = op;
+      this.timeoutMs = timeoutMs;
+    }
+  }
+  return { MockQuotaExhaustedError, MockDbTimeoutError };
 });
 
 vi.mock("@/src/lib/embeddings", () => ({
@@ -24,8 +34,32 @@ vi.mock("@/src/lib/embeddings", () => ({
 }));
 
 vi.mock("@/src/lib/db", () => ({
+  DbTimeoutError: MockDbTimeoutError,
   hybridSearch: vi.fn(),
   queryArticlesByEmbedding: vi.fn(),
+  searchArticlesForRag: vi.fn(),
+  queryArchiveCoverage: vi.fn(),
+  fuseArticleResults: vi.fn(
+    (
+      vectorResults: Array<Record<string, unknown>>,
+      ftsResults: Array<Record<string, unknown>>,
+      options: { limit: number },
+    ) => {
+      const merged = new Map<string, Record<string, unknown>>();
+      for (const article of vectorResults) {
+        merged.set(String(article.id), article);
+      }
+      for (const article of ftsResults) {
+        const id = String(article.id);
+        const previous = merged.get(id);
+        merged.set(
+          id,
+          previous ? { ...previous, source: "both" } : article,
+        );
+      }
+      return [...merged.values()].slice(0, options.limit);
+    },
+  ),
 }));
 
 vi.mock("@/src/lib/answer-generator", () => ({
@@ -66,7 +100,12 @@ import {
 } from "@/src/app/api/ask/route";
 import type { NextResponse } from "next/server";
 import { embedQuery } from "@/src/lib/embeddings";
-import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
+import {
+  hybridSearch,
+  queryArticlesByEmbedding,
+  searchArticlesForRag,
+  queryArchiveCoverage,
+} from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
@@ -112,7 +151,8 @@ async function readSseEvents(
   for (const frame of buf.split("\n\n")) {
     const trimmed = frame.trim();
     if (!trimmed) continue;
-    const dataMatch = trimmed.match(/^data:\s*(.*)$/s);
+    // Literal /s regex flag needs an ES2018+ tsc target; RegExp form is identical at runtime.
+    const dataMatch = trimmed.match(new RegExp("^data:\\s*(.*)$", "s"));
     if (!dataMatch) continue;
     try {
       events.push(JSON.parse(dataMatch[1]) as Record<string, unknown>);
@@ -137,6 +177,83 @@ const mockArticle = {
   imageCaptions: [],
 };
 
+// Every describe block inherits a clean, healthy retrieval baseline. Vitest's
+// clearAllMocks intentionally preserves implementations, which previously let
+// an FTS rejection from one block leak into unrelated route tests.
+beforeEach(() => {
+  (embedQuery as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockResolvedValue(new Array(768).fill(0));
+  (hybridSearch as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockResolvedValue([mockArticle]);
+  (queryArticlesByEmbedding as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockResolvedValue([mockArticle]);
+  (searchArticlesForRag as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockResolvedValue([{ ...mockArticle, source: "fts" as const }]);
+  (queryArchiveCoverage as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockResolvedValue({
+      editionCount: 351,
+      articleCount: 11_705,
+      earliestEditionDate: "1950-01-01",
+      latestEditionDate: "2006-12-31",
+      retrievalTarget: "legacy",
+    });
+  (reformulateQuery as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockResolvedValue({
+      embeddingQuery: "What happened at OWU?",
+      ftsQuery: "What happened at OWU?",
+      mode: "text",
+      complexity: "simple",
+      coverageIntent: "none",
+    });
+  (rerankArticles as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockResolvedValue([{ ...mockArticle, relevanceScore: 8 }]);
+  (generateAnswer as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockResolvedValue({
+      answer: "Test answer [Source 1]",
+      citations: [
+        {
+          articleId: mockArticle.id,
+          headline: mockArticle.headline,
+          editionDate: mockArticle.editionDate,
+        },
+      ],
+      confidence: "high",
+      followUps: [],
+    });
+  (generateAnswerStream as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockImplementation(() =>
+      (async function* () {
+        yield { type: "delta", text: "Stream answer." };
+        yield {
+          type: "done",
+          answer: "Stream answer.",
+          citations: [],
+          confidence: "medium",
+          followUps: [],
+        };
+      })(),
+    );
+  (runAgentLoop as ReturnType<typeof vi.fn>).mockReset();
+  (getConversationHistory as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockResolvedValue([]);
+  (addConversationTurn as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockResolvedValue(undefined);
+  (formatHistoryForPrompt as ReturnType<typeof vi.fn>)
+    .mockReset()
+    .mockReturnValue("");
+});
+
 describe("POST /api/ask", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -146,9 +263,24 @@ describe("POST /api/ask", () => {
       embeddingQuery: "What happened at OWU?",
       ftsQuery: "What happened at OWU?",
       mode: "text",
+      complexity: "simple",
+      coverageIntent: "none",
+    });
+    (queryArchiveCoverage as ReturnType<typeof vi.fn>).mockResolvedValue({
+      editionCount: 351,
+      articleCount: 11_705,
+      earliestEditionDate: "1950-01-01",
+      latestEditionDate: "2006-12-31",
+      retrievalTarget: "legacy",
     });
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
+    (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockResolvedValue([
+      mockArticle,
+    ]);
+    (searchArticlesForRag as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, source: "fts" as const },
+    ]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
     ]);
@@ -208,17 +340,19 @@ describe("POST /api/ask", () => {
     expect(body.error).toContain("1001 chars");
   });
 
-  it("returns 502 when embedding fails", async () => {
+  it("continues with full-text retrieval when embedding fails", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("API key missing"));
 
     const response = await POST(makeRequest({ question: "What happened?" }));
     const body = await response.json();
 
-    expect(response.status).toBe(502);
-    expect(body.error).toBe("Failed to process question. Please try again.");
+    expect(response.status).toBe(200);
+    expect(body.meta.method).toBe("fts");
+    expect(searchArticlesForRag).toHaveBeenCalledTimes(1);
+    expect(queryArticlesByEmbedding).not.toHaveBeenCalled();
   });
 
-  it("returns 429 + Retry-After when embedQuery throws QuotaExhaustedError", async () => {
+  it("continues with full-text retrieval when vector quota is exhausted", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
       new MockQuotaExhaustedError("embedQuery", { code: 429 }),
     );
@@ -226,13 +360,9 @@ describe("POST /api/ask", () => {
     const response = await POST(makeRequest({ question: "What happened?" }));
     const body = await response.json();
 
-    expect(response.status).toBe(429);
-    expect(body.error).toMatch(/quota/i);
-    expect(body.cause).toBe("quota_exhausted");
-    expect(body.stage).toBe("embed");
-    expect(typeof body.requestId).toBe("string");
-    expect(body.requestId.length).toBeGreaterThan(0);
-    expect(response.headers.get("Retry-After")).toBe("3600");
+    expect(response.status).toBe(200);
+    expect(body.meta.method).toBe("fts");
+    expect(response.headers.get("Retry-After")).toBeNull();
   });
 
   it("tags reformulator errors with stage='reformulate'", async () => {
@@ -274,16 +404,19 @@ describe("POST /api/ask", () => {
     expect(body.requestId).toBeDefined();
   });
 
-  it("502 embed failure includes stage='embed' and requestId", async () => {
+  it("returns a typed retrieval error when both retrieval signals fail", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error("network error"),
+    );
+    (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("database unavailable"),
     );
 
     const response = await POST(makeRequest({ question: "What happened?" }));
     const body = await response.json();
 
-    expect(response.status).toBe(502);
-    expect(body.stage).toBe("embed");
+    expect(response.status).toBe(500);
+    expect(body.stage).toBe("retrieve");
     expect(body.requestId).toBeDefined();
   });
 
@@ -307,9 +440,26 @@ describe("POST /api/ask", () => {
     expect(body.meta.method).toBe("hybrid");
   });
 
-  it("falls back to vector-only search when hybridSearch throws", async () => {
-    (hybridSearch as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("FTS index unavailable")
+  it("persists a revision-pinned citation snapshot with the conversation turn", async () => {
+    await POST(makeRequest({ question: "What happened?" }));
+
+    const call = (addConversationTurn as ReturnType<typeof vi.fn>).mock.calls[0];
+    const snapshots = call[4] as Array<Record<string, unknown>>;
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toMatchObject({
+      articleId: mockArticle.id,
+      headline: mockArticle.headline,
+      editionDate: mockArticle.editionDate,
+      evidenceSnippet: mockArticle.bodyPlain,
+    });
+    expect(snapshots[0].contentRevisionId).toMatch(
+      /^legacy-sha256:[a-f0-9]{64}$/,
+    );
+  });
+
+  it("falls back to vector-only search when full-text retrieval fails", async () => {
+    (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("FTS index unavailable"),
     );
     (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
 
@@ -381,8 +531,11 @@ describe("POST /api/ask", () => {
       "expanded OWU query",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(hybridSearch).toHaveBeenCalledWith(
+    expect(searchArticlesForRag).toHaveBeenCalledWith(
       "OWU OR Ohio Wesleyan",
+      expect.objectContaining({ limit: 20, signal: expect.any(AbortSignal) }),
+    );
+    expect(queryArticlesByEmbedding).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({ limit: 20, signal: expect.any(AbortSignal) }),
     );
@@ -407,7 +560,8 @@ describe("POST /api/ask", () => {
   it("calls rerankArticles between retrieval and generation", async () => {
     const retrieved = [mockArticle, { ...mockArticle, id: "1960-01-07-1" }];
     const reranked = [{ ...mockArticle, relevanceScore: 9 }];
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue(retrieved);
+    (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockResolvedValue(retrieved);
+    (searchArticlesForRag as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue(reranked);
 
     await POST(makeRequest({ question: "Test?" }));
@@ -492,17 +646,28 @@ describe("POST /api/ask", () => {
     }
   });
 
-  // Retrieval timeout should fire BEFORE the global deadline when
-  // hybridSearch hangs — the inner 10s budget must win over the outer
+  // Retrieval timeout should fire BEFORE the global deadline when both
+  // independent retrieval signals time out — the inner budget must win over the outer
   // 30s budget. Uses short deadlines so the test runs in real wall time.
   it("retrieval timeout fires before the global deadline (stage=retrieve, not deadline)", async () => {
     _setGlobalDeadlineForTests(2000);
     _setRetrievalTimeoutForTests(150);
     try {
-      // Both hybrid AND the vector-only fallback hang; the inner retrieval
-      // timeout should fire for hybrid, return 504 with stage=retrieve.
-      (hybridSearch as ReturnType<typeof vi.fn>).mockImplementation(
-        () => new Promise(() => {}),
+      // The mocked DB layer surfaces the same typed timeout that the real
+      // AbortSignal-aware Neon wrapper emits at its local budget.
+      const rejectAtRetrievalBudget = () =>
+        new Promise((_, reject) => {
+          setTimeout(
+            () => reject(new MockDbTimeoutError("retrieval", 150)),
+            150,
+          );
+        });
+      (searchArticlesForRag as ReturnType<typeof vi.fn>).mockImplementation(
+        rejectAtRetrievalBudget,
+      );
+      (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockImplementation(
+        () =>
+          rejectAtRetrievalBudget(),
       );
 
       const start = Date.now();
@@ -545,7 +710,8 @@ describe("POST /api/ask", () => {
     // Critical: each pipeline stage was called exactly ONCE total
     expect(reformulateQuery).toHaveBeenCalledTimes(1);
     expect(embedQuery).toHaveBeenCalledTimes(1);
-    expect(hybridSearch).toHaveBeenCalledTimes(1);
+    expect(searchArticlesForRag).toHaveBeenCalledTimes(1);
+    expect(queryArticlesByEmbedding).toHaveBeenCalledTimes(1);
     expect(rerankArticles).toHaveBeenCalledTimes(1);
     expect(generateAnswer).toHaveBeenCalledTimes(1);
   });
@@ -591,6 +757,104 @@ describe("POST /api/ask", () => {
     ]);
 
     expect(reformulateQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies dates inferred from an explicit decade to retrieval", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "football season",
+      ftsQuery: "football season",
+      mode: "text",
+      complexity: "simple",
+      startDate: "1970-01-01",
+      endDate: "1979-12-31",
+    });
+    await POST(makeRequest({ question: "football in the 1970s" }));
+    expect(searchArticlesForRag).toHaveBeenCalledWith(
+      "football season",
+      expect.objectContaining({
+        startDate: "1970-01-01",
+        endDate: "1979-12-31",
+      }),
+    );
+    expect(queryArticlesByEmbedding).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        startDate: "1970-01-01",
+        endDate: "1979-12-31",
+      }),
+    );
+  });
+
+  it("keeps explicit API dates authoritative over inferred dates", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "football",
+      ftsQuery: "football",
+      mode: "text",
+      complexity: "simple",
+      startDate: "1970-01-01",
+      endDate: "1979-12-31",
+    });
+    await POST(makeRequest({
+      question: "football",
+      filters: { startDate: "1980-01-01", endDate: "1980-12-31" },
+    }));
+    expect(searchArticlesForRag).toHaveBeenCalledWith(
+      "football",
+      expect.objectContaining({
+        startDate: "1980-01-01",
+        endDate: "1980-12-31",
+      }),
+    );
+    expect(queryArticlesByEmbedding).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        startDate: "1980-01-01",
+        endDate: "1980-12-31",
+      }),
+    );
+  });
+
+  it("loads deterministic coverage only for absence/count/exhaustive intent", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "computer science department",
+      ftsQuery: "computer science",
+      mode: "text",
+      complexity: "simple",
+      coverageIntent: "absence",
+      startDate: "1960-01-01",
+      endDate: "1969-12-31",
+    });
+
+    const response = await POST(
+      makeRequest({ question: "Did OWU ever mention computer science in the 1960s?" }),
+    );
+    const body = await response.json();
+
+    expect(queryArchiveCoverage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startDate: "1960-01-01",
+        endDate: "1969-12-31",
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(generateAnswer).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({
+        coverage: expect.objectContaining({
+          intent: "absence",
+          editionCount: 351,
+          articleCount: 11_705,
+        }),
+      }),
+    );
+    expect(body.meta.coverage).toMatchObject({
+      intent: "absence",
+      editionCount: 351,
+      articleCount: 11_705,
+      requestedStartDate: "1960-01-01",
+      requestedEndDate: "1969-12-31",
+    });
   });
 
   it("does NOT dedup same question with different sessionIds (bug_018)", async () => {
@@ -688,18 +952,17 @@ describe("POST /api/ask", () => {
     await readSseEvents(response);
   });
 
-  it("streaming: happy path emits stage*4 → metadata → delta*2 → done", async () => {
+  it("streaming: happy path emits stage*3 → metadata → delta*2 → done", async () => {
     const response = await POST(
       makeRequest({ question: "streaming happy path" }, { stream: true }),
     );
     const events = await readSseEvents(response);
 
     const types = events.map((e) => e.type);
-    // Order matters: reformulate → embed → retrieve → rerank stages,
+    // Order matters: reformulate → retrieve → rerank stages,
     // then metadata (needs reranked source articles), then deltas from
     // generateAnswerStream, then the final done event.
     expect(types).toEqual([
-      "stage",
       "stage",
       "stage",
       "stage",
@@ -712,7 +975,6 @@ describe("POST /api/ask", () => {
     const stageEvents = events.filter((e) => e.type === "stage");
     expect(stageEvents.map((e) => e.name)).toEqual([
       "reformulate",
-      "embed",
       "retrieve",
       "rerank",
     ]);
@@ -775,9 +1037,12 @@ describe("POST /api/ask", () => {
     expect(events.find((e) => e.type === "done")).toBeUndefined();
   });
 
-  it("streaming: embed quota → error with cause=quota_exhausted", async () => {
+  it("streaming: both signals unavailable surfaces vector quota at retrieve", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
       new MockQuotaExhaustedError("embedQuery", { code: 429 }),
+    );
+    (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("database unavailable"),
     );
 
     const response = await POST(
@@ -787,14 +1052,17 @@ describe("POST /api/ask", () => {
 
     const errorEvent = events.find((e) => e.type === "error");
     expect(errorEvent).toBeDefined();
-    expect(errorEvent!.stage).toBe("embed");
+    expect(errorEvent!.stage).toBe("retrieve");
     expect(errorEvent!.cause).toBe("quota_exhausted");
     expect(errorEvent!.message).toMatch(/quota/i);
   });
 
-  it("streaming: embed generic failure → error with stage=embed", async () => {
+  it("streaming: both generic signal failures report stage=retrieve", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error("network failed"),
+    );
+    (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("database unavailable"),
     );
 
     const response = await POST(
@@ -804,7 +1072,7 @@ describe("POST /api/ask", () => {
 
     const errorEvent = events.find((e) => e.type === "error");
     expect(errorEvent).toBeDefined();
-    expect(errorEvent!.stage).toBe("embed");
+    expect(errorEvent!.stage).toBe("retrieve");
     expect(errorEvent!.cause).toBeUndefined();
   });
 
@@ -890,12 +1158,14 @@ describe("POST /api/ask", () => {
   // 503-class errors during embed, and a streaming generator that throws
   // mid-delta. See the master plan in warm-soaring-willow.md.
 
-  it("returns low-confidence 'not enough info' when reranker filters all articles", async () => {
-    // Retrieval succeeds with 2 articles, but reranker drops them all
-    // (everything scored below minScore=5). route.ts passes the empty
-    // array to generateAnswer, which returns the canned insufficient-info
-    // response with confidence=low. Previously this path had no explicit
-    // test — coverage reached via golden suite only.
+  it("falls back to fused retrieval order when reranker filters all articles", async () => {
+    // Retrieval succeeds with 2 articles, but the reranker (and its CRAG
+    // retry) drop everything below minScore. The total-veto guard keeps the
+    // fused-order articles at relevanceScore 5 — the reranker's degraded-mode
+    // score, and the minimum generateAnswer engages with (below
+    // RERANK_TANGENTIAL it refuses without calling the model) — instead of
+    // handing the generator an empty array. An LLM judge discarding every
+    // real candidate is a judging artifact, not proof of no evidence.
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
       mockArticle,
       { ...mockArticle, id: "1960-01-07-1" },
@@ -918,24 +1188,22 @@ describe("POST /api/ask", () => {
     expect(body.confidence).toBe("low");
     expect(body.citations).toEqual([]);
     expect(body.answer).toMatch(/don.?t have enough information/i);
-    // sourceArticles should be empty because nothing survived reranking
-    expect(body.sourceArticles).toEqual([]);
-    // generateAnswer must still be called with the empty array so the
-    // canned low-confidence response path is reachable from the route
-    expect(generateAnswer).toHaveBeenCalledWith(
-      "something totally off-topic",
-      [],
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    // The fallback articles reach the generator in fused order (the two
+    // mocks share a contentRevisionId, so fusion dedupes them to one) at
+    // relevanceScore 5 — never an empty array, and never a score the
+    // generator's tangential gate would refuse without generating.
+    const generatorArticles = (generateAnswer as ReturnType<typeof vi.fn>)
+      .mock.calls[0][1] as Array<{ id: string; relevanceScore: number }>;
+    expect(generatorArticles.length).toBeGreaterThan(0);
+    expect(generatorArticles[0]).toMatchObject({
+      id: mockArticle.id,
+      relevanceScore: 5,
+    });
+    // Both rerank passes ran (initial + retry) before the guard engaged.
+    expect(rerankArticles).toHaveBeenCalledTimes(2);
   });
 
-  it("returns 502 with stage='embed' when embed throws a Gemini 503-style error", async () => {
-    // Gemini SERVICE_UNAVAILABLE (503) is not a QuotaExhaustedError and
-    // not a timeout — it's a transient 5xx. Today the route collapses
-    // all non-quota embed failures into a generic 502. This test pins
-    // that behavior so a future change that surfaces 503 distinctly
-    // (e.g., a dedicated 503 passthrough) breaks this test on purpose
-    // and forces explicit migration instead of silent drift.
+  it("uses full-text retrieval when embedding has a transient 503", async () => {
     const serviceUnavailable = Object.assign(
       new Error("Gemini API error: 503 SERVICE_UNAVAILABLE upstream connect error"),
       { status: "UNAVAILABLE", code: 503 },
@@ -947,12 +1215,8 @@ describe("POST /api/ask", () => {
     );
     const body = await response.json();
 
-    expect(response.status).toBe(502);
-    expect(body.stage).toBe("embed");
-    expect(body.error).toBe("Failed to process question. Please try again.");
-    expect(typeof body.requestId).toBe("string");
-    expect(body.requestId.length).toBeGreaterThan(0);
-    // Retry-After header is NOT set for generic 502 (only for quota 429)
+    expect(response.status).toBe(200);
+    expect(body.meta.method).toBe("fts");
     expect(response.headers.get("Retry-After")).toBeNull();
   });
 
@@ -1066,6 +1330,51 @@ describe("Complexity routing", () => {
     expect(body.meta.agentToolCalls).toBe(3);
   });
 
+  it("passes deterministic count scope into the complex agent path", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "homecoming parades",
+      ftsQuery: "homecoming parade",
+      mode: "text",
+      complexity: "complex",
+      coverageIntent: "count",
+    });
+    (queryArchiveCoverage as ReturnType<typeof vi.fn>).mockResolvedValue({
+      editionCount: 351,
+      articleCount: 11_705,
+      earliestEditionDate: "1950-01-01",
+      latestEditionDate: "2006-12-31",
+      retrievalTarget: "legacy",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "The cited evidence identified two parades [1965-03-15-4].",
+      citations: [
+        { articleId: "1965-03-15-4", headline: "Parades", editionDate: "1965-03-15" },
+      ],
+      confidence: "medium",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map(),
+      retrievalTimeMs: 10,
+      generationTimeMs: 20,
+      retrievalMethod: "fts",
+    });
+
+    const response = await POST(makeRequest({ question: "How many homecoming parades were covered?" }));
+    const body = await response.json();
+
+    expect(runAgentLoop).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        coverage: expect.objectContaining({
+          intent: "count",
+          editionCount: 351,
+        }),
+      }),
+    );
+    expect(body.meta.coverage.intent).toBe("count");
+    expect(body.meta.method).toBe("fts");
+  });
+
   it("populates sourceArticles from agent metadata", async () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "test",
@@ -1141,6 +1450,7 @@ describe("Complexity routing", () => {
       "complex q",
       "Agent answer.",
       ["a1"],
+      expect.any(Array),
     );
   });
 });
@@ -1262,6 +1572,9 @@ describe("CRAG retry (streaming)", () => {
     (embedQuery as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(new Array(768).fill(0))
       .mockRejectedValueOnce(new MockQuotaExhaustedError("embedQuery"));
+    (searchArticlesForRag as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([{ ...mockArticle, source: "fts" as const }])
+      .mockRejectedValueOnce(new Error("database unavailable"));
 
     const response = await POST(
       makeRequest({ question: "obscure topic" }, { stream: true }),
@@ -1271,8 +1584,8 @@ describe("CRAG retry (streaming)", () => {
     const errorEvent = events.find((e) => e.type === "error");
     expect(errorEvent).toBeDefined();
     expect(errorEvent?.message).toMatch(/quota/i);
-    // Stage should reflect the retry-specific label, not a generic "rerank".
-    expect(errorEvent?.stage).toBe("embed-retry");
+    // Stage reflects the combined retry retrieval operation.
+    expect(errorEvent?.stage).toBe("retrieve-retry");
   });
 });
 
@@ -1349,6 +1662,7 @@ describe("Streaming + agent", () => {
       "streaming complex q",
       "Streaming agent answer.",
       [],
+      expect.any(Array),
     );
   });
 
@@ -1366,6 +1680,46 @@ describe("Streaming + agent", () => {
     const doneEvent = events.find((e) => e.type === "done");
     expect(doneEvent).toBeDefined();
     expect((doneEvent?.meta as Record<string, unknown>)?.complexity).toBe("simple");
+  });
+
+  it("threads verified coverage through the streaming pipeline", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "all housing examples",
+      ftsQuery: "housing",
+      mode: "text",
+      complexity: "simple",
+      coverageIntent: "exhaustive",
+    });
+    (queryArchiveCoverage as ReturnType<typeof vi.fn>).mockResolvedValue({
+      editionCount: 50,
+      articleCount: 1_500,
+      earliestEditionDate: "1960-01-01",
+      latestEditionDate: "1970-12-31",
+      retrievalTarget: "legacy",
+    });
+
+    const response = await POST(
+      makeRequest({ question: "List all housing examples" }, { stream: true }),
+    );
+    const events = await readSseEvents(response);
+
+    expect(generateAnswerStream).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({
+        coverage: expect.objectContaining({
+          intent: "exhaustive",
+          editionCount: 50,
+        }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "stage", name: "coverage" }),
+    );
+    const doneEvent = events.find((event) => event.type === "done");
+    expect(
+      ((doneEvent?.meta as Record<string, unknown>)?.coverage as Record<string, unknown>)?.intent,
+    ).toBe("exhaustive");
   });
 
   it("emits generic error for streaming agent failure", async () => {
@@ -1405,6 +1759,7 @@ describe("Streaming + agent", () => {
       "pipeline streaming q",
       "Answer.",
       [],
+      expect.any(Array),
     );
   });
 });
@@ -1813,9 +2168,12 @@ describe("typed AskError response body", () => {
     expect(body.kind).toBe("bad_request");
   });
 
-  it("429 budget with retryAfterSec=3600 on quota_exhausted", async () => {
+  it("429 budget when vector quota and full-text retrieval both fail", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
       new MockQuotaExhaustedError("embedQuery", { code: 429 }),
+    );
+    (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("database unavailable"),
     );
 
     const response = await POST(makeRequest({ question: "q" }));
@@ -1825,20 +2183,24 @@ describe("typed AskError response body", () => {
     expect(body.kind).toBe("budget");
     expect(body.retryAfterSec).toBe(3600);
     expect(body.cause).toBe("quota_exhausted");
+    expect(body.stage).toBe("retrieve");
     expect(response.headers.get("Retry-After")).toBe("3600");
   });
 
-  it("502 server on embed failure", async () => {
+  it("500 server when both retrieval signals fail generically", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error("network error"),
+    );
+    (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("database unavailable"),
     );
 
     const response = await POST(makeRequest({ question: "q" }));
     const body = await response.json();
 
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(500);
     expect(body.kind).toBe("server");
-    expect(body.stage).toBe("embed");
+    expect(body.stage).toBe("retrieve");
     expect(body.requestId).toBeDefined();
   });
 

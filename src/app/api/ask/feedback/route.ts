@@ -22,6 +22,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
+import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 
 const MAX_QUESTION_LENGTH = 1000;
 const MAX_ANSWER_LENGTH = 20_000;
@@ -35,7 +36,15 @@ interface Citation {
     articleId: string;
     headline: string;
     editionDate: string;
+    /**
+     * Optional pin to the exact article revision the answer cited.
+     * Persisted inside the existing citations JSONB — no schema change.
+     */
+    contentRevisionId?: string;
 }
+
+const MAX_CONTENT_REVISION_ID_LENGTH = 200;
+const CONTENT_REVISION_ID_PATTERN = /^[A-Za-z0-9:_-]+$/;
 
 interface FeedbackBody {
     requestId: unknown;
@@ -58,6 +67,14 @@ function isStringArrayOfShape(
 function isCitation(value: unknown): value is Citation {
     if (!value || typeof value !== "object") return false;
     const obj = value as Record<string, unknown>;
+    if (
+        obj.contentRevisionId !== undefined &&
+        (typeof obj.contentRevisionId !== "string" ||
+            obj.contentRevisionId.length > MAX_CONTENT_REVISION_ID_LENGTH ||
+            !CONTENT_REVISION_ID_PATTERN.test(obj.contentRevisionId))
+    ) {
+        return false;
+    }
     return (
         typeof obj.articleId === "string" &&
         typeof obj.headline === "string" &&
@@ -153,6 +170,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
         const trimmed = body.comment.trim();
         comment = trimmed === "" ? null : trimmed;
+    }
+
+    if (isRagEvaluationMode()) {
+        return NextResponse.json(
+            { ok: true, persisted: false, evaluationMode: true },
+            { status: 202 },
+        );
     }
 
     // ── Insert ──

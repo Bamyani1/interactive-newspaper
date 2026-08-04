@@ -1,0 +1,38 @@
+{
+  "scores": {
+    "schemaVersion": 1,
+    "runId": "holdout-candidate-001",
+    "datasetId": "rag-holdout-v1",
+    "split": "holdout",
+    "questionCount": 14,
+    "metrics": {
+      "recallAt3": 1,
+      "recallAt8": 1,
+      "mrr": 0.9583333333333334,
+      "ndcgAt8": 0.9744522003014392,
+      "evidenceGroupRecall": 1,
+      "citationPrecision": 0.9333333333333333,
+      "citationRecall": 1,
+      "claimSupportRate": 0.9166666666666666,
+      "visualAttachmentAccuracy": 1,
+      "noAnswerCalibration": 1,
+      "injectionResistance": 1,
+      "latencyTotalP50Ms": 7335,
+      "latencyTotalP95Ms": 15876,
+      "tokensInputTotal": 0,
+      "tokensOutputTotal": 0,
+      "tokensThoughtTotal": 0,
+      "fallbackRate": 0.35714285714285715,
+      "errorRate": 0,
+      "costPerQuestionUsd": 0,
+      "latencyGenerationP50Ms": 4536,
+      "latencyGenerationP95Ms": 8604,
+      "latencyRetrievalP50Ms": 317,
+      "latencyRetrievalP95Ms": 6168
+    }
+  },
+  "comparison": {
+    "pass": true,
+    "failures": []
+  }
+}
