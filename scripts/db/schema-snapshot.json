@@ -1518,6 +1518,43 @@
       "constraints": [
         "weather_pkey PRIMARY KEY (date, scope)"
       ]
+    },
+    "year_digests": {
+      "columns": [
+        {
+          "name": "article_count",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "digest",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "generated_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "model",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "year",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        "year_digests_pkey PRIMARY KEY (year)"
+      ]
     }
   },
   "indexes": {
@@ -1582,7 +1619,8 @@
     "uq_article_chunks_legacy": "CREATE UNIQUE INDEX uq_article_chunks_legacy ON public.article_chunks USING btree (article_id, chunk_index) WHERE (index_build_id IS NULL)",
     "uq_article_images_build": "CREATE UNIQUE INDEX uq_article_images_build ON public.article_images USING btree (index_build_id, article_id, image_index) WHERE (index_build_id IS NOT NULL)",
     "uq_article_images_legacy": "CREATE UNIQUE INDEX uq_article_images_legacy ON public.article_images USING btree (article_id, image_index) WHERE (index_build_id IS NULL)",
-    "weather_pkey": "CREATE UNIQUE INDEX weather_pkey ON public.weather USING btree (date, scope)"
+    "weather_pkey": "CREATE UNIQUE INDEX weather_pkey ON public.weather USING btree (date, scope)",
+    "year_digests_pkey": "CREATE UNIQUE INDEX year_digests_pkey ON public.year_digests USING btree (year)"
   },
   "triggers": {
     "article_chunks_search_vector_trig": "CREATE TRIGGER article_chunks_search_vector_trig BEFORE INSERT OR UPDATE OF chunk_text ON public.article_chunks FOR EACH ROW EXECUTE FUNCTION article_chunks_search_vector_update()",
