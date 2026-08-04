@@ -20,10 +20,10 @@ export default function ContactPage() {
                         email us and we will respond as soon as we can.
                     </p>
                     <a
-                        href="mailto:manwari@owu.edu"
+                        href="mailto:anwari.works@gmail.com"
                         className="inline-flex items-center min-h-[44px] text-base text-[var(--color-text-primary)] underline decoration-[var(--color-accent)]/40 underline-offset-4 hover:text-[var(--color-accent)] hover:decoration-[var(--color-accent)] transition-colors"
                     >
-                        manwari@owu.edu
+                        anwari.works@gmail.com
                     </a>
                 </div>
             </main>
