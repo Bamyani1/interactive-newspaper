@@ -14,15 +14,17 @@ yarn-error.log*
 pnpm-debug.log*
 *.log
 
-# Environment files
+# Environment files. The catch-all covers .env.production, .env.staging and
+# any other variant — only the committed template is allowed back through.
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 
 # Testing / coverage
 coverage/
+playwright-report/
+test-results/
+.playwright/
 audit-evidence/full/
 
 # TypeScript
@@ -120,6 +122,8 @@ ocr/env/
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
 # OCR run artifacts and diagnostics
 ocr/runs/
