@@ -20,7 +20,7 @@
 ---
 
 
-> Status: the RAG pipeline, OCR pipeline, chat UI, and data ingestion are all functional and running locally. The hosted site is not yet public. Run locally to explore, or read [`docs/architecture/`](./docs/architecture/) for production-level deep-dives on each subsystem.
+> Status: the RAG pipeline, OCR pipeline, chat UI, and data ingestion are all functional, and the versioned RAG pipeline is deployed and serving on Vercel. Run locally to explore, or read [`docs/architecture/`](./docs/architecture/) for production-level deep-dives on each subsystem.
 
 ---
 
@@ -75,7 +75,7 @@ Ohio Wesleyan University's student newspaper, *The Transcript*, has been publish
 - **Ask the Archive.** Natural-language chat over the archive with a full RAG pipeline: query reformulation, hybrid vector + full-text search, Gemini reranking, cited answer generation, and streaming SSE responses.
 - **Complex queries get an agent.** Multi-era, comparative, or multi-hop questions trigger a Gemini function-calling agent with `search_archive`, `read_article`, and `list_editions` tools instead of the linear pipeline.
 - **Multi-thread conversations.** Sessions persist to Neon (5 turns, 30-min TTL). A sidebar shows the current thread plus an archive of past threads. Follow-up questions carry context.
-- **Budget-aware by default.** A $0.50/day hard kill switch stops the pipeline before a runaway loop can drain the Gemini quota.
+- **Budget-aware by default.** A $2/day hard kill switch stops the pipeline before a runaway loop can drain the Gemini quota.
 - **Multimodal visual queries.** "Show me protest photos" returns a visual-mode answer with a `TimelineGallery` of matching article thumbnails. Text and image embeddings live in the same vector space.
 - **End-to-end OCR pipeline.** A seven-phase Python pipeline turns raw TIF scans into structured `edition.json`: DocAI layout parsing, DocLayout-YOLO region detection, Gemini structuring, cross-page article merging, ad enrichment, content triage, and per-run diagnostics.
 - **Historical context.** Offline Ohio weather archive (1950–2000) and monthly US top-10 music archive (1958–2010) feed period-accurate sidebars.
@@ -164,14 +164,14 @@ The three docs cross-reference each other and share a glossary. Read them in ord
 
 **AI / Machine Learning**
 
-- **Google Gemini on Vertex AI** (`@google/genai`) — ADC-authenticated RAG generation (`gemini-3.5-flash-lite` only) and stable 768-dimensional embeddings (`gemini-embedding-2`), plus the independently configured OCR stages
+- **Google Gemini** (`@google/genai`) — RAG generation on `gemini-3.6-flash` with query reformulation on `gemini-3.5-flash-lite`, and stable 768-dimensional embeddings (`gemini-embedding-2`), plus the independently configured OCR stages. Vertex AI with ADC locally and for the data pipeline; API-key auth on the Vercel serving runtime
 - **Google Document AI** — layout parser for character-level OCR with confidence scoring
 - **DocLayout-YOLO** — photo/illustration region detection on scanned pages
 
 **Python OCR Pipeline**
 
 - Python 3.12, `ocr/src/transcript_ocr/` package
-- Domain-driven layout with ten domain layers (`application/`, `recognition/`, `preprocessing/`, `detection/`, `merging/`, `postprocessing/`, `image_linking/`, `export/`, `diagnostics/`, `ingestion/`) plus infrastructure (`contracts/`, `shared/`, `config/`)
+- Domain-driven layout with eleven domain layers (`application/`, `recognition/`, `preprocessing/`, `detection/`, `merging/`, `postprocessing/`, `image_linking/`, `export/`, `evaluation/`, `diagnostics/`, `ingestion/`) plus infrastructure (`contracts/`, `shared/`, `config/`, `cli/`)
 - Import-boundary and architecture tests enforced in CI (`.github/workflows/ocr-architecture.yml`)
 
 ---
@@ -205,7 +205,7 @@ Retrieved articles go to Gemini with explicit score anchors (0–10). Scores ≥
 
 ### Answer generation
 
-The answer generator receives the **original** user question plus the matched passages from reranked articles. A skip-Gemini guard fires when reranker evidence is tangential (average score below 5). The output ceiling leaves room for MEDIUM thinking plus the structured JSON answer, and malformed structured envelopes are never shown as raw UI text. Confidence is based on verified visible citations and the model-independent 0–10 reranker rubric, not embedding-distance constants.
+The answer generator receives the **original** user question plus the matched passages from reranked articles. A skip-Gemini guard fires when reranker evidence is tangential (average score below 5). The output ceiling leaves room for the thinking budget plus the structured JSON answer, and malformed structured envelopes are never shown as raw UI text. Confidence is based on verified visible citations and the model-independent 0–10 reranker rubric, not embedding-distance constants.
 
 ### Agent loop for complex questions
 
@@ -218,9 +218,9 @@ The answer generator receives the **original** user question plus the matched pa
 ### Guards
 
 - **Rate limiting**: two layers (middleware + route), 10 req/min per IP on `/api/ask`, Neon-backed with in-memory fallback
-- **Daily budget**: $0.50/day hard stop via `ai_spend_counter` table (`cost-tracker.ts`)
+- **Daily budget**: $2/day hard stop via `ai_spend_counter` table (`cost-tracker.ts`)
 - **Concurrent dedup**: identical in-flight (ip, question, filters, sessionId) requests share one pipeline run (JSON path only)
-- **Global deadline**: `GLOBAL_DEADLINE_MS = 30_000`; all stages race against it
+- **Global deadline**: `GLOBAL_DEADLINE_MS = 55_000`; all stages race against it
 - **Prompt-injection defense**: user questions are encoded as JSON strings, model outputs use schemas, and citations are accepted only for evidence actually returned by retrieval/tools
 
 ---
@@ -258,7 +258,6 @@ For the full seven-phase walkthrough, LLM retry policy, diagnostics, and gotchas
 - **Retry identity**: OCR retries keep the same stage model and configuration; see the OCR architecture document for its independently locked routing.
 - **RECITATION handling**: Gemini's content filter blocks verbatim text reproduction from system instructions; the page extractor moves OCR text to user contents on RECITATION.
 - **Atomic writes**: Phases 4 and 5 use `tempfile.mkstemp` + `os.replace` to prevent file-name collisions if two processes hit the same edition.
-- **`MERGE_MIN_CONFIDENCE=1.0`** disables LLM merges, leaving only deterministic continuation stitching — useful for debugging bad merges.
 - **DocAI 18 MB cap**: `_prepare_image_for_docai()` raises before DocAI's real 20 MB limit, with a 2 MB safety margin.
 
 Full set: [docs/architecture/ocr-pipeline.md § Gotchas](./docs/architecture/ocr-pipeline.md#gotchas).
@@ -319,7 +318,7 @@ ads (id, edition_date FK, position, title, body, category, ad_type,
 
 -- RAG infrastructure
 ask_session_turns (id, session_id, question, answer, cited_article_ids, created_at)
-ai_spend_counter  (day PK, spent_usd, updated_at)                   -- $0.50/day kill switch
+ai_spend_counter  (day PK, spent_usd, updated_at)                   -- $2/day kill switch
 api_rate_bucket   (key PK, count, expires_at, created_at)           -- sliding window
 ask_feedback      (id, request_id, question, answer, vote, …)       -- thumbs up/down
 
@@ -361,7 +360,7 @@ A representative sample of commits that each address a real failure mode discove
 | `0b04000` | Reranker bounds | Reranker fallback could exceed `maxArticles`. Capped. |
 | `35139f7` | Cache correctness | Answer cache was serving context-flavored answers across sessions. Now bypassed when conversation history is non-empty. |
 
-Every pipeline step has a timeout and a typed error envelope with a `kind` discriminator. Generation stays on Gemini 3.5 Flash-Lite; retries never switch to 3.6.
+Every pipeline step has a timeout and a typed error envelope with a `kind` discriminator. Reranking and generation run on Gemini 3.6 Flash; only query reformulation uses Flash-Lite, and retries never change the stage model.
 
 ---
 
@@ -370,14 +369,14 @@ Every pipeline step has a timeout and a typed error envelope with a `kind` discr
 ### TypeScript (Vitest)
 
 - **Lib tests** — `embeddings.test.ts`, `query-reformulator.test.ts`, `reranker.test.ts`, `answer-generator.test.ts`, `db-vector-search.test.ts`, `agent-loop.test.ts`, `agent-tools.test.ts`, `answer-cache.test.ts`, `rate-limit.test.ts`
-- **API tests** — `ask-route.test.ts` (70 tests) covers the full `/api/ask` pipeline, streaming, dedup, and error taxonomy with mocked Gemini
+- **API tests** — `ask-route.test.ts` (76 tests) covers the full `/api/ask` pipeline, streaming, dedup, and error taxonomy with mocked Gemini
 - **Golden RAG regression** — opt-in `rag-golden-questions.test.ts`; frozen source/fact and security assertions determine correctness, while citation-count/confidence drift is reported as telemetry
 - **Component tests** — `ask-archive`, `news-feed` variants
 - **Runner** — `npm run test:run` (CI) or `npm run test` (watch)
 
 ### Python (pytest)
 
-- **Unit** — `test_continuation.py`, `test_merging.py`, `test_null_sanitizer.py`, `test_image_converter.py`, `test_merge_helpers.py`, `test_boundary_cleanup.py`, `test_byline_cleanup.py`, `test_best_body.py`
+- **Unit** — `test_merging.py`, `test_null_sanitizer.py`, `test_image_converter.py`, `test_merge_helpers.py`, `test_byline_cleanup.py`
 - **DocAI / preprocessing** — `test_docai_provider.py`, `test_prepare_image_for_docai.py`, `test_page_quality.py`, `test_region_filters.py`
 - **Failure paths** — `test_failure_paths_static.py`
 - **Architecture / import-boundary tests** (run in CI) — `tests/ocr/architecture/`
@@ -455,7 +454,8 @@ Create `.env.local` from `.env.example`:
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | Yes | Neon Postgres connection string |
-| `GOOGLE_CLOUD_PROJECT` | Yes | Vertex AI/Document AI project used with ADC |
+| `GOOGLE_CLOUD_PROJECT` | Yes locally | Vertex AI/Document AI project used with ADC. Its presence selects Vertex mode; the data pipeline and OCR require it |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Yes on Vercel | API-key auth used when `GOOGLE_CLOUD_PROJECT` is unset — the serving path in production, which has no ADC |
 | `GOOGLE_CLOUD_LOCATION` | Yes | Vertex AI location; use `global` for current RAG models |
 | `GOOGLE_ADC_EXPECTED_PRINCIPAL` | Recommended locally | Optional identity assertion used by the read-only ADC preflight |
 | `RAG_CORPUS_VERSION` | Recommended | Cache namespace; bump after a corpus/index deployment |
@@ -463,17 +463,23 @@ Create `.env.local` from `.env.example`:
 | `RAG_ACTIVE_INDEX_BUILD_ID` | Candidate only | Required immutable build identity for `shadow` or `versioned` retrieval |
 | `DOCUMENT_AI_PROCESSOR_ID` | Yes (OCR) | Document AI layout parser processor |
 | `DOCUMENT_AI_LOCATION` | Yes (OCR) | Typically `us` |
-| `LAYOUT_PARSER_PROCESSOR_ID` | Optional | Secondary layout processor |
 | `R2_ACCOUNT_ID` | Optional | Cloudflare R2 account (production image CDN) |
 | `R2_ACCESS_KEY_ID` | Optional | R2 access key |
 | `R2_SECRET_ACCESS_KEY` | Optional | R2 secret key |
 | `R2_BUCKET_NAME` | Optional | R2 bucket name |
 | `IMAGE_BASE_URL` | Optional | R2 public CDN base URL (falls back to a local API proxy in dev) |
 | `ADMIN_REVALIDATE_TOKEN` | Optional | Auth token for `/api/admin/revalidate` |
+| `CRON_SECRET` | Yes in production | Bearer token the Vercel cron presents to `/api/internal/retention` |
+| `VOYAGE_API_KEY` | Optional | Enables the Voyage reranker provider; falls back to Gemini reranking when unset |
+| `GC_APPROVAL_TOKEN` | Optional | Required confirmation for destructive R2/index garbage-collection scripts |
+| `FEEDBACK_RETENTION_DAYS` | Optional | Overrides the 90-day `ask_feedback` retention window |
+| `EVAL_DATABASE_URL` | Optional | Separate database for the isolated evaluation harness |
 | `OCR_WORKERS` | Optional | Parallel worker count for OCR pipeline (default 1) |
-| `GEMINI_REQUEST_TIMEOUT_S` | Optional | Per-call Gemini timeout (default 120) |
 | `GEMINI_CALL_SPACING_S` | Optional | Minimum gap between Gemini calls (default 0.5) |
-| `MERGE_MIN_CONFIDENCE` | Optional | Cross-page merge confidence gate (default 0.5) |
+
+The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PLAIN`,
+`OCR_MIN_TEXT_LENGTH`, `DOCAI_CONFIDENCE_THRESHOLD`, `AMERICAN_STORIES_MODEL_PATH`,
+`OCR_DETECTOR_LICENSES_ACCEPTED`) — see [`ocr/README.md`](./ocr/README.md).
 
 **Never commit `.env.local`** — it is already in `.gitignore`.
 
@@ -493,7 +499,8 @@ Create `.env.local` from `.env.example`:
 | `npm run db:seed` | Seed editions into Neon Postgres |
 | `npm run db:reset` | Drop + recreate tables, then seed |
 | `npm run db:embed` | Generate vector embeddings for articles (incremental) |
-| `npm run db:embed:force` | Force re-embed all articles |
+| `npm run db:migrate` | Apply pending SQL migrations |
+| `npm run db:migrate:status` | Show which migrations have been applied |
 | `npm run images:upload` | Upload edition images to Cloudflare R2 |
 | `npm run weather:build:ohio` | Build offline weather archive (1950–2000) |
 | `npm run weather:verify:ohio` | Verify weather archive integrity |
@@ -521,7 +528,7 @@ Create `.env.local` from `.env.example`:
 ├── src/lib/                      # Shared services (flat TS modules)
 │   ├── agent-loop.ts             # Gemini function-calling agent
 │   ├── agent-tools.ts            # search_archive, read_article, list_editions
-│   ├── answer-cache.ts           # 1-hour in-memory answer LRU
+│   ├── answer-cache.ts           # In-memory LRU + pgvector semantic cache
 │   ├── answer-generator.ts       # Gemini cited-answer generation
 │   ├── ask-dedup.ts              # Concurrent-request coalescing
 │   ├── conversation-store.ts     # Neon-backed session turns
@@ -531,7 +538,7 @@ Create `.env.local` from `.env.example`:
 │   ├── article-chunking.ts       # deterministic sentence-aware chunk records
 │   ├── embeddings.ts             # stable gemini-embedding-2 + LRU
 │   ├── gemini-client.ts          # Shared client factory
-│   ├── rag-model-config.ts       # Flash-Lite-only RAG model/thinking routing
+│   ├── rag-model-config.ts       # Per-stage RAG model + thinking-level routing
 │   ├── retrieval.ts              # canonical retrieve/rerank/CRAG service
 │   ├── gold-edition.ts           # Gold fallback loader
 │   ├── image-url.ts              # R2 CDN ↔ dev API proxy URL resolver
@@ -547,7 +554,8 @@ Create `.env.local` from `.env.example`:
 ├── ocr/                          # Python OCR pipeline
 │   ├── src/transcript_ocr/       # Domain-driven package (see docs/architecture/ocr-pipeline.md)
 │   ├── convert_scans.py          # OCR CLI entry point
-│   └── enrich_ads.py             # Ad-enrichment CLI
+│   ├── score_gold.py             # Gold-edition accuracy scoring
+│   └── validate_candidate.py     # Candidate-edition validation
 │
 ├── scripts/
 │   ├── db/                       # seed, embed, migrate, recreate-hnsw-index
@@ -556,7 +564,9 @@ Create `.env.local` from `.env.example`:
 │   └── weather/                  # Weather archive builders
 │
 ├── docs/
-│   ├── architecture/             # Three deep-dive docs + landing page
+│   ├── architecture/             # Deep-dive docs, reference reports, landing page
+│   ├── archive/                  # Superseded plans and handoffs (not current)
+│   ├── design/                   # Design carve-outs
 │   └── issues/                   # Issue log
 │
 ├── public/
@@ -579,9 +589,9 @@ Create `.env.local` from `.env.example`:
 - **API routes** — always validate inputs, return typed JSON with the `AskErrorKind` discriminator, and use correct HTTP status codes.
 - **OCR adapter** — `src/server/ocr-adapter/` is the *only* place that transforms `edition.json` → DB shape. Restores must go through this path, not raw SQL.
 - **Dates** — always `YYYY-MM-DD` strings; never `Date` objects across API boundaries.
-- **Design tokens** — colors, typography, and spacing live in `src/styles/tokens/`; components consume semantic tokens (`--color-*`, `--owu-*`), not raw hex values.
+- **Design tokens** — colors, typography, and spacing live in `src/styles/tokens/`; components consume the semantic `--color-*` layer, not raw hex values. The four `--owu-*` names are inert compatibility aliases; see [`design.md`](./design.md#legacy---owu--aliases).
 - **Path aliases** — `@/*`, `@/features/*`, `@/shared/*`, `@/styles/*` per `tsconfig.json`.
-- **Pipeline changes** — bug fixes OK; new behavior needs explicit approval (per CLAUDE.md).
+- **Pipeline changes** — bug fixes OK; new behavior needs explicit approval.
 
 ---
 

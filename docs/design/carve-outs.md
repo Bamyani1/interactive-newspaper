@@ -2,13 +2,15 @@
 
 This doc inventories live features, intentional hardcodes, and external contracts that the design-system refresh MUST NOT silently break. Every subsequent phase (token edits, primitive migration, Tailwind expansion, feature cleanup) must consult this doc before modifying a listed file or token.
 
-Produced during Phase 0 of the plan at `~/.claude/plans/here-is-an-new-declarative-wozniak.md`.
+Produced during Phase 0 of the design refresh. Line numbers are deliberately left out
+below — they drift with every edit. Each carve-out also carries an inline comment at the
+site itself, and that comment is the authoritative marker.
 
 ---
 
 ## 1. YouTube play-button red (`bg-red-600`) — intentional affordance
 
-**Where:** `src/features/music-player/components/SidebarPlayer.tsx:117`
+**Where:** `src/features/music-player/components/SidebarPlayer.tsx` — the `bg-red-600` play circle
 
 **What it is:** A red circle overlaid on a YouTube thumbnail (`https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`) as the play button. YouTube brand red is the user-recognized "click here to play" cue. Replacing it with brand OWU red weakens the affordance.
 
@@ -18,7 +20,7 @@ Produced during Phase 0 of the plan at `~/.claude/plans/here-is-an-new-declarati
 <div className="w-12 h-12 rounded-full bg-red-600 …">
 ```
 
-The surrounding `bg-black` container (line 106) is also part of the YouTube-player visual cue — keep.
+The surrounding `bg-black` container is also part of the YouTube-player visual cue — keep. It already carries its own inline comment.
 
 ---
 
@@ -55,7 +57,10 @@ blanket-tokenizing them.
 
 ## 4. `.env*` files — hard-blocked
 
-Per `.claude/settings.json`, Claude Code is hard-blocked from editing/writing any `.env*` file. The refresh touches none of these. If a new environment variable becomes necessary, the user must add it manually.
+Automated tooling is hard-blocked from editing or writing any `.env*` file (enforced by
+local agent settings, which are not tracked in this repo). The refresh touches none of
+them. If a new environment variable becomes necessary, the maintainer adds it by hand and
+documents it in `.env.example` and the README env table.
 
 ---
 

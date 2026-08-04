@@ -53,9 +53,9 @@ Read these documents before changing code:
 
 1. [`rag-data-pipeline-final-plan.md`](rag-data-pipeline-final-plan.md) — the
    approved, phase-gated roadmap and authorization boundaries.
-2. [`rag-pipeline.md`](rag-pipeline.md) — the current `/api/ask` runtime,
+2. [`rag-pipeline.md`](../architecture/rag-pipeline.md) — the current `/api/ask` runtime,
    retrieval modes, failure behavior, telemetry, and operator notes.
-3. [`data-model.md`](data-model.md) — the legacy schema and current draft RAG
+3. [`data-model.md`](../architecture/data-model.md) — the legacy schema and current draft RAG
    schema.
 4. This handoff — what was actually completed, verified, and left undone.
 

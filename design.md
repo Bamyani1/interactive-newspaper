@@ -504,6 +504,54 @@ The floating ColorCustomizer and FontCustomizer were removed. Four brand-anchor 
 
 They are aliases into the primitive palette (e.g. `--newsprint-50`, `--ink-900`, `--red-600`). Kept as ballast so any stale `localStorage["tts-color-preset"]` entry in a returning user's browser can still call `document.documentElement.style.setProperty("--owu-red", …)` without error. Do not rename. Do not rely on them from new code — use the semantic layer.
 
+## Review checklist
+
+The operational form of everything above — what to actually check when reviewing a
+change to the front end. Where [`docs/design/carve-outs.md`](docs/design/carve-outs.md)
+documents a deliberate exception, the carve-out wins.
+
+**Direction.** A restrained 1960s newsprint archive: warm paper, warm ink, scarce
+institutional red, period-aware typography, with photographic and scan material doing
+the narrative work. The landing page establishes the archive and offers two equal tasks
+(Ask or Read); utility routes begin with the working surface; edition pages lead with
+publication identity, then reporting, then contextual weather/music and source tools.
+Every first frame is complete, navigation preserves spatial context, and motion is fast
+and local to state or affordance. Ambient landing motion, edition swaps, and overlays
+may move — but content is never hidden until hydration, and scroll-triggered reveals are
+not used.
+
+**Tokens.** Exact primitive values only, never approximations derived from the legacy
+`--owu-*` aliases. Components consume semantic `--color-*` variables. Brand red is
+scarce; dark-mode link and focus semantics may use a lighter documented red token where
+WCAG contrast requires it. Spacing is 0, 4, 8, 12, 16, 24, 32, 48, 64px. Radius is 0, 2,
+or 3px — `9999px` is reserved for circles. Shadows are for media, overlays, and the
+intentional landing art; routine regions use hierarchy, whitespace, and hairlines. Type
+is Playfair Display, Source Serif 4, and JetBrains Mono only; body text is 16px, nothing
+user-facing is below 12px, and each type token carries its intended line height.
+
+**Components and states.** Standard actions use `Button`, text entry uses `Input`,
+long-form Markdown uses `Prose`. Specialized listbox options, disclosure rows, and
+navigation stay semantic native controls but share the same tokenized states. Every
+control needs default, hover (hover-capable devices only), active, focus-visible,
+disabled, loading/pending where relevant, and reduced-motion behavior. Minimum pointer
+target 44×44px. Focus is a visible 2px semantic ring at 2px offset — removing the native
+outline without an equivalent focus-visible treatment is forbidden. Cards appear only
+where the region is itself an interaction or a bounded document.
+
+**Layout.** Final evidence viewports are 1440×900 and 390×844, with boundary probes on
+both sides of 640, 768, and 1024px. The landing is a full-canvas composition that must
+fit the first viewport; Ask is a stable workspace; edition pages are three columns at
+desktop and a readable feed plus bottom navigation below 1024px. No route may create
+unintended horizontal scroll, and fixed headers, bottom navigation, drawers, and modals
+must reserve their geometry and safe-area offsets.
+
+**Motion and first paint.** Server-rendered core content stays visible with JavaScript
+disabled. No route root or critical heading starts at opacity zero, and current or target
+content stays coherent for the whole navigation. Base motion uses the shared
+duration/easing tokens, normally 150–300ms; reduced motion removes nonessential animation
+and stops continuous motion. Theme, fonts, and route data must not cause post-paint
+identity, color, or landmark shifts — per-transition CLS target is at most 0.01.
+
 ## Versioning
 
 This document is versioned via Git. Major breaking changes (e.g., palette overhaul) bump the `version` in the frontmatter. Minor additions (new token, new component variant) don't bump.

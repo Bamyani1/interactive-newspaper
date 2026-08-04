@@ -7,8 +7,8 @@ Thanks for taking a look. This is a solo portfolio project, so the primary autho
 - **Scope.** The project is pre-production and under active iteration. Large feature PRs may be declined if they conflict with the roadmap. Open an issue first before investing significant effort.
 - **Conventional commits.** Commit messages follow the [Conventional Commits](https://www.conventionalcommits.org/) format: `feat(rag):`, `fix(ocr):`, `chore:`, `docs:`, `ci:`. Keep the summary under ~70 characters.
 - **One concern per PR.** Bundle unrelated changes into separate PRs.
-- **Tests.** If you change `src/lib/`, add or update a Vitest test next to the change. If you change `ocr/src/transcript_ocr/`, add a pytest test under `tests/ocr/`.
-- **Lint + tests.** `npm run lint` and `npm run test:run` must pass before requesting review.
+- **Tests.** Tests mirror the source tree under `tests/` rather than sitting beside the code — a change to `src/lib/foo.ts` belongs in `tests/lib/foo.test.ts` (Vitest). If you change `ocr/src/transcript_ocr/`, add a pytest test under `tests/ocr/`.
+- **Lint + tests.** `npm run lint`, `npm run typecheck`, and `npm run test:run` must pass before requesting review. Note that ESLint is configured to skip `scripts/**` and `ocr/**`, so a clean lint says nothing about those trees — check them by hand.
 
 ## Filing an issue
 

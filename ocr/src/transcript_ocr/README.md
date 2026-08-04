@@ -17,6 +17,7 @@ postprocessing/ — Text deduplication, byline cleanup, and page normalization
 merging/        — Model-decided grouping and batched seam review
 image_linking/  — Model-decided visual disposition (no spatial fallback)
 export/         — Candidate validation, atomic JSON, and provenance
+evaluation/     — Gold-edition accuracy scoring (gold_score)
 diagnostics/    — In-memory metrics and the metadata-only failure log
 shared/         — Console utilities, retry helpers
 ```

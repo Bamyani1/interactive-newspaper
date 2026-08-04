@@ -2,8 +2,8 @@
 
 This document describes the production OCR path that converts a newspaper
 edition into the current public `edition.json` contract. The reviewed and
-locked decision record is
-[`ocr-pipeline-implementation-plan.md`](ocr-pipeline-implementation-plan.md).
+locked decision record is archived at
+[`../archive/ocr-pipeline-implementation-plan.md`](../archive/ocr-pipeline-implementation-plan.md).
 The RAG pipeline is outside this scope and remains unchanged.
 
 ## System boundary
