@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
+import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 
 /**
  * Constant-time string comparison — same guard as
@@ -26,7 +27,34 @@ function safeEqual(a: string, b: string): boolean {
     return timingSafeEqual(ab, bb);
 }
 
+// This is the only auth-bearing route with no rate limiter, and it runs bulk
+// DELETEs. Throttle per-IP BEFORE the token check so a stolen-endpoint guess
+// can't be brute-forced at offline speed. The Vercel cron hits this once/day
+// from an unspoofable x-real-ip, so 5/min is never a constraint; and the
+// limiter falls back to in-memory (allowing) on any Neon error, so a DB blip
+// cannot 429 the cron either.
+const retentionRateLimiter = createRateLimiter({
+    bucket: "internal-retention",
+    limit: 5,
+    windowMs: 60_000,
+});
+
 async function handleRetentionSweep(request: NextRequest): Promise<NextResponse> {
+    const rate = await retentionRateLimiter(getClientIp(request));
+    if (!rate.allowed) {
+        return NextResponse.json(
+            { error: "Too many requests." },
+            {
+                status: 429,
+                headers: {
+                    "Retry-After": String(
+                        Math.ceil((rate.resetAt - Date.now()) / 1000),
+                    ),
+                },
+            },
+        );
+    }
+
     const secret = process.env.CRON_SECRET;
     if (!secret) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
