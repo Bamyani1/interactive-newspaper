@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { queryEditionByDate } from "@/src/lib/db";
-import { getEditionsList } from "@/src/lib/editions-server";
 import { GOLD_DATE, loadGoldEdition, type GoldEditionData } from "@/src/lib/gold-edition";
 import { normalizeArticles } from "@/features/news-feed/lib/normalize-articles";
 import { EditionDateClient } from "./EditionDateClient";
 
-export const dynamicParams = true;
-export const revalidate = false;
+// Rendered dynamically so middleware can stamp a per-request CSP nonce
+// (see middleware.ts). Nonce-based CSP disables static prerendering/ISR, so the
+// former `generateStaticParams` + `revalidate: false` no longer apply; invalid
+// dates are still rejected via the notFound() checks below.
+export const dynamic = "force-dynamic";
 
 type EditionData = GoldEditionData;
 
@@ -47,11 +49,6 @@ async function loadEdition(date: string): Promise<EditionData | null> {
     return loadGoldEdition();
   }
   return null;
-}
-
-export async function generateStaticParams() {
-  const editions = await getEditionsList();
-  return editions.map((e) => ({ date: e.date }));
 }
 
 export default async function EditionDatePage({ params }: EditionPageProps) {

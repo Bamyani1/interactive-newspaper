@@ -1,10 +1,5 @@
 import type { NextConfig } from "next";
 
-// Next's dev server (React Refresh) needs 'unsafe-eval'; production bundles do
-// not, so drop it there to shrink the XSS blast radius. next.config.ts is
-// evaluated per environment at build/start, so this resolves correctly.
-const isDev = process.env.NODE_ENV === "development";
-
 const nextConfig: NextConfig = {
   // LAN ranges only, for on-device mobile testing against the dev server.
   allowedDevOrigins: ["192.168.*.*", "10.*.*.*"],
@@ -21,26 +16,8 @@ const nextConfig: NextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
           },
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              // Next.js hydration + Tailwind need inline scripts/styles.
-              // 'unsafe-eval' is dev-only (React Refresh); omitted in prod.
-              `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-              "style-src 'self' 'unsafe-inline'",
-              // R2 images + data: for inline SVGs + blob: for next/image
-              "img-src 'self' data: blob: https:",
-              "font-src 'self' data:",
-              // Gemini + any external HTTPS the front-end might call
-              "connect-src 'self' https:",
-              // Restrict framing to same-origin (matches X-Frame-Options: SAMEORIGIN)
-              "frame-ancestors 'self'",
-              "form-action 'self'",
-              "base-uri 'self'",
-              "object-src 'self'",
-            ].join("; "),
-          },
+          // Content-Security-Policy is set per-request in middleware.ts so
+          // script-src can carry a fresh nonce (no 'unsafe-inline').
         ],
       },
     ];
