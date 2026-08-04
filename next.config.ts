@@ -1,7 +1,13 @@
 import type { NextConfig } from "next";
 
+// Next's dev server (React Refresh) needs 'unsafe-eval'; production bundles do
+// not, so drop it there to shrink the XSS blast radius. next.config.ts is
+// evaluated per environment at build/start, so this resolves correctly.
+const isDev = process.env.NODE_ENV === "development";
+
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["206.21.140.161", "192.168.*.*", "10.*.*.*"],
+  // LAN ranges only, for on-device mobile testing against the dev server.
+  allowedDevOrigins: ["192.168.*.*", "10.*.*.*"],
   async headers() {
     return [
       {
@@ -19,15 +25,16 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              // Next.js hydration + Tailwind need inline scripts/styles
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              // Next.js hydration + Tailwind need inline scripts/styles.
+              // 'unsafe-eval' is dev-only (React Refresh); omitted in prod.
+              `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
               "style-src 'self' 'unsafe-inline'",
               // R2 images + data: for inline SVGs + blob: for next/image
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
               // Gemini + any external HTTPS the front-end might call
               "connect-src 'self' https:",
-              // Block frame embedding (equivalent to X-Frame-Options: DENY)
+              // Restrict framing to same-origin (matches X-Frame-Options: SAMEORIGIN)
               "frame-ancestors 'self'",
               "form-action 'self'",
               "base-uri 'self'",
