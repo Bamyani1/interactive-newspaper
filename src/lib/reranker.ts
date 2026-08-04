@@ -64,6 +64,109 @@ const RERANKER_SCHEMA = {
     additionalProperties: false,
 } as const;
 
+function articleDocument(a: RetrievedArticle, index: number | null): string {
+    const relevantText =
+        a.matchedPassages && a.matchedPassages.length > 0
+            ? a.matchedPassages.join("\n\n")
+            : a.bodyPlain || "";
+    const bodyExcerpt = relevantText.slice(0, RERANKER_BODY_CHARS);
+    const imageCaptions = (a.imageCaptions ?? [])
+        .filter((caption): caption is string => Boolean(caption?.trim()))
+        .map((caption) => caption.trim())
+        .join(" | ")
+        .slice(0, RERANKER_IMAGE_CAPTION_CHARS);
+    const label = index === null ? "" : `[${index + 1}] `;
+    return `${label}"${a.headline}" (${a.editionDate}, ${a.category})\nSummary: ${a.summary || "(none)"}\nExcerpt: ${bodyExcerpt}\nImage captions: ${imageCaptions || "(none)"}`;
+}
+
+const VOYAGE_RERANK_MODEL = "rerank-2.5";
+const VOYAGE_RERANK_URL = "https://api.voyageai.com/v1/rerank";
+const VOYAGE_TIMEOUT_MS = 5_000;
+
+/**
+ * Dedicated cross-encoder reranking via Voyage. Active only when
+ * VOYAGE_API_KEY is set; any failure falls back to the LLM judge, so this
+ * path can never make results worse than the previous behavior. Voyage
+ * relevance scores (0..1) are mapped onto the pipeline's 0-10 scale.
+ */
+async function voyageRerank(
+    question: string,
+    articles: RetrievedArticle[],
+    minScore: number,
+    maxArticles: number,
+    options: RerankOptions,
+): Promise<RankedArticle[] | null> {
+    const apiKey = process.env.VOYAGE_API_KEY;
+    if (!apiKey) return null;
+    const started = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), VOYAGE_TIMEOUT_MS);
+    const combinedSignal = options.signal
+        ? AbortSignal.any([options.signal, controller.signal])
+        : controller.signal;
+    try {
+        const res = await fetch(VOYAGE_RERANK_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: VOYAGE_RERANK_MODEL,
+                query: question,
+                documents: articles.map((a) => articleDocument(a, null)),
+            }),
+            signal: combinedSignal,
+        });
+        if (!res.ok) throw new Error(`Voyage rerank HTTP ${res.status}`);
+        const payload = (await res.json()) as {
+            data?: Array<{ index: number; relevance_score: number }>;
+        };
+        const data = payload.data;
+        if (!Array.isArray(data) || data.length === 0) {
+            throw new Error("Voyage rerank returned no results");
+        }
+        const ranked = data
+            .filter((r) => Number.isInteger(r.index) && articles[r.index] !== undefined)
+            .map((r) => ({
+                ...articles[r.index],
+                relevanceScore: Math.max(0, Math.min(10, r.relevance_score * 10)),
+            }))
+            .filter((a) => a.relevanceScore >= minScore)
+            .sort((a, b) => b.relevanceScore - a.relevanceScore)
+            .slice(0, maxArticles);
+        console.warn(
+            JSON.stringify({
+                level: "info",
+                route: "/api/ask",
+                requestId: options.requestId,
+                stage: "rerank",
+                provider: "voyage",
+                model: VOYAGE_RERANK_MODEL,
+                docCount: articles.length,
+                keptCount: ranked.length,
+                latencyMs: Date.now() - started,
+            }),
+        );
+        return ranked;
+    } catch (err) {
+        console.warn(
+            JSON.stringify({
+                level: "warn",
+                route: "/api/ask",
+                requestId: options.requestId,
+                stage: "rerank",
+                provider: "voyage",
+                msg: "voyage rerank failed; falling back to LLM judge",
+                err: err instanceof Error ? err.message : String(err),
+            }),
+        );
+        return null;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 export async function rerankArticles(
     question: string,
     articles: RetrievedArticle[],
@@ -75,23 +178,20 @@ export async function rerankArticles(
     // Nothing to rerank
     if (articles.length === 0) return [];
 
+    const voyageRanked = await voyageRerank(
+        question,
+        articles,
+        minScore,
+        maxArticles,
+        options,
+    );
+    if (voyageRanked !== null) return voyageRanked;
+
     try {
         const client = getGeminiClient();
 
         const articleSummaries = articles
-            .map((a, i) => {
-                const relevantText =
-                    a.matchedPassages && a.matchedPassages.length > 0
-                        ? a.matchedPassages.join("\n\n")
-                        : a.bodyPlain || "";
-                const bodyExcerpt = relevantText.slice(0, RERANKER_BODY_CHARS);
-                const imageCaptions = (a.imageCaptions ?? [])
-                    .filter((caption): caption is string => Boolean(caption?.trim()))
-                    .map((caption) => caption.trim())
-                    .join(" | ")
-                    .slice(0, RERANKER_IMAGE_CAPTION_CHARS);
-                return `[${i + 1}] "${a.headline}" (${a.editionDate}, ${a.category})\nSummary: ${a.summary || "(none)"}\nExcerpt: ${bodyExcerpt}\nImage captions: ${imageCaptions || "(none)"}`;
-            })
+            .map((a, i) => articleDocument(a, i))
             .join("\n\n");
 
         const userPrompt = `SEARCH MODE: ${options.mode ?? "text"}\nUSER QUESTION (JSON string): ${JSON.stringify(question)}\n\nArticles:\n${articleSummaries}`;

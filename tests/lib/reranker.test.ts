@@ -54,9 +54,73 @@ describe("parseScores", () => {
   });
 });
 
+describe("voyage rerank path", () => {
+  beforeEach(() => {
+    generateContentMock.mockReset();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("uses Voyage when VOYAGE_API_KEY is set and maps scores to the 0-10 scale", async () => {
+    vi.stubEnv("VOYAGE_API_KEY", "test-voyage-key");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          { index: 1, relevance_score: 0.9 },
+          { index: 0, relevance_score: 0.62 },
+          { index: 2, relevance_score: 0.2 },
+        ],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const articles = [
+      makeArticle({ id: "a-0" }),
+      makeArticle({ id: "a-1" }),
+      makeArticle({ id: "a-2" }),
+    ];
+    const result = await rerankArticles("question", articles, { minScore: 4 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(generateContentMock).not.toHaveBeenCalled();
+    // 0.9 -> 9 and 0.62 -> 6.2 survive minScore 4; 0.2 -> 2 is filtered.
+    expect(result.map((a) => a.id)).toEqual(["a-1", "a-0"]);
+    expect(result[0].relevanceScore).toBeCloseTo(9);
+    expect(result[1].relevanceScore).toBeCloseTo(6.2);
+  });
+
+  it("falls back to the LLM judge when the Voyage call fails", async () => {
+    vi.stubEnv("VOYAGE_API_KEY", "test-voyage-key");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("boom")));
+    generateContentMock.mockResolvedValue({ text: '{"scores":[8]}' });
+
+    const result = await rerankArticles("question", [makeArticle()], {
+      minScore: 4,
+    });
+
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+    expect(result).toHaveLength(1);
+    expect(result[0].relevanceScore).toBe(8);
+  });
+
+  it("skips Voyage entirely without an API key", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    generateContentMock.mockResolvedValue({ text: '{"scores":[7]}' });
+
+    await rerankArticles("question", [makeArticle()], { minScore: 4 });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("rerankArticles", () => {
   beforeEach(() => {
     generateContentMock.mockReset();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it("returns an empty list without calling Gemini", async () => {

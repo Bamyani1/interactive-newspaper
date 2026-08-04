@@ -21,10 +21,10 @@ describe("RAG model routing", () => {
     expect(RAG_MODEL_CONFIG.agent.model).toBe(RAG_ANSWER_MODEL);
   });
 
-  it("reserves minimal thinking for lookup steps and medium for synthesis", () => {
+  it("reserves minimal/low thinking for grounded steps and medium for the agent loop", () => {
     expect(RAG_MODEL_CONFIG.reformulate.thinkingLevel).toBe("MINIMAL");
     expect(RAG_MODEL_CONFIG.rerank.thinkingLevel).toBe("MINIMAL");
-    expect(RAG_MODEL_CONFIG.answer.thinkingLevel).toBe("MEDIUM");
+    expect(RAG_MODEL_CONFIG.answer.thinkingLevel).toBe("LOW");
     expect(RAG_MODEL_CONFIG.agent.thinkingLevel).toBe("MEDIUM");
   });
 
