@@ -28,8 +28,11 @@ export const RAG_MODEL_CONFIG = {
         thinkingLevel: "MINIMAL" as ThinkingLevel,
     },
     answer: {
+        // LOW, not MEDIUM: grounded single-hop QA over pre-retrieved
+        // context is Google's canonical low-thinking case, and thinking
+        // bills at the output rate — the holdout regression run gates this.
         model: RAG_ANSWER_MODEL,
-        thinkingLevel: "MEDIUM" as ThinkingLevel,
+        thinkingLevel: "LOW" as ThinkingLevel,
     },
     agent: {
         model: RAG_ANSWER_MODEL,
