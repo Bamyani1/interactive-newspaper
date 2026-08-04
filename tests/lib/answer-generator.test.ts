@@ -311,7 +311,7 @@ describe("generateAnswer", () => {
 });
 
 describe("generateAnswerStream", () => {
-  it("buffers structured JSON and emits only cleaned user-facing text", async () => {
+  it("emits only decoded answer text from the JSON envelope, never syntax", async () => {
     generateContentStreamMock.mockResolvedValue(
       (async function* () {
         yield { text: '{"answer":"Answer [Source 1].",' };
@@ -335,5 +335,53 @@ describe("generateAnswerStream", () => {
     const call = generateContentStreamMock.mock.calls[0][0];
     expect(call.model).toBe("gemini-3.6-flash");
     expect(call.config.thinkingConfig.thinkingLevel).toBe("LOW");
+  });
+
+  it("streams incremental deltas as the answer field arrives across chunks", async () => {
+    generateContentStreamMock.mockResolvedValue(
+      (async function* () {
+        yield { text: '{"answer":"The 1968 protest ' };
+        yield { text: 'drew hundreds [Source 1].\\nA second' };
+        yield { text: ' march followed.","follow_ups":[]}', usageMetadata: {} };
+      })(),
+    );
+
+    const events = [];
+    for await (const event of generateAnswerStream("q", [makeArticle()])) {
+      events.push(event);
+    }
+    const deltas = events.filter((e) => e.type === "delta");
+    expect(deltas.length).toBeGreaterThan(1);
+    expect(deltas.map((d) => (d as { text: string }).text).join("")).toBe(
+      "The 1968 protest drew hundreds [Source 1].\nA second march followed.",
+    );
+    expect(events[events.length - 1]).toEqual(
+      expect.objectContaining({
+        type: "done",
+        answer:
+          "The 1968 protest drew hundreds [Source 1].\nA second march followed.",
+      }),
+    );
+  });
+
+  it("emits no deltas for a legacy plain-text response", async () => {
+    generateContentStreamMock.mockResolvedValue(
+      (async function* () {
+        yield { text: "A plain answer [Source 1]." };
+        yield { text: " More text.", usageMetadata: {} };
+      })(),
+    );
+
+    const events = [];
+    for await (const event of generateAnswerStream("q", [makeArticle()])) {
+      events.push(event);
+    }
+    expect(events.filter((e) => e.type === "delta")).toEqual([]);
+    expect(events[events.length - 1]).toEqual(
+      expect.objectContaining({
+        type: "done",
+        answer: "A plain answer [Source 1]. More text.",
+      }),
+    );
   });
 });
