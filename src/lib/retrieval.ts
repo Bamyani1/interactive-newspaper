@@ -131,14 +131,24 @@ export async function retrieveCandidates(params: {
     const identity = getRagRetrievalConfig();
     const servedTarget =
         identity.mode === "versioned" ? "versioned" : "legacy";
+    // Month-stratified vector selection for wide date ranges (>= ~3
+    // months): survey questions need coverage across the range, not the
+    // similarity-densest fortnight. Narrow ranges keep pure similarity.
+    const startDate = params.filters?.startDate ?? null;
+    const endDate = params.filters?.endDate ?? null;
+    const rangeDays =
+        startDate && endDate
+            ? (Date.parse(endDate) - Date.parse(startDate)) / 86_400_000
+            : 0;
     const searchOptions = {
         limit: params.limit,
         category: params.filters?.category ?? null,
-        startDate: params.filters?.startDate ?? null,
-        endDate: params.filters?.endDate ?? null,
+        startDate,
+        endDate,
         onlyWithImages: params.onlyWithImages,
         timeoutMs: params.timeoutMs,
         signal: params.signal,
+        temporalStratify: rangeDays >= 90,
     };
 
     const embeddingPromise = embedQuery(params.embeddingQuery, {

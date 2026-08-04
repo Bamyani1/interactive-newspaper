@@ -331,9 +331,22 @@ function logNonStopFinishReason(
 
 // ─── Generation ──────────────────────────────────────────────────
 
+function orderForCoverage(
+    sourceArticles: RankedArticle[],
+    coverage?: ArchiveCoverage,
+): RankedArticle[] {
+    // Survey questions read best (and ground best) when evidence appears in
+    // chronological order with explicit dates; relevance order is noise for
+    // "what happened in YEAR". Specific questions keep relevance order.
+    if (coverage?.intent !== "exhaustive") return sourceArticles;
+    return [...sourceArticles].sort((a, b) =>
+        a.editionDate < b.editionDate ? -1 : a.editionDate > b.editionDate ? 1 : 0,
+    );
+}
+
 export async function generateAnswer(
     question: string,
-    sourceArticles: RankedArticle[],
+    articlesInput: RankedArticle[],
     opts: {
         signal?: AbortSignal;
         requestId?: string;
@@ -341,6 +354,7 @@ export async function generateAnswer(
         coverage?: ArchiveCoverage;
     } = {},
 ): Promise<GeneratedAnswer> {
+    const sourceArticles = orderForCoverage(articlesInput, opts.coverage);
     if (sourceArticles.length === 0) {
         return {
             answer:
@@ -527,7 +541,7 @@ export async function generateAnswer(
  */
 export async function* generateAnswerStream(
     question: string,
-    sourceArticles: RankedArticle[],
+    articlesInput: RankedArticle[],
     opts: {
         signal?: AbortSignal;
         requestId?: string;
@@ -535,6 +549,7 @@ export async function* generateAnswerStream(
         coverage?: ArchiveCoverage;
     } = {},
 ): AsyncGenerator<AnswerStreamEvent, void, void> {
+    const sourceArticles = orderForCoverage(articlesInput, opts.coverage);
     if (sourceArticles.length === 0) {
         yield {
             type: "done",

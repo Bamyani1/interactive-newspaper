@@ -580,6 +580,14 @@ interface VectorSearchOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   retrievalTarget?: RetrievalTarget;
+  /**
+   * Stratify candidate selection across the months of the requested date
+   * range instead of pure similarity order. For broad survey questions
+   * ("what happened in 1986?") top-k cosine clusters on two or three
+   * months; month-stratified selection guarantees the best article of
+   * every covered month is considered before any month's second-best.
+   */
+  temporalStratify?: boolean;
 }
 
 interface RagResultRow {
@@ -782,10 +790,56 @@ async function queryRagV2ByEmbedding(
     return aggregateEvidenceRows(rows, "vector", limit);
   }
 
-  const [, , rows] = await sql.transaction([
-    sql`SET LOCAL hnsw.ef_search = 100`,
-    sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
-    sql`
+  // Month-stratified variant: rank articles (month_rank, distance) so the
+  // best article of every month in range precedes any month's second-best.
+  const rankedArticlesSql = options.temporalStratify
+    ? sql`
+      WITH chunk_evidence AS (
+        SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+               a.byline, a.body_plain, a.image_urls, a.image_captions,
+               c.chunk_text,
+               (c.embedding <=> ${vecStr}::vector) AS evidence_distance,
+               MIN(c.embedding <=> ${vecStr}::vector)
+                 OVER (PARTITION BY c.article_id) AS article_distance,
+               ROW_NUMBER() OVER (
+                 PARTITION BY c.article_id
+                 ORDER BY c.embedding <=> ${vecStr}::vector, c.chunk_index
+               ) AS evidence_rank
+        FROM article_chunks c
+        JOIN articles a ON a.id = c.article_id
+        WHERE c.embedding IS NOT NULL
+          AND c.index_build_id = ${indexBuildId}
+          AND c.embedding_model = ${RAG_EMBEDDING_MODEL}
+          AND c.embedding_input_version = ${RAG_TEXT_EMBEDDING_INPUT_VERSION}
+          AND (${category}::text IS NULL OR a.category = ${category})
+          AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+          AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+      ), article_months AS (
+        SELECT id, MIN(article_distance) AS article_distance,
+               left(MIN(edition_date), 7) AS month
+        FROM chunk_evidence
+        GROUP BY id
+      ), ranked_articles AS (
+        SELECT id, article_distance
+        FROM (
+          SELECT id, article_distance,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY month ORDER BY article_distance
+                 ) AS month_rank
+          FROM article_months
+        ) m
+        ORDER BY month_rank, article_distance
+        LIMIT ${limit}
+      )
+      SELECT e.id, e.edition_date, e.category, e.headline, e.summary,
+             e.byline, e.body_plain, e.image_urls, e.image_captions,
+             e.chunk_text, r.article_distance AS distance
+      FROM ranked_articles r
+      JOIN chunk_evidence e ON e.id = r.id
+      WHERE e.evidence_rank <= ${evidencePerArticle}
+      ORDER BY r.article_distance, e.evidence_rank
+    `
+    : sql`
       WITH chunk_evidence AS (
         SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
                a.byline, a.body_plain, a.image_urls, a.image_captions,
@@ -820,7 +874,12 @@ async function queryRagV2ByEmbedding(
       JOIN chunk_evidence e ON e.id = r.id
       WHERE e.evidence_rank <= ${evidencePerArticle}
       ORDER BY r.article_distance, e.evidence_rank
-    `,
+    `;
+
+  const [, , rows] = await sql.transaction([
+    sql`SET LOCAL hnsw.ef_search = 100`,
+    sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
+    rankedArticlesSql,
   ], { readOnly: true, fetchOptions: { signal } });
   return aggregateEvidenceRows(rows, "vector", limit);
 }
