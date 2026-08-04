@@ -38,9 +38,26 @@ describe("Gemini Vertex client", () => {
     );
   });
 
-  it("does not fall back to an API key when the ADC project is missing", () => {
+  it("prefers Vertex ADC over an API key when both are configured", () => {
+    vi.stubEnv("GOOGLE_CLOUD_PROJECT", "archive-project");
     vi.stubEnv("GEMINI_API_KEY", "must-not-be-used");
-    expect(() => getGeminiClient()).toThrow(/GOOGLE_CLOUD_PROJECT/);
+    getGeminiClient();
+    expect(GoogleGenAIMock).toHaveBeenCalledWith(
+      expect.objectContaining({ vertexai: true, project: "archive-project" }),
+    );
+  });
+
+  it("uses API-key mode without an ADC project (Vercel serving path)", () => {
+    vi.stubEnv("GOOGLE_API_KEY", "serving-key");
+    getGeminiClient();
+    expect(GoogleGenAIMock).toHaveBeenCalledWith({
+      apiKey: "serving-key",
+      apiVersion: "v1",
+    });
+  });
+
+  it("throws when neither ADC project nor API key is configured", () => {
+    expect(() => getGeminiClient()).toThrow(/Gemini auth is not configured/);
     expect(GoogleGenAIMock).not.toHaveBeenCalled();
   });
 });
