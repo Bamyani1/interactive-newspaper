@@ -67,5 +67,27 @@ drift check clean; migrations 0001–0009 applied; identities 351/11,692/
 branch `pre-phase8-backup` (br-young-water-ae0vtuki) created beforehand;
 `eval-rag` branch deleted after full local evacuation. Post-verification:
 build active, full vector coverage, 2 HNSW indexes, legacy serving
-untouched. Remaining: steps 7–9 (deploy + shadow → canary → rollback
-drill readiness) — blocked on the user's push/deploy decision.
+untouched.
+
+Steps 7–9 executed later the same day (user-approved; the 24h shadow soak
+was compressed by explicit direction — the blind eval, the holdout
+regression re-run after the serving-model upgrade, and the user's own
+local testing stood in for it):
+
+7. Vercel production env set (user-run): `RAG_RETRIEVAL_MODE=versioned`,
+   `RAG_ACTIVE_INDEX_BUILD_ID=build-01KZ43MP8XEGE3J7RAJH3K7W45`,
+   `RAG_CORPUS_VERSION=legacy-8b8207373510d69e`.
+8. PR #50 merged to main (user-run, merge commit `a404f8d`), including the
+   dual-mode Gemini auth fix (Vertex ADC locally, API key on Vercel —
+   without it every serverless AI call would have failed). Vercel deployed.
+9. Live verification against the production URL: HTTP 200,
+   `retrievalTarget: versioned`, correct build id and corpus version,
+   8 citations at medium confidence on the previously-failing broad
+   question. Rollback remains one env flip (`RAG_RETRIEVAL_MODE=legacy`)
+   plus redeploy — never demote the build first.
+
+Phase 9 (same day): `gc-index-builds --list` against production shows a
+single active build (13,143 chunk rows / 2,875 image rows) — nothing
+prunable; the GC gate correctly refuses until a future build supersedes
+it. Local eval environment (PG 17 + shim) shut down; evacuated vector
+backups retained. Phases 0–9 are closed.

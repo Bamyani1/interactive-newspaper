@@ -1,17 +1,13 @@
 # RAG Enhancement — Implementation Handoff
 
-Last verified: 2026-08-02
+Last verified: 2026-08-03
 
-Implementation checkpoint: `6c40a6b` (Phase 2); Phases 3–5 completed in the
-commits listed below
-
-Branch: `rag-enhancement`
-
-Status: Phases 0–6 complete and gated, and the Phase 7 tooling is implemented
-and tested. Every remaining action requires an explicit user approval:
-read-only production access (exact backfill figures), Neon evaluation
-environment creation, the paid backfill, and then the pre-authorized $10
-evaluation run itself.
+Status: **Phases 0–9 are closed.** Merged to `main` (PR #50, `a404f8d`) and
+serving live in versioned mode on Vercel production. The blind evaluation
+verdict, the Phase 8 database execution log, and the post-eval serving-model
+upgrade are recorded in `rag-phase7-evaluation-report.md` and
+`rag-phase8-rollout-runbook.md`; those two documents are authoritative over
+the phase-by-phase narrative below, which is retained as history.
 
 ## Read this first
 
