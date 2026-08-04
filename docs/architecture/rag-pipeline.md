@@ -8,17 +8,17 @@ This document describes the `/api/ask` pipeline and the isolated RAG-v2 candidat
 |---|---|---|---|
 | Query reformulation and intent classification | `gemini-3.5-flash-lite` | `MINIMAL` | Structured JSON |
 | Candidate reranking | `gemini-3.6-flash` | `MINIMAL` | Structured JSON |
-| Grounded answer generation | `gemini-3.6-flash` | `MEDIUM` | Structured JSON |
+| Grounded answer generation | `gemini-3.6-flash` | `LOW` | Structured JSON |
 | Complex-question agent loop | `gemini-3.6-flash` | `MEDIUM` | Text plus function calls |
 | Text and image embeddings | `gemini-embedding-2` | N/A | 768-dimensional vectors |
 
-All Gemini clients use Vertex AI, Application Default Credentials, the stable `v1` endpoint, and `GOOGLE_CLOUD_LOCATION` (default `global`). The RAG path has no API-key fallback. Gemini 3 requests omit `temperature`, `topP`, and `topK`. Reranking and answering deliberately run on the full Flash tier: the lite model consistently judged every candidate for broad survey questions as tangential (a total-veto that surfaced as false no-evidence refusals) and wrote weaker prose than the previously served `gemini-3-flash-preview`.
+Gemini auth has two modes, chosen by whether `GOOGLE_CLOUD_PROJECT` is set (`src/lib/gemini-client.ts`). With it, clients use Vertex AI with Application Default Credentials and `GOOGLE_CLOUD_LOCATION` (default `global`) — local dev and the entire data pipeline, where ADC is the locked provenance decision. Without it, clients use `GEMINI_API_KEY` / `GOOGLE_API_KEY`; **this is the serving path on Vercel**, where no ADC exists, and it is the same mechanism production used before the Vertex migration. Both use the stable `v1` endpoint, and model names and the embedding space are identical across them. Gemini 3 requests omit `temperature`, `topP`, and `topK`. Reranking and answering deliberately run on the full Flash tier: the lite model consistently judged every candidate for broad survey questions as tangential (a total-veto that surfaced as false no-evidence refusals) and wrote weaker prose than the previously served `gemini-3-flash-preview`.
 
 The model and thinking configuration lives in `src/lib/rag-model-config.ts`. `RAG_PIPELINE_VERSION` participates in answer and retrieval cache keys so incompatible results cannot survive a pipeline upgrade.
 
 ## Request flow
 
-`POST /api/ask` supports JSON and Server-Sent Events (`?stream=1`). Both paths apply input validation, rate limiting, the daily cost guard, a 30-second global deadline, session history, cache policy, and the same retrieval/ranking rules.
+`POST /api/ask` supports JSON and Server-Sent Events (`?stream=1`). Both paths apply input validation, rate limiting, the daily cost guard, a 55-second global deadline, session history, cache policy, and the same retrieval/ranking rules.
 
 ```text
 question
@@ -50,7 +50,7 @@ Required runtime variables:
 DATABASE_URL=postgresql://...
 GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=global
-RAG_CORPUS_VERSION=2026-07-31
+RAG_CORPUS_VERSION=legacy-8b8207373510d69e
 RAG_RETRIEVAL_MODE=legacy
 ```
 
@@ -72,7 +72,7 @@ gcloud auth application-default set-quota-project "$GOOGLE_CLOUD_PROJECT"
 npm run google:verify-adc
 ```
 
-The deployed runtime must have an identity with permission to invoke the relevant Vertex AI models. Do not add `GEMINI_API_KEY` or `GOOGLE_API_KEY` as a fallback; doing so makes project attribution and promotional-credit verification ambiguous.
+ADC is required for the data pipeline — `npm run db:embed`, the OCR path, and every offline script — because project attribution and promotional-credit verification depend on it. The Vercel serving runtime has no ADC and authenticates with `GEMINI_API_KEY` / `GOOGLE_API_KEY` instead; keep that key scoped to the same project so attribution stays intact.
 
 ## Retrieval index
 
@@ -190,7 +190,7 @@ only a scope note.
 
 Confidence no longer depends on hardcoded embedding-distance thresholds. It is based on the model-independent 0–10 reranker rubric and verified cited sources. A single source can support a medium-confidence answer, but never a high-confidence synthesis.
 
-MEDIUM thinking and the user-facing answer share the model's output ceiling, so generation reserves 8,192 tokens and caps the answer field at 12,000 characters. If a response stops abnormally, the finish reason is logged. A complete answer field can be recovered from a truncated outer envelope; malformed structured output is otherwise discarded rather than displayed as raw JSON.
+Thinking and the user-facing answer share the model's output ceiling, so generation reserves 8,192 tokens and caps the answer field at 12,000 characters. The answer stage runs at `LOW` rather than `MEDIUM` — grounded single-hop QA over pre-retrieved context is the canonical low-thinking case, and thinking bills at the output rate. If a response stops abnormally, the finish reason is logged. A complete answer field can be recovered from a truncated outer envelope; malformed structured output is otherwise discarded rather than displayed as raw JSON.
 
 The SSE generator buffers the model's structured JSON and emits only the cleaned answer, followed by the final `done` event. Raw partial JSON is never shown to the client.
 
@@ -218,8 +218,8 @@ Agent citations use `[YYYY-MM-DD-index]`. A citation is accepted only if that ex
 | Query embedding | 10 s |
 | Hybrid/DB retrieval | 8 s default, 10 s route budget |
 | Reranking | 8 s |
-| Answer generation | 15 s |
-| Entire request | 30 s |
+| Answer generation | 30 s |
+| Entire request | 55 s |
 
 Neon HTTP queries receive `fetchOptions.signal`. The database wrapper also races the operation against the abort event. This dual mechanism cancels the real fetch and still guarantees the caller returns if a driver or test double ignores `AbortSignal`.
 
@@ -227,7 +227,9 @@ Neon HTTP queries receive `fetchOptions.signal`. The database wrapper also races
 
 ## Caching and conversations
 
-The one-hour answer cache is used only for history-free simple questions. Its key includes the pipeline, generation model, embedding model, corpus version, normalized question, and filters. Cache lookup occurs before a reformulation call.
+The answer cache has two tiers, both used only for history-free simple questions, and both scoped by a cache identity covering the pipeline version, generation model, embedding model, corpus version, and retrieval identity. Tier 1 is a one-hour in-memory LRU keyed on the exact normalized question plus filters — free and instant, but per-instance on Vercel and gone on redeploy. Tier 2 is a pgvector semantic cache (the `answer_cache` table, migration `0010`) that matches paraphrases by question-embedding similarity at a 0.94 threshold, survives instances and deploys, and costs one query embedding per lookup. Cache lookup occurs before a reformulation call.
+
+Cache entries are shared across every visitor, so `setCachedAnswer` strips the storing request's `question`, `sessionId`, and `requestId` before either tier keeps it, and a cache hit re-attaches the reading caller's own.
 
 Query embeddings and hybrid results have five-minute bounded LRUs. Agent answers are not placed in the answer cache.
 

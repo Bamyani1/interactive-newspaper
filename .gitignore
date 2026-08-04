@@ -154,6 +154,7 @@ gold-candidates/
 CLAUDE.md
 docs/*
 !docs/architecture/
+!docs/archive/
 !docs/design/
 !docs/issues/
 docs/issues/*
