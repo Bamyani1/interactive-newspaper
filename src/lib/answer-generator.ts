@@ -20,6 +20,7 @@ import type { RetrievedArticle } from "@/src/lib/db";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { Citation } from "@/src/types";
 import { groundPipelineAnswer } from "@/src/lib/answer-grounding";
+import { AnswerFieldExtractor } from "@/src/lib/answer-stream-extractor";
 import {
     applyCoverageAnswerPolicy,
     buildCoveragePromptBlock,
@@ -54,13 +55,13 @@ export interface GeneratedAnswer {
 }
 
 /**
- * Stream events yielded by `generateAnswerStream`. Current shape: the
- * generator buffers the full JSON response from the LLM, then emits a
- * single `delta` event with the cleaned answer text immediately before
- * the `done` event. This is a deliberate change from token-by-token
- * streaming because the model now produces JSON, and emitting partial
- * JSON tokens would show the user raw JSON syntax. Progressive feedback
- * during loading is handled by the ResearchFeed component instead.
+ * Stream events yielded by `generateAnswerStream`. `delta` events carry
+ * incrementally decoded answer text — the model produces a JSON envelope,
+ * and AnswerFieldExtractor decodes the "answer" string field as chunks
+ * arrive so the client sees prose, never JSON syntax. Deltas are the
+ * model's raw answer text; grounding, link sanitization, and coverage
+ * policy run on the buffered full response, so the `done` event's answer
+ * is authoritative and may differ slightly from the concatenated deltas.
  */
 export type AnswerStreamEvent =
     | { type: "delta"; text: string }
@@ -534,10 +535,8 @@ export async function generateAnswer(
  * the same confidence rubric, preamble stripping, and citation parsing.
  * On early-skip paths (no sources, distant retrieval), no deltas are
  * produced and a single `done` event with the skip message is yielded.
- *
- * IMPORTANT: the deltas are NOT user-facing raw tokens — the
- * "Relevant sources: ..." preamble is stripped before the first delta is
- * emitted, so the UI never shows the model's chain-of-thought line.
+ * If the model returns a legacy plain-text (non-JSON) response, the
+ * extractor never fires and the answer arrives only via `done`.
  */
 export async function* generateAnswerStream(
     question: string,
@@ -615,9 +614,10 @@ export async function* generateAnswerStream(
         ? AbortSignal.any([opts.signal, controller.signal])
         : controller.signal;
 
-    // Buffer the full stream before emitting — the model now returns JSON
-    // and showing partial JSON tokens to the user would be noise. Perceived
-    // progress during loading is handled by the ResearchFeed component.
+    // fullText buffers the complete JSON envelope for the authoritative
+    // parse at the end; the extractor decodes the answer field's text out
+    // of the same chunks for incremental delta emission.
+    const extractor = new AnswerFieldExtractor();
     let fullText = "";
     // usageMetadata typically lands in the final streamed chunk; record
     // the last non-empty one so our counters reflect the whole call.
@@ -655,6 +655,8 @@ export async function* generateAnswerStream(
                 typeof chunk.text === "string" ? chunk.text : "";
             if (!chunkText) continue;
             fullText += chunkText;
+            const decoded = extractor.push(chunkText);
+            if (decoded) yield { type: "delta", text: decoded };
         }
 
         clearTimeout(timeout);
@@ -709,10 +711,6 @@ export async function* generateAnswerStream(
             citations,
             confidence,
         );
-
-        // Emit the cleaned answer as a single delta immediately before done
-        // so consumers get the final text through the same event channel.
-        yield { type: "delta", text: policyAnswer };
 
         yield {
             type: "done",
