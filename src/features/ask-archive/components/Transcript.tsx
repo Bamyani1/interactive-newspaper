@@ -32,23 +32,70 @@ export const Transcript: React.FC<TranscriptProps> = ({
     const containerRef = useRef<HTMLDivElement>(null);
     const prevTurnCountRef = useRef(turns.length);
 
+    // Whether the reader is "following" the stream. Attachment changes
+    // only on user scrolls: scrolling up detaches, returning to within
+    // FOLLOW_THRESHOLD_PX of the bottom re-attaches. Content growth never
+    // changes it — a large one-shot insertion (the source list mounting
+    // mid-stream, an inline image loading) must not silently detach a
+    // reader who never touched the scroll wheel.
+    const followRef = useRef(false);
+    // Set when we move scrollTop ourselves so the scroll listener can
+    // tell programmatic scrolls from user intent.
+    const programmaticScrollRef = useRef(false);
+    const FOLLOW_THRESHOLD_PX = 200;
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return undefined;
+        const onScroll = () => {
+            if (programmaticScrollRef.current) {
+                programmaticScrollRef.current = false;
+                return;
+            }
+            const distanceFromBottom =
+                el.scrollHeight - el.scrollTop - el.clientHeight;
+            followRef.current = distanceFromBottom <= FOLLOW_THRESHOLD_PX;
+        };
+        el.addEventListener("scroll", onScroll, { passive: true });
+        return () => el.removeEventListener("scroll", onScroll);
+    }, []);
+
     // When a new turn is added, anchor the viewport to the top of that
-    // turn so the reader starts at the beginning of the answer. During
-    // streaming (same turn, growing answer), leave the scroll alone so
-    // the reader isn't yanked down.
+    // turn so the reader starts at the beginning of the answer. While that
+    // turn streams past the fold, follow the growing text — unless the
+    // reader has scrolled away, in which case leave them be.
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
         const isNewTurn = turns.length > prevTurnCountRef.current;
         prevTurnCountRef.current = turns.length;
-        if (!isNewTurn) return;
-        const lastTurn = el.querySelector(
-            ".ask-turn:last-of-type",
-        ) as HTMLElement | null;
-        if (!lastTurn) return;
-        const turnTop = lastTurn.getBoundingClientRect().top;
-        const containerTop = el.getBoundingClientRect().top;
-        el.scrollTop += turnTop - containerTop;
+        if (isNewTurn) {
+            const lastTurn = el.querySelector(
+                ".ask-turn:last-of-type",
+            ) as HTMLElement | null;
+            if (!lastTurn) return;
+            const turnTop = lastTurn.getBoundingClientRect().top;
+            const containerTop = el.getBoundingClientRect().top;
+            const next = el.scrollTop + (turnTop - containerTop);
+            // >1px guard: a sub-pixel "change" may not fire a scroll
+            // event, which would leave the programmatic flag stuck and
+            // swallow the reader's next real scroll.
+            if (Math.abs(next - el.scrollTop) > 1) {
+                programmaticScrollRef.current = true;
+                el.scrollTop = next;
+            }
+            // A fresh question starts the reader at its top, reading
+            // along — following until they scroll away.
+            followRef.current = true;
+            return;
+        }
+        const lastTurn = turns[turns.length - 1];
+        if (!lastTurn || lastTurn.status !== "streaming") return;
+        if (!followRef.current) return;
+        if (el.scrollHeight - el.scrollTop - el.clientHeight > 1) {
+            programmaticScrollRef.current = true;
+            el.scrollTop = el.scrollHeight;
+        }
     }, [turns]);
 
     const isEmpty = turns.length === 0;

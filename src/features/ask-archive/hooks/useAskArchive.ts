@@ -165,19 +165,44 @@ type StreamEvent =
           requestId?: string;
       };
 
-// Smooths incoming answer text into a steady character flow. Real SSE
+// Smooths incoming answer text into a steady word-by-word flow. Real SSE
 // deltas arrive as multi-word bursts every ~100-300ms; queueing them and
-// draining a few characters per tick renders the classic typewriter effect.
+// draining a small slice per tick renders the classic typewriter effect.
 // The drain rate adapts to the backlog so the display never lags the
 // stream by more than roughly TYPE_CATCHUP_TICKS ticks — single-payload
 // answers (cache hits, agent path) start fast and settle to a crawl.
+//
+// Emission ends on word boundaries: releasing a partial word makes the
+// line wrap mid-word and re-wrap a tick later, which reads as trembling
+// text. A boundary is only awaited while more input may arrive — the
+// final flush drains everything.
 const TYPE_TICK_MS = 16;
 const TYPE_CATCHUP_TICKS = 24;
 const TYPE_MIN_CHARS_PER_TICK = 3;
+// A "word" longer than this (an image URL mid-stream) is emitted without
+// waiting for whitespace so typing never visibly stalls.
+const TYPE_MAX_BOUNDARY_WAIT_CHARS = 48;
 
-class DeltaTypewriter {
+// Align ticks with display frames when possible; fall back to a timer in
+// hidden tabs (rAF pauses there) and non-browser environments.
+function typeTick(): Promise<void> {
+    return new Promise((resolve) => {
+        if (
+            typeof requestAnimationFrame === "function" &&
+            typeof document !== "undefined" &&
+            document.visibilityState !== "hidden"
+        ) {
+            requestAnimationFrame(() => resolve());
+        } else {
+            setTimeout(resolve, TYPE_TICK_MS);
+        }
+    });
+}
+
+export class DeltaTypewriter {
     private queue = "";
     private draining: Promise<void> | null = null;
+    private finished = false;
 
     constructor(
         private readonly emit: (text: string) => void,
@@ -192,7 +217,27 @@ class DeltaTypewriter {
 
     /** Resolves once everything pushed so far has been emitted. */
     async settle(): Promise<void> {
+        this.finished = true;
         while (this.draining) await this.draining;
+        if (this.queue.length > 0) {
+            // Drain parked on a word boundary before finished was set.
+            this.draining = this.drain();
+            while (this.draining) await this.draining;
+        }
+    }
+
+    /**
+     * End of this tick's slice: at least `take` chars, extended through
+     * the next word boundary. Returns 0 to park mid-word until more
+     * input (or the final flush) arrives.
+     */
+    private sliceEnd(take: number): number {
+        if (this.finished) return Math.min(take, this.queue.length);
+        const boundary = this.queue.slice(take - 1).search(/\s/);
+        if (boundary !== -1) return take + boundary;
+        return this.queue.length >= TYPE_MAX_BOUNDARY_WAIT_CHARS
+            ? Math.min(take, this.queue.length)
+            : 0;
     }
 
     private async drain(): Promise<void> {
@@ -205,13 +250,11 @@ class DeltaTypewriter {
                 TYPE_MIN_CHARS_PER_TICK,
                 Math.ceil(this.queue.length / TYPE_CATCHUP_TICKS),
             );
-            this.emit(this.queue.slice(0, take));
-            this.queue = this.queue.slice(take);
-            if (this.queue.length > 0) {
-                await new Promise((resolve) =>
-                    setTimeout(resolve, TYPE_TICK_MS),
-                );
-            }
+            const end = this.sliceEnd(take);
+            if (end === 0) break; // mid-word; wait for the next push
+            this.emit(this.queue.slice(0, end));
+            this.queue = this.queue.slice(end);
+            if (this.queue.length > 0) await typeTick();
         }
         this.draining = null;
     }

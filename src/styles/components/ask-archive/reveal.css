@@ -1,0 +1,35 @@
+/**
+ * Ask the Archive — Reveal transitions
+ *
+ * Elements that appear at a stream milestone (source cards at metadata,
+ * follow-up chips / caveat / photos at done) fade-and-rise in instead of
+ * popping. The animation runs on DOM insertion, so components need no
+ * state — mounting is the trigger.
+ */
+
+.ask-source-list,
+.ask-followups,
+.ask-caveat,
+.ask-photos-panel {
+  animation: ask-reveal 0.32s ease-out both;
+}
+
+@keyframes ask-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-source-list,
+  .ask-followups,
+  .ask-caveat,
+  .ask-photos-panel {
+    animation: none;
+  }
+}
