@@ -11,6 +11,10 @@ export interface ArchiveCoverage {
     category?: string;
     corpusVersion: string;
     retrievalTarget: "legacy" | "versioned";
+    /** Pre-computed chronological digest of the requested year, when the
+     * question targets a single archive year. Trusted guidance, never
+     * citable evidence. */
+    yearDigest?: string;
 }
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
@@ -47,7 +51,15 @@ COVERAGE RULES:
 - A positive historical claim still requires a cited article; coverage metadata never supports a source claim.
 - If no relevant cited evidence was found, say that no matching evidence was found in the indexed scope. Never claim that the event or subject was absent from every newspaper page.
 - For count or exhaustive questions, do not imply a database-wide exact result unless the cited evidence itself establishes that result.
-- Do not lower confidence in a supported positive claim merely because editions outside the requested scope were not searched.`;
+- Do not lower confidence in a supported positive claim merely because editions outside the requested scope were not searched.${coverage.yearDigest ? `
+
+YEAR DIGEST (trusted editorial index of the requested year's coverage; NOT citable evidence):
+${coverage.yearDigest}
+
+DIGEST RULES:
+- Use the digest only to organize a comprehensive answer and to know what coverage exists.
+- Never cite the digest. Every specific factual claim (names, dates, scores, outcomes) must be supported by a cited article source.
+- A story that appears only in the digest may be mentioned as a topic the archive covered, without specific details or citations.` : ""}`;
 }
 
 function noEvidenceAnswer(coverage: ArchiveCoverage): string {
