@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import {
   Playfair_Display,
   Source_Serif_4,
@@ -52,10 +53,14 @@ export default async function RootLayout({
     .map((edition) => edition.date)
     .sort((a, b) => a.localeCompare(b));
 
+  // Per-request CSP nonce set by middleware.ts; the pre-paint theme script
+  // needs it to run under the nonce-based script-src (no 'unsafe-inline').
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <ThemePrepaintScript />
+        <ThemePrepaintScript nonce={nonce} />
       </head>
       <body
         className={`${playfairDisplay.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} antialiased`}
