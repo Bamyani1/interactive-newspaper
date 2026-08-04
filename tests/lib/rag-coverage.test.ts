@@ -38,6 +38,17 @@ describe("RAG coverage semantics", () => {
         expect(prompt).toContain("positive historical claim still requires a cited article");
     });
 
+    it("includes the year digest as non-citable guidance when present", () => {
+        const withDigest = buildCoveragePromptBlock(
+            coverage({ intent: "exhaustive", yearDigest: "**January**\n* Jan. 24: Benz named provost." }),
+        );
+        expect(withDigest).toContain("YEAR DIGEST");
+        expect(withDigest).toContain("Benz named provost");
+        expect(withDigest).toContain("Never cite the digest");
+        const withoutDigest = buildCoveragePromptBlock(coverage({ intent: "exhaustive" }));
+        expect(withoutDigest).not.toContain("YEAR DIGEST");
+    });
+
     it("replaces an unsupported absence claim with deterministic no-evidence wording", () => {
         const answer = applyCoverageAnswerPolicy(
             "The event definitely never happened.",

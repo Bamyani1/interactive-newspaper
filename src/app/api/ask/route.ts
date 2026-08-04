@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { QuotaExhaustedError } from "@/src/lib/embeddings";
-import { DbTimeoutError, queryArchiveCoverage } from "@/src/lib/db";
+import { DbTimeoutError, fetchYearDigest, queryArchiveCoverage } from "@/src/lib/db";
 import type { RetrievedArticle } from "@/src/lib/db";
 import type { RetrievalMethod } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
@@ -148,6 +148,29 @@ async function resolveArchiveCoverage(
     if (!intent || intent === "none") return undefined;
     const identity = getRagRetrievalConfig();
     const stats = await queryArchiveCoverage({ ...filters, signal });
+    // Survey questions scoped to one calendar year get the pre-computed
+    // digest as non-citable guidance. Absence (undigested year, table not
+    // migrated yet) degrades silently.
+    let yearDigest: string | undefined;
+    if (intent === "exhaustive" && filters.startDate && filters.endDate) {
+        const startYear = filters.startDate.slice(0, 4);
+        if (startYear === filters.endDate.slice(0, 4)) {
+            yearDigest =
+                (await fetchYearDigest(Number(startYear), signal).catch((err) => {
+                    console.warn(
+                        JSON.stringify({
+                            level: "warn",
+                            route: "/api/ask",
+                            requestId,
+                            stage: "coverage",
+                            msg: "year digest unavailable, continuing without it",
+                            err: err instanceof Error ? err.message : String(err),
+                        }),
+                    );
+                    return null;
+                })) ?? undefined;
+        }
+    }
     const coverage: ArchiveCoverage = {
         intent,
         ...stats,
@@ -155,6 +178,7 @@ async function resolveArchiveCoverage(
         requestedEndDate: filters.endDate,
         category: filters.category,
         corpusVersion: identity.corpusVersion,
+        yearDigest,
     };
     // eslint-disable-next-line no-console -- structured retrieval telemetry
     console.info(
@@ -165,6 +189,7 @@ async function resolveArchiveCoverage(
             stage: "coverage",
             msg: "deterministic archive coverage loaded",
             ...coverage,
+            yearDigest: yearDigest ? true : undefined,
         }),
     );
     return coverage;

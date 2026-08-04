@@ -304,6 +304,22 @@ export interface ArchiveCoverageStats {
   retrievalTarget: "legacy" | "versioned";
 }
 
+/**
+ * Pre-computed chronological digest for a single archive year, or null when
+ * absent (year not digested, or table not yet migrated — callers degrade).
+ */
+export async function fetchYearDigest(
+  year: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const rows = (await sql.query(
+    `SELECT digest FROM year_digests WHERE year = $1`,
+    [year],
+    { fetchOptions: { signal } },
+  )) as Array<{ digest: string }>;
+  return rows[0]?.digest ?? null;
+}
+
 export async function queryArchiveCoverage(
   options: {
     startDate?: string;
