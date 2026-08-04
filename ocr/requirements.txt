@@ -8,4 +8,4 @@ scipy
 doclayout-yolo==0.0.4
 onnxruntime==1.28.0
 huggingface_hub
-rich>=13.7
+rich>=15.0.0
