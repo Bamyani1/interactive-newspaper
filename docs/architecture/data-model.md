@@ -571,13 +571,18 @@ COMMIT;
 
 Iterative scanning improves recall when category/date/image filters would otherwise discard ANN candidates.
 
-### Incremental vs force
+### Embedding runs
+
+`db:embed` is always incremental — there is no force flag. Re-embedding everything is
+driven by the input version, not by a command-line switch: bump
+`RAG_TEXT_EMBEDDING_INPUT_VERSION` or `RAG_IMAGE_EMBEDDING_INPUT_VERSION` in
+`src/lib/rag-model-config.ts`, which makes every existing row stale, then run `db:embed`.
 
 | Command | Effect |
 |---|---|
 | `npm run db:embed -- --dry-run` | Counts pending chunks/images and estimates online cost; no model call |
 | `npm run db:embed` | Missing/stale model or version rows only |
-| `npm run db:embed:force` | Every text chunk and available image |
+| `npm run db:embed -- --legacy-unversioned` | Targets the pre-build legacy article vectors instead of the versioned index |
 
 - Script text batch size: 50 chunks.
 - Images are embedded one at a time.
@@ -864,11 +869,19 @@ npm run db:embed
 
 ### Force a full re-embed after changing the canonical input format
 
+Bump the relevant input version in `src/lib/rag-model-config.ts` —
+`RAG_TEXT_EMBEDDING_INPUT_VERSION` (`article-chunk-v1`) or
+`RAG_IMAGE_EMBEDDING_INPUT_VERSION` (`article-image-v1`) — which marks every existing
+row stale, then run the ordinary incremental backfill:
+
 ```bash
-npm run db:embed:force
+npm run db:embed -- --dry-run   # confirm the pending count and cost first
+npm run db:embed
 ```
 
-Use only when the model, canonical input format, or source image bytes changed without a corresponding hash/version bump.
+Do this only when the model, canonical input format, or source image bytes changed
+without a corresponding hash bump. The version bump *is* the force switch; there is no
+`--force` flag.
 
 ### Investigate a slow query
 
@@ -906,7 +919,7 @@ Run in this order. The first two commands never call the model; the dry run repo
 
 If you're new and need to make a change, read these in order:
 
-1. `scripts/db/migrations/` — the canonical DDL, nine numbered files applied by `scripts/db/lib/migration-runner.ts`. Everything else is downstream of this.
+1. `scripts/db/migrations/` — the canonical DDL, eleven numbered files applied by `scripts/db/lib/migration-runner.ts`. Everything else is downstream of this.
 2. `ocr/src/transcript_ocr/contracts/content_models.py` — the `edition.json` contract, source of truth for everything that flows into the DB.
 3. `src/server/ocr-adapter/article-transform.ts` — where `edition.json` becomes DB rows. Every normalization rule lives here.
 4. `src/lib/db.ts` — every runtime read query. `raceWithTimeout` and `DbTimeoutError` patterns apply to every caller.

@@ -9,8 +9,8 @@ promoted into `public/editions/<YYYY-MM-DD>/`.
 The public edition and database schemas are unchanged. The OCR pipeline does not
 run or modify the RAG pipeline.
 
-The reviewed implementation plan is saved at
-[`docs/architecture/ocr-pipeline-implementation-plan.md`](../docs/architecture/ocr-pipeline-implementation-plan.md).
+The reviewed implementation plan is archived at
+[`docs/archive/ocr-pipeline-implementation-plan.md`](../docs/archive/ocr-pipeline-implementation-plan.md).
 The detailed runtime design is in
 [`docs/architecture/ocr-pipeline.md`](../docs/architecture/ocr-pipeline.md).
 
