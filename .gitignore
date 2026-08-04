@@ -25,7 +25,6 @@ coverage/
 playwright-report/
 test-results/
 .playwright/
-audit-evidence/full/
 
 # TypeScript
 *.tsbuildinfo
@@ -69,21 +68,28 @@ scripts/dev/data/
 # Misc
 *.pem
 
+# Development/internal artifacts removed from the public repo (2026-08 showcase
+# cleanup) — kept local only, never re-commit. Rooted so they only match the
+# top-level dirs, not source modules like ocr/src/transcript_ocr/evaluation/.
+/AUDIT.md
+/BASELINE.md
+/PLAN.md
+/PROGRESS.md
+/REMAINING.md
+/evaluation/
+/audit-evidence/
+/data/year-digests.jsonl
+
 # Google Cloud / API Credentials
 *.json
 !ocr/src/prompts.json
 !public/top-10-music/*.json
 !scripts/db/locked-editions.json
-!audit-evidence/manifest.json
-!audit-evidence/curated/
-!audit-evidence/curated/**
-!evaluation/rag/**/*.json
-!evaluation/assets/*.json
 !tests/api/rag-golden-questions.json
-# Baseline snapshot for the nightly RAG regression workflow. Must be
-# committed so rag-golden-nightly can compare each run against a stable
-# reference — without this, every CI run writes a throwaway baseline
-# and drift is never detected.
+# Baseline snapshot for the RAG golden-question regression test
+# (tests/api/rag-golden-questions.test.ts, run on demand with RUN_RAG_GOLDEN=1).
+# Committed so each run compares against a stable reference instead of writing a
+# throwaway baseline; without it, drift is never detected.
 !tests/api/rag-golden-baseline.json
 # Pre-built offline weather archive — canonical dataset per CLAUDE.md's
 # "Do Not Modify" list. Tests at tests/weather/ depend on this being
@@ -158,7 +164,6 @@ gold-candidates/
 CLAUDE.md
 docs/*
 !docs/architecture/
-!docs/archive/
 !docs/design/
 !docs/issues/
 docs/issues/*
