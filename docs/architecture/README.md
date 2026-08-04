@@ -11,14 +11,6 @@ if you're new; the reference docs below them answer narrower questions.
 
 Each doc is written to be readable standalone, but the three share vocabulary and cross-link at points where duplicating would drift.
 
-## Reference
-
-- **[rag-phase7-evaluation-report.md](rag-phase7-evaluation-report.md)** — Blind-holdout A/B results for the RAG v2 build. The authoritative evaluation record.
-- **[rag-phase8-rollout-runbook.md](rag-phase8-rollout-runbook.md)** — The executed production rollout sequence and the rollback drill. Still operationally live.
-
-Superseded plans and handoffs live in [`../archive/`](../archive/README.md) and are
-explicitly not current.
-
 ## Glossary
 
 Terms that appear across multiple docs:
