@@ -56,8 +56,8 @@ export async function registerCorpusVersion(executor, corpusPath = CORPUS_FILE) 
 
 async function main() {
     console.warn(
-        "NOTE: production runs are gated by the Phase 8 rollout runbook " +
-            "(docs/architecture/rag-phase8-rollout-runbook.md); this insert is idempotent.",
+        "NOTE: this insert is idempotent (ON CONFLICT (id) DO NOTHING). The " +
+            "frozen corpus snapshot is not committed; pass its path if re-running.",
     );
     if (!process.env.DATABASE_URL) {
         console.error("ERROR: DATABASE_URL is required.");

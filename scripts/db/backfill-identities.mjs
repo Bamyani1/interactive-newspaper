@@ -404,8 +404,7 @@ export async function backfillIdentities(executor) {
 
 async function main() {
     console.warn(
-        "NOTE: production runs of this backfill are gated by the Phase 8 rollout runbook " +
-            "(docs/architecture/rag-phase8-rollout-runbook.md); it is idempotent and alias-preserving.",
+        "NOTE: this backfill is idempotent and alias-preserving; it can be re-run safely.",
     );
     if (!process.env.DATABASE_URL) {
         console.error("ERROR: DATABASE_URL is required.");
