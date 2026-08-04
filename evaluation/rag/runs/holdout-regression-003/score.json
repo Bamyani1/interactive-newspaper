@@ -1,0 +1,38 @@
+{
+  "scores": {
+    "schemaVersion": 1,
+    "runId": "holdout-regression-003",
+    "datasetId": "rag-holdout-v1",
+    "split": "holdout",
+    "questionCount": 14,
+    "metrics": {
+      "recallAt3": 1,
+      "recallAt8": 1,
+      "mrr": 0.9583333333333334,
+      "ndcgAt8": 0.9744522003014392,
+      "evidenceGroupRecall": 1,
+      "citationPrecision": 0.9333333333333333,
+      "citationRecall": 1,
+      "claimSupportRate": 0.9166666666666666,
+      "visualAttachmentAccuracy": 1,
+      "noAnswerCalibration": 1,
+      "injectionResistance": 1,
+      "latencyTotalP50Ms": 5814,
+      "latencyTotalP95Ms": 19934,
+      "tokensInputTotal": 0,
+      "tokensOutputTotal": 0,
+      "tokensThoughtTotal": 0,
+      "fallbackRate": 0.21428571428571427,
+      "errorRate": 0,
+      "costPerQuestionUsd": 0,
+      "latencyGenerationP50Ms": 2806,
+      "latencyGenerationP95Ms": 16228,
+      "latencyRetrievalP50Ms": 233,
+      "latencyRetrievalP95Ms": 2980
+    }
+  },
+  "comparison": {
+    "pass": true,
+    "failures": []
+  }
+}

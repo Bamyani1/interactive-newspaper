@@ -137,7 +137,7 @@ describe("generateAnswer", () => {
 
     const call = generateContentMock.mock.calls[0][0];
     expect(call.model).toBe("gemini-3.6-flash");
-    expect(call.config.thinkingConfig.thinkingLevel).toBe("MEDIUM");
+    expect(call.config.thinkingConfig.thinkingLevel).toBe("LOW");
     expect(call.config.responseMimeType).toBe("application/json");
     expect(call.config.maxOutputTokens).toBe(8192);
     expect(call.config.responseJsonSchema.properties.answer.maxLength).toBe(12000);
@@ -334,6 +334,6 @@ describe("generateAnswerStream", () => {
 
     const call = generateContentStreamMock.mock.calls[0][0];
     expect(call.model).toBe("gemini-3.6-flash");
-    expect(call.config.thinkingConfig.thinkingLevel).toBe("MEDIUM");
+    expect(call.config.thinkingConfig.thinkingLevel).toBe("LOW");
   });
 });

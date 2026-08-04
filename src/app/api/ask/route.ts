@@ -540,11 +540,12 @@ async function handleStreamingAsk(params: {
             const stageElapsed = () => Date.now() - totalStart;
 
             try {
-                // Cache lookup precedes reformulation so a true hit performs
-                // zero Google calls. Contextual follow-ups still bypass it.
+                // Cache lookup precedes reformulation: an exact hit performs
+                // zero Google calls; a semantic (paraphrase) hit costs one
+                // query embedding. Contextual follow-ups still bypass it.
                 const earlyCached =
                     conversationHistory.length === 0
-                        ? getCachedAnswer(question, explicitFilters)
+                        ? await getCachedAnswer(question, explicitFilters, { requestId })
                         : null;
                 if (earlyCached) {
                     send({
@@ -823,7 +824,11 @@ async function handleStreamingAsk(params: {
                 send({ type: "stage", name: "retrieve", elapsedMs: stageElapsed() });
 
                 // ── Step 3: Rerank ──
-                const keepTopK = mode === "visual" ? 15 : 10;
+                // Text answers: 6 sources post-rerank — answer F1 peaks near 3-6 kept
+                // sources and declines as distractors accumulate; also trims ~40% off
+                // the generation prompt. Visual mode keeps a wider pool for image
+                // selection (accuracy band-gated by the holdout eval).
+                const keepTopK = mode === "visual" ? 15 : 6;
                 logRerankSignals(requestId, computeRerankSignals(articles), mode, "streaming");
 
                 let rankedArticles: RankedArticle[];
@@ -1228,7 +1233,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const pipelinePromise = (async (): Promise<NextResponse> => {
         const earlyCached =
             conversationHistory.length === 0
-                ? getCachedAnswer(question, body.filters)
+                ? await getCachedAnswer(question, body.filters, { requestId })
                 : null;
         if (earlyCached) {
             const response: AskResponse = {
@@ -1434,7 +1439,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // Visual mode uses a lower threshold (3 = tangentially related) because
         // the user's goal is seeing photos, not precise answers — "somewhat related"
         // photos are still valuable. Text mode stays strict at 5.
-        const keepTopK = mode === "visual" ? 15 : 10;
+        const keepTopK = mode === "visual" ? 15 : 6;
         logRerankSignals(requestId, computeRerankSignals(articles), mode, "default");
 
         const rankedArticles = await rerankWithCragRetry({

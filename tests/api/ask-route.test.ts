@@ -570,7 +570,7 @@ describe("POST /api/ask", () => {
       "Test?",
       retrieved,
       expect.objectContaining({
-        maxArticles: 10,
+        maxArticles: 6,
         minScore: 4,
         signal: expect.any(AbortSignal),
       }),
