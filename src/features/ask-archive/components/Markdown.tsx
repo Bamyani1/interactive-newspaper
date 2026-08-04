@@ -139,21 +139,77 @@ const renderAnchor: React.FC<AnchorProps> = ({ href, children, ...rest }) => {
     );
 };
 
+// Stable references so MarkdownBlock's React.memo isn't defeated by a
+// fresh object/array identity on every parent render.
+const MD_COMPONENTS = { a: renderAnchor, img: renderImg, pre: renderPre };
+const MD_PLUGINS = [remarkGfm];
+
+/**
+ * Split markdown into top-level blocks on blank lines, keeping fenced
+ * code blocks intact. During streaming only the final block's text
+ * changes, so every earlier block hits the MarkdownBlock memo and the
+ * per-tick re-render cost stays proportional to one paragraph instead
+ * of the whole answer.
+ */
+export function splitMarkdownBlocks(text: string): string[] {
+    // Capture the separators so merged segments rejoin with their exact
+    // original newlines — fenced code content must stay verbatim.
+    const parts = text.split(/(\n{2,})/);
+    const blocks: string[] = [];
+    let openFence = false;
+    let pendingSeparator = "";
+    for (let i = 0; i < parts.length; i += 1) {
+        if (i % 2 === 1) {
+            pendingSeparator = parts[i];
+            continue;
+        }
+        const segment = parts[i];
+        // A segment starting with an ordered-list marker continues the
+        // previous block — splitting a loose "1. / 2." list would reset
+        // its numbering to 1 in the second <ol>.
+        const continuesList =
+            blocks.length > 0 && /^\d+\.\s/.test(segment);
+        if ((openFence || continuesList) && blocks.length > 0) {
+            blocks[blocks.length - 1] += pendingSeparator + segment;
+        } else {
+            blocks.push(segment);
+        }
+        const fences = blocks[blocks.length - 1].match(/^```/gm);
+        openFence = Boolean(fences && fences.length % 2 === 1);
+    }
+    return blocks.filter((b) => b.trim().length > 0);
+}
+
+const MarkdownBlock = React.memo<{ text: string }>(
+    ({ text }) => (
+        <ReactMarkdown remarkPlugins={MD_PLUGINS} components={MD_COMPONENTS}>
+            {text}
+        </ReactMarkdown>
+    ),
+    (prev, next) => prev.text === next.text,
+);
+MarkdownBlock.displayName = "MarkdownBlock";
+
 /**
  * Markdown renderer for answer text. Uses react-markdown + remark-gfm so
  * code blocks, lists, tables, and strikethrough render correctly. Pre-
  * processes citation tokens ([Source N], [YYYY-MM-DD-N]) into anchor
- * links that scroll to the matching source card.
+ * links that scroll to the matching source card, then renders per-block
+ * with memoization so streaming ticks re-parse only the growing block.
  */
 export const Markdown: React.FC<MarkdownProps> = ({
     children,
     articleIdIndex,
     className,
 }) => {
-    const preprocessed = useMemo(
-        () => replaceCitations(children, articleIdIndex),
+    const blocks = useMemo(
+        () => splitMarkdownBlocks(replaceCitations(children, articleIdIndex)),
         [children, articleIdIndex],
     );
+
+    const rendered = blocks.map((block, i) => (
+        <MarkdownBlock key={i} text={block} />
+    ));
 
     // Wrap the markdown in the <Prose> primitive so every RAG answer
     // picks up the Direction-A prose typography defined in
@@ -162,29 +218,12 @@ export const Markdown: React.FC<MarkdownProps> = ({
     // the legacy per-parent class AND the new prose spec style the
     // content. The streaming cursor in typing-cursor.css matches both
     // .ask-turn-answer > :last-child and .ask-turn-answer > .prose >
-    // :last-child, so the Prose wrapper doesn't break the trailing-
-    // cursor invariant.
+    // :last-child, so the per-block fragments preserve the trailing-
+    // cursor invariant — each block renders its elements directly with
+    // no extra wrapper.
     if (!className) {
-        return (
-            <Prose measure="narrow">
-                <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{ a: renderAnchor, img: renderImg, pre: renderPre }}
-                >
-                    {preprocessed}
-                </ReactMarkdown>
-            </Prose>
-        );
+        return <Prose measure="narrow">{rendered}</Prose>;
     }
 
-    return (
-        <div className={`${className} prose`}>
-            <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{ a: renderAnchor, img: renderImg, pre: renderPre }}
-            >
-                {preprocessed}
-            </ReactMarkdown>
-        </div>
-    );
+    return <div className={`${className} prose`}>{rendered}</div>;
 };
