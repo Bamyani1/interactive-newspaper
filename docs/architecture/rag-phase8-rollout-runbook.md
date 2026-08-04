@@ -31,7 +31,7 @@ Abort at ANY unexpected output; every step is idempotent or reversible.
 | # | Step | Command | Expected |
 |---|------|---------|----------|
 | 1 | Drift check | `pg_dump --schema-only` prod, diff vs the rehearsal dump | No new drift beyond the documented legacy `entities`/`article_entities` |
-| 2 | Migrations | `npm run db:migrate` | 0001–0009 applied; `db:migrate:status` clean; legacy tables untouched |
+| 2 | Migrations | `npm run db:migrate` | All numbered migrations applied — 0001–0009 at the time of this rollout, 0001–0011 today; `db:migrate:status` clean; legacy tables untouched |
 | 3 | Identity backfill | `npx tsx scripts/db/backfill-identities.mjs --yes` | ~351 issues / 11,692 items / 11,703 revisions / 11,705 aliases, 0 skipped (~31 batched requests) |
 | 4 | Register corpus | `npx tsx scripts/db/register-corpus-version.mjs --yes` | row `legacy-8b8207373510d69e` in `corpus_versions` |
 | 5 | Import vectors | `npx tsx scripts/db/import-build-vectors.mjs --dir <export> --yes` | `insertedChunks: 13143, insertedImages: 2875`; build lands **validated** (never active) |
