@@ -320,7 +320,15 @@ function summarizeToolResult(
     toolName: string,
     result: Record<string, unknown>,
 ): string {
-    if (result.error) return `Error: ${result.error}`;
+    if (result.error) {
+        // This string is streamed to unauthenticated SSE clients. Raw tool
+        // errors carry internals — DB timeout text, RAG index-build and
+        // corpus identifiers — so only the model's own argument mistakes,
+        // which describe the call and nothing about the server, are echoed.
+        return result.kind === "invalid_arguments"
+            ? `Error: ${result.error}`
+            : "Error: archive lookup failed";
+    }
     if (toolName === "search_archive" && Array.isArray(result.results)) {
         return `Found ${result.results.length} articles`;
     }

@@ -44,6 +44,25 @@ describe("answer-cache", () => {
         expect(await getCachedAnswer("never asked", {})).toBeNull();
     });
 
+    it("never retains the original asker's question, session, or request id", async () => {
+        setCachedAnswer(
+            "what happened in 1965?",
+            {},
+            makeResponse({
+                question: "what did my grandmother Jane Doe do in 1965?",
+                requestId: "req-first-asker",
+                sessionId: "session-first-asker",
+            }),
+        );
+
+        const cached = await getCachedAnswer("what happened in 1965?", {});
+        expect(cached).not.toBeNull();
+        expect(cached!.answer).toBe("sample answer");
+        expect(cached!.question).toBe("");
+        expect(cached!.requestId).toBe("");
+        expect(cached!.sessionId).toBe("");
+    });
+
     it("normalizes key across case and whitespace", async () => {
         const response = makeResponse();
         setCachedAnswer("Campus Life In 1965", {}, response);

@@ -87,11 +87,31 @@ describe("createRateLimiter", () => {
 });
 
 describe("getClientIp", () => {
-  it("extracts first IP from x-forwarded-for", () => {
+  it("prefers x-vercel-forwarded-for over a spoofable x-forwarded-for", () => {
+    const request = new Request("http://localhost", {
+      headers: {
+        "x-forwarded-for": "1.2.3.4",
+        "x-vercel-forwarded-for": "203.0.113.50",
+      },
+    });
+    expect(getClientIp(request)).toBe("203.0.113.50");
+  });
+
+  it("falls back to x-real-ip when Vercel's header is absent", () => {
+    const request = new Request("http://localhost", {
+      headers: { "x-forwarded-for": "1.2.3.4", "x-real-ip": "203.0.113.50" },
+    });
+    expect(getClientIp(request)).toBe("203.0.113.50");
+  });
+
+  it("takes the right-most x-forwarded-for hop, not the client-supplied left-most", () => {
+    // Only the hop nearest this server is trustworthy; everything to its
+    // left is whatever the caller chose to send. Keying limiters on the
+    // left-most entry let anyone mint a fresh bucket per request.
     const request = new Request("http://localhost", {
       headers: { "x-forwarded-for": "203.0.113.50, 70.41.3.18, 150.172.238.178" },
     });
-    expect(getClientIp(request)).toBe("203.0.113.50");
+    expect(getClientIp(request)).toBe("150.172.238.178");
   });
 
   it("returns single IP from x-forwarded-for", () => {

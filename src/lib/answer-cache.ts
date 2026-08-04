@@ -187,6 +187,16 @@ export async function getCachedAnswer(
     }
 }
 
+/**
+ * Both tiers are shared across every visitor, so anything identifying the
+ * original asker must not survive into a cache entry — a paraphrase by a
+ * later visitor would otherwise be answered with the first asker's own
+ * question text, session, and request id. Callers re-attach their own.
+ */
+function withoutRequesterIdentity(response: AskResponse): AskResponse {
+    return { ...response, question: "", sessionId: "", requestId: "" };
+}
+
 export function setCachedAnswer(
     question: string,
     filters: unknown,
@@ -196,14 +206,15 @@ export function setCachedAnswer(
     if (response.confidence === "low") return;
     if (response.meta?.complexity === "complex") return;
 
+    const shareable = withoutRequesterIdentity(response);
     const key = makeKey(question, filters);
     if (cache.size >= MAX_ENTRIES && !cache.has(key)) {
         const oldest = cache.keys().next().value;
         if (oldest !== undefined) cache.delete(oldest);
     }
-    cache.set(key, { response, ts: Date.now() });
+    cache.set(key, { response: shareable, ts: Date.now() });
 
-    void semanticStore(question, filters ?? {}, response).catch((err) =>
+    void semanticStore(question, filters ?? {}, shareable).catch((err) =>
         warnCache("semanticStore", err, response.requestId),
     );
 }

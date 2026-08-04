@@ -138,11 +138,30 @@ export function createRateLimiter(options: RateLimiterOptions) {
     };
 }
 
-/** Extract client IP from request headers, falling back to 127.0.0.1. */
+/**
+ * Extract client IP from request headers, falling back to 127.0.0.1.
+ *
+ * `x-forwarded-for` is a client-supplied header: its left-most entry is
+ * whatever the caller typed, so keying limiters on it let anyone mint a
+ * fresh bucket per request by varying the header. Vercel sets
+ * `x-vercel-forwarded-for` and `x-real-ip` from the connection itself, so
+ * those are preferred; XFF is only consulted when neither is present, and
+ * then the right-most entry is used — the hop nearest this server, and the
+ * last one an untrusted client cannot forge.
+ */
 export function getClientIp(request: Request): string {
+    const trusted =
+        request.headers.get("x-vercel-forwarded-for") ??
+        request.headers.get("x-real-ip");
+    if (trusted?.trim()) return trusted.trim();
+
     const forwarded = request.headers.get("x-forwarded-for");
     if (forwarded) {
-        return forwarded.split(",")[0].trim();
+        const hops = forwarded
+            .split(",")
+            .map((hop) => hop.trim())
+            .filter(Boolean);
+        if (hops.length > 0) return hops[hops.length - 1];
     }
     return "127.0.0.1";
 }
