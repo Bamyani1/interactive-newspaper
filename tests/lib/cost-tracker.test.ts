@@ -29,6 +29,8 @@ import {
     _getEvaluationSpendForTests,
     _getEvaluationReservedForTests,
     _resetEvaluationSpendForTests,
+    _getOutageSpendForTests,
+    _resetOutageSpendForTests,
     executeTrackedGenerationCall,
     releaseEvaluationGoogleCall,
     reserveEvaluationGoogleCall,
@@ -120,6 +122,7 @@ describe("checkDailyBudget", () => {
     beforeEach(() => {
         vi.unstubAllEnvs();
         _resetEvaluationSpendForTests();
+        _resetOutageSpendForTests();
         sqlMock.mockReset();
         _setDailyBudgetForTests(ORIGINAL_BUDGET);
     });
@@ -166,6 +169,7 @@ describe("recordUsage", () => {
     beforeEach(() => {
         vi.unstubAllEnvs();
         _resetEvaluationSpendForTests();
+        _resetOutageSpendForTests();
         sqlMock.mockReset();
         _setDailyBudgetForTests(ORIGINAL_BUDGET);
     });
@@ -243,6 +247,57 @@ describe("recordUsage", () => {
             expect((error as DailyBudgetExceededError).scope).toBe("evaluation_run");
         }
         expect(sqlMock).not.toHaveBeenCalled();
+    });
+});
+
+describe("bounded fail-open during a DB outage", () => {
+    const usage = { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 }; // $2.80
+    beforeEach(() => {
+        vi.unstubAllEnvs();
+        _resetEvaluationSpendForTests();
+        _resetOutageSpendForTests();
+        sqlMock.mockReset();
+        _setDailyBudgetForTests(ORIGINAL_BUDGET);
+    });
+
+    it("fails open (still allows) while blind outage spend is under the ceiling", async () => {
+        // A failed write accrues a tiny amount, well under $0.50.
+        sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
+        await recordUsage(
+            "gemini-3.5-flash-lite",
+            { promptTokenCount: 100, candidatesTokenCount: 50 },
+            { op: "outage.small" },
+        );
+        expect(_getOutageSpendForTests()).toBeCloseTo(0.000155, 8);
+        // The budget read also fails, but under the ceiling we don't block.
+        sqlMock.mockRejectedValueOnce(new Error("neon unreachable"));
+        await expect(checkDailyBudget()).resolves.toBeUndefined();
+    });
+
+    it("refuses (429) once blind outage spend crosses the ceiling", async () => {
+        sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
+        await recordUsage("gemini-3.5-flash-lite", usage, { op: "outage.large" });
+        expect(_getOutageSpendForTests()).toBeCloseTo(2.8, 6);
+        sqlMock.mockRejectedValueOnce(new Error("neon unreachable"));
+        try {
+            await checkDailyBudget();
+            throw new Error("expected fail-open ceiling rejection");
+        } catch (err) {
+            expect(err).toBeInstanceOf(DailyBudgetExceededError);
+            expect((err as DailyBudgetExceededError).budgetUsd).toBe(0.5);
+            expect((err as DailyBudgetExceededError).spentUsd).toBeCloseTo(2.8, 6);
+        }
+    });
+
+    it("resets the accumulator once the DB is reachable again", async () => {
+        sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
+        await recordUsage("gemini-3.5-flash-lite", usage, { op: "outage.large" });
+        expect(_getOutageSpendForTests()).toBeCloseTo(2.8, 6);
+        // A successful budget read means Neon recovered; the accumulator clears
+        // and the request is allowed again.
+        sqlMock.mockResolvedValueOnce([{ spent_usd: "0.000000" }]);
+        await expect(checkDailyBudget()).resolves.toBeUndefined();
+        expect(_getOutageSpendForTests()).toBe(0);
     });
 });
 

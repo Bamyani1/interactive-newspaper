@@ -37,6 +37,17 @@ const PRICE_PER_MTOKEN: Record<string, { input: number; output: number }> = {
 const GEMINI_EMBEDDING_2_IMAGE_USD = 0.00012;
 
 let DAILY_BUDGET_USD = 2;
+
+// Bounded fail-open for the online path. When Neon is unreachable the daily
+// counter can neither be read nor written, so the hard cap above can't be
+// enforced. Skipping the cap entirely means unbounded blind spend during an
+// outage; failing closed turns any DB blip into a full /api/ask outage. Instead
+// we accumulate the estimated cost of calls made while the DB is down and start
+// refusing once that estimate crosses OUTAGE_BUDGET_USD. Any successful DB
+// read/write means Neon recovered and resets the accumulator to 0.
+const OUTAGE_BUDGET_USD = 0.5;
+let outageSpendUsd = 0;
+
 let evaluationRunId: string | null = null;
 let evaluationSpendUsd = 0;
 let evaluationReservationSequence = 0;
@@ -338,6 +349,7 @@ export async function checkDailyBudget(): Promise<void> {
             SELECT spent_usd FROM ai_spend_counter WHERE day = ${day}
         `) as Array<{ spent_usd: string | number }>;
         spent = rows.length > 0 ? Number(rows[0].spent_usd) : 0;
+        outageSpendUsd = 0; // DB reachable — clear any accumulated outage estimate
     } catch (err) {
         console.warn(
             JSON.stringify({
@@ -345,9 +357,15 @@ export async function checkDailyBudget(): Promise<void> {
                 module: "cost-tracker",
                 op: "checkDailyBudget",
                 msg: "budget check skipped (db error)",
+                outageSpendUsd,
                 err: err instanceof Error ? err.message : String(err),
             }),
         );
+        // Bounded fail-open: once blind spend during the outage crosses the
+        // ceiling, refuse further calls (429) instead of spending unbounded.
+        if (outageSpendUsd >= OUTAGE_BUDGET_USD) {
+            throw new DailyBudgetExceededError(outageSpendUsd, OUTAGE_BUDGET_USD);
+        }
         return;
     }
     if (spent >= DAILY_BUDGET_USD) {
@@ -388,13 +406,18 @@ export async function recordUsage(
                 ON CONFLICT (day) DO UPDATE
                   SET spent_usd = ai_spend_counter.spent_usd + ${cost}
             `;
+            outageSpendUsd = 0; // write succeeded — Neon reachable
         } catch (err) {
+            // Blind spend during an outage; bounds the fail-open cap in
+            // checkDailyBudget so an unreachable DB can't be spent past.
+            outageSpendUsd += cost;
             console.warn(
                 JSON.stringify({
                     level: "warn",
                     module: "cost-tracker",
                     op: "recordUsage",
                     msg: "usage write failed",
+                    outageSpendUsd,
                     err: err instanceof Error ? err.message : String(err),
                 }),
             );
@@ -452,13 +475,16 @@ export async function recordEmbeddingUsage(
                 ON CONFLICT (day) DO UPDATE
                   SET spent_usd = ai_spend_counter.spent_usd + ${cost}
             `;
+            outageSpendUsd = 0; // write succeeded — Neon reachable
         } catch (err) {
+            outageSpendUsd += cost; // blind spend during outage (see recordUsage)
             console.warn(
                 JSON.stringify({
                     level: "warn",
                     module: "cost-tracker",
                     op: "recordEmbeddingUsage",
                     msg: "embedding usage write failed",
+                    outageSpendUsd,
                     err: err instanceof Error ? err.message : String(err),
                 }),
             );
@@ -489,6 +515,14 @@ export function _setDailyBudgetForTests(usd: number): void {
 
 export function _getDailyBudgetForTests(): number {
     return DAILY_BUDGET_USD;
+}
+
+export function _getOutageSpendForTests(): number {
+    return outageSpendUsd;
+}
+
+export function _resetOutageSpendForTests(): void {
+    outageSpendUsd = 0;
 }
 
 export function _getEvaluationSpendForTests(): number {
