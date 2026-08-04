@@ -272,23 +272,39 @@ function parseEventFrame(frame: string): StreamEvent | null {
     }
 }
 
+/**
+ * The session id is the only credential guarding a conversation
+ * transcript, so it must come from a CSPRNG — a Math.random()+Date.now()
+ * id is recoverable from a few samples and makes transcripts enumerable.
+ * Returns "" when no CSPRNG exists; callers then omit the field and let
+ * the server mint one rather than sending a guessable id.
+ */
+function mintSessionId(): string {
+    if (typeof crypto === "undefined") return "";
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    if (typeof crypto.getRandomValues === "function") {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(
+            "",
+        );
+    }
+    return "";
+}
+
 function readOrCreateSessionId(): string {
     if (typeof window === "undefined") return "";
     try {
         const existing = window.localStorage.getItem(SESSION_STORAGE_KEY);
         if (existing) return existing;
-        const fresh =
-            typeof crypto !== "undefined" &&
-            typeof crypto.randomUUID === "function"
-                ? crypto.randomUUID()
-                : Math.random().toString(36).slice(2) +
-                  Date.now().toString(36);
-        window.localStorage.setItem(SESSION_STORAGE_KEY, fresh);
+        const fresh = mintSessionId();
+        if (fresh) window.localStorage.setItem(SESSION_STORAGE_KEY, fresh);
         return fresh;
     } catch {
-        return (
-            Math.random().toString(36).slice(2) + Date.now().toString(36)
-        );
+        // localStorage blocked (site data disabled, some embedded
+        // webviews). Still mint from the CSPRNG — the id just lives for
+        // this page rather than persisting.
+        return mintSessionId();
     }
 }
 
@@ -512,7 +528,11 @@ export function useAskArchive(): UseAskArchiveReturn {
                 const res = await fetch("/api/ask?stream=1", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ question, sessionId }),
+                    // Omit rather than send "" — the server mints a strong
+                    // id when the field is absent, but rejects an empty one.
+                    body: JSON.stringify(
+                        sessionId ? { question, sessionId } : { question },
+                    ),
                     signal: controller.signal,
                 });
 

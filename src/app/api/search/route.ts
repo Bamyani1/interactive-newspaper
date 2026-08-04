@@ -11,6 +11,12 @@ function newRequestId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function clampParam(raw: string | null, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(raw ?? "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
+
 export async function GET(request: NextRequest) {
   const ip = getClientIp(request);
   const rate = await searchRateLimiter(ip);
@@ -52,8 +58,11 @@ export async function GET(request: NextRequest) {
   const category = url.searchParams.get("category") || undefined;
   const startDate = url.searchParams.get("start_date") || undefined;
   const endDate = url.searchParams.get("end_date") || undefined;
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20", 10), 100);
-  const offset = Math.max(parseInt(url.searchParams.get("offset") ?? "0", 10), 0);
+  // parseInt returns NaN for junk, and NaN survives both Math.min and
+  // Math.max — it used to reach LIMIT/OFFSET and fail in Postgres. Same
+  // guard shape as /api/editions.
+  const limit = clampParam(url.searchParams.get("limit"), 20, 1, 100);
+  const offset = clampParam(url.searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
 
   // Wrap the DB call in a timeout race so a hung Neon request can't block
   // /api/search forever. 504 on fire matches /api/ask retrieval semantics.

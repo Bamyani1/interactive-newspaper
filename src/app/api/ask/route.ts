@@ -1263,6 +1263,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (earlyCached) {
             const response: AskResponse = {
                 ...earlyCached,
+                // Cache entries are shared across every visitor. Re-attach
+                // this caller's own identity so a semantic hit never echoes
+                // the original asker's question back — this also covers
+                // entries stored before setCachedAnswer began stripping it.
+                question,
                 requestId,
                 sessionId,
                 meta: {

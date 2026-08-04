@@ -30,10 +30,16 @@ function safeEqual(a: string, b: string): boolean {
 export async function POST(request: NextRequest) {
   const expected = process.env.ADMIN_REVALIDATE_TOKEN;
   if (!expected) {
-    return NextResponse.json(
-      { error: "ADMIN_REVALIDATE_TOKEN is not configured on the server" },
-      { status: 503 },
+    // Answer exactly as a wrong token does. A distinct 503 here told any
+    // unauthenticated caller whether this endpoint was armed.
+    console.error(
+      JSON.stringify({
+        level: "error",
+        route: "/api/admin/revalidate",
+        msg: "ADMIN_REVALIDATE_TOKEN is not configured",
+      }),
     );
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Throttle before the token check so online brute force is bounded. The
