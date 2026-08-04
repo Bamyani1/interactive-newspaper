@@ -19,18 +19,27 @@ process.env.DATABASE_URL = process.env.DATABASE_URL ?? "postgres://fake/test";
 // Import AFTER the mock is declared so the module sees our fake.
 import {
     computeCostUsd,
+    computeEmbeddingCostUsd,
+    embeddingTokenCount,
     checkDailyBudget,
     recordUsage,
     DailyBudgetExceededError,
     _setDailyBudgetForTests,
     _getDailyBudgetForTests,
+    _getEvaluationSpendForTests,
+    _getEvaluationReservedForTests,
+    _resetEvaluationSpendForTests,
+    executeTrackedGenerationCall,
+    releaseEvaluationGoogleCall,
+    reserveEvaluationGoogleCall,
+    settleEvaluationGoogleCall,
 } from "@/src/lib/cost-tracker";
 
 const ORIGINAL_BUDGET = 0.5;
 
 describe("computeCostUsd", () => {
     it("returns 0 when usage is undefined", () => {
-        expect(computeCostUsd("gemini-3-flash-preview", undefined)).toBe(0);
+        expect(computeCostUsd("gemini-3.5-flash-lite", undefined)).toBe(0);
     });
 
     it("returns 0 for an unknown model", () => {
@@ -43,35 +52,74 @@ describe("computeCostUsd", () => {
     });
 
     it("multiplies tokens by the model's input+output rate", () => {
-        // 1M input tokens at $0.10/M + 1M output at $0.40/M = $0.50
-        const cost = computeCostUsd("gemini-3-flash-preview", {
+        // 1M input at $0.30/M + 1M output/reasoning at $2.50/M.
+        const cost = computeCostUsd("gemini-3.5-flash-lite", {
             promptTokenCount: 1_000_000,
             candidatesTokenCount: 1_000_000,
         });
-        expect(cost).toBeCloseTo(0.5, 6);
+        expect(cost).toBeCloseTo(2.8, 6);
     });
 
     it("handles embedding model with zero output price", () => {
-        // 1M input tokens at $0.025/M = $0.025
-        const cost = computeCostUsd("gemini-embedding-2-preview", {
+        const cost = computeCostUsd("gemini-embedding-2", {
             promptTokenCount: 1_000_000,
             candidatesTokenCount: 0,
         });
-        expect(cost).toBeCloseTo(0.025, 6);
+        expect(cost).toBeCloseTo(0.2, 6);
     });
 
     it("treats missing token counts as 0", () => {
         expect(
-            computeCostUsd("gemini-3-flash-preview", {
+            computeCostUsd("gemini-3.5-flash-lite", {
                 promptTokenCount: undefined,
                 candidatesTokenCount: undefined,
             }),
         ).toBe(0);
     });
+
+    it("bills tool-use prompt tokens as input and thought tokens as output", () => {
+        expect(
+            computeCostUsd("gemini-3.5-flash-lite", {
+                promptTokenCount: 1_000_000,
+                toolUsePromptTokenCount: 1_000_000,
+                candidatesTokenCount: 1_000_000,
+                thoughtsTokenCount: 1_000_000,
+            }),
+        ).toBeCloseTo(5.6, 6);
+    });
+});
+
+describe("embedding cost", () => {
+    it("uses exact Vertex token statistics and the per-image charge", () => {
+        const response = {
+            embeddings: [
+                { values: [], statistics: { tokenCount: 600 } },
+                { values: [], statistics: { tokenCount: 400 } },
+            ],
+            metadata: { billableCharacterCount: 999_999 },
+        };
+        expect(embeddingTokenCount(response)).toBe(1000);
+        expect(
+            computeEmbeddingCostUsd("gemini-embedding-2", response, {
+                imageCount: 2,
+            }),
+        ).toBeCloseTo(0.00044, 8);
+    });
+
+    it("falls back to billable characters when token statistics are absent", () => {
+        expect(
+            embeddingTokenCount({
+                embeddings: [{ values: [] }],
+                metadata: { billableCharacterCount: 400 },
+            }),
+        ).toBe(100);
+    });
 });
 
 describe("checkDailyBudget", () => {
     beforeEach(() => {
+        vi.unstubAllEnvs();
+        _resetEvaluationSpendForTests();
         sqlMock.mockReset();
         _setDailyBudgetForTests(ORIGINAL_BUDGET);
     });
@@ -116,6 +164,8 @@ describe("checkDailyBudget", () => {
 
 describe("recordUsage", () => {
     beforeEach(() => {
+        vi.unstubAllEnvs();
+        _resetEvaluationSpendForTests();
         sqlMock.mockReset();
         _setDailyBudgetForTests(ORIGINAL_BUDGET);
     });
@@ -130,7 +180,7 @@ describe("recordUsage", () => {
     it("emits an INSERT ... ON CONFLICT with the day + cost", async () => {
         sqlMock.mockResolvedValueOnce(undefined);
         await recordUsage(
-            "gemini-3-flash-preview",
+            "gemini-3.5-flash-lite",
             { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 },
             { op: "test.route", requestId: "r1" },
         );
@@ -141,7 +191,7 @@ describe("recordUsage", () => {
         // passed — the exact SQL text is an implementation detail.
         const call = sqlMock.mock.calls[0];
         const substitutions = call.slice(1);
-        expect(substitutions).toContain(0.5); // cost in USD
+        expect(substitutions).toContain(2.8); // cost in USD
         // day string is YYYY-MM-DD
         expect(substitutions.some((v: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(v)))).toBe(true);
     });
@@ -150,11 +200,124 @@ describe("recordUsage", () => {
         sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
         await expect(
             recordUsage(
-                "gemini-3-flash-preview",
+                "gemini-3.5-flash-lite",
                 { promptTokenCount: 100, candidatesTokenCount: 50 },
                 { op: "test" },
             ),
         ).resolves.toBeUndefined();
+    });
+
+    it("keeps evaluation spend out of the online Neon ledger", async () => {
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        vi.stubEnv("RAG_EVALUATION_RUN_ID", "cost-test");
+        vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
+        vi.stubEnv("RAG_EVALUATION_SPEND_CAP_USD", "5");
+
+        await recordUsage(
+            "gemini-3.5-flash-lite",
+            { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 },
+            { op: "evaluation.test" },
+        );
+
+        expect(_getEvaluationSpendForTests()).toBeCloseTo(2.8, 6);
+        expect(sqlMock).not.toHaveBeenCalled();
+    });
+
+    it("blocks the next request after the evaluation run reaches its cap", async () => {
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        vi.stubEnv("RAG_EVALUATION_RUN_ID", "cost-cap-test");
+        vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
+        vi.stubEnv("RAG_EVALUATION_SPEND_CAP_USD", "5");
+        const usage = {
+            promptTokenCount: 1_000_000,
+            candidatesTokenCount: 1_000_000,
+        };
+        await recordUsage("gemini-3.5-flash-lite", usage, { op: "evaluation.one" });
+        await recordUsage("gemini-3.5-flash-lite", usage, { op: "evaluation.two" });
+
+        try {
+            await checkDailyBudget();
+            throw new Error("expected evaluation budget rejection");
+        } catch (error) {
+            expect(error).toBeInstanceOf(DailyBudgetExceededError);
+            expect((error as DailyBudgetExceededError).scope).toBe("evaluation_run");
+        }
+        expect(sqlMock).not.toHaveBeenCalled();
+    });
+});
+
+describe("hard evaluation reservations", () => {
+    beforeEach(() => {
+        vi.unstubAllEnvs();
+        _resetEvaluationSpendForTests();
+        sqlMock.mockReset();
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        vi.stubEnv("RAG_EVALUATION_RUN_ID", "reservation-test");
+        vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
+        vi.stubEnv("RAG_EVALUATION_SPEND_CAP_USD", "1");
+    });
+
+    it("rejects parallel calls before their conservative maxima can cross the cap", () => {
+        const first = reserveEvaluationGoogleCall({
+            model: "gemini-3.5-flash-lite",
+            op: "first",
+            maxOutputTokens: 8192,
+        });
+        expect(first).not.toBeNull();
+        expect(_getEvaluationReservedForTests()).toBeGreaterThan(0.6);
+        expect(() =>
+            reserveEvaluationGoogleCall({
+                model: "gemini-3.5-flash-lite",
+                op: "second",
+                maxOutputTokens: 8192,
+            }),
+        ).toThrow(DailyBudgetExceededError);
+        releaseEvaluationGoogleCall(first);
+        expect(_getEvaluationReservedForTests()).toBe(0);
+    });
+
+    it("atomically replaces a reservation with actual usage", () => {
+        const reservation = reserveEvaluationGoogleCall({
+            model: "gemini-3.5-flash-lite",
+            op: "settle",
+            maxOutputTokens: 8192,
+        });
+        settleEvaluationGoogleCall(reservation, 0.0125);
+        expect(_getEvaluationReservedForTests()).toBe(0);
+        expect(_getEvaluationSpendForTests()).toBeCloseTo(0.0125, 8);
+    });
+
+    it("tracked generation records evaluation cost exactly once", async () => {
+        const response = await executeTrackedGenerationCall({
+            model: "gemini-3.5-flash-lite",
+            op: "tracked",
+            maxOutputTokens: 350,
+            call: async () => ({
+                usageMetadata: {
+                    promptTokenCount: 1000,
+                    candidatesTokenCount: 100,
+                },
+            }),
+        });
+        expect(response.usageMetadata.promptTokenCount).toBe(1000);
+        expect(_getEvaluationReservedForTests()).toBe(0);
+        expect(_getEvaluationSpendForTests()).toBeCloseTo(0.00055, 8);
+        expect(sqlMock).not.toHaveBeenCalled();
+    });
+
+    it("releases the reservation when Google rejects the call", async () => {
+        await expect(
+            executeTrackedGenerationCall({
+                model: "gemini-3.5-flash-lite",
+                op: "failure",
+                maxOutputTokens: 350,
+                call: async () => {
+                    throw new Error("google unavailable");
+                },
+            }),
+        ).rejects.toThrow("google unavailable");
+        expect(_getEvaluationReservedForTests()).toBe(0);
+        expect(_getEvaluationSpendForTests()).toBe(0);
     });
 });
 

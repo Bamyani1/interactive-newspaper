@@ -1,12 +1,14 @@
 # Architecture
 
-Three deep-dive docs describe how the project works end-to-end. Read them in this order if you're new.
+Four documents describe how the project works end-to-end and record the current
+implementation state. Read them in this order if you're new.
 
 ## Reading order
 
 1. **[ocr-pipeline.md](ocr-pipeline.md)** — How raw scanned TIF images become structured `edition.json` with articles, ads, and image crops. Seven-phase pipeline: Phase 0 (TIF→PNG) through Phase 6 (write diagnostics).
 2. **[data-model.md](data-model.md)** — How `edition.json` becomes DB rows. Schema, the `ocr-adapter` boundary, embeddings + HNSW, migrations, and the embedding-preservation fingerprint mechanism that makes re-seeds cheap.
 3. **[rag-pipeline.md](rag-pipeline.md)** — How DB rows become answers. `/api/ask` end-to-end: reformulate → embed → retrieve → rerank → generate, plus the agent loop for complex queries, SSE streaming, caching, dedup, budget, and the error taxonomy.
+4. **[rag-enhancement-handoff.md](rag-enhancement-handoff.md)** — The exact `rag-enhancement` branch state, completed phases, frozen evaluation evidence, verification results, user decisions, known boundaries, and the continuation protocol for the next agent.
 
 Each doc is written to be readable standalone, but the three share vocabulary and cross-link at points where duplicating would drift.
 
@@ -25,6 +27,8 @@ Terms that appear across multiple docs:
 - **RRF** — Reciprocal Rank Fusion. The algorithm that merges vector and FTS rank lists: `score = weight / (K + rank)` with `K=40`.
 - **simple pipeline** — The 5-stage non-agent path in `/api/ask`: reformulate → embed → retrieve → rerank → generate.
 - **turn** — One (question, answer) pair in a conversation. Multiple turns form a session (up to 5 within 30 min, stored in `ask_session_turns`).
+- **citation snapshot** — Bounded, immutable metadata/evidence retained with a turn and keyed to the cited content revision, so later OCR changes do not rewrite hydrated sources.
+- **coverage intent** — `absence`, `count`, or `exhaustive` classification that triggers a deterministic indexed-edition/article scope query. Coverage metadata describes search scope and is never source evidence.
 - **CRAG retry stages** — `reformulate-retry`, `embed-retry`, `retrieve-retry`, `rerank-retry`. Tagged for log attribution.
 
 ## Operator shortcuts

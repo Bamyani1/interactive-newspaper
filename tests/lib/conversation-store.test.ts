@@ -1,8 +1,15 @@
 /** @vitest-environment node */
+import { createHash } from "node:crypto";
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
 // Mock the Neon SQL tag so tests can control each returned row.
-const { sqlMock } = vi.hoisted(() => ({ sqlMock: vi.fn() }));
+const { sqlMock } = vi.hoisted(() => {
+    const mock = vi.fn() as ReturnType<typeof vi.fn> & {
+        transaction: ReturnType<typeof vi.fn>;
+    };
+    mock.transaction = vi.fn();
+    return { sqlMock: mock };
+});
 vi.mock("@neondatabase/serverless", () => ({ neon: () => sqlMock }));
 
 // Ensure lazy getSql() returns our mock (requires a non-empty URL).
@@ -13,13 +20,19 @@ beforeAll(() => {
 import {
     getConversationHistory,
     addConversationTurn,
+    deleteConversationTurns,
+    sessionHasAnyTurns,
     newSessionId,
     formatHistoryForPrompt,
+    _clearSessionsForTests,
 } from "@/src/lib/conversation-store";
 
 describe("conversation-store", () => {
     beforeEach(() => {
+        vi.unstubAllEnvs();
+        _clearSessionsForTests();
         sqlMock.mockReset();
+        sqlMock.transaction.mockReset();
     });
 
     it("generates unique session IDs", () => {
@@ -27,6 +40,57 @@ describe("conversation-store", () => {
         const b = newSessionId();
         expect(a).not.toBe(b);
         expect(a.length).toBeGreaterThan(8);
+    });
+
+    it("generates 43-char base64url session tokens", () => {
+        const a = newSessionId();
+        const b = newSessionId();
+        expect(a).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(b).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(a).not.toBe(b);
+    });
+
+    it("never sends the raw session token to the database — only its sha256 hex", async () => {
+        const rawToken = "raw-session-token-for-capture-test";
+        const hashed = createHash("sha256").update(rawToken).digest("hex");
+
+        sqlMock.mockResolvedValue([]);
+        sqlMock.transaction.mockResolvedValue(undefined);
+
+        await getConversationHistory(rawToken);
+        await addConversationTurn(rawToken, "Q", "A", ["art-1"]);
+        await deleteConversationTurns(rawToken);
+        await sessionHasAnyTurns(rawToken);
+
+        const allParams = sqlMock.mock.calls.flatMap((call) => call.slice(1));
+        expect(allParams.length).toBeGreaterThan(0);
+        expect(allParams).not.toContain(rawToken);
+        for (const param of allParams) {
+            if (typeof param === "string") {
+                expect(param.includes(rawToken)).toBe(false);
+            }
+        }
+        expect(allParams).toContain(hashed);
+
+        // Every session_id-bearing query keys on the hash: the SELECT,
+        // the INSERT, the per-session trim, the DELETE, and the probe.
+        const hashCount = allParams.filter((p) => p === hashed).length;
+        expect(hashCount).toBeGreaterThanOrEqual(4);
+    });
+
+    it("reports { ok: true } when a delete matches zero rows", async () => {
+        sqlMock.mockResolvedValueOnce([]);
+        await expect(deleteConversationTurns("no-such-session")).resolves.toEqual({
+            ok: true,
+        });
+    });
+
+    it("reports { ok: false, error } without throwing when the delete fails", async () => {
+        sqlMock.mockRejectedValueOnce(new Error("neon down"));
+        await expect(deleteConversationTurns("sid")).resolves.toEqual({
+            ok: false,
+            error: "neon down",
+        });
     });
 
     it("returns empty history when the DB returns no rows", async () => {
@@ -43,12 +107,14 @@ describe("conversation-store", () => {
                 question: "Q2",
                 answer: "A2",
                 cited_article_ids: ["art-2"],
+                citation_snapshots: [],
                 created_at: now,
             },
             {
                 question: "Q1",
                 answer: "A1",
                 cited_article_ids: ["art-1"],
+                citation_snapshots: [],
                 created_at: new Date(now.getTime() - 1000),
             },
         ]);
@@ -62,12 +128,14 @@ describe("conversation-store", () => {
     });
 
     it("stores short answers verbatim on addConversationTurn", async () => {
-        sqlMock.mockResolvedValueOnce(undefined);
+        sqlMock.transaction.mockResolvedValueOnce(undefined);
+        sqlMock.mockResolvedValueOnce([{ exists: true }]);
         const shortAnswer = "x".repeat(1000);
         await addConversationTurn("sid", "What?", shortAnswer, ["a", "b"]);
 
-        expect(sqlMock).toHaveBeenCalledTimes(1);
-        const substitutions = sqlMock.mock.calls[0].slice(1);
+        expect(sqlMock).toHaveBeenCalledTimes(4);
+        expect(sqlMock.transaction).toHaveBeenCalledTimes(1);
+        const substitutions = sqlMock.mock.calls[1].slice(1);
         const stringArgs = substitutions.filter(
             (v: unknown) => typeof v === "string",
         );
@@ -78,11 +146,12 @@ describe("conversation-store", () => {
     });
 
     it("caps over-long answers at 8000 chars with a truncation marker", async () => {
-        sqlMock.mockResolvedValueOnce(undefined);
+        sqlMock.transaction.mockResolvedValueOnce(undefined);
+        sqlMock.mockResolvedValueOnce([{ exists: true }]);
         const longAnswer = "x".repeat(10_000);
         await addConversationTurn("sid", "What?", longAnswer, []);
 
-        const substitutions = sqlMock.mock.calls[0].slice(1);
+        const substitutions = sqlMock.mock.calls[1].slice(1);
         const stringArgs = substitutions.filter(
             (v: unknown) => typeof v === "string",
         );
@@ -100,7 +169,7 @@ describe("conversation-store", () => {
     });
 
     it("does not throw when the DB write fails", async () => {
-        sqlMock.mockRejectedValueOnce(new Error("neon down"));
+        sqlMock.transaction.mockRejectedValueOnce(new Error("neon down"));
         await expect(
             addConversationTurn("sid", "Q", "A", []),
         ).resolves.toBeUndefined();
@@ -112,11 +181,62 @@ describe("conversation-store", () => {
                 question: "Q",
                 answer: "A",
                 cited_article_ids: null,
+                citation_snapshots: null,
                 created_at: new Date(),
             },
         ]);
         const history = await getConversationHistory("sid");
         expect(history[0].citedArticleIds).toEqual([]);
+        expect(history[0].citationSnapshots).toEqual([]);
+    });
+
+    it("stores and restores immutable citation snapshots when the column exists", async () => {
+        const snapshot = {
+            articleId: "1960-01-07-0",
+            contentRevisionId: "legacy-sha256:abc",
+            headline: "Original headline",
+            editionDate: "1960-01-07",
+            category: "News",
+            summary: "Original summary",
+            byline: "Staff",
+            bodySnippet: "Original body",
+            evidenceSnippet: "Exact cited evidence",
+            imageUrls: [],
+            imageCaptions: [],
+        };
+        sqlMock.mockResolvedValueOnce([{ exists: true }]);
+        sqlMock.transaction.mockResolvedValueOnce(undefined);
+
+        await addConversationTurn("sid", "Q", "A", [snapshot.articleId], [snapshot]);
+
+        const insertSql = Array.isArray(sqlMock.mock.calls[1][0])
+            ? sqlMock.mock.calls[1][0].join(" ")
+            : "";
+        expect(insertSql).toContain("citation_snapshots");
+        expect(sqlMock.mock.calls[1]).toContain(JSON.stringify([snapshot]));
+
+        sqlMock.mockResolvedValueOnce([
+            {
+                question: "Q",
+                answer: "A",
+                cited_article_ids: [snapshot.articleId],
+                citation_snapshots: [snapshot],
+                created_at: new Date(),
+            },
+        ]);
+        const history = await getConversationHistory("sid");
+        expect(history[0].citationSnapshots).toEqual([snapshot]);
+    });
+
+    it("uses an ephemeral store and makes no Neon call in evaluation mode", async () => {
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        await addConversationTurn("eval-session", "Q", "A", ["article-1"]);
+
+        expect(await getConversationHistory("eval-session")).toMatchObject([
+            { question: "Q", answer: "A", citedArticleIds: ["article-1"] },
+        ]);
+        expect(sqlMock).not.toHaveBeenCalled();
+        expect(sqlMock.transaction).not.toHaveBeenCalled();
     });
 });
 
@@ -127,8 +247,8 @@ describe("formatHistoryForPrompt", () => {
 
     it("formats turns with numbered labels", () => {
         const turns = [
-            { question: "Q1", answer: "A1", citedArticleIds: [], timestamp: 0 },
-            { question: "Q2", answer: "A2", citedArticleIds: [], timestamp: 0 },
+            { question: "Q1", answer: "A1", citedArticleIds: [], citationSnapshots: [], timestamp: 0 },
+            { question: "Q2", answer: "A2", citedArticleIds: [], citationSnapshots: [], timestamp: 0 },
         ];
         const result = formatHistoryForPrompt(turns);
         expect(result).toContain("[Turn 1] Q: Q1");

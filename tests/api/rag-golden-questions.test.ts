@@ -4,9 +4,9 @@
  * RAG golden regression suite
  *
  * Hits the REAL /api/ask pipeline (real Gemini, real Neon) with a
- * hand-curated catalog of questions and asserts basic accuracy invariants:
- * citations present, keywords appear in answer, confidence floor/ceiling,
- * mode detection, response time under 30s.
+ * previously used development catalog of questions and asserts source/fact, security,
+ * citation, mode, and deadline invariants. Historical count/confidence drift is
+ * printed as telemetry, not treated as an accuracy oracle.
  *
  * Skipped unless RUN_RAG_GOLDEN=1 is set. Uses .env.local for credentials.
  *
@@ -24,7 +24,7 @@
 
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { NextRequest } from "next/server";
-import { readFileSync, existsSync, writeFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -56,12 +56,32 @@ interface GoldenQuestion {
     confidenceMin?: Confidence;
     confidenceMax?: Confidence;
     mode?: "text" | "visual";
+    complexity?: "simple" | "complex";
     expectError?: boolean;
     expectStatus?: number;
+    expectedSourceIdsAny?: string[];
+    expectedSourceIdsAll?: string[];
+    /** Every group must contribute at least one returned source ID. */
+    expectedSourceIdGroupsAll?: string[][];
+    expectedFactsAny?: string[][];
+}
+
+interface DevelopmentCatalog {
+    schemaVersion: 2;
+    datasetId: string;
+    split: "development";
+    provenance: string;
+    questions: GoldenQuestion[];
 }
 
 const catalogPath = resolve(__dirname, "rag-golden-questions.json");
-const catalog: GoldenQuestion[] = JSON.parse(readFileSync(catalogPath, "utf-8"));
+const developmentCatalog: DevelopmentCatalog = JSON.parse(
+    readFileSync(catalogPath, "utf-8"),
+);
+if (developmentCatalog.split !== "development") {
+    throw new Error("Previously used RAG questions must be labeled as development data.");
+}
+const catalog = developmentCatalog.questions;
 
 const CONFIDENCE_RANK: Record<Confidence, number> = {
     low: 1,
@@ -88,7 +108,8 @@ interface ObservedResult {
     totalTimeMs?: number;
     retrievalTimeMs?: number;
     generationTimeMs?: number;
-    method?: "hybrid" | "vector";
+    method?: "hybrid" | "fts" | "vector";
+    sourceIds?: string[];
 }
 
 describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () => {
@@ -102,9 +123,9 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
                 "Golden suite requires DATABASE_URL (via .env.local or shell env)",
             );
         }
-        if (!process.env.GOOGLE_API_KEY) {
+        if (!process.env.GOOGLE_CLOUD_PROJECT) {
             throw new Error(
-                "Golden suite requires GOOGLE_API_KEY (via .env.local or shell env)",
+                "Golden suite requires GOOGLE_CLOUD_PROJECT and working ADC",
             );
         }
         const mod = await import("@/src/app/api/ask/route");
@@ -125,11 +146,9 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
             );
         }
 
-        // Drift detection: compare current run against prior baseline.
-        // Confidence drop >= 2 levels OR citations halved OR status change
-        // is a hard regression — fails the suite AND preserves the prior
-        // baseline for investigation. Smaller drops are warnings only.
-        const regressions: string[] = [];
+        // Historical telemetry is informational only. Frozen source/fact
+        // assertions in the catalog determine correctness; citation counts
+        // and self-scored confidence are not a quality oracle.
         if (existsSync(baselinePath)) {
             try {
                 const baselineRaw = JSON.parse(
@@ -141,12 +160,8 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
                     const prior = priorResults.find((r) => r.id === curr.id);
                     if (!prior) continue;
 
-                    // Status code change is always a regression
                     if (curr.status !== prior.status) {
-                        regressions.push(
-                            `${curr.id}: status ${prior.status} → ${curr.status}`,
-                        );
-                        continue; // skip further checks for this one
+                        console.error(`[rag-golden] INFO  ${curr.id}: status ${prior.status} → ${curr.status}`);
                     }
 
                     // Confidence drop
@@ -155,9 +170,7 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
                             CONFIDENCE_RANK[prior.confidence] -
                             CONFIDENCE_RANK[curr.confidence];
                         if (drop >= 2) {
-                            regressions.push(
-                                `${curr.id}: confidence ${prior.confidence} → ${curr.confidence} (dropped ${drop} levels)`,
-                            );
+                            console.error(`[rag-golden] INFO  ${curr.id}: confidence ${prior.confidence} → ${curr.confidence}`);
                         } else if (drop === 1) {
                             console.error(
                                 `[rag-golden] WARN  ${curr.id}: confidence ${prior.confidence} → ${curr.confidence} (drift 1 level)`,
@@ -168,9 +181,7 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
                     // Citation count drop
                     if (prior.citations >= 2) {
                         if (curr.citations * 2 < prior.citations) {
-                            regressions.push(
-                                `${curr.id}: citations ${prior.citations} → ${curr.citations} (halved)`,
-                            );
+                            console.error(`[rag-golden] INFO  ${curr.id}: citations ${prior.citations} → ${curr.citations}`);
                         } else if (curr.citations < prior.citations) {
                             console.error(
                                 `[rag-golden] WARN  ${curr.id}: citations ${prior.citations} → ${curr.citations}`,
@@ -194,32 +205,7 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
                     `[rag-golden] failed to read baseline for comparison: ${err}`,
                 );
             }
-        } else {
-            console.error(
-                `[rag-golden] no prior baseline at ${baselinePath} — this run becomes the first baseline`,
-            );
         }
-
-        if (regressions.length > 0) {
-            console.error(
-                `\n[rag-golden] REGRESSIONS DETECTED vs prior baseline:\n  ${regressions.join("\n  ")}\n\nNOT writing new baseline — delete ${baselinePath} manually once the cause is fixed.`,
-            );
-            throw new Error(
-                `golden suite detected ${regressions.length} regression(s) vs baseline`,
-            );
-        }
-
-        // No regressions → update baseline
-        writeFileSync(
-            baselinePath,
-            JSON.stringify(
-                { capturedAt: new Date().toISOString(), results: observed },
-                null,
-                2,
-            ),
-            "utf-8",
-        );
-        console.error(`[rag-golden] wrote ${baselinePath}`);
     });
 
     for (const q of catalog) {
@@ -230,7 +216,7 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
                 const response = await POST(makeRequest(q.question));
                 const body = await response.json();
 
-                // Record observed shape for baseline snapshot (afterAll writes it)
+                // Record observed shape for the read-only comparison report.
                 observed.push({
                     id: q.id,
                     status: response.status,
@@ -241,6 +227,9 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
                     retrievalTimeMs: body.meta?.retrievalTimeMs,
                     generationTimeMs: body.meta?.generationTimeMs,
                     method: body.meta?.method,
+                    sourceIds: Array.isArray(body.sourceArticles)
+                        ? body.sourceArticles.map((source: { id: string }) => source.id)
+                        : [],
                 });
 
                 if (q.expectError) {
@@ -305,6 +294,38 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
 
                 if (q.mode) {
                     expect(body.mode).toBe(q.mode);
+                }
+
+                if (q.complexity) {
+                    expect(body.meta?.complexity).toBe(q.complexity);
+                }
+
+                const sourceIds = new Set(
+                    Array.isArray(body.sourceArticles)
+                        ? body.sourceArticles.map((source: { id: string }) => source.id)
+                        : [],
+                );
+                if (q.expectedSourceIdsAny?.length) {
+                    expect(
+                        q.expectedSourceIdsAny.some((id) => sourceIds.has(id)),
+                        `Expected at least one frozen relevant source; got ${[...sourceIds].join(", ")}`,
+                    ).toBe(true);
+                }
+                for (const id of q.expectedSourceIdsAll ?? []) {
+                    expect(sourceIds.has(id), `Missing frozen relevant source ${id}`).toBe(true);
+                }
+                for (const group of q.expectedSourceIdGroupsAll ?? []) {
+                    expect(
+                        group.some((id) => sourceIds.has(id)),
+                        `Expected one frozen source from group [${group.join(", ")}]; got ${[...sourceIds].join(", ")}`,
+                    ).toBe(true);
+                }
+                const answerLower = body.answer.toLowerCase();
+                for (const aliases of q.expectedFactsAny ?? []) {
+                    expect(
+                        aliases.some((fact) => answerLower.includes(fact.toLowerCase())),
+                        `Expected answer fact represented by one of [${aliases.join(", ")}]`,
+                    ).toBe(true);
                 }
 
                 expect(body.meta?.totalTimeMs).toBeLessThan(30000);

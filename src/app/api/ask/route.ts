@@ -7,9 +7,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { embedQuery, QuotaExhaustedError } from "@/src/lib/embeddings";
-import { hybridSearch, queryArticlesByEmbedding } from "@/src/lib/db";
+import { QuotaExhaustedError } from "@/src/lib/embeddings";
+import { DbTimeoutError, queryArchiveCoverage } from "@/src/lib/db";
 import type { RetrievedArticle } from "@/src/lib/db";
+import type { RetrievalMethod } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
@@ -21,7 +22,12 @@ import {
 } from "@/src/lib/conversation-store";
 import { runAgentLoop } from "@/src/lib/agent-loop";
 import type { RankedArticle } from "@/src/lib/reranker";
-import type { AskResponse, AskErrorKind, Citation } from "@/src/types";
+import type {
+    AskResponse,
+    AskErrorKind,
+    Citation,
+    CitationSnapshot,
+} from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 import { getCachedAnswer, setCachedAnswer } from "@/src/lib/answer-cache";
 import { checkDailyBudget, DailyBudgetExceededError } from "@/src/lib/cost-tracker";
@@ -40,6 +46,19 @@ import {
     logRerankSignals,
     _computeRerankSignalsForTests,
 } from "@/src/lib/rerank-signals";
+import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
+import {
+    retrieveCandidates,
+    RetrievalSignalsUnavailableError,
+} from "@/src/lib/retrieval";
+import type { CandidateRetrievalResult } from "@/src/lib/retrieval";
+import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
+import type { CoverageIntent } from "@/src/lib/query-reformulator";
+import type { ArchiveCoverage } from "@/src/lib/rag-coverage";
+import {
+    buildCitationSnapshots,
+    type CitationSnapshotSource,
+} from "@/src/lib/citation-snapshot";
 
 export {
     _clearAskDedupForTests,
@@ -47,9 +66,14 @@ export {
     _computeRerankSignalsForTests,
 };
 
+// Vercel function ceiling; must stay above GLOBAL_DEADLINE_MS so the
+// platform never kills a request our own deadline machinery would have
+// finished or failed gracefully.
+export const maxDuration = 60;
+
 const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
-const GLOBAL_DEADLINE_MS = 30_000;
+const GLOBAL_DEADLINE_MS = 55_000;
 
 const askRateLimiter = createRateLimiter({ bucket: "ask", limit: 10, windowMs: 60_000 });
 
@@ -79,6 +103,88 @@ class StageError extends Error {
         super(cause instanceof Error ? cause.message : String(cause));
         this.name = "StageError";
     }
+}
+
+function retrievalFailureParts(error: unknown): unknown[] {
+    return error instanceof RetrievalSignalsUnavailableError
+        ? [error.ftsError, error.vectorError]
+        : [error];
+}
+
+function retrievalTimeout(error: unknown): DbTimeoutError | undefined {
+    return retrievalFailureParts(error).find(
+        (part): part is DbTimeoutError => part instanceof DbTimeoutError,
+    );
+}
+
+function retrievalQuota(error: unknown): QuotaExhaustedError | undefined {
+    return retrievalFailureParts(error).find(
+        (part): part is QuotaExhaustedError =>
+            part instanceof QuotaExhaustedError,
+    );
+}
+
+function retrievalIdentityMetadata(
+    identity: CandidateRetrievalResult["identity"] = getRagRetrievalConfig(),
+) {
+    return {
+        corpusVersion: identity.corpusVersion,
+        indexBuildId: identity.activeIndexBuildId,
+        pipelineVersion: identity.pipelineVersion,
+        embeddingModel: identity.embeddingModel,
+        textEmbeddingInputVersion: identity.textEmbeddingInputVersion,
+        imageEmbeddingInputVersion: identity.imageEmbeddingInputVersion,
+        retrievalTarget:
+            identity.mode === "versioned" ? "versioned" as const : "legacy" as const,
+    };
+}
+
+async function resolveArchiveCoverage(
+    intent: CoverageIntent | undefined,
+    filters: { category?: string; startDate?: string; endDate?: string },
+    signal: AbortSignal,
+    requestId: string,
+): Promise<ArchiveCoverage | undefined> {
+    if (!intent || intent === "none") return undefined;
+    const identity = getRagRetrievalConfig();
+    const stats = await queryArchiveCoverage({ ...filters, signal });
+    const coverage: ArchiveCoverage = {
+        intent,
+        ...stats,
+        requestedStartDate: filters.startDate,
+        requestedEndDate: filters.endDate,
+        category: filters.category,
+        corpusVersion: identity.corpusVersion,
+    };
+    // eslint-disable-next-line no-console -- structured retrieval telemetry
+    console.info(
+        JSON.stringify({
+            level: "info",
+            route: "/api/ask",
+            requestId,
+            stage: "coverage",
+            msg: "deterministic archive coverage loaded",
+            ...coverage,
+        }),
+    );
+    return coverage;
+}
+
+function coverageMetadata(coverage?: ArchiveCoverage) {
+    return coverage
+        ? {
+              coverage: {
+                  intent: coverage.intent,
+                  editionCount: coverage.editionCount,
+                  articleCount: coverage.articleCount,
+                  earliestEditionDate: coverage.earliestEditionDate,
+                  latestEditionDate: coverage.latestEditionDate,
+                  requestedStartDate: coverage.requestedStartDate,
+                  requestedEndDate: coverage.requestedEndDate,
+                  category: coverage.category,
+              },
+          }
+        : {};
 }
 
 function wrapStage<T>(stage: string, fn: () => Promise<T>): Promise<T> {
@@ -115,13 +221,29 @@ async function persistTurnBounded(
     question: string,
     answer: string,
     citedArticleIds: string[],
+    citationSnapshots: CitationSnapshot[],
 ): Promise<void> {
     await Promise.race([
-        addConversationTurn(sessionId, question, answer, citedArticleIds),
+        addConversationTurn(
+            sessionId,
+            question,
+            answer,
+            citedArticleIds,
+            citationSnapshots,
+        ),
         new Promise<void>((resolve) =>
             setTimeout(resolve, PERSIST_TURN_TIMEOUT_MS),
         ),
     ]);
+}
+
+function agentSnapshotSources(
+    articleMeta: Map<string, import("@/src/lib/agent-loop").ArticleMeta>,
+): CitationSnapshotSource[] {
+    return [...articleMeta.entries()].map(([id, article]) => ({
+        id,
+        ...article,
+    }));
 }
 
 /**
@@ -192,6 +314,7 @@ async function rerankWithCragRetry(params: {
         rerankArticles(params.question, params.articles, {
             maxArticles: params.keepTopK,
             minScore,
+            mode: params.mode,
             signal: params.signal,
             requestId: params.requestId,
         }),
@@ -218,52 +341,62 @@ async function rerankWithCragRetry(params: {
                 conversationHistory: params.conversationHistory,
             }),
         );
-        // embed-retry: QuotaExhaustedError otherwise flows through wrapStage
-        // untouched and loses the retry-stage tag. Wrap it (and any other
-        // non-deadline error) in StageError so both streaming and
-        // non-streaming catches can attribute it to "embed-retry".
-        let retryEmbedding: number[];
-        try {
-            retryEmbedding = await embedQuery(retry.embeddingQuery, {
-                signal: params.signal,
-            });
-        } catch (err) {
-            if (err instanceof DeadlineExceededError) throw err;
-            throw new StageError("embed-retry", err);
-        }
-        // retrieve-retry: same pattern. The "Retrieval timeout" Error is
-        // a local marker, not a typed class; caller unwraps via StageError.cause.
         let retryArticles: RetrievedArticle[];
         try {
-            retryArticles = await Promise.race([
-                hybridSearch(retry.ftsQuery, retryEmbedding, {
-                    limit: params.retrievalLimit,
-                    category: params.filters.category ?? null,
-                    startDate: params.filters.startDate ?? null,
-                    endDate: params.filters.endDate ?? null,
-                    vectorWeight: params.vectorWeight,
-                    onlyWithImages: params.onlyWithImages,
-                    signal: params.signal,
-                }),
-                new Promise<never>((_, reject) =>
-                    setTimeout(
-                        () => reject(new Error("Retrieval timeout")),
-                        params.retrievalTimeoutMs,
-                    ),
-                ),
-            ]);
+            const retrieval = await retrieveCandidates({
+                embeddingQuery: retry.embeddingQuery,
+                ftsQuery: retry.ftsQuery,
+                limit: params.retrievalLimit,
+                filters: params.filters,
+                vectorWeight: params.vectorWeight,
+                onlyWithImages: params.onlyWithImages,
+                timeoutMs: params.retrievalTimeoutMs,
+                signal: params.signal,
+                requestId: params.requestId,
+            });
+            retryArticles = retrieval.articles;
         } catch (err) {
             if (err instanceof DeadlineExceededError) throw err;
-            throw new StageError("retrieve-retry", err);
+            throw new StageError(
+                "retrieve-retry",
+                retrievalTimeout(err) ?? retrievalQuota(err) ?? err,
+            );
         }
         ranked = await wrapStage("rerank-retry", () =>
             rerankArticles(params.question, retryArticles, {
                 maxArticles: params.keepTopK,
                 minScore: params.mode === "visual" ? 2 : 3,
+                mode: params.mode,
                 signal: params.signal,
                 requestId: params.requestId,
             }),
         );
+    }
+
+    // Total-veto guard: the reranker's job is trimming noise, not overruling
+    // retrieval wholesale. An LLM judge scoring 20 real candidates all-below-
+    // threshold is far more often a judging artifact (broad/thematic
+    // questions score poorly per-article) than a true no-evidence state —
+    // and downstream, zero kept articles becomes a categorical "no matching
+    // evidence" refusal that is simply false. Fall back to fused retrieval
+    // order at relevanceScore 5 — the reranker's own degraded-mode score, and
+    // the minimum the generator will engage with (below RERANK_TANGENTIAL it
+    // refuses without ever calling the model) — so citation allowlisting and
+    // the generator's own confidence machinery stay in charge of honesty.
+    if (ranked.length === 0 && params.articles.length > 0 && !params.signal.aborted) {
+        console.warn(
+            JSON.stringify({
+                level: "warn",
+                route: "/api/ask",
+                requestId: params.requestId,
+                stage: "rerank-fallback",
+                msg: "reranker (and retry) kept nothing; falling back to fused retrieval order",
+                candidateCount: params.articles.length,
+            }),
+        );
+        return params.articles
+            .slice(0, params.keepTopK)
+            .map((article) => ({ ...article, relevanceScore: 5 }));
     }
 
     return ranked;
@@ -290,6 +423,64 @@ interface AskRequestBody {
         category?: string;
         startDate?: string;
         endDate?: string;
+    };
+}
+
+const ASK_CATEGORIES = new Set([
+    "Campus News",
+    "News",
+    "Sports",
+    "Arts & Entertainment",
+    "Opinion",
+]);
+
+function isValidIsoDate(value: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value);
+}
+
+function validateAskContext(body: AskRequestBody): string | null {
+    if (
+        body.sessionId !== undefined &&
+        (typeof body.sessionId !== "string" ||
+            !/^[A-Za-z0-9_-]{1,128}$/.test(body.sessionId))
+    ) {
+        return "sessionId has an invalid format";
+    }
+    if (body.filters === undefined) return null;
+    if (typeof body.filters !== "object" || body.filters === null || Array.isArray(body.filters)) {
+        return "filters must be an object";
+    }
+    const { category, startDate, endDate } = body.filters;
+    if (category !== undefined && (typeof category !== "string" || !ASK_CATEGORIES.has(category))) {
+        return "filters.category is not supported";
+    }
+    if (startDate !== undefined && (typeof startDate !== "string" || !isValidIsoDate(startDate))) {
+        return "filters.startDate must be a real date in YYYY-MM-DD format";
+    }
+    if (endDate !== undefined && (typeof endDate !== "string" || !isValidIsoDate(endDate))) {
+        return "filters.endDate must be a real date in YYYY-MM-DD format";
+    }
+    if (startDate && endDate && startDate > endDate) {
+        return "filters.startDate must not be after filters.endDate";
+    }
+    return null;
+}
+
+function resolveRetrievalFilters(
+    explicit: AskRequestBody["filters"] | undefined,
+    inferred: { startDate?: string; endDate?: string },
+): NonNullable<AskRequestBody["filters"]> {
+    const requested = explicit ?? {};
+    // A caller-supplied temporal boundary is authoritative. We never combine
+    // half of an explicit range with a model-inferred range because that can
+    // silently create an impossible interval.
+    const hasExplicitDates = Boolean(requested.startDate || requested.endDate);
+    return {
+        ...requested,
+        startDate: hasExplicitDates ? requested.startDate : inferred.startDate,
+        endDate: hasExplicitDates ? requested.endDate : inferred.endDate,
     };
 }
 
@@ -323,7 +514,7 @@ async function handleStreamingAsk(params: {
 }): Promise<NextResponse> {
     const { body, requestId, totalStart, deadlineMs, sessionId, conversationHistory } = params;
     const question = body.question.trim();
-    const filters = body.filters ?? {};
+    const explicitFilters = body.filters ?? {};
 
     const globalController = new AbortController();
     const deadlineTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
@@ -349,11 +540,57 @@ async function handleStreamingAsk(params: {
             const stageElapsed = () => Date.now() - totalStart;
 
             try {
+                // Cache lookup precedes reformulation so a true hit performs
+                // zero Google calls. Contextual follow-ups still bypass it.
+                const earlyCached =
+                    conversationHistory.length === 0
+                        ? getCachedAnswer(question, explicitFilters)
+                        : null;
+                if (earlyCached) {
+                    send({
+                        type: "metadata",
+                        question,
+                        mode: earlyCached.mode,
+                        requestId,
+                        sourceArticles: earlyCached.sourceArticles,
+                        meta: earlyCached.meta,
+                    });
+                    send({ type: "delta", text: earlyCached.answer });
+                    await persistTurnBounded(
+                        sessionId,
+                        question,
+                        earlyCached.answer,
+                        earlyCached.citations.map((citation) => citation.articleId),
+                        buildCitationSnapshots(
+                            earlyCached.citations,
+                            earlyCached.sourceArticles,
+                        ),
+                    );
+                    send({
+                        type: "done",
+                        answer: earlyCached.answer,
+                        citations: earlyCached.citations,
+                        confidence: earlyCached.confidence,
+                        sessionId,
+                        sourceArticles: earlyCached.sourceArticles,
+                        followUpQuestions: earlyCached.followUpQuestions ?? [],
+                        meta: {
+                            ...earlyCached.meta,
+                            totalTimeMs: Date.now() - totalStart,
+                            cacheHit: true,
+                        },
+                    });
+                    return;
+                }
+
                 // ── Step 1: Reformulate ──
                 let embeddingQuery: string;
                 let ftsQuery: string;
                 let mode: "text" | "visual";
                 let complexity: "simple" | "complex";
+                let coverageIntent: CoverageIntent | undefined;
+                let inferredStartDate: string | undefined;
+                let inferredEndDate: string | undefined;
                 try {
                     const reformulated = await reformulateQuery(question, {
                         signal: globalController.signal,
@@ -364,6 +601,9 @@ async function handleStreamingAsk(params: {
                     ftsQuery = reformulated.ftsQuery;
                     mode = reformulated.mode;
                     complexity = reformulated.complexity;
+                    coverageIntent = reformulated.coverageIntent;
+                    inferredStartDate = reformulated.startDate;
+                    inferredEndDate = reformulated.endDate;
                 } catch (err) {
                     console.error(
                         JSON.stringify({
@@ -390,6 +630,38 @@ async function handleStreamingAsk(params: {
                     detail: embeddingQuery !== question ? embeddingQuery : undefined,
                 });
 
+                const filters = resolveRetrievalFilters(explicitFilters, {
+                    startDate: inferredStartDate,
+                    endDate: inferredEndDate,
+                });
+                let coverage: ArchiveCoverage | undefined;
+                try {
+                    coverage = await resolveArchiveCoverage(
+                        coverageIntent,
+                        filters,
+                        globalController.signal,
+                        requestId,
+                    );
+                } catch (err) {
+                    // Coverage is supplementary caveat metadata; retrieval
+                    // grounding stands on its own. Degrade instead of turning
+                    // one failed stats query into a dead request.
+                    console.warn(
+                        JSON.stringify({
+                            level: "warn",
+                            route: "/api/ask",
+                            requestId,
+                            stage: "coverage",
+                            msg: "archive coverage query failed; continuing without coverage",
+                            err: err instanceof Error ? err.message : String(err),
+                        }),
+                    );
+                    coverage = undefined;
+                }
+                if (coverage) {
+                    send({ type: "stage", name: "coverage", elapsedMs: stageElapsed() });
+                }
+
                 // ── Agent path for complex questions ──
                 if (complexity === "complex") {
                     send({ type: "stage", name: "agent", elapsedMs: stageElapsed() });
@@ -402,6 +674,7 @@ async function handleStreamingAsk(params: {
                         meta: {
                             reformulatedQuery:
                                 embeddingQuery !== question ? embeddingQuery : undefined,
+                            ...coverageMetadata(coverage),
                         },
                     });
 
@@ -414,6 +687,8 @@ async function handleStreamingAsk(params: {
                             signal: globalController.signal,
                             requestId,
                             conversationContext,
+                            filters,
+                            coverage,
                             onProgress: (event) => send(event),
                         });
 
@@ -422,12 +697,17 @@ async function handleStreamingAsk(params: {
                             question,
                             agentResult.answer,
                             agentResult.citations.map((c) => c.articleId),
+                            buildCitationSnapshots(
+                                agentResult.citations,
+                                agentSnapshotSources(agentResult.articleMeta),
+                            ),
                         );
 
                         const agentSourceArticles = agentResult.citations.map((c) => {
                             const meta = agentResult.articleMeta.get(c.articleId);
                             return {
                                 id: c.articleId,
+                                contentRevisionId: meta?.contentRevisionId,
                                 headline: c.headline,
                                 editionDate: c.editionDate,
                                 category: meta?.category ?? "",
@@ -450,16 +730,18 @@ async function handleStreamingAsk(params: {
                             sessionId,
                             sourceArticles: agentSourceArticles,
                             meta: {
-                                retrievalTimeMs: 0,
-                                generationTimeMs: 0,
+                                retrievalTimeMs: agentResult.retrievalTimeMs,
+                                generationTimeMs: agentResult.generationTimeMs,
                                 totalTimeMs,
                                 articlesSearched: agentResult.articleMeta.size,
-                                method: "hybrid",
+                                method: agentResult.retrievalMethod ?? "none",
                                 reformulatedQuery:
                                     embeddingQuery !== question ? embeddingQuery : undefined,
                                 complexity,
                                 agentSteps: agentResult.rounds,
                                 agentToolCalls: agentResult.toolCallCount,
+                                ...retrievalIdentityMetadata(),
+                                ...coverageMetadata(coverage),
                             },
                         });
                     } catch (err) {
@@ -483,134 +765,41 @@ async function handleStreamingAsk(params: {
                     return;
                 }
 
-                // ── Cache check (pipeline path only; skipped when
-                // conversation history is in play so we don't serve a
-                // prior session's context-flavored answer to a fresh one).
-                const cached =
-                    conversationHistory.length === 0
-                        ? getCachedAnswer(question, filters)
-                        : null;
-                if (cached) {
-                    const cachedSourceArticles = cached.sourceArticles;
-                    const cachedMeta = cached.meta;
-                    send({
-                        type: "metadata",
-                        question,
-                        mode: cached.mode,
-                        requestId,
-                        sourceArticles: cachedSourceArticles,
-                        meta: {
-                            retrievalTimeMs: cachedMeta.retrievalTimeMs,
-                            articlesSearched: cachedMeta.articlesSearched,
-                            method: cachedMeta.method,
-                            reformulatedQuery: cachedMeta.reformulatedQuery,
-                        },
-                    });
-                    send({ type: "delta", text: cached.answer });
-                    await persistTurnBounded(
-                        sessionId,
-                        question,
-                        cached.answer,
-                        cached.citations.map((c) => c.articleId),
-                    );
-                    send({
-                        type: "done",
-                        answer: cached.answer,
-                        citations: cached.citations,
-                        confidence: cached.confidence,
-                        sessionId,
-                        sourceArticles: cachedSourceArticles,
-                        followUpQuestions: cached.followUpQuestions ?? [],
-                        meta: {
-                            ...cachedMeta,
-                            totalTimeMs: Date.now() - totalStart,
-                            cacheHit: true,
-                            complexity,
-                        },
-                    });
-                    return;
-                }
-
-                // ── Step 2: Embed (pipeline path) ──
-                let questionEmbedding: number[];
-                try {
-                    questionEmbedding = await embedQuery(embeddingQuery, {
-                        signal: globalController.signal,
-                    });
-                } catch (err) {
-                    if (err instanceof QuotaExhaustedError) {
-                        console.warn(
-                            JSON.stringify({
-                                level: "warn",
-                                route: "/api/ask",
-                                requestId,
-                                stage: "embed",
-                                msg: "quota exhausted (streaming)",
-                                err: err instanceof Error ? err.message : String(err),
-                            }),
-                        );
-                        send({
-                            type: "error",
-                            stage: "embed",
-                            cause: "quota_exhausted",
-                            message: "Daily AI quota reached. Please try again tomorrow.",
-                            requestId,
-                        });
-                        return;
-                    }
-                    console.error(
-                        JSON.stringify({
-                            level: "error",
-                            route: "/api/ask",
-                            requestId,
-                            stage: "embed",
-                            msg: "embed failed (streaming)",
-                            err: err instanceof Error ? err.message : String(err),
-                        }),
-                    );
-                    send({
-                        type: "error",
-                        stage: "embed",
-                        message: "Failed to process question. Please try again.",
-                        requestId,
-                    });
-                    return;
-                }
-                send({ type: "stage", name: "embed", elapsedMs: stageElapsed() });
-
-                // ── Step 3: Retrieve ──
+                // ── Step 2: Retrieve independent lexical + vector signals ──
                 const retrievalTimeoutMs =
                     _testRetrievalTimeoutMsOverride ?? RETRIEVAL_TIMEOUT_MS;
-                const retrievalStart = Date.now();
                 const retrievalLimit = mode === "visual" ? 30 : 20;
                 const vectorWeight = mode === "visual" ? 0.7 : 0.6;
                 const onlyWithImages = mode === "visual";
 
-                const retrievalTimeout = new Promise<never>((_, reject) =>
-                    setTimeout(
-                        () => reject(new Error("Retrieval timeout")),
-                        retrievalTimeoutMs,
-                    ),
-                );
-
                 let articles: RetrievedArticle[];
-                let method: "hybrid" | "vector" = "hybrid";
+                let method: RetrievalMethod = "hybrid";
+                let retrievalTimeMs = 0;
+                let retrievalIdentity = getRagRetrievalConfig();
 
                 try {
-                    articles = await Promise.race([
-                        hybridSearch(ftsQuery, questionEmbedding, {
-                            limit: retrievalLimit,
-                            category: filters.category ?? null,
-                            startDate: filters.startDate ?? null,
-                            endDate: filters.endDate ?? null,
-                            vectorWeight,
-                            onlyWithImages,
-                            signal: globalController.signal,
-                        }),
-                        retrievalTimeout,
-                    ]);
+                    const retrieval = await retrieveCandidates({
+                        embeddingQuery,
+                        ftsQuery,
+                        limit: retrievalLimit,
+                        filters,
+                        vectorWeight,
+                        onlyWithImages,
+                        timeoutMs: retrievalTimeoutMs,
+                        signal: globalController.signal,
+                        requestId,
+                    });
+                    articles = retrieval.articles;
+                    method = retrieval.method;
+                    retrievalTimeMs = retrieval.retrievalTimeMs;
+                    retrievalIdentity = retrieval.identity;
                 } catch (err) {
-                    if (err instanceof Error && err.message === "Retrieval timeout") {
+                    const timeoutError = retrievalTimeout(err);
+                    const quotaError = retrievalQuota(err);
+                    if (
+                        timeoutError ||
+                        globalController.signal.aborted
+                    ) {
                         send({
                             type: "error",
                             stage: "retrieve",
@@ -619,53 +808,21 @@ async function handleStreamingAsk(params: {
                         });
                         return;
                     }
-                    console.warn(
-                        JSON.stringify({
-                            level: "warn",
-                            route: "/api/ask",
-                            requestId,
-                            stage: "retrieve",
-                            msg: "hybrid search failed — falling back (streaming)",
-                            err: err instanceof Error ? err.message : String(err),
-                        }),
-                    );
-                    method = "vector";
-                    const fallbackTimeout = new Promise<never>((_, reject) =>
-                        setTimeout(
-                            () => reject(new Error("Retrieval timeout")),
-                            retrievalTimeoutMs,
-                        ),
-                    );
-                    try {
-                        articles = await Promise.race([
-                            queryArticlesByEmbedding(questionEmbedding, {
-                                limit: retrievalLimit,
-                                category: filters.category ?? null,
-                                startDate: filters.startDate ?? null,
-                                endDate: filters.endDate ?? null,
-                                onlyWithImages,
-                                signal: globalController.signal,
-                            }),
-                            fallbackTimeout,
-                        ]);
-                    } catch (fallbackErr) {
-                        send({
-                            type: "error",
-                            stage: "retrieve",
-                            message:
-                                fallbackErr instanceof Error &&
-                                fallbackErr.message === "Retrieval timeout"
-                                    ? "Retrieval took too long. Please try again."
-                                    : "Retrieval failed. Please try again.",
-                            requestId,
-                        });
-                        return;
-                    }
+                    send({
+                        type: "error",
+                        stage: "retrieve",
+                        cause: quotaError ? "quota_exhausted" : undefined,
+                        message:
+                            quotaError
+                                ? "Vector quota was exhausted and full-text retrieval also failed. Please try again later."
+                                : "Retrieval failed. Please try again.",
+                        requestId,
+                    });
+                    return;
                 }
-                const retrievalTimeMs = Date.now() - retrievalStart;
                 send({ type: "stage", name: "retrieve", elapsedMs: stageElapsed() });
 
-                // ── Step 4: Rerank ──
+                // ── Step 3: Rerank ──
                 const keepTopK = mode === "visual" ? 15 : 10;
                 logRerankSignals(requestId, computeRerankSignals(articles), mode, "streaming");
 
@@ -700,8 +857,7 @@ async function handleStreamingAsk(params: {
                             ? "Daily AI quota reached. Please try again later."
                             : cause instanceof DeadlineExceededError
                             ? "Request timed out. Please try again."
-                            : cause instanceof Error &&
-                              cause.message === "Retrieval timeout"
+                            : cause instanceof DbTimeoutError
                             ? "Retrieval took too long. Please try again."
                             : "Reranking failed. Please try again.";
                     console.error(
@@ -732,6 +888,7 @@ async function handleStreamingAsk(params: {
                 // streaming in.
                 const sourceArticles = rankedArticles.map((a) => ({
                     id: a.id,
+                    contentRevisionId: a.contentRevisionId,
                     headline: a.headline,
                     editionDate: a.editionDate,
                     category: a.category,
@@ -758,6 +915,7 @@ async function handleStreamingAsk(params: {
                         method,
                         reformulatedQuery:
                             embeddingQuery !== question ? embeddingQuery : undefined,
+                        ...retrievalIdentityMetadata(retrievalIdentity),
                     },
                 });
 
@@ -776,6 +934,7 @@ async function handleStreamingAsk(params: {
                             conversationHistory.length > 0
                                 ? formatHistoryForPrompt(conversationHistory)
                                 : undefined,
+                        coverage,
                     })) {
                         if (event.type === "delta") {
                             send({ type: "delta", text: event.text });
@@ -814,6 +973,7 @@ async function handleStreamingAsk(params: {
                     question,
                     finalAnswer,
                     finalCitations.map((c) => c.articleId),
+                    buildCitationSnapshots(finalCitations, rankedArticles),
                 );
 
                 const streamingResponse: AskResponse = {
@@ -835,11 +995,13 @@ async function handleStreamingAsk(params: {
                         reformulatedQuery:
                             embeddingQuery !== question ? embeddingQuery : undefined,
                         complexity,
+                        ...retrievalIdentityMetadata(retrievalIdentity),
+                        ...coverageMetadata(coverage),
                     },
                 };
 
                 if (conversationHistory.length === 0) {
-                    setCachedAnswer(question, filters, streamingResponse);
+                    setCachedAnswer(question, explicitFilters, streamingResponse);
                 }
 
                 send({
@@ -858,6 +1020,8 @@ async function handleStreamingAsk(params: {
                         reformulatedQuery:
                             embeddingQuery !== question ? embeddingQuery : undefined,
                         complexity,
+                        ...retrievalIdentityMetadata(retrievalIdentity),
+                        ...coverageMetadata(coverage),
                     },
                 });
             } catch (err) {
@@ -960,6 +1124,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             message: `Question too long (${question.length} chars). Maximum is ${MAX_QUESTION_LENGTH}.`,
         });
     }
+    const contextValidationError = validateAskContext(body);
+    if (contextValidationError) {
+        return askErrorJson({
+            status: 400,
+            kind: "bad_request",
+            message: contextValidationError,
+        });
+    }
 
     // ── Daily budget kill switch ──
     // Fail fast if the project has already burned through today's AI
@@ -969,13 +1141,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await checkDailyBudget();
     } catch (err) {
         if (err instanceof DailyBudgetExceededError) {
+            const evaluationBudget = err.scope === "evaluation_run";
             console.warn(
                 JSON.stringify({
                     level: "warn",
                     route: "/api/ask",
                     requestId,
                     stage: "budget",
-                    msg: "daily budget exceeded",
+                    msg: evaluationBudget
+                        ? "evaluation run budget exceeded"
+                        : "daily budget exceeded",
                     spentUsd: err.spentUsd,
                     budgetUsd: err.budgetUsd,
                 }),
@@ -983,9 +1158,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return askErrorJson({
                 status: 429,
                 kind: "budget",
-                message: "Daily AI budget reached. Please try again tomorrow.",
-                retryAfterSec: 3600,
-                cause: "daily_budget_reached",
+                message: evaluationBudget
+                    ? "Evaluation spending cap reached. Start a separately approved run to continue."
+                    : "Daily AI budget reached. Please try again tomorrow.",
+                retryAfterSec: evaluationBudget ? undefined : 3600,
+                cause: evaluationBudget
+                    ? "evaluation_budget_reached"
+                    : "daily_budget_reached",
                 stage: "budget",
                 requestId,
             });
@@ -1021,8 +1200,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // If an identical (ip, question, filters) request is already in
     // flight, piggyback on it instead of running the full pipeline again.
     // Falls through (runs our own) if the in-flight one rejects.
+    const evaluationMode = isRagEvaluationMode();
     const dedupId = dedupKey(ip, question, body.filters, sessionId);
-    const existingEntry = inFlightAsk.get(dedupId);
+    const existingEntry = evaluationMode ? undefined : inFlightAsk.get(dedupId);
     if (existingEntry) {
         try {
             const data = await getOrExtract(existingEntry);
@@ -1046,8 +1226,36 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     const pipelinePromise = (async (): Promise<NextResponse> => {
+        const earlyCached =
+            conversationHistory.length === 0
+                ? getCachedAnswer(question, body.filters)
+                : null;
+        if (earlyCached) {
+            const response: AskResponse = {
+                ...earlyCached,
+                requestId,
+                sessionId,
+                meta: {
+                    ...earlyCached.meta,
+                    totalTimeMs: Date.now() - totalStart,
+                    cacheHit: true,
+                },
+            };
+            await persistTurnBounded(
+                sessionId,
+                question,
+                earlyCached.answer,
+                earlyCached.citations.map((citation) => citation.articleId),
+                buildCitationSnapshots(
+                    earlyCached.citations,
+                    earlyCached.sourceArticles,
+                ),
+            );
+            return NextResponse.json(response);
+        }
+
         // ── Step 1: Reformulate query for better retrieval ──
-        const { embeddingQuery, ftsQuery, mode, complexity } = await wrapStage(
+        const reformulated = await wrapStage(
             "reformulate",
             () =>
                 reformulateQuery(question, {
@@ -1056,10 +1264,39 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     conversationHistory,
                 }),
         );
+        const {
+            embeddingQuery,
+            ftsQuery,
+            mode,
+            complexity,
+            coverageIntent,
+        } = reformulated;
+        const filters = resolveRetrievalFilters(body.filters, reformulated);
+        // Coverage is supplementary caveat metadata — a failed stats query
+        // degrades to "no coverage" rather than failing the whole request.
+        const coverage = await wrapStage("coverage", () =>
+            resolveArchiveCoverage(
+                coverageIntent,
+                filters,
+                globalController.signal,
+                requestId,
+            ),
+        ).catch((err: unknown) => {
+            console.warn(
+                JSON.stringify({
+                    level: "warn",
+                    route: "/api/ask",
+                    requestId,
+                    stage: "coverage",
+                    msg: "archive coverage query failed; continuing without coverage",
+                    err: err instanceof Error ? err.message : String(err),
+                }),
+            );
+            return undefined;
+        });
 
         // ── Agent path for complex questions ──
         if (complexity === "complex") {
-            const agentStart = Date.now();
             const conversationContext = conversationHistory.length > 0
                 ? formatHistoryForPrompt(conversationHistory)
                 : undefined;
@@ -1069,6 +1306,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     signal: globalController.signal,
                     requestId,
                     conversationContext,
+                    filters,
+                    coverage,
                 }),
             );
 
@@ -1077,12 +1316,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 question,
                 agentResult.answer,
                 agentResult.citations.map((c) => c.articleId),
+                buildCitationSnapshots(
+                    agentResult.citations,
+                    agentSnapshotSources(agentResult.articleMeta),
+                ),
             );
 
             const agentSourceArticles = agentResult.citations.map((c) => {
                 const meta = agentResult.articleMeta.get(c.articleId);
                 return {
                     id: c.articleId,
+                    contentRevisionId: meta?.contentRevisionId,
                     headline: c.headline,
                     editionDate: c.editionDate,
                     category: meta?.category ?? "",
@@ -1105,115 +1349,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 sessionId,
                 sourceArticles: agentSourceArticles,
                 meta: {
-                    retrievalTimeMs: 0,
-                    generationTimeMs: 0,
-                    totalTimeMs: Date.now() - agentStart,
+                    retrievalTimeMs: agentResult.retrievalTimeMs,
+                    generationTimeMs: agentResult.generationTimeMs,
+                    totalTimeMs: Date.now() - totalStart,
                     articlesSearched: agentResult.articleMeta.size,
-                    method: "hybrid",
+                    method: agentResult.retrievalMethod ?? "none",
                     reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
                     complexity,
                     agentSteps: agentResult.rounds,
                     agentToolCalls: agentResult.toolCallCount,
+                    ...retrievalIdentityMetadata(),
+                    ...coverageMetadata(coverage),
                 },
             };
             return NextResponse.json(response);
         }
 
-        // ── Cache check (pipeline path only; skipped when conversation
-        // history is in play to avoid cross-session context pollution).
-        const cachedResponse =
-            conversationHistory.length === 0
-                ? getCachedAnswer(question, body.filters)
-                : null;
-        if (cachedResponse) {
-            const overridden: AskResponse = {
-                ...cachedResponse,
-                requestId,
-                sessionId,
-                meta: {
-                    ...cachedResponse.meta,
-                    totalTimeMs: Date.now() - totalStart,
-                    cacheHit: true,
-                    complexity,
-                },
-            };
-            await persistTurnBounded(
-                sessionId,
-                question,
-                cachedResponse.answer,
-                cachedResponse.citations.map((c) => c.articleId),
-            );
-            return NextResponse.json(overridden);
-        }
-
-        // ── Step 2: Embed the reformulated query (pipeline path) ──
-        let questionEmbedding: number[];
-        try {
-            questionEmbedding = await embedQuery(embeddingQuery, {
-                signal: globalController.signal,
-            });
-        } catch (err) {
-            // Quota exhaustion is a distinct, retry-after-tomorrow case;
-            // surface as 429 so the client UI can show a useful message
-            // instead of an opaque "failed to process question". 0028.
-            if (err instanceof QuotaExhaustedError) {
-                console.warn(
-                    JSON.stringify({
-                        level: "warn",
-                        route: "/api/ask",
-                        requestId,
-                        stage: "embed",
-                        msg: "quota exhausted",
-                        err: err instanceof Error ? err.message : String(err),
-                    }),
-                );
-                return askErrorJson({
-                    status: 429,
-                    kind: "budget",
-                    message: "Daily AI quota reached. Please try again tomorrow.",
-                    retryAfterSec: 3600,
-                    cause: "quota_exhausted",
-                    stage: "embed",
-                    requestId,
-                });
-            }
-            console.error(
-                JSON.stringify({
-                    level: "error",
-                    route: "/api/ask",
-                    requestId,
-                    stage: "embed",
-                    msg: "embed failed",
-                    err: err instanceof Error ? err.message : String(err),
-                }),
-            );
-            return askErrorJson({
-                status: 502,
-                kind: "server",
-                message: "Failed to process question. Please try again.",
-                stage: "embed",
-                requestId,
-            });
-        }
-
-        // ── Step 3: Retrieve relevant articles (with timeout) ──
-        const retrievalStart = Date.now();
-        const filters = body.filters ?? {};
+        // ── Step 2: Retrieve independent lexical + vector signals ──
         let articles: RetrievedArticle[];
-        let method: "hybrid" | "vector" = "hybrid";
+        let method: RetrievalMethod = "hybrid";
+        let retrievalTimeMs = 0;
+        let retrievalIdentity = getRagRetrievalConfig();
         // Visual mode retrieves more candidates since we pre-filter to articles
         // with images (smaller pool, need wider net to find relevant photos)
         const retrievalLimit = mode === "visual" ? 30 : 20;
 
         const retrievalTimeoutMs =
             _testRetrievalTimeoutMsOverride ?? RETRIEVAL_TIMEOUT_MS;
-        const retrievalTimeout = new Promise<never>((_, reject) =>
-            setTimeout(
-                () => reject(new Error("Retrieval timeout")),
-                retrievalTimeoutMs,
-            ),
-        );
-
         // Adaptive vector/FTS weighting based on query mode:
         // Visual queries (conceptual "show me X") favor vector similarity (0.7)
         // Text queries (factual, often keyword-heavy) get more FTS weight (0.4)
@@ -1223,20 +1385,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const onlyWithImages = mode === "visual";
 
         try {
-            articles = await Promise.race([
-                hybridSearch(ftsQuery, questionEmbedding, {
-                    limit: retrievalLimit,
-                    category: filters.category ?? null,
-                    startDate: filters.startDate ?? null,
-                    endDate: filters.endDate ?? null,
-                    vectorWeight,
-                    onlyWithImages,
-                    signal: globalController.signal,
-                }),
-                retrievalTimeout,
-            ]);
+            const retrieval = await retrieveCandidates({
+                embeddingQuery,
+                ftsQuery,
+                limit: retrievalLimit,
+                filters,
+                vectorWeight,
+                onlyWithImages,
+                timeoutMs: retrievalTimeoutMs,
+                signal: globalController.signal,
+                requestId,
+            });
+            articles = retrieval.articles;
+            method = retrieval.method;
+            retrievalTimeMs = retrieval.retrievalTimeMs;
+            retrievalIdentity = retrieval.identity;
         } catch (err) {
-            if (err instanceof Error && err.message === "Retrieval timeout") {
+            const timeoutError = retrievalTimeout(err);
+            const quotaError = retrievalQuota(err);
+            if (
+                timeoutError ||
+                globalController.signal.aborted
+            ) {
                 return askErrorJson({
                     status: 504,
                     kind: "timeout",
@@ -1245,53 +1415,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     requestId,
                 });
             }
-            console.warn(
-                JSON.stringify({
-                    level: "warn",
-                    route: "/api/ask",
-                    requestId,
+            if (quotaError) {
+                return askErrorJson({
+                    status: 429,
+                    kind: "budget",
+                    message:
+                        "Vector quota was exhausted and full-text retrieval also failed. Please try again later.",
+                    retryAfterSec: 3600,
+                    cause: "quota_exhausted",
                     stage: "retrieve",
-                    msg: "hybrid search failed — falling back to vector-only",
-                    err: err instanceof Error ? err.message : String(err),
-                }),
-            );
-            method = "vector";
-            const fallbackTimeout = new Promise<never>((_, reject) =>
-                setTimeout(
-                    () => reject(new Error("Retrieval timeout")),
-                    retrievalTimeoutMs,
-                ),
-            );
-            try {
-                articles = await Promise.race([
-                    queryArticlesByEmbedding(questionEmbedding, {
-                        limit: retrievalLimit,
-                        category: filters.category ?? null,
-                        startDate: filters.startDate ?? null,
-                        endDate: filters.endDate ?? null,
-                        onlyWithImages,
-                        signal: globalController.signal,
-                    }),
-                    fallbackTimeout,
-                ]);
-            } catch (fallbackErr) {
-                if (fallbackErr instanceof Error && fallbackErr.message === "Retrieval timeout") {
-                    return NextResponse.json(
-                        {
-                            error: "Retrieval took too long. Please try again.",
-                            stage: "retrieve",
-                            requestId,
-                        },
-                        { status: 504 },
-                    );
-                }
-                // Re-throw with stage tag so the outer catch reports it correctly
-                throw new StageError("retrieve", fallbackErr);
+                    requestId,
+                });
             }
+            throw new StageError("retrieve", err);
         }
-        const retrievalTimeMs = Date.now() - retrievalStart;
 
-        // ── Step 4: Re-rank articles by relevance ──
+        // ── Step 3: Re-rank articles by relevance ──
         // Visual mode uses a lower threshold (3 = tangentially related) because
         // the user's goal is seeing photos, not precise answers — "somewhat related"
         // photos are still valuable. Text mode stays strict at 5.
@@ -1325,6 +1464,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                         conversationHistory.length > 0
                             ? formatHistoryForPrompt(conversationHistory)
                             : undefined,
+                    coverage,
                 }),
         );
         const generationTimeMs = Date.now() - generationStart;
@@ -1335,6 +1475,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             question,
             answer,
             citations.map((c) => c.articleId),
+            buildCitationSnapshots(citations, rankedArticles),
         );
 
         // ── Build response ──
@@ -1348,6 +1489,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             sessionId,
             sourceArticles: rankedArticles.map((a) => ({
                 id: a.id,
+                contentRevisionId: a.contentRevisionId,
                 headline: a.headline,
                 editionDate: a.editionDate,
                 category: a.category,
@@ -1367,11 +1509,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 method,
                 reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
                 complexity,
+                ...retrievalIdentityMetadata(retrievalIdentity),
+                ...coverageMetadata(coverage),
             },
         };
 
         if (conversationHistory.length === 0) {
-            setCachedAnswer(question, filters, response);
+            setCachedAnswer(question, body.filters, response);
         }
 
         return NextResponse.json(response);
@@ -1383,7 +1527,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // the same deadline behavior as the original.
     const racePromise = Promise.race([pipelinePromise, deadlinePromise]);
     const dedupEntry: DedupEntry = { promise: racePromise };
-    inFlightAsk.set(dedupId, dedupEntry);
+    if (!evaluationMode) inFlightAsk.set(dedupId, dedupEntry);
 
     try {
         return await racePromise;
@@ -1424,8 +1568,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 });
             }
             if (
-                err.cause instanceof Error &&
-                err.cause.message === "Retrieval timeout"
+                err.cause instanceof DbTimeoutError
             ) {
                 console.warn(
                     JSON.stringify({
@@ -1487,10 +1630,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // Auto-evict after TTL so a long-completed entry doesn't pin
         // memory. We don't delete immediately because slow concurrent
         // dups still need a window to read the cached body.
-        setTimeout(() => {
-            if (inFlightAsk.get(dedupId) === dedupEntry) {
-                inFlightAsk.delete(dedupId);
-            }
-        }, DEDUP_TTL_MS);
+        if (!evaluationMode) {
+            setTimeout(() => {
+                if (inFlightAsk.get(dedupId) === dedupEntry) {
+                    inFlightAsk.delete(dedupId);
+                }
+            }, DEDUP_TTL_MS);
+        }
     }
 }

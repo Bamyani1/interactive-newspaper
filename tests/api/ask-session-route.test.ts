@@ -15,7 +15,7 @@ import { NextRequest } from "next/server";
 vi.mock("@/src/lib/conversation-store", () => ({
     getConversationHistory: vi.fn(async () => []),
     sessionHasAnyTurns: vi.fn(async () => false),
-    deleteConversationTurns: vi.fn(async () => undefined),
+    deleteConversationTurns: vi.fn(async () => ({ ok: true })),
 }));
 
 vi.mock("@/src/lib/db", () => ({
@@ -193,6 +193,44 @@ describe("GET /api/ask/session", () => {
         expect(body.turns[0].sourceArticles[0].id).toBe("1960-01-07-0");
     });
 
+    it("hydrates from the pinned citation revision instead of a later article row", async () => {
+        (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+            {
+                question: "Q1",
+                answer: "Original answer",
+                citedArticleIds: ["1960-01-07-0"],
+                citationSnapshots: [
+                    {
+                        articleId: "1960-01-07-0",
+                        contentRevisionId: "legacy-sha256:original",
+                        headline: "Original headline",
+                        editionDate: "1960-01-07",
+                        category: "News",
+                        summary: "Original summary",
+                        byline: "Original writer",
+                        bodySnippet: "Original body",
+                        evidenceSnippet: "Original cited evidence",
+                        imageUrls: [],
+                        imageCaptions: [],
+                    },
+                ],
+                timestamp: 1_700_000_000_000,
+            },
+        ]);
+
+        const response = await GET(makeRequest("pinned-sid"));
+        const body = await response.json();
+
+        expect(fetchArticlesByIds).toHaveBeenCalledWith([]);
+        expect(body.turns[0].sourceArticles[0]).toMatchObject({
+            id: "1960-01-07-0",
+            contentRevisionId: "legacy-sha256:original",
+            headline: "Original headline",
+            summary: "Original summary",
+            bodySnippet: "Original body",
+        });
+    });
+
     it("returns empty body without probing when sessionId is missing", async () => {
         const response = await GET(makeRequest(undefined));
         const body = await response.json();
@@ -217,6 +255,9 @@ describe("GET /api/ask/session", () => {
 describe("DELETE /api/ask/session", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        (
+            deleteConversationTurns as ReturnType<typeof vi.fn>
+        ).mockResolvedValue({ ok: true });
     });
 
     it("wipes the session's turns and returns 204", async () => {
@@ -225,6 +266,19 @@ describe("DELETE /api/ask/session", () => {
         expect(response.status).toBe(204);
         expect(deleteConversationTurns).toHaveBeenCalledTimes(1);
         expect(deleteConversationTurns).toHaveBeenCalledWith("sid-to-clear");
+    });
+
+    it("returns 500 with an error body when the store reports a failed delete", async () => {
+        (
+            deleteConversationTurns as ReturnType<typeof vi.fn>
+        ).mockResolvedValue({ ok: false, error: "neon down" });
+
+        const response = await DELETE(makeRequest("sid-to-clear", "DELETE"));
+
+        expect(response.status).toBe(500);
+        await expect(response.json()).resolves.toEqual({
+            error: "failed to delete conversation",
+        });
     });
 
     it("is a no-op 204 when sessionId is missing (no DB call)", async () => {

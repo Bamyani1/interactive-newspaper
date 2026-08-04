@@ -1,3 +1,10 @@
+-- FROZEN FIXTURE - legacy production baseline shape for upgrade testing.
+-- Never regenerate or edit: upgrade-path tests migrate this exact shape.
+-- Source: commit b59e1ef scripts/db/schema.sql, plus the three one-off
+-- runtime tables as production has them (migrate-ask-sessions.mjs WITHOUT
+-- the citation_snapshots column, migrate-ai-spend-counter.mjs,
+-- migrate-api-rate-bucket.mjs).
+
 -- The Transcript Archive — PostgreSQL Schema
 -- Designed for Neon serverless PostgreSQL
 -- Run via: npm run db:seed (or db:reset to drop + recreate)
@@ -142,3 +149,40 @@ DO $$ BEGIN
     FOR EACH ROW EXECUTE FUNCTION articles_search_vector_update();
   END IF;
 END $$;
+
+-- ─── One-off runtime tables (migrate-ask-sessions.mjs, pre-citation_snapshots) ───
+
+CREATE TABLE IF NOT EXISTS ask_session_turns (
+  id                 BIGSERIAL PRIMARY KEY,
+  session_id         TEXT NOT NULL,
+  question           TEXT NOT NULL,
+  answer             TEXT NOT NULL,
+  cited_article_ids  TEXT[] NOT NULL DEFAULT '{}',
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ask_session_turns_session_created
+ON ask_session_turns(session_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ask_session_turns_created
+ON ask_session_turns(created_at DESC);
+
+-- ─── One-off runtime table (migrate-ai-spend-counter.mjs) ────────
+
+CREATE TABLE IF NOT EXISTS ai_spend_counter (
+  day         DATE PRIMARY KEY,
+  spent_usd   NUMERIC(12, 6) NOT NULL DEFAULT 0,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ─── One-off runtime table (migrate-api-rate-bucket.mjs) ─────────
+
+CREATE TABLE IF NOT EXISTS api_rate_bucket (
+  key         TEXT PRIMARY KEY,
+  count       INTEGER NOT NULL DEFAULT 0,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_rate_bucket_expires
+ON api_rate_bucket(expires_at);

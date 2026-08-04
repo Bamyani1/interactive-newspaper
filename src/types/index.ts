@@ -158,8 +158,23 @@ export interface OcrEdition {
 
 export interface Citation {
     articleId: string;
+    contentRevisionId?: string;
     headline: string;
     editionDate: string;
+}
+
+export interface CitationSnapshot {
+    articleId: string;
+    contentRevisionId: string;
+    headline: string;
+    editionDate: string;
+    category: string;
+    summary: string;
+    byline: string | null;
+    bodySnippet: string;
+    evidenceSnippet: string;
+    imageUrls: string[];
+    imageCaptions: (string | null)[];
 }
 
 export interface AskResponse {
@@ -177,6 +192,7 @@ export interface AskResponse {
     sessionId?: string;
     sourceArticles: {
         id: string;
+        contentRevisionId?: string;
         headline: string;
         editionDate: string;
         category: string;
@@ -193,12 +209,29 @@ export interface AskResponse {
         generationTimeMs: number;
         totalTimeMs: number;
         articlesSearched: number;
-        method: "hybrid" | "vector";
+        method: "hybrid" | "fts" | "vector" | "none";
         reformulatedQuery?: string;
         complexity?: "simple" | "complex";
         agentSteps?: number;
         agentToolCalls?: number;
         cacheHit?: boolean;
+        corpusVersion?: string;
+        indexBuildId?: string | null;
+        pipelineVersion?: string;
+        embeddingModel?: string;
+        textEmbeddingInputVersion?: string;
+        imageEmbeddingInputVersion?: string;
+        retrievalTarget?: "legacy" | "versioned";
+        coverage?: {
+            intent: "absence" | "count" | "exhaustive";
+            editionCount: number;
+            articleCount: number;
+            earliestEditionDate: string | null;
+            latestEditionDate: string | null;
+            requestedStartDate?: string;
+            requestedEndDate?: string;
+            category?: string;
+        };
     };
 }
 

@@ -40,7 +40,7 @@ const mockResponse: AskResponse = {
             bodySnippet: "Body...",
             distance: 0.25,
             imageUrls: [],
-        },
+        } as unknown as AskResponse["sourceArticles"][number],
     ],
     meta: {
         retrievalTimeMs: 100,

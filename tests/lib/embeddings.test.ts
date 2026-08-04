@@ -24,6 +24,10 @@ import {
   EmbedTimeoutError,
   QuotaExhaustedError,
   _setQuotaRetryDelaysForTests,
+  _clearQueryEmbeddingCacheForTests,
+  embeddingInputFingerprint,
+  EMBEDDING_INPUT_VERSION,
+  IMAGE_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/embeddings";
 
 describe("buildEmbeddingText", () => {
@@ -134,7 +138,7 @@ describe("embedDocuments", () => {
       contents: Array<{ parts: Array<{ text: string }> }>;
       config: { outputDimensionality: number; abortSignal?: AbortSignal };
     };
-    expect(call.model).toBe("gemini-embedding-2-preview");
+    expect(call.model).toBe("gemini-embedding-2");
     expect(call.contents).toHaveLength(2);
     expect(call.contents[0].parts[0].text).toBe("first");
     // Step 2 wraps the call with AbortController, so the signal must be passed
@@ -427,6 +431,28 @@ describe("embedDocuments", () => {
   });
 });
 
+describe("embedding input identity", () => {
+  it("versions text chunks and image inputs separately", () => {
+    expect(EMBEDDING_INPUT_VERSION).toBe("article-chunk-v1");
+    expect(IMAGE_EMBEDDING_INPUT_VERSION).toBe("article-image-v1");
+  });
+
+  it("changes the fingerprint when canonical text, image bytes, or version changes", () => {
+    const base = { text: "title: One | text: Body" };
+    const first = embeddingInputFingerprint(base);
+    expect(embeddingInputFingerprint(base)).toBe(first);
+    expect(embeddingInputFingerprint({ text: `${base.text}.` })).not.toBe(first);
+    expect(embeddingInputFingerprint(base, "article-chunk-v2")).not.toBe(first);
+    expect(
+      embeddingInputFingerprint({
+        ...base,
+        imageBase64: "different-bytes",
+        imageMimeType: "image/jpeg",
+      }),
+    ).not.toBe(first);
+  });
+});
+
 // ─── embedQuery ─────────────────────────────────────────────────
 // embedQuery has its own error-conversion try/catch separate from
 // embedWithTimeout (it rolls its own timer). These tests cover the
@@ -436,11 +462,27 @@ describe("embedDocuments", () => {
 
 describe("embedQuery", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
+    _clearQueryEmbeddingCacheForTests();
     // mockReset clears both history AND any leaked mockImplementation from
     // the embedDocuments block (notably the persistent mixed-batch impl).
     // clearAllMocks only clears history, so queued mockRejectedValueOnce
     // calls would otherwise fall back to a stale impl after one call.
     mockEmbedContent.mockReset();
+  });
+
+  it("bypasses the query embedding cache in evaluation mode", async () => {
+    vi.stubEnv("RAG_EVALUATION_MODE", "1");
+    vi.stubEnv("RAG_EVALUATION_RUN_ID", "embedding-cache-test");
+    vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
+    mockEmbedContent.mockResolvedValue({
+      embeddings: [{ values: makeFakeVector(7) }],
+    });
+
+    await embedQuery("repeat exactly");
+    await embedQuery("repeat exactly");
+
+    expect(mockEmbedContent).toHaveBeenCalledTimes(2);
   });
 
   it("throws immediately when signal is pre-aborted (no SDK call)", async () => {

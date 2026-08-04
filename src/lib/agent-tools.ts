@@ -1,19 +1,21 @@
 import { Type } from "@google/genai";
-import { neon } from "@neondatabase/serverless";
-import type { NeonQueryFunction } from "@neondatabase/serverless";
-import { hybridSearch, queryEditions } from "@/src/lib/db";
-import { embedQuery } from "@/src/lib/embeddings";
+import {
+  fetchArticleForRag,
+  queryEditions,
+} from "@/src/lib/db";
+import { searchAndRankArchive } from "@/src/lib/retrieval";
+import type { RetrievalFilters } from "@/src/lib/retrieval";
 
-// R2 keys can contain spaces; encode them so the LLM can embed these URLs
-// inside markdown `![](...)` without the parser choking on the space.
+const CATEGORIES = [
+  "Campus News",
+  "News",
+  "Sports",
+  "Arts & Entertainment",
+  "Opinion",
+] as const;
+
 function mdSafeUrls(urls: string[]): string[] {
-    return urls.map((u) => u.replace(/ /g, "%20"));
-}
-
-let _sql: NeonQueryFunction<false, false> | null = null;
-function getSql() {
-    if (!_sql) _sql = neon(process.env.DATABASE_URL!);
-    return _sql;
+  return urls.map((url) => url.replace(/ /g, "%20"));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,181 +23,248 @@ export const AGENT_TOOL_DECLARATIONS: any[] = [
   {
     name: "search_archive",
     description:
-      "Search the Ohio Wesleyan Transcript newspaper archive (1950-2006, 11705 articles). " +
-      "Uses hybrid vector + full-text search. Returns matching articles ranked by relevance.",
+      "Search the Ohio Wesleyan Transcript newspaper archive (1950-2006). " +
+      "Uses the same reformulation, chunk/image retrieval, reranking, and corrective retry as the main RAG path.",
     parameters: {
       type: Type.OBJECT,
       properties: {
-        query: {
-          type: Type.STRING,
-          description: "Natural-language search query",
-        },
-        startDate: {
-          type: Type.STRING,
-          description: "Earliest edition date to include (YYYY-MM-DD)",
-        },
-        endDate: {
-          type: Type.STRING,
-          description: "Latest edition date to include (YYYY-MM-DD)",
-        },
+        query: { type: Type.STRING, description: "Natural-language search query" },
+        startDate: { type: Type.STRING, description: "Earliest edition date (YYYY-MM-DD)" },
+        endDate: { type: Type.STRING, description: "Latest edition date (YYYY-MM-DD)" },
         category: {
           type: Type.STRING,
           description: "Filter by article category",
-          enum: [
-            "Campus News",
-            "News",
-            "Sports",
-            "Arts & Entertainment",
-            "Opinion",
-          ],
+          enum: [...CATEGORIES],
         },
-        limit: {
-          type: Type.NUMBER,
-          description: "Max results to return (default 10, max 20)",
-        },
+        limit: { type: Type.NUMBER, description: "Maximum results (1-20, default 10)" },
       },
       required: ["query"],
     },
   },
   {
     name: "read_article",
-    description:
-      "Retrieve the full text of a single article by its ID. " +
-      "Use after search_archive to read an article in full.",
+    description: "Retrieve the complete text of an article returned by search_archive.",
     parameters: {
       type: Type.OBJECT,
       properties: {
-        articleId: {
-          type: Type.STRING,
-          description: "The article ID returned by search_archive",
-        },
+        articleId: { type: Type.STRING, description: "Article ID returned by search_archive" },
       },
       required: ["articleId"],
     },
   },
   {
     name: "list_editions",
-    description:
-      "List available newspaper editions (dates) with article counts. " +
-      "Useful for browsing what dates are in the archive or narrowing a date range.",
+    description: "List archive edition dates with pagination and article counts.",
     parameters: {
       type: Type.OBJECT,
       properties: {
-        startDate: {
-          type: Type.STRING,
-          description: "Earliest date to include (YYYY-MM-DD)",
-        },
-        endDate: {
-          type: Type.STRING,
-          description: "Latest date to include (YYYY-MM-DD)",
-        },
+        startDate: { type: Type.STRING, description: "Earliest date (YYYY-MM-DD)" },
+        endDate: { type: Type.STRING, description: "Latest date (YYYY-MM-DD)" },
+        offset: { type: Type.NUMBER, description: "Pagination offset (default 0)" },
+        limit: { type: Type.NUMBER, description: "Page size (1-100, default 50)" },
       },
     },
   },
 ];
 
-async function executeSearchArchive(
-  args: Record<string, unknown>,
-  opts?: { signal?: AbortSignal },
-): Promise<Record<string, unknown>> {
-  const query = args.query as string;
-  const startDate = (args.startDate as string) ?? undefined;
-  const endDate = (args.endDate as string) ?? undefined;
-  const category = (args.category as string) ?? undefined;
-  const rawLimit = (args.limit as number) ?? 10;
-  const limit = Math.max(1, Math.min(rawLimit, 20));
+class ToolArgumentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ToolArgumentError";
+  }
+}
 
-  const embedding = await embedQuery(query, { signal: opts?.signal });
-  const results = await hybridSearch(query, embedding, {
-    limit,
+function optionalString(args: Record<string, unknown>, key: string): string | undefined {
+  const value = args[key];
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string") throw new ToolArgumentError(`${key} must be a string`);
+  return value.trim();
+}
+
+function requiredString(args: Record<string, unknown>, key: string, maxLength = 500): string {
+  const value = optionalString(args, key);
+  if (!value) throw new ToolArgumentError(`${key} is required`);
+  if (value.length > maxLength) throw new ToolArgumentError(`${key} is too long`);
+  return value;
+}
+
+function dateArg(args: Record<string, unknown>, key: string): string | undefined {
+  const value = optionalString(args, key);
+  if (!value) return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new ToolArgumentError(`${key} must use YYYY-MM-DD`);
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || !parsed.toISOString().startsWith(value)) {
+    throw new ToolArgumentError(`${key} is not a real date`);
+  }
+  return value;
+}
+
+function boundedInteger(
+  args: Record<string, unknown>,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const value = args[key];
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new ToolArgumentError(`${key} must be an integer`);
+  }
+  return Math.max(min, Math.min(max, value));
+}
+
+function dateRange(args: Record<string, unknown>) {
+  const startDate = dateArg(args, "startDate");
+  const endDate = dateArg(args, "endDate");
+  if (startDate && endDate && startDate > endDate) {
+    throw new ToolArgumentError("startDate must not be after endDate");
+  }
+  return { startDate, endDate };
+}
+
+function constrainedFilters(
+  requested: { startDate?: string; endDate?: string; category?: string },
+  enforced: RetrievalFilters | undefined,
+): RetrievalFilters {
+  const startDates = [requested.startDate, enforced?.startDate].filter(
+    (value): value is string => Boolean(value),
+  );
+  const endDates = [requested.endDate, enforced?.endDate].filter(
+    (value): value is string => Boolean(value),
+  );
+  const startDate = startDates.sort().at(-1);
+  const endDate = endDates.sort().at(0);
+  if (startDate && endDate && startDate > endDate) {
+    throw new ToolArgumentError("tool date range falls outside the enforced archive filters");
+  }
+  return {
     startDate,
     endDate,
-    category,
-    signal: opts?.signal,
+    category: enforced?.category ?? requested.category,
+  };
+}
+
+async function executeSearchArchive(
+  args: Record<string, unknown>,
+  opts: { signal?: AbortSignal; requestId?: string; filters?: RetrievalFilters },
+): Promise<Record<string, unknown>> {
+  const query = requiredString(args, "query");
+  const requestedDates = dateRange(args);
+  const category = optionalString(args, "category");
+  if (category && !CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
+    throw new ToolArgumentError("category is not supported");
+  }
+  const filters = constrainedFilters(
+    { ...requestedDates, category },
+    opts.filters,
+  );
+  const limit = boundedInteger(args, "limit", 10, 1, 20);
+  const retrieval = await searchAndRankArchive({
+    question: query,
+    filters,
+    maxArticles: limit,
+    signal: opts.signal,
+    requestId: opts.requestId,
   });
 
   return {
-    results: results.map((r) => ({
-      id: r.id,
-      headline: r.headline,
-      editionDate: r.editionDate,
-      category: r.category,
-      summary: r.summary,
-      excerpt: r.bodyPlain.slice(0, 500),
-      imageUrls: mdSafeUrls(r.imageUrls),
-      imageCaptions: r.imageCaptions,
+    results: retrieval.articles.map((article) => ({
+      id: article.id,
+      headline: article.headline,
+      editionDate: article.editionDate,
+      category: article.category,
+      summary: article.summary,
+      byline: article.byline,
+      relevantPassages: article.matchedPassages ?? [],
+      excerpt:
+        article.matchedPassages?.join("\n\n") ||
+        article.summary ||
+        article.bodyPlain,
+      relevanceScore: article.relevanceScore,
+      contentRevisionId: article.contentRevisionId,
+      imageUrls: mdSafeUrls(article.imageUrls),
+      imageCaptions: article.imageCaptions ?? [],
     })),
+    retrieval: {
+      candidates: retrieval.candidates,
+      method: retrieval.method,
+      mode: retrieval.mode,
+      elapsedMs: retrieval.retrievalTimeMs,
+    },
   };
 }
 
 async function executeReadArticle(
   args: Record<string, unknown>,
+  opts: { signal?: AbortSignal; filters?: RetrievalFilters },
 ): Promise<Record<string, unknown>> {
-  const articleId = args.articleId as string;
-
-  const rows = await getSql()`
-    SELECT id, edition_date, category, headline, summary, byline,
-           body_plain, image_urls, image_captions
-    FROM articles
-    WHERE id = ${articleId}
-  `;
-
-  if (rows.length === 0) {
-    return { error: "Article not found" };
+  const articleId = requiredString(args, "articleId", 100);
+  if (!/^\d{4}-\d{2}-\d{2}-\d+$/.test(articleId)) {
+    throw new ToolArgumentError("articleId has an invalid format");
   }
-
-  const r = rows[0];
+  const article = await fetchArticleForRag(articleId, { signal: opts.signal });
+  if (!article) return { error: "Article not found" };
+  if (
+    (opts.filters?.startDate && article.editionDate < opts.filters.startDate) ||
+    (opts.filters?.endDate && article.editionDate > opts.filters.endDate) ||
+    (opts.filters?.category && article.category !== opts.filters.category)
+  ) {
+    return { error: "Article falls outside the enforced archive filters" };
+  }
   return {
-    id: r.id,
-    editionDate: r.edition_date,
-    category: r.category,
-    headline: r.headline,
-    summary: r.summary,
-    byline: r.byline ?? null,
-    bodyPlain: r.body_plain,
-    imageUrls: mdSafeUrls(r.image_urls ?? []),
-    imageCaptions: r.image_captions ?? [],
+    id: article.id,
+    editionDate: article.editionDate,
+    category: article.category,
+    headline: article.headline,
+    summary: article.summary,
+    byline: article.byline,
+    bodyPlain: article.bodyPlain,
+    contentRevisionId: article.contentRevisionId,
+    imageUrls: mdSafeUrls(article.imageUrls),
+    imageCaptions: article.imageCaptions ?? [],
   };
 }
 
 async function executeListEditions(
   args: Record<string, unknown>,
+  opts: { signal?: AbortSignal; filters?: RetrievalFilters },
 ): Promise<Record<string, unknown>> {
-  const startDate = (args.startDate as string) ?? undefined;
-  const endDate = (args.endDate as string) ?? undefined;
-
-  const { editions } = await queryEditions({
-    startDate,
-    endDate,
-    limit: 50,
-  });
-
+  const { startDate, endDate } = constrainedFilters(dateRange(args), opts.filters);
+  const offset = boundedInteger(args, "offset", 0, 0, 100_000);
+  const limit = boundedInteger(args, "limit", 50, 1, 100);
+  const result = await queryEditions({ startDate, endDate, offset, limit, signal: opts.signal });
   return {
-    editions: editions.map((e) => ({
-      date: e.date,
-      articleCount: e.articleCount,
+    editions: result.editions.map((edition) => ({
+      date: edition.date,
+      articleCount: edition.articleCount,
     })),
+    pagination: result.pagination,
   };
 }
 
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
-  opts?: { signal?: AbortSignal },
+  opts: { signal?: AbortSignal; requestId?: string; filters?: RetrievalFilters } = {},
 ): Promise<Record<string, unknown>> {
   try {
     switch (name) {
       case "search_archive":
         return await executeSearchArchive(args, opts);
       case "read_article":
-        return await executeReadArticle(args);
+        return await executeReadArticle(args, opts);
       case "list_editions":
-        return await executeListEditions(args);
+        return await executeListEditions(args, opts);
       default:
         return { error: `Unknown tool: ${name}` };
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { error: message };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error),
+      ...(error instanceof ToolArgumentError ? { kind: "invalid_arguments" } : {}),
+    };
   }
 }

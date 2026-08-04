@@ -13,6 +13,14 @@
 
 import { createHash } from "crypto";
 import type { AskResponse } from "@/src/types";
+import {
+    RAG_ANSWER_MODEL,
+    RAG_EMBEDDING_MODEL,
+    RAG_GENERATION_MODEL,
+    RAG_PIPELINE_VERSION,
+} from "@/src/lib/rag-model-config";
+import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
+import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 
 const MAX_ENTRIES = 200;
 const TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -27,13 +35,28 @@ const cache = new Map<string, CacheEntry>();
 function makeKey(question: string, filters?: unknown): string {
     const normalized = question.trim().toLowerCase();
     const filtersJson = JSON.stringify(filters ?? {});
-    return createHash("sha256").update(`${normalized}|${filtersJson}`).digest("hex");
+    const corpusVersion = process.env.RAG_CORPUS_VERSION ?? "default";
+    return createHash("sha256")
+        .update(
+            [
+                RAG_PIPELINE_VERSION,
+                RAG_GENERATION_MODEL,
+                RAG_ANSWER_MODEL,
+                RAG_EMBEDDING_MODEL,
+                corpusVersion,
+                getRagRetrievalConfig().cacheIdentity,
+                normalized,
+                filtersJson,
+            ].join("|"),
+        )
+        .digest("hex");
 }
 
 export function getCachedAnswer(
     question: string,
     filters?: unknown,
 ): AskResponse | null {
+    if (isRagEvaluationMode()) return null;
     const key = makeKey(question, filters);
     const entry = cache.get(key);
     if (!entry) return null;
@@ -52,6 +75,7 @@ export function setCachedAnswer(
     filters: unknown,
     response: AskResponse,
 ): void {
+    if (isRagEvaluationMode()) return;
     if (response.confidence === "low") return;
     if (response.meta?.complexity === "complex") return;
 

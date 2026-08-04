@@ -47,6 +47,7 @@ const validBody = {
 
 describe("POST /api/ask/feedback", () => {
     beforeEach(() => {
+        vi.unstubAllEnvs();
         vi.clearAllMocks();
         mockSql.mockResolvedValue(undefined);
     });
@@ -69,6 +70,20 @@ describe("POST /api/ask/feedback", () => {
         );
         expect(response.status).toBe(201);
         expect(mockSql).toHaveBeenCalledTimes(1);
+    });
+
+    it("validates but does not persist feedback in evaluation mode", async () => {
+        vi.stubEnv("RAG_EVALUATION_MODE", "1");
+        const response = await POST(
+            makeRequest(validBody) as unknown as Parameters<typeof POST>[0],
+        );
+        expect(response.status).toBe(202);
+        await expect(response.json()).resolves.toMatchObject({
+            ok: true,
+            persisted: false,
+            evaluationMode: true,
+        });
+        expect(mockSql).not.toHaveBeenCalled();
     });
 
     it("rejects an invalid JSON body with 400", async () => {
@@ -157,6 +172,47 @@ describe("POST /api/ask/feedback", () => {
         // confidence is the 4th interpolated value
         expect(values[3]).toBeNull();
     });
+
+    it("accepts a citation with a valid contentRevisionId and persists it in the INSERT", async () => {
+        const citation = {
+            articleId: "1965-01-07-0",
+            headline: "Test",
+            editionDate: "1965-01-07",
+            contentRevisionId: "legacy-sha256:abc_DEF-123",
+        };
+        const response = await POST(
+            makeRequest({ ...validBody, citations: [citation] }) as unknown as Parameters<typeof POST>[0],
+        );
+        expect(response.status).toBe(201);
+        // citations is the 6th interpolated value (request_id, question,
+        // answer, confidence, mode, citations, vote, comment).
+        const [, ...values] = mockSql.mock.calls[0];
+        expect(JSON.parse(values[5] as string)).toEqual([citation]);
+    });
+
+    it.each([
+        ["object", { pin: true }],
+        ["300-char string", "a".repeat(300)],
+        ["bad charset", "rev id!with spaces/slashes"],
+    ])(
+        "rejects a citation whose contentRevisionId is malformed (%s)",
+        async (_label, contentRevisionId) => {
+            const citation = {
+                articleId: "1965-01-07-0",
+                headline: "Test",
+                editionDate: "1965-01-07",
+                contentRevisionId,
+            };
+            const response = await POST(
+                makeRequest({ ...validBody, citations: [citation] }) as unknown as Parameters<typeof POST>[0],
+            );
+            // Invalid citations don't fail the request — like other invalid
+            // citations today, the citations array falls back to [].
+            expect(response.status).toBe(201);
+            const [, ...values] = mockSql.mock.calls[0];
+            expect(JSON.parse(values[5] as string)).toEqual([]);
+        },
+    );
 
     it("returns 500 when the DB insert fails", async () => {
         mockSql.mockRejectedValueOnce(new Error("connection refused"));

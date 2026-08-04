@@ -13,7 +13,11 @@
  * to zero rather than failing the user's request.
  */
 
+import { createHash, randomBytes } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
+import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
+import type { CitationSnapshot } from "@/src/types";
+import { isCitationSnapshot } from "@/src/lib/citation-snapshot";
 
 const MAX_TURNS = 5;
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -27,10 +31,27 @@ export interface ConversationTurn {
     question: string;
     answer: string;
     citedArticleIds: string[];
+    citationSnapshots: CitationSnapshot[];
     timestamp: number;
 }
 
+// Live evaluations need multi-turn behavior without persisting user-like test
+// content. The store is process-local, TTL-bound, and cleared between runs.
+const evaluationSessions = new Map<string, ConversationTurn[]>();
+
+function liveEvaluationTurns(sessionId: string): ConversationTurn[] {
+    const cutoff = Date.now() - TTL_MS;
+    const turns = (evaluationSessions.get(sessionId) ?? []).filter(
+        (turn) => turn.timestamp >= cutoff,
+    );
+    if (turns.length === 0) evaluationSessions.delete(sessionId);
+    else evaluationSessions.set(sessionId, turns);
+    return turns;
+}
+
 let _sql: ReturnType<typeof neon> | null = null;
+let citationSnapshotColumn: { value: boolean; checkedAt: number } | null = null;
+const SCHEMA_PROBE_TTL_MS = 30_000;
 function getSql(): ReturnType<typeof neon> | null {
     if (_sql !== null) return _sql;
     const url = process.env.DATABASE_URL;
@@ -39,23 +60,75 @@ function getSql(): ReturnType<typeof neon> | null {
     return _sql;
 }
 
+async function hasCitationSnapshotColumn(
+    sql: ReturnType<typeof neon>,
+): Promise<boolean> {
+    if (
+        citationSnapshotColumn &&
+        Date.now() - citationSnapshotColumn.checkedAt < SCHEMA_PROBE_TTL_MS
+    ) {
+        return citationSnapshotColumn.value;
+    }
+    try {
+        const rows = (await sql`
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'ask_session_turns'
+                  AND column_name = 'citation_snapshots'
+            ) AS exists
+        `) as Array<{ exists: boolean }>;
+        const value = Boolean(rows[0]?.exists);
+        citationSnapshotColumn = { value, checkedAt: Date.now() };
+        return value;
+    } catch {
+        // A probe failure must not drop an otherwise valid conversation turn.
+        // Fall back to the legacy insert and retry the probe after the TTL.
+        citationSnapshotColumn = { value: false, checkedAt: Date.now() };
+        return false;
+    }
+}
+
 export function newSessionId(): string {
-    // Keep the old short-id format for log greppability; uuid would also
-    // work but existing log tooling expects the compact form.
-    return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    // 32 bytes of CSPRNG entropy, base64url-encoded (43 chars). Fits the
+    // client contract (^[A-Za-z0-9_-]{1,128}$) and is unguessable, unlike
+    // the previous Math.random()-derived short id.
+    return randomBytes(32).toString("base64url");
+}
+
+/**
+ * Session tokens are hashed-at-rest: every SQL touchpoint that reads or
+ * writes ask_session_turns.session_id passes this sha256 hex digest, so
+ * the client-held plaintext token never reaches the database. Rows
+ * written before this cutover hold plaintext session ids and simply
+ * stop matching hashed lookups; they age out naturally via the
+ * 30-minute TTL window and the piggybacked retention sweep.
+ */
+function hashSessionToken(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
 }
 
 export async function getConversationHistory(
     sessionId: string,
 ): Promise<ConversationTurn[]> {
+    if (isRagEvaluationMode()) {
+        return liveEvaluationTurns(sessionId).slice(-MAX_TURNS);
+    }
     const sql = getSql();
     if (!sql) return [];
+    const sessionKey = hashSessionToken(sessionId);
     const sinceIso = new Date(Date.now() - TTL_MS).toISOString();
     try {
         const rows = (await sql`
-            SELECT question, answer, cited_article_ids, created_at
+            SELECT question, answer, cited_article_ids,
+                   COALESCE(
+                     to_jsonb(ask_session_turns)->'citation_snapshots',
+                     '[]'::jsonb
+                   ) AS citation_snapshots,
+                   created_at
             FROM ask_session_turns
-            WHERE session_id = ${sessionId}
+            WHERE session_id = ${sessionKey}
               AND created_at >= ${sinceIso}
             ORDER BY created_at DESC
             LIMIT ${MAX_TURNS}
@@ -63,6 +136,7 @@ export async function getConversationHistory(
             question: string;
             answer: string;
             cited_article_ids: string[] | null;
+            citation_snapshots: unknown;
             created_at: string | Date;
         }>;
         // DB returns most-recent-first; reverse so callers see
@@ -71,6 +145,9 @@ export async function getConversationHistory(
             question: r.question,
             answer: r.answer,
             citedArticleIds: r.cited_article_ids ?? [],
+            citationSnapshots: Array.isArray(r.citation_snapshots)
+                ? r.citation_snapshots.filter(isCitationSnapshot)
+                : [],
             timestamp:
                 r.created_at instanceof Date
                     ? r.created_at.getTime()
@@ -95,9 +172,8 @@ export async function addConversationTurn(
     question: string,
     answer: string,
     citedArticleIds: string[],
+    citationSnapshots: CitationSnapshot[] = [],
 ): Promise<void> {
-    const sql = getSql();
-    if (!sql) return;
     const stored =
         answer.length > ANSWER_TRUNCATE_CHARS
             ? answer.slice(
@@ -105,13 +181,51 @@ export async function addConversationTurn(
                   ANSWER_TRUNCATE_CHARS - TRUNCATION_MARKER.length,
               ) + TRUNCATION_MARKER
             : answer;
+    if (isRagEvaluationMode()) {
+        const turns = liveEvaluationTurns(sessionId);
+        turns.push({
+            question,
+            answer: stored,
+            citedArticleIds: [...citedArticleIds],
+            citationSnapshots: citationSnapshots.map((snapshot) => ({ ...snapshot })),
+            timestamp: Date.now(),
+        });
+        evaluationSessions.set(sessionId, turns.slice(-MAX_TURNS));
+        return;
+    }
+    const sql = getSql();
+    if (!sql) return;
+    const sessionKey = hashSessionToken(sessionId);
+    const cutoffIso = new Date(Date.now() - TTL_MS).toISOString();
     try {
-        await sql`
-            INSERT INTO ask_session_turns
-              (session_id, question, answer, cited_article_ids)
-            VALUES
-              (${sessionId}, ${question}, ${stored}, ${citedArticleIds})
-        `;
+        const snapshotColumnAvailable = await hasCitationSnapshotColumn(sql);
+        const insert = snapshotColumnAvailable
+            ? sql`
+                INSERT INTO ask_session_turns
+                  (session_id, question, answer, cited_article_ids, citation_snapshots)
+                VALUES
+                  (${sessionKey}, ${question}, ${stored}, ${citedArticleIds}, ${JSON.stringify(citationSnapshots)}::jsonb)
+            `
+            : sql`
+                INSERT INTO ask_session_turns
+                  (session_id, question, answer, cited_article_ids)
+                VALUES
+                  (${sessionKey}, ${question}, ${stored}, ${citedArticleIds})
+            `;
+        await sql.transaction([
+            insert,
+            sql`DELETE FROM ask_session_turns WHERE created_at < ${cutoffIso}`,
+            sql`
+                DELETE FROM ask_session_turns
+                WHERE session_id = ${sessionKey}
+                  AND id NOT IN (
+                    SELECT id FROM ask_session_turns
+                    WHERE session_id = ${sessionKey}
+                    ORDER BY created_at DESC
+                    LIMIT ${MAX_TURNS}
+                  )
+            `,
+        ]);
     } catch (err) {
         console.warn(
             JSON.stringify({
@@ -125,32 +239,44 @@ export async function addConversationTurn(
     }
 }
 
+export type DeleteConversationTurnsResult =
+    | { ok: true }
+    | { ok: false; error: string };
+
 /**
  * Wipes every stored turn for a session. Used by the "Clear
  * conversation" button so the server doesn't keep the transcript
- * around until its 30-minute TTL. Best-effort: a DB failure only
- * means the old rows linger and age out naturally.
+ * around until its 30-minute TTL. Never throws; instead reports the
+ * outcome so callers can decide whether to surface a failure. Deleting
+ * zero rows is a success — the session was already gone.
  */
 export async function deleteConversationTurns(
     sessionId: string,
-): Promise<void> {
+): Promise<DeleteConversationTurnsResult> {
+    if (isRagEvaluationMode()) {
+        evaluationSessions.delete(sessionId);
+        return { ok: true };
+    }
     const sql = getSql();
-    if (!sql) return;
+    if (!sql) return { ok: true };
     try {
         await sql`
             DELETE FROM ask_session_turns
-            WHERE session_id = ${sessionId}
+            WHERE session_id = ${hashSessionToken(sessionId)}
         `;
+        return { ok: true };
     } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
         console.warn(
             JSON.stringify({
                 level: "warn",
                 module: "conversation-store",
                 op: "deleteConversationTurns",
                 msg: "db delete failed; session will age out via TTL",
-                err: err instanceof Error ? err.message : String(err),
+                err: error,
             }),
         );
+        return { ok: false, error };
     }
 }
 
@@ -161,13 +287,16 @@ export async function deleteConversationTurns(
  * expired' banner instead of a silent empty state.
  */
 export async function sessionHasAnyTurns(sessionId: string): Promise<boolean> {
+    if (isRagEvaluationMode()) {
+        return liveEvaluationTurns(sessionId).length > 0;
+    }
     const sql = getSql();
     if (!sql) return false;
     try {
         const rows = (await sql`
             SELECT 1
             FROM ask_session_turns
-            WHERE session_id = ${sessionId}
+            WHERE session_id = ${hashSessionToken(sessionId)}
             LIMIT 1
         `) as Array<Record<string, unknown>>;
         return rows.length > 0;
@@ -192,8 +321,7 @@ export function formatHistoryForPrompt(turns: ConversationTurn[]): string {
         .join("\n\n");
 }
 
-// Test hook — no-op now that state lives in Neon, but kept to preserve
-// call-site compatibility with tests that import it.
 export function _clearSessionsForTests(): void {
-    // intentional no-op
+    evaluationSessions.clear();
+    citationSnapshotColumn = null;
 }

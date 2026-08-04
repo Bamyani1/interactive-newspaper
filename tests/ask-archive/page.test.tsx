@@ -47,7 +47,7 @@ vi.mock("@/shared", () => ({
 }));
 
 // Import AFTER the mocks are set up.
-import AskPage from "@/app/ask/AskWorkspace";
+import AskPage from "@/src/app/ask/AskWorkspace";
 
 function defaultState() {
     return {

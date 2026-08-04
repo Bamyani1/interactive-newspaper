@@ -137,6 +137,36 @@ function replaceReferences(edition, replacements) {
   }
 }
 
+/**
+ * Pure constructor for one asset-manifest v2 entry. Exported for unit tests.
+ * `sourceSha256` is the sha256 of the ORIGINAL source file bytes (pre-sharp);
+ * `hash` is the sha256 of the optimized webp bytes that are uploaded.
+ */
+export function buildAssetManifestEntry({
+  hash,
+  publicPath,
+  r2Key,
+  sizeBytes,
+  width,
+  height,
+  quality,
+  sourceSha256,
+  status,
+}) {
+  return {
+    hash,
+    public_path: publicPath,
+    r2_key: r2Key,
+    size_bytes: sizeBytes,
+    width,
+    height,
+    quality,
+    source_sha256: sourceSha256,
+    mime_type: "image/webp",
+    status,
+  };
+}
+
 async function optimizeAsset(sharp, sourcePath) {
   const metadata = await sharp(sourcePath).metadata();
   if (!metadata.width || !metadata.height) throw new Error("image dimensions unavailable");
@@ -154,6 +184,7 @@ async function optimizeAsset(sharp, sourcePath) {
       targetLong: Math.max(metadata.width, metadata.height),
       width: metadata.width,
       height: metadata.height,
+      sourceSha256: sourceHash,
     };
   }
   const originalLong = Math.max(metadata.width, metadata.height);
@@ -176,7 +207,12 @@ async function optimizeAsset(sharp, sourcePath) {
       last = { buffer, quality, targetLong };
       if (buffer.length < MAX_ASSET_BYTES) {
         const outputMeta = await sharp(buffer).metadata();
-        return { ...last, width: outputMeta.width, height: outputMeta.height };
+        return {
+          ...last,
+          width: outputMeta.width,
+          height: outputMeta.height,
+          sourceSha256: sourceHash,
+        };
       }
     }
     if (targetLong === floor) break;
@@ -197,7 +233,7 @@ if (uniqueReferences.length === 0) {
       for (const filename of readdirSync(imagesDir)) unlinkSync(join(imagesDir, filename));
     }
     atomicJson(join(editionDir, "asset-manifest.json"), {
-      schema_version: 1,
+      schema_version: 2,
       date,
       assets: [],
       total_bytes: 0,
@@ -277,16 +313,17 @@ for (const reference of uniqueReferences) {
           }));
         }
       }
-      assetsByHash.set(hash, {
+      assetsByHash.set(hash, buildAssetManifestEntry({
         hash,
-        public_path: publicPath,
-        r2_key: key,
-        size_bytes: optimized.buffer.length,
+        publicPath,
+        r2Key: key,
+        sizeBytes: optimized.buffer.length,
         width: optimized.width,
         height: optimized.height,
         quality: optimized.quality,
+        sourceSha256: optimized.sourceSha256,
         status: uploadStatus,
-      });
+      }));
     }
     console.log(
       `${dryRun ? "PLAN" : "OK"} ${basename(sourcePath)} -> ${publicPath} ` +
@@ -325,7 +362,7 @@ if (!dryRun) {
   }
   atomicJson(editionPath, edition);
   atomicJson(join(editionDir, "asset-manifest.json"), {
-    schema_version: 1,
+    schema_version: 2,
     date,
     total_bytes: totalBytes,
     assets,
