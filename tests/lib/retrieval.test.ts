@@ -106,6 +106,7 @@ describe("canonical RAG retrieval", () => {
       timeoutMs: 5000,
       signal: controller.signal,
       retrievalTarget: "legacy",
+      temporalStratify: false,
     });
     expect(embedQueryMock).toHaveBeenCalledWith("semantic", {
       signal: controller.signal,
@@ -120,6 +121,7 @@ describe("canonical RAG retrieval", () => {
       timeoutMs: 5000,
       signal: controller.signal,
       retrievalTarget: "legacy",
+      temporalStratify: false,
     });
     expect(result).toMatchObject({
       method: "hybrid",
@@ -129,6 +131,24 @@ describe("canonical RAG retrieval", () => {
         vector: { status: "success", count: 1 },
       },
     });
+  });
+
+  it("stratifies across months for wide date ranges but not narrow ones", async () => {
+    await retrieveCandidates(candidateParams({
+      filters: { startDate: "1986-01-01", endDate: "1986-12-31" },
+    }));
+    expect(queryArticlesByEmbeddingMock).toHaveBeenLastCalledWith(
+      [0.1, 0.2],
+      expect.objectContaining({ temporalStratify: true }),
+    );
+
+    await retrieveCandidates(candidateParams({
+      filters: { startDate: "1986-03-01", endDate: "1986-03-31" },
+    }));
+    expect(queryArticlesByEmbeddingMock).toHaveBeenLastCalledWith(
+      [0.1, 0.2],
+      expect.objectContaining({ temporalStratify: false }),
+    );
   });
 
   it("serves legacy while measuring a versioned shadow with one embedding call", async () => {
