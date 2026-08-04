@@ -13,7 +13,13 @@ const generalLimiter = createRateLimiter({ bucket: "mw-general", limit: 120, win
 function rateLimitedTier(pathname: string) {
   if (pathname === "/api/ask") return askLimiter;
   if (pathname === "/api/search") return searchLimiter;
-  if (pathname.startsWith("/api/editions/") || pathname === "/api/weather") {
+  // The old matcher "/api/editions/:path*" also covered the exact
+  // "/api/editions" (zero trailing segments), so keep it in the tier.
+  if (
+    pathname === "/api/editions" ||
+    pathname.startsWith("/api/editions/") ||
+    pathname === "/api/weather"
+  ) {
     return generalLimiter;
   }
   return null;

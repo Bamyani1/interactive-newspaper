@@ -96,6 +96,14 @@ describe("middleware rate limiting", () => {
         await middleware(req("/about"));
         expect(mockRateLimit).not.toHaveBeenCalled();
     });
+
+    it("rate-limits /api/editions (exact), /api/editions/[date], and /api/weather", async () => {
+        for (const path of ["/api/editions", "/api/editions/2000-01-01", "/api/weather"]) {
+            mockRateLimit.mockClear();
+            await middleware(req(path));
+            expect(mockRateLimit, `expected ${path} to be rate-limited`).toHaveBeenCalledTimes(1);
+        }
+    });
 });
 
 describe("middleware matcher", () => {
