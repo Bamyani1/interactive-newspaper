@@ -143,7 +143,7 @@ This prevents a broader CRAG retry from receiving the first query's cached candi
 
 ## Reranking and corrective retrieval
 
-Gemini scores candidates from 0–10 using structured JSON. It sees the retrieval-local passages and image captions. Sources that directly disprove a question's premise remain highly relevant because non-occurrence may be the answer. In visual mode, captions are the evidence for whether the requested subject is actually pictured; a prose mention beside an unrelated portrait is not a visual match. The normal thresholds are:
+By default Gemini scores candidates from 0–10 using structured JSON. When `VOYAGE_API_KEY` is set, a dedicated Voyage cross-encoder (`rerank-2.5`) scores instead, with its 0–1 relevance mapped onto the same 0–10 scale; any failure (or an unset key) falls back to the Gemini judge, so the Voyage path can never make results worse. The scorer sees the retrieval-local passages and image captions. Sources that directly disprove a question's premise remain highly relevant because non-occurrence may be the answer. In visual mode, captions are the evidence for whether the requested subject is actually pictured; a prose mention beside an unrelated portrait is not a visual match. The normal thresholds are:
 
 - text: keep score 4 or higher;
 - visual: keep score 3 or higher.

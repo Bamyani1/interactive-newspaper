@@ -278,7 +278,7 @@ CREATE TABLE IF NOT EXISTS ai_spend_counter (
 );
 ```
 
-Written by `cost-tracker.ts :: recordUsage()` as an atomic increment via `INSERT … ON CONFLICT (day) DO UPDATE SET spent_usd = spent_usd + $cost`. Read by `checkDailyBudget()` at the top of every `/api/ask` call. Hard limit: `$0.50/day`.
+Written by `cost-tracker.ts :: recordUsage()` as an atomic increment via `INSERT … ON CONFLICT (day) DO UPDATE SET spent_usd = spent_usd + $cost`. Read by `checkDailyBudget()` at the top of every `/api/ask` call. Hard limit: `$2/day` (`DAILY_BUDGET_USD`). A separate `$0.50` `OUTAGE_BUDGET_USD` bounds blind spend while this table is unreachable.
 
 ### `api_rate_bucket`
 
@@ -344,6 +344,42 @@ CREATE TABLE IF NOT EXISTS ask_feedback (
 ```
 
 Indexes: `idx_ask_feedback_request` on `(request_id)`, `idx_ask_feedback_created` on `(created_at DESC)`. Wired to `/api/ask/feedback`.
+
+### `answer_cache`
+
+Source: `scripts/db/migrations/0010_answer_cache.sql`.
+
+```sql
+CREATE TABLE IF NOT EXISTS answer_cache (
+  id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  cache_identity     TEXT NOT NULL,          -- pipeline version + models + corpus + retrieval identity
+  filters_hash       TEXT NOT NULL,
+  question           TEXT NOT NULL,
+  question_embedding VECTOR(768) NOT NULL,
+  response           JSONB NOT NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS answer_cache_scope_idx
+  ON answer_cache (cache_identity, filters_hash, created_at DESC);
+```
+
+Durable half of the semantic answer cache (`answer-cache.ts`): a stored answer is reused only when a new question's embedding is close enough *within the same* `cache_identity` scope, so any pipeline/model/corpus/retrieval change invalidates by scoping rather than deletion. Low volume — an exact scan, no vector index. Bypassed when conversation history is non-empty, and agent-loop answers are never cached. See [rag-pipeline.md](./rag-pipeline.md).
+
+### `year_digests`
+
+Source: `scripts/db/migrations/0011_year_digests.sql`.
+
+```sql
+CREATE TABLE IF NOT EXISTS year_digests (
+  year          INTEGER PRIMARY KEY,
+  digest        TEXT NOT NULL,
+  article_count INTEGER NOT NULL,
+  model         TEXT NOT NULL,
+  generated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+One pre-computed chronological synthesis per archive year, regenerated offline by `scripts/db/generate-year-digests.mjs`. Read by `rag-coverage.ts` (and surfaced through `db.ts`) and injected into survey/coverage prompts as trusted **non-evidence** guidance — it shapes what the model looks for but is never citable; every claim in the answer still requires a cited article.
 
 ### `weather`
 
@@ -621,7 +657,7 @@ Articles appearing in both result sets get both scores summed and their `source`
 
 ## Migrations
 
-Canonical system: numbered SQL files in `scripts/db/migrations/` (`NNNN_snake_case.sql`, currently `0001`–`0009`), applied by `scripts/db/lib/migration-runner.ts` through the CLI `scripts/db/migrate.mjs`. All schema comes from here — nothing else runs DDL. `scripts/db/schema.sql` no longer exists; the old file is frozen as `tests/db/fixtures/legacy-draft-schema.sql`, where the upgrade-path tests prove the canonical migrations converge a database that was created from it.
+Canonical system: numbered SQL files in `scripts/db/migrations/` (`NNNN_snake_case.sql`, currently `0001`–`0011`), applied by `scripts/db/lib/migration-runner.ts` through the CLI `scripts/db/migrate.mjs`. All schema comes from here — nothing else runs DDL. `scripts/db/schema.sql` no longer exists; the old file is frozen as `tests/db/fixtures/legacy-draft-schema.sql`, where the upgrade-path tests prove the canonical migrations converge a database that was created from it.
 
 | Command | Effect |
 |---|---|
