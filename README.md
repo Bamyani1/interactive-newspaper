@@ -15,12 +15,14 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/Bamyani1/interactive-newspaper/nextjs-ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=E8E8E8&labelColor=1A1F24&label=CI)](https://github.com/Bamyani1/interactive-newspaper/actions/workflows/nextjs-ci.yml)
 [![License MIT](https://img.shields.io/badge/License-MIT-B80D3E?style=flat-square&labelColor=1A1F24)](./LICENSE)
 
+**[▶ Explore the live demo](https://interactive-newspaper-sable.vercel.app)**
+
 </div>
 
 ---
 
 
-> Status: the RAG pipeline, OCR pipeline, chat UI, and data ingestion are all functional, and the versioned RAG pipeline is deployed and serving on Vercel. Run locally to explore, or read [`docs/architecture/`](./docs/architecture/) for production-level deep-dives on each subsystem.
+> Status: the RAG pipeline, OCR pipeline, chat UI, and data ingestion are all functional and deployed on Vercel. Production serves the `legacy` retrieval path; the versioned index is built and validated but not yet activated. Explore the [live demo](https://interactive-newspaper-sable.vercel.app), run it locally, or read [`docs/architecture/`](./docs/architecture/) for production-level deep-dives on each subsystem.
 
 ---
 
@@ -75,6 +77,7 @@ Ohio Wesleyan University's student newspaper, *The Transcript*, has been publish
 - **Ask the Archive.** Natural-language chat over the archive with a full RAG pipeline: query reformulation, hybrid vector + full-text search, Gemini reranking, cited answer generation, and streaming SSE responses.
 - **Complex queries get an agent.** Multi-era, comparative, or multi-hop questions trigger a Gemini function-calling agent with `search_archive`, `read_article`, and `list_editions` tools instead of the linear pipeline.
 - **Multi-thread conversations.** Sessions persist to Neon (5 turns, 30-min TTL). A sidebar shows the current thread plus an archive of past threads. Follow-up questions carry context.
+- **Export a conversation.** Any Ask thread exports to a formatted PDF client-side (`jspdf` + `html2canvas`) for sharing or citation.
 - **Budget-aware by default.** A $2/day hard kill switch stops the pipeline before a runaway loop can drain the Gemini quota.
 - **Multimodal visual queries.** "Show me protest photos" returns a visual-mode answer with a `TimelineGallery` of matching article thumbnails. Text and image embeddings live in the same vector space.
 - **End-to-end OCR pipeline.** A seven-phase Python pipeline turns raw TIF scans into structured `edition.json`: DocAI layout parsing, DocLayout-YOLO region detection, Gemini structuring, cross-page article merging, ad enrichment, content triage, and per-run diagnostics.
@@ -235,7 +238,7 @@ application → (recognition | preprocessing | detection | merging |
             → (contracts | shared | config)
 ```
 
-No lower layer can import `application`; `contracts` and `shared` can't import any domain layer. AST-based static checks in `tests/ocr/architecture/`.
+No lower layer can import `application`; `contracts` and `shared` can't import any domain layer. The `evaluation/` layer is offline analysis, held outside this runtime stage chain — like the stages, it may never import `application`. AST-based static checks in `tests/ocr/architecture/`.
 
 For the full seven-phase walkthrough, LLM retry policy, diagnostics, and gotchas, see **[docs/architecture/ocr-pipeline.md](./docs/architecture/ocr-pipeline.md)**.
 
@@ -564,10 +567,9 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 │   └── weather/                  # Weather archive builders
 │
 ├── docs/
-│   ├── architecture/             # Deep-dive docs, reference reports, landing page
-│   ├── archive/                  # Superseded plans and handoffs (not current)
+│   ├── architecture/             # Deep-dive docs + reading-order README
 │   ├── design/                   # Design carve-outs
-│   └── issues/                   # Issue log
+│   └── issues/                   # Engineering notes (referenced from source comments)
 │
 ├── public/
 │   ├── readme/                   # README hero screenshots

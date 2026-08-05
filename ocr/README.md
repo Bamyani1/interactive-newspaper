@@ -58,7 +58,7 @@ cd ..
 ```
 
 The OCR pipeline locks the Python Google Gen AI SDK to
-`google-genai==2.14.0`.
+`google-genai==2.16.0`.
 
 Enable Vertex AI and Document AI in the intended Google Cloud project, then
 authenticate locally with ADC:
@@ -240,6 +240,10 @@ python ocr/score_gold.py \
 The scorer never performs fuzzy pairing implicitly. Provide `--mapping-json`
 only after its gold/candidate index pairs have been manually checked against
 the scans.
+
+> Note: the `gold/` and `gold-candidates/` reference editions are gitignored and
+> not shipped in the public repo, so these commands run only where that curated
+> data is present locally.
 
 ## Tests
 

@@ -56,8 +56,9 @@ export default function AboutPage() {
                         (1950&ndash;2006), 11,705 articles with complete multimodal embedding
                         coverage, and 6,846 advertisements, alongside period-accurate weather
                         (1950&ndash;2000) and US music-chart (1958&ndash;2010) sidebars that
-                        place each edition in its moment. Retrieval runs against versioned,
-                        immutable index builds so results stay reproducible as the corpus grows.
+                        place each edition in its moment. Retrieval is designed around
+                        versioned, immutable index builds so results stay reproducible as the
+                        corpus grows.
                     </p>
                     <p className="text-base text-[var(--color-text-secondary)] leading-relaxed">
                         The stack: Next.js 16 and React 19 on the front end; TypeScript
@@ -91,6 +92,14 @@ export default function AboutPage() {
                         usable again. I&rsquo;m happy to talk through any part of how it works.
                     </p>
                     <div className="flex flex-wrap gap-x-6 gap-y-2">
+                        <a
+                            href="https://interactive-newspaper-sable.vercel.app"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center min-h-[44px] text-base text-[var(--color-text-primary)] underline decoration-[var(--color-accent)]/40 underline-offset-4 hover:text-[var(--color-accent)] hover:decoration-[var(--color-accent)] transition-colors"
+                        >
+                            Live site
+                        </a>
                         <a
                             href="mailto:anwari.works@gmail.com"
                             className="inline-flex items-center min-h-[44px] text-base text-[var(--color-text-primary)] underline decoration-[var(--color-accent)]/40 underline-offset-4 hover:text-[var(--color-accent)] hover:decoration-[var(--color-accent)] transition-colors"
