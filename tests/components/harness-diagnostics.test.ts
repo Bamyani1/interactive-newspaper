@@ -8,6 +8,8 @@ import {
   expectNoUnexpectedDiagnostics,
   isExpectedFramerMotionReducedMotionDevWarning,
   isIgnorableOptimizedImageAbort,
+  isIgnorableAskStreamMockAbort,
+  isIgnorableRscPrefetchAbort,
   type FulfilledHttpError,
 } from "../e2e/support/harness";
 
@@ -361,5 +363,165 @@ describe("optimized-image abort exception (isIgnorableOptimizedImageAbort)", () 
     );
 
     expect(() => expectNoUnexpectedDiagnostics(diagnostics)).toThrow();
+  });
+});
+
+describe("ask-stream mock abort exception (isIgnorableAskStreamMockAbort)", () => {
+  it.each([
+    {
+      name: "stream POST aborted",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "lowercase stream POST aborted",
+      input: {
+        method: "post",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+  ])("ignores $name", ({ input }) => {
+    expect(isIgnorableAskStreamMockAbort(input)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "session GET abort",
+      input: {
+        method: "GET",
+        url: "http://127.0.0.1:3219/api/ask/session?sessionId=abc",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "search POST abort",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/search",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "near-match ask path abort",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask/feedback",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "stream POST refused",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_CONNECTION_REFUSED",
+      },
+    },
+    {
+      name: "stream POST timed out",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_TIMED_OUT",
+      },
+    },
+    {
+      name: "malformed stream URL",
+      input: {
+        method: "POST",
+        url: "not a url",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+  ])("keeps $name fatal", ({ input }) => {
+    expect(isIgnorableAskStreamMockAbort(input)).toBe(false);
+  });
+});
+
+describe("rsc prefetch abort exception (isIgnorableRscPrefetchAbort)", () => {
+  it.each([
+    {
+      name: "superseded edition prefetch",
+      input: {
+        method: "GET",
+        resourceType: "fetch",
+        url: "http://127.0.0.1:3219/edition/2006-04-20?_rsc=nYzaen3a2Q6OoqBQ",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "superseded ask prefetch",
+      input: {
+        method: "GET",
+        resourceType: "xhr",
+        url: "http://127.0.0.1:3219/ask?_rsc=98AxpYnxFZDoh0fn",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+  ])("ignores $name", ({ input }) => {
+    expect(isIgnorableRscPrefetchAbort(input)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "aborted document navigation",
+      input: {
+        method: "GET",
+        resourceType: "document",
+        url: "http://127.0.0.1:3219/edition/2006-04-20",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "aborted document request carrying _rsc",
+      input: {
+        method: "GET",
+        resourceType: "document",
+        url: "http://127.0.0.1:3219/edition/2006-04-20?_rsc=nYzaen3a2Q6OoqBQ",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "aborted non-rsc fetch",
+      input: {
+        method: "GET",
+        resourceType: "fetch",
+        url: "http://127.0.0.1:3219/api/editions?limit=500",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "ask stream POST abort (covered by its own rule, not this one)",
+      input: {
+        method: "POST",
+        resourceType: "fetch",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "rsc prefetch refused",
+      input: {
+        method: "GET",
+        resourceType: "fetch",
+        url: "http://127.0.0.1:3219/edition/2006-04-20?_rsc=nYzaen3a2Q6OoqBQ",
+        errorText: "net::ERR_CONNECTION_REFUSED",
+      },
+    },
+    {
+      name: "malformed prefetch URL",
+      input: {
+        method: "GET",
+        resourceType: "fetch",
+        url: "not a url",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+  ])("keeps $name fatal", ({ input }) => {
+    expect(isIgnorableRscPrefetchAbort(input)).toBe(false);
   });
 });

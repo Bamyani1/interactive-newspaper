@@ -44,7 +44,7 @@ function assertEditionDiagnostics(diagnostics: BrowserDiagnostics): void {
   expectNoUnexpectedDiagnostics(diagnostics);
 }
 
-async function productionPrerenderInventory() {
+async function productionBuildInfo() {
   expect(
     process.env.PLAYWRIGHT_SERVER_MODE,
     "edition reconciliation must run against a fresh production build",
@@ -64,13 +64,14 @@ async function productionPrerenderInventory() {
     "prerender manifest must be written by the active production build",
   ).toBeGreaterThanOrEqual(buildIdStats.mtimeMs);
 
+  // /edition/[date] is force-dynamic (per-request CSP nonces disable static
+  // prerendering), so the prerender manifest carries no edition date routes.
+  // The live API inventory below is the canonical edition set.
   const manifest = JSON.parse(manifestText) as PrerenderManifest;
   const routes = Object.keys(manifest.routes ?? {});
   const datePaths = routes.filter((route) => EDITION_PATH.test(route)).sort();
-  const dates = datePaths.map((route) => route.match(EDITION_PATH)![1]);
   return {
     buildId: buildId.trim(),
-    dates,
     datePaths,
     hasIndex: routes.includes("/edition"),
     manifestModifiedAt: manifestStats.mtime.toISOString(),
@@ -99,16 +100,15 @@ test("reconciles and sweeps the complete production/local edition union", async 
   expect(liveResponse.ok(), "live edition inventory should load").toBeTruthy();
   const liveDateRows = editionDatesFromApi(await liveResponse.json());
   const liveDates = [...new Set(liveDateRows)].sort();
-  const generated = await productionPrerenderInventory();
-  const generatedDates = generated.dates;
+  const productionBuild = await productionBuildInfo();
   const localOnlyDates = localDates.filter(
-    (date) => !generatedDates.includes(date),
+    (date) => !liveDates.includes(date),
   );
-  const generatedOnlyDates = generatedDates.filter(
+  const liveOnlyDates = liveDates.filter(
     (date) => !localDates.includes(date),
   );
-  const unionDates = [...new Set([...generatedDates, ...localDates])].sort();
-  const generatedFailures: Array<{ date: string; reason: string }> = [];
+  const unionDates = [...new Set([...liveDates, ...localDates])].sort();
+  const liveFailures: Array<{ date: string; reason: string }> = [];
   const localOnlyFailures: Array<{ date: string; reason: string }> = [];
   const deferredAssets: Array<{
     date: string;
@@ -120,16 +120,14 @@ test("reconciles and sweeps the complete production/local edition union", async 
 
   expect(liveDateRows).toHaveLength(351);
   expect(liveDates).toHaveLength(351);
-  expect(generatedDates).toHaveLength(351);
-  expect(generated.datePaths).toHaveLength(351);
-  expect(generated.hasIndex).toBe(true);
-  expect(generated.datePaths.length + Number(generated.hasIndex)).toBe(352);
+  // force-dynamic: no prerendered edition date routes and no static index.
+  expect(productionBuild.datePaths).toEqual([]);
+  expect(productionBuild.hasIndex).toBe(false);
   expect(localDates).toHaveLength(373);
   expect(localOnlyDates).toHaveLength(22);
-  expect(generatedOnlyDates).toEqual([]);
+  expect(liveOnlyDates).toEqual([]);
   expect(unionDates).toHaveLength(373);
-  expect(generatedDates).toEqual(liveDates);
-  expect(generatedDates).toEqual(expect.arrayContaining([...DEEP_TEST_EDITIONS]));
+  expect(liveDates).toEqual(expect.arrayContaining([...DEEP_TEST_EDITIONS]));
 
   await writeAuditJson(
     evidencePath({
@@ -141,23 +139,23 @@ test("reconciles and sweeps the complete production/local edition union", async 
     {
       localCount: localDates.length,
       apiCount: liveDates.length,
-      generatedCount: generatedDates.length,
+      generatedCount: productionBuild.datePaths.length,
       generatedPathCountIncludingIndex:
-        generated.datePaths.length + Number(generated.hasIndex),
+        productionBuild.datePaths.length + Number(productionBuild.hasIndex),
       localOnlyCount: localOnlyDates.length,
       localOnly404s: localOnlyDates,
-      generatedOnly: generatedOnlyDates,
+      generatedOnly: liveOnlyDates,
       unionCount: unionDates.length,
-      productionBuild: generated,
+      productionBuild,
       deepTestEditions: DEEP_TEST_EDITIONS,
     },
   );
 
   for (const date of unionDates) {
     const response = await page.goto(`/edition/${date}`);
-    const isGenerated = generatedDates.includes(date);
+    const isLive = liveDates.includes(date);
 
-    if (!isGenerated) {
+    if (!isLive) {
       if (response?.status() !== 404) {
         localOnlyFailures.push({
           date,
@@ -190,7 +188,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
     }
 
     if (!response || response.status() >= 400) {
-      generatedFailures.push({
+      liveFailures.push({
         date,
         reason: response ? `HTTP ${response.status()}` : "no response",
       });
@@ -256,8 +254,8 @@ test("reconciles and sweeps the complete production/local edition union", async 
       state: "reconciliation",
       viewport,
     }),
-    { generatedFailures, localOnlyFailures, deferredAssets },
+    { generatedFailures: liveFailures, localOnlyFailures, deferredAssets },
   );
-  expect(generatedFailures).toEqual([]);
+  expect(liveFailures).toEqual([]);
   expect(localOnlyFailures).toEqual([]);
 });

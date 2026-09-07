@@ -138,6 +138,9 @@ test.describe("deep edition state matrix", () => {
 
       await page.getByRole("button", { name: "Toggle color theme" }).click();
       await expect(page.locator("html")).toHaveAttribute("data-mode", "dark");
+      // Theme colors crossfade over --duration-slow (500ms). Axe must run on
+      // the settled end-state, not mid-transition.
+      await page.waitForTimeout(750);
       expect(
         await page.evaluate(() => localStorage.getItem("transcript-mode")),
       ).toBe("dark");

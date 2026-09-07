@@ -70,6 +70,7 @@ export default function AboutPage() {
                             href="https://github.com/Bamyani1/interactive-newspaper/tree/main/docs/architecture"
                             target="_blank"
                             rel="noopener noreferrer"
+                            data-audit-inline-text-link="design.md defines Prose anchors as hyperlinks embedded in body copy."
                             className="text-[var(--color-text-primary)] underline decoration-[var(--color-accent)]/40 underline-offset-4 hover:text-[var(--color-accent)] hover:decoration-[var(--color-accent)] transition-colors"
                         >
                             architecture docs

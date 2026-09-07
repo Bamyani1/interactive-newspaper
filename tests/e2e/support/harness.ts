@@ -95,6 +95,58 @@ export function isIgnorableOptimizedImageAbort(input: {
   return isImageOptimizerRequest && input.errorText.includes("ERR_ABORTED");
 }
 
+/**
+ * A POST to the Ask SSE endpoint that fails with `net::ERR_ABORTED` is a
+ * benign mock-timing artifact, not a real failure: when `page.route`
+ * fulfills the whole SSE body in the same tick as the request, Chromium
+ * records the request as aborted even though every byte reaches the
+ * renderer and the turn completes (verified: full answer renders and all
+ * functional assertions pass; delaying the fulfill by 500ms removes the
+ * record entirely). Only this exact combination is ignored. Anything else
+ * on the Ask endpoint stays fatal: GET aborts, non-abort POST errors, and
+ * HTTP error statuses (which surface via `onResponse`).
+ */
+export function isIgnorableAskStreamMockAbort(input: {
+  method: string;
+  url: string;
+  errorText: string;
+}): boolean {
+  if (input.method.toUpperCase() !== "POST") return false;
+  if (!input.errorText.includes("ERR_ABORTED")) return false;
+  try {
+    return new URL(input.url).pathname === "/api/ask";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * An aborted RSC prefetch (`?_rsc=` GET) is benign speculation churn, not a
+ * real failure: when several same-target links mount in the same tick, Next
+ * issues parallel prefetches and each newer one supersedes the previous,
+ * which the browser records as `net::ERR_ABORTED` (verified on an unmocked
+ * production server — the storm fires on plain landing mount with no test
+ * doubles involved). Navigation correctness is covered independently by
+ * every test's own completion and first-paint assertions. Only this exact
+ * combination is ignored: aborted document navigations (no `_rsc` param, or
+ * `document` resource type) and every non-abort error stay fatal.
+ */
+export function isIgnorableRscPrefetchAbort(input: {
+  method: string;
+  resourceType: string;
+  url: string;
+  errorText: string;
+}): boolean {
+  if (input.method.toUpperCase() !== "GET") return false;
+  if (input.resourceType.toLowerCase() === "document") return false;
+  if (!input.errorText.includes("ERR_ABORTED")) return false;
+  try {
+    return new URL(input.url).searchParams.has("_rsc");
+  } catch {
+    return false;
+  }
+}
+
 export function observeBrowserDiagnostics(
   page: Page,
   diagnostics: BrowserDiagnostics,
@@ -151,8 +203,23 @@ export function observeBrowserDiagnostics(
     // responsive-candidate cancellation, not a real failure — never record it.
     // Image 404s (missing objects) still surface via `onResponse`, and every
     // other request failure stays fatal. See isIgnorableOptimizedImageAbort.
+    // Likewise, an aborted POST to the Ask SSE endpoint is a benign
+    // route-fulfill timing artifact — never record it. See
+    // isIgnorableAskStreamMockAbort. And an aborted RSC prefetch is benign
+    // speculation churn — never record it. See isIgnorableRscPrefetchAbort.
     if (
       isIgnorableOptimizedImageAbort({
+        resourceType: request.resourceType(),
+        url: request.url(),
+        errorText,
+      }) ||
+      isIgnorableAskStreamMockAbort({
+        method: request.method(),
+        url: request.url(),
+        errorText,
+      }) ||
+      isIgnorableRscPrefetchAbort({
+        method: request.method(),
         resourceType: request.resourceType(),
         url: request.url(),
         errorText,

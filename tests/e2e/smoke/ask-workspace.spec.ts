@@ -10,7 +10,6 @@ import {
 } from "../support/harness";
 import {
   DELAYED_ASK_ANSWER,
-  DELAYED_ASK_PARTIAL_ANSWER,
   DELAYED_ASK_QUESTION,
   DELAYED_ASK_STREAM_EVENTS,
   DETERMINISTIC_ASK_ANSWER,
@@ -421,7 +420,12 @@ test.describe("Ask response states", () => {
       "Writing answer…",
     );
     await advanceControlledAskStream(page);
-    await expect(page.getByText(DELAYED_ASK_PARTIAL_ANSWER)).toBeVisible();
+    // The typewriter emits word-by-word and parks the final word
+    // ("started") until the done event settles it, so only the typed
+    // prefix is visible at this point.
+    await expect(
+      page.getByText("The deterministic stream has"),
+    ).toBeVisible();
     await expect(page.locator(".ask-thinking-rule")).toHaveCount(0);
 
     await advanceControlledAskStream(page);
