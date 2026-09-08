@@ -22,7 +22,6 @@ const dateNamedDirs = existsSync(EDITIONS_DIR)
 // prevent *every* edition from being validated.
 const hasEdition = (date: string) => existsSync(path.join(EDITIONS_DIR, date, "edition.json"));
 const editionDirs = dateNamedDirs.filter(hasEdition);
-const partiallyIngested = dateNamedDirs.filter((date) => !hasEdition(date));
 
 // Pre-existing data issues in legacy editions — tracked here so tests pass
 // while still catching regressions in newly processed editions.
@@ -57,12 +56,6 @@ if (editionDirs.length === 0) {
 }
 
 describe("edition corpus", () => {
-  it("validates every directory that carries an edition.json", () => {
-    // Guards the filter above: if a partial directory ever slipped into the
-    // validated set, the sweep would throw instead of reporting.
-    editionDirs.forEach((date) => expect(hasEdition(date)).toBe(true));
-  });
-
   it("does not let promoted-article page provenance debt grow", () => {
     // Every article missing source_pages today is a content_rescue.py
     // promotion in a legacy edition. Freezing the count means re-ingesting
@@ -88,17 +81,6 @@ describe("edition corpus", () => {
     // genuine pipeline failure, not legacy debt.
     expect(otherWithoutPages).toBe(0);
     expect(promotedWithoutPages).toBeLessThanOrEqual(PROMOTED_WITHOUT_PAGES_BASELINE);
-  });
-
-  it("reports directories still awaiting ingestion", () => {
-    // Informational, not a failure: these are mid-pipeline artifacts on a
-    // local checkout (public/editions is gitignored, so CI sees none).
-    if (partiallyIngested.length > 0) {
-      console.warn(
-        `[pipeline-invariants] ${partiallyIngested.length} directory(ies) have no edition.json and were skipped: ${partiallyIngested.join(", ")}`
-      );
-    }
-    expect(partiallyIngested.every((d) => !editionDirs.includes(d))).toBe(true);
   });
 });
 
