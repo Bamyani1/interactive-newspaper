@@ -28,12 +28,13 @@ import {
 } from "@/src/lib/rag-coverage";
 
 const GENERATION_MODEL = RAG_MODEL_CONFIG.answer.model;
-// Thinking tokens share the output-token ceiling. MEDIUM reasoning consumed
-// nearly the old 4,096-token limit in a live housing synthesis and truncated
-// the JSON envelope, so leave enough room for both reasoning and the answer.
+// Thinking tokens share the output-token ceiling. Reasoning consumed nearly
+// the old 4,096-token limit in a live housing synthesis and truncated the
+// JSON envelope, so leave enough room for both reasoning and the answer.
 const MAX_ANSWER_TOKENS = 8192;
-// gemini-3.6-flash with MEDIUM thinking regularly needs 15-25s for
-// survey-style answers; the route's global deadline still bounds the request.
+// gemini-3.6-flash still regularly needs 15-25s for survey-style answers at
+// the LOW thinking level this stage uses (see rag-model-config); the route's
+// global deadline bounds the request either way.
 const GENERATION_TIMEOUT_MS = 30_000;
 const MAX_SOURCE_CHARS = 5000;
 
@@ -374,7 +375,13 @@ export async function generateAnswer(
       : null;
   const avgRerankerScore =
     sourceArticles.reduce((s, a) => s + a.relevanceScore, 0) / sourceArticles.length;
-  const confidence = computeConfidence(avgDistance, sourceArticles.length, avgRerankerScore);
+  const rerankDegraded = rerankWasDegraded(sourceArticles);
+  const confidence = computeConfidence(
+    avgDistance,
+    sourceArticles.length,
+    avgRerankerScore,
+    rerankDegraded
+  );
 
   if (avgRerankerScore < RERANK_TANGENTIAL) {
     return {
@@ -549,7 +556,13 @@ export async function* generateAnswerStream(
       : null;
   const avgRerankerScore =
     sourceArticles.reduce((s, a) => s + a.relevanceScore, 0) / sourceArticles.length;
-  const confidence = computeConfidence(avgDistance, sourceArticles.length, avgRerankerScore);
+  const rerankDegraded = rerankWasDegraded(sourceArticles);
+  const confidence = computeConfidence(
+    avgDistance,
+    sourceArticles.length,
+    avgRerankerScore,
+    rerankDegraded
+  );
 
   if (avgRerankerScore < RERANK_TANGENTIAL) {
     yield {
@@ -717,6 +730,9 @@ function confidenceForCitations(
   citations: Citation[],
   retrievalConfidence: "low" | "medium" | "high"
 ): "low" | "medium" | "high" {
+  // An unvetted candidate set cannot be talked back up by counting its own
+  // citations: the scores those citations average are the fail-open constant.
+  if (rerankWasDegraded(sourceArticles)) return "low";
   if (/don['’]t have enough information/i.test(answer)) return "low";
   if (citations.length === 0) return "low";
 
@@ -754,11 +770,21 @@ function confidenceForCitations(
 function computeConfidence(
   _avgDistance: number | null,
   articleCount: number,
-  avgRerankerScore: number
+  avgRerankerScore: number,
+  degraded = false
 ): "low" | "medium" | "high" {
+  // Nothing judged these articles, so the score below is the reranker's own
+  // fail-open constant rather than a measurement. Reporting anything above
+  // "low" off it would be inventing a confidence.
+  if (degraded) return "low";
   if (avgRerankerScore >= RERANK_CONFIDENT && articleCount >= 2) return "high";
   if (avgRerankerScore >= RERANK_RELEVANT && articleCount >= 3) return "high";
   if (avgRerankerScore >= RERANK_MEDIUM) return "medium";
   if (avgRerankerScore >= RERANK_TANGENTIAL) return "medium";
   return "low";
+}
+
+/** True when any candidate reached the generator without being judged. */
+function rerankWasDegraded(articles: RankedArticle[]): boolean {
+  return articles.some((article) => article.rerankDegraded === true);
 }

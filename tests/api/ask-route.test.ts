@@ -2310,4 +2310,29 @@ describe("honest degradation metadata", () => {
     expect((metadata?.meta as Record<string, unknown>)?.reformulationDegraded).toBe(true);
     expect((done?.meta as Record<string, unknown>)?.reformulationDegraded).toBe(true);
   });
+
+  it("reports a dead reranker so a fail-open answer cannot look vetted", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 5, rerankDegraded: true },
+    ]);
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(body.meta.rerankDegraded).toBe(true);
+  });
+
+  it("reports a dead reranker on the streaming metadata and done events", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 5, rerankDegraded: true },
+    ]);
+
+    const response = await POST(makeRequest({ question: "q" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    const metadata = events.find((e) => e.type === "metadata");
+    const done = events.find((e) => e.type === "done");
+    expect((metadata?.meta as Record<string, unknown>)?.rerankDegraded).toBe(true);
+    expect((done?.meta as Record<string, unknown>)?.rerankDegraded).toBe(true);
+  });
 });

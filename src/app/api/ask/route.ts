@@ -926,6 +926,10 @@ async function handleStreamingAsk(params: {
         }
         send({ type: "stage", name: "rerank", elapsedMs: stageElapsed() });
 
+        // No judge ever scored these candidates, so the reader is told the
+        // sources are unvetted and the generator caps confidence at low.
+        const rerankDegraded = rankedArticles.some((a) => a.rerankDegraded === true);
+
         // Emit metadata BEFORE generation so client can render the
         // citation sidebar immediately, before the answer tokens start
         // streaming in.
@@ -956,6 +960,7 @@ async function handleStreamingAsk(params: {
             method,
             reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
             ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
+            ...(rerankDegraded ? { rerankDegraded: true } : {}),
             ...retrievalIdentityMetadata(retrievalIdentity),
           },
         });
@@ -1039,6 +1044,7 @@ async function handleStreamingAsk(params: {
             method,
             reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
             ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
+            ...(rerankDegraded ? { rerankDegraded: true } : {}),
             complexity,
             ...retrievalIdentityMetadata(retrievalIdentity),
             ...coverageMetadata(coverage),
@@ -1410,6 +1416,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       signal: globalController.signal,
       requestId,
     });
+    // No judge ever scored these candidates, so the reader is told the
+    // sources are unvetted and the generator caps confidence at low.
+    const rerankDegraded = rankedArticles.some((a) => a.rerankDegraded === true);
 
     // ── Step 5: Generate answer (using ORIGINAL question, not reformulated) ──
     const generationStart = Date.now();
@@ -1465,6 +1474,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         method,
         reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
         ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
+        ...(rerankDegraded ? { rerankDegraded: true } : {}),
         complexity,
         ...retrievalIdentityMetadata(retrievalIdentity),
         ...coverageMetadata(coverage),
