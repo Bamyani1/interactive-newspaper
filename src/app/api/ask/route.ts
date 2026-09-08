@@ -9,6 +9,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { QuotaExhaustedError } from "@/src/lib/embeddings";
 import { DbTimeoutError, fetchYearDigest, queryArchiveCoverage } from "@/src/lib/db";
+// Imported from db-timeout, not db: db.ts is mocked wholesale in the route
+// tests, and the race must be the real one wherever it bounds a real call.
+import { runWithDbTimeout } from "@/src/lib/db-timeout";
 import type { RetrievedArticle } from "@/src/lib/db";
 import type { RetrievalMethod } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
@@ -67,6 +70,7 @@ export const maxDuration = 60;
 const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
 const GLOBAL_DEADLINE_MS = 55_000;
+const CONVERSATION_HISTORY_TIMEOUT_MS = 2_000;
 
 const askRateLimiter = createRateLimiter({ bucket: "ask", limit: 10, windowMs: 60_000 });
 
@@ -607,18 +611,27 @@ async function handleStreamingAsk(params: {
   body: AskRequestBody;
   requestId: string;
   totalStart: number;
-  deadlineMs: number;
   sessionId: string;
   conversationHistory: import("@/src/lib/conversation-store").ConversationTurn[];
+  /**
+   * The request's deadline machinery, armed by POST before the body was
+   * parsed so the awaits ahead of this call count against the same budget.
+   * Ownership passes here: the stream clears the timer when it settles.
+   */
+  globalController: AbortController;
+  deadlineTimer: ReturnType<typeof setTimeout>;
 }): Promise<NextResponse> {
-  const { body, requestId, totalStart, deadlineMs, sessionId, conversationHistory } = params;
+  const {
+    body,
+    requestId,
+    totalStart,
+    sessionId,
+    conversationHistory,
+    globalController,
+    deadlineTimer,
+  } = params;
   const question = body.question.trim();
   const explicitFilters = body.filters ?? {};
-
-  const globalController = new AbortController();
-  const deadlineTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
-    globalController.abort();
-  }, deadlineMs);
 
   const encoder = new TextEncoder();
 
@@ -1105,12 +1118,39 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
   }
 
+  // ── Global deadline ──
+  // Armed before the body is parsed so every await on the request path counts
+  // against it: when it was armed after the budget check instead, a slow
+  // pre-pipeline await bought the pipeline a fresh `deadlineMs` on top of time
+  // already spent, past Vercel's own maxDuration. The AbortController lets
+  // signal-aware libs cancel their in-flight fetches; the Promise.race below
+  // returns even if those libs ignore the signal.
+  const globalController = new AbortController();
+  let rejectDeadline!: (error: DeadlineExceededError) => void;
+  const deadlinePromise = new Promise<NextResponse>((_, reject) => {
+    rejectDeadline = reject;
+  });
+  const globalTimer = setTimeout(() => {
+    globalController.abort();
+    rejectDeadline(new DeadlineExceededError(deadlineMs));
+  }, deadlineMs);
+  // Nothing awaits the deadline until the race below, and an early return
+  // never awaits it at all — this no-op handler keeps a fired deadline from
+  // surfacing as an unhandled rejection. Promise.race still observes it.
+  deadlinePromise.catch(() => {});
+  // Every early return happens before the race that clears the timer, so
+  // route them through here: a 400 must not leave a timer armed for a minute.
+  const bail = (params: Parameters<typeof askErrorJson>[0]): NextResponse => {
+    clearTimeout(globalTimer);
+    return askErrorJson(params);
+  };
+
   // ── Parse + validate body ──
   let body: AskRequestBody;
   try {
     body = (await request.json()) as AskRequestBody;
   } catch {
-    return askErrorJson({
+    return bail({
       status: 400,
       kind: "bad_request",
       message: "Invalid JSON body",
@@ -1118,7 +1158,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (!body.question || typeof body.question !== "string") {
-    return askErrorJson({
+    return bail({
       status: 400,
       kind: "bad_request",
       message: "Missing required field: question",
@@ -1126,14 +1166,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   const question = body.question.trim();
   if (question.length === 0) {
-    return askErrorJson({
+    return bail({
       status: 400,
       kind: "bad_request",
       message: "Question cannot be empty",
     });
   }
   if (question.length > MAX_QUESTION_LENGTH) {
-    return askErrorJson({
+    return bail({
       status: 400,
       kind: "bad_request",
       message: `Question too long (${question.length} chars). Maximum is ${MAX_QUESTION_LENGTH}.`,
@@ -1141,7 +1181,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   const contextValidationError = validateAskContext(body);
   if (contextValidationError) {
-    return askErrorJson({
+    return bail({
       status: 400,
       kind: "bad_request",
       message: contextValidationError,
@@ -1168,7 +1208,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           budgetUsd: err.budgetUsd,
         })
       );
-      return askErrorJson({
+      return bail({
         status: 429,
         kind: "budget",
         message: evaluationBudget
@@ -1180,6 +1220,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         requestId,
       });
     }
+    clearTimeout(globalTimer);
     throw err;
   }
 
@@ -1191,7 +1232,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (body.regenerate && body.sessionId) {
     await deleteLatestTurn(body.sessionId, body.regenerate.previousQuestion);
   }
-  const conversationHistory = body.sessionId ? await getConversationHistory(body.sessionId) : [];
+  const historySessionId = body.sessionId;
+  // History is best-effort context, not a system of record, so a slow Neon
+  // costs this follow-up its context rather than the whole answer. Raced
+  // because the driver has no AbortSignal support of its own.
+  const conversationHistory = historySessionId
+    ? await runWithDbTimeout(
+        "getConversationHistory",
+        () => getConversationHistory(historySessionId),
+        CONVERSATION_HISTORY_TIMEOUT_MS
+      ).catch((err) => {
+        console.warn(
+          JSON.stringify({
+            level: "warn",
+            route: "/api/ask",
+            requestId,
+            stage: "session",
+            msg: "history read exceeded its budget; answering without context",
+            err: err instanceof Error ? err.message : String(err),
+          })
+        );
+        return [];
+      })
+    : [];
 
   // ── Streaming branch ──
   // If the client requested ?stream=1, return an SSE stream that emits
@@ -1205,9 +1268,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       body: { question, filters: body.filters },
       requestId,
       totalStart,
-      deadlineMs,
       sessionId,
       conversationHistory,
+      globalController,
+      deadlineTimer: globalTimer,
     });
   }
 
@@ -1221,24 +1285,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (existingEntry) {
     try {
       const data = await getOrExtract(existingEntry);
+      clearTimeout(globalTimer);
       return freshResponseFromCached(data);
     } catch {
       // Existing pipeline rejected; fall through.
     }
   }
-
-  // Global deadline: guarantees the route returns within `deadlineMs` even
-  // if a downstream stage hangs. The AbortController lets signal-aware
-  // libs cancel their in-flight fetches; the Promise.race below guarantees
-  // return even if those libs ignore the signal.
-  const globalController = new AbortController();
-  let globalTimer: ReturnType<typeof setTimeout> | undefined;
-  const deadlinePromise = new Promise<NextResponse>((_, reject) => {
-    globalTimer = setTimeout(() => {
-      globalController.abort();
-      reject(new DeadlineExceededError(deadlineMs));
-    }, deadlineMs);
-  });
 
   const pipelinePromise = (async (): Promise<NextResponse> => {
     // ── Step 1: Reformulate query for better retrieval ──
@@ -1592,7 +1644,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       requestId,
     });
   } finally {
-    if (globalTimer) clearTimeout(globalTimer);
+    clearTimeout(globalTimer);
     // Auto-evict after TTL so a long-completed entry doesn't pin
     // memory. We don't delete immediately because slow concurrent
     // dups still need a window to read the cached body.

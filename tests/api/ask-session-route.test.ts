@@ -37,6 +37,7 @@ import {
   sessionHasAnyTurns,
 } from "@/src/lib/conversation-store";
 import { fetchArticlesByIds } from "@/src/lib/db";
+import { DbTimeoutError } from "@/src/lib/db-timeout";
 
 function makeRequest(sessionId?: string, method: "GET" | "DELETE" = "GET"): NextRequest {
   const url =
@@ -215,6 +216,46 @@ describe("GET /api/ask/session", () => {
       summary: "Original summary",
       bodySnippet: "Original body",
     });
+  });
+
+  it("falls back to snapshot-only sources when the articles read times out", async () => {
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        question: "Q1",
+        answer: "A1",
+        citedArticleIds: ["pinned-id", "unpinned-id"],
+        citationSnapshots: [
+          {
+            articleId: "pinned-id",
+            contentRevisionId: "legacy-sha256:pinned",
+            headline: "Pinned headline",
+            editionDate: "1960-01-07",
+            category: "News",
+            summary: "Pinned summary",
+            byline: null,
+            bodySnippet: "Pinned body",
+            evidenceSnippet: "Pinned evidence",
+            imageUrls: [],
+            imageCaptions: [],
+          },
+        ],
+        timestamp: 1_700_000_000_000,
+      },
+    ]);
+    (fetchArticlesByIds as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new DbTimeoutError("fetchArticlesByIds", 5_000)
+    );
+
+    const response = await GET(makeRequest("slow-db-sid"));
+    const body = await response.json();
+
+    // The transcript still renders: every pinned citation survives, and the
+    // one that needed the articles table is dropped rather than 500-ing.
+    expect(response.status).toBe(200);
+    expect(body.turns).toHaveLength(1);
+    expect(body.turns[0].answer).toBe("A1");
+    expect(body.turns[0].sourceArticles).toHaveLength(1);
+    expect(body.turns[0].sourceArticles[0].id).toBe("pinned-id");
   });
 
   it("returns empty body without probing when sessionId is missing", async () => {

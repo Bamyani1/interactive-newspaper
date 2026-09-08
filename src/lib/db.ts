@@ -1265,44 +1265,63 @@ export async function fetchArticleForRag(
   );
 }
 
+const SESSION_ARTICLES_TIMEOUT_MS = 5_000;
+
 /**
  * Batch-fetch article metadata by id for the /api/ask/session hydration
  * path. Returns a Map keyed by article id so callers can reassemble
  * per-turn sourceArticles without duplicating rows. Missing ids are
  * silently dropped (the article may have been deleted since the turn
  * was recorded).
+ *
+ * Raced against a timer like every other request-path query: this runs
+ * twice per hydrate, and an un-raced Neon call leaves an orphaned query
+ * running server-side while the route waits forever. Callers degrade to
+ * snapshot-only sources on DbTimeoutError.
  */
-export async function fetchArticlesByIds(ids: string[]): Promise<Map<string, SessionArticleMeta>> {
+export async function fetchArticlesByIds(
+  ids: string[],
+  options: { timeoutMs?: number; signal?: AbortSignal } = {}
+): Promise<Map<string, SessionArticleMeta>> {
   if (ids.length === 0) return new Map();
-  const rows = (await sql`
-    SELECT id, edition_date, category, headline, summary, byline, body_plain, image_urls, image_captions
-    FROM articles
-    WHERE id = ANY(${ids})
-  `) as Array<{
-    id: string;
-    edition_date: string;
-    category: string;
-    headline: string;
-    summary: string;
-    byline: string | null;
-    body_plain: string | null;
-    image_urls: string[] | null;
-    image_captions: (string | null)[] | null;
-  }>;
-  const map = new Map<string, SessionArticleMeta>();
-  for (const r of rows) {
-    const body = r.body_plain ?? "";
-    map.set(r.id, {
-      id: r.id,
-      headline: r.headline,
-      editionDate: r.edition_date,
-      category: r.category,
-      summary: r.summary,
-      byline: r.byline ?? null,
-      bodySnippet: body.slice(0, 300) + (body.length > 300 ? "\u2026" : ""),
-      imageUrls: r.image_urls ?? [],
-      imageCaptions: r.image_captions ?? [],
-    });
-  }
-  return map;
+  return runWithDbTimeout(
+    "fetchArticlesByIds",
+    async (signal) => {
+      const rows = (await sql.query(
+        `SELECT id, edition_date, category, headline, summary, byline, body_plain, image_urls, image_captions
+         FROM articles
+         WHERE id = ANY($1)`,
+        [ids],
+        { fetchOptions: { signal } }
+      )) as Array<{
+        id: string;
+        edition_date: string;
+        category: string;
+        headline: string;
+        summary: string;
+        byline: string | null;
+        body_plain: string | null;
+        image_urls: string[] | null;
+        image_captions: (string | null)[] | null;
+      }>;
+      const map = new Map<string, SessionArticleMeta>();
+      for (const r of rows) {
+        const body = r.body_plain ?? "";
+        map.set(r.id, {
+          id: r.id,
+          headline: r.headline,
+          editionDate: r.edition_date,
+          category: r.category,
+          summary: r.summary,
+          byline: r.byline ?? null,
+          bodySnippet: body.slice(0, 300) + (body.length > 300 ? "\u2026" : ""),
+          imageUrls: r.image_urls ?? [],
+          imageCaptions: r.image_captions ?? [],
+        });
+      }
+      return map;
+    },
+    options.timeoutMs ?? SESSION_ARTICLES_TIMEOUT_MS,
+    options.signal
+  );
 }

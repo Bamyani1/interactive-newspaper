@@ -9,6 +9,11 @@
  */
 
 import { neon } from "@neondatabase/serverless";
+import { runWithDbTimeout } from "@/src/lib/db-timeout";
+
+// The limiter gates every /api/* request, so its budget is the tightest on
+// the request path: past this the in-memory window is the better answer.
+const NEON_CHECK_TIMEOUT_MS = 1_500;
 
 interface RateLimitEntry {
   count: number;
@@ -91,7 +96,13 @@ async function checkNeon(
   // Atomic upsert + increment. If the existing window has expired we
   // reset the counter to 1 and push expires_at forward; otherwise we
   // increment. RETURNING gives us the post-update count + expiry.
-  const rows = (await sql`
+  // Raced against a timer: the limiter is the first await on every /api/*
+  // request, and Neon's serverless driver has no AbortSignal support, so a
+  // hung upsert would stall everything behind it. A timeout lands in the
+  // caller's catch and degrades to the in-memory window.
+  const rows = (await runWithDbTimeout(
+    "rateLimitCheck",
+    () => sql`
         INSERT INTO api_rate_bucket (key, count, expires_at)
         VALUES (${key}, 1, ${windowEndIso})
         ON CONFLICT (key) DO UPDATE
@@ -99,7 +110,9 @@ async function checkNeon(
             count = CASE WHEN api_rate_bucket.expires_at < NOW() THEN 1 ELSE api_rate_bucket.count + 1 END,
             expires_at = CASE WHEN api_rate_bucket.expires_at < NOW() THEN ${windowEndIso} ELSE api_rate_bucket.expires_at END
         RETURNING count, expires_at
-    `) as Array<{ count: number; expires_at: string | Date }>;
+    `,
+    NEON_CHECK_TIMEOUT_MS
+  )) as Array<{ count: number; expires_at: string | Date }>;
   const count = Number(rows[0]?.count ?? 1);
   const resetAt =
     rows[0]?.expires_at instanceof Date

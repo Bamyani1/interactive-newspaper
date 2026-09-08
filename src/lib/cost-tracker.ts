@@ -24,6 +24,7 @@ import {
   RAG_GENERATION_MODEL,
 } from "@/src/lib/rag-model-config";
 import { getRagEvaluationConfig } from "@/src/lib/rag-evaluation";
+import { runWithDbTimeout } from "@/src/lib/db-timeout";
 
 // USD per 1,000,000 tokens for standard online requests at global.
 const PRICE_PER_MTOKEN: Record<string, { input: number; output: number }> = {
@@ -44,6 +45,10 @@ let DAILY_BUDGET_USD = 2;
 // read/write means Neon recovered and resets the accumulator to 0.
 const OUTAGE_BUDGET_USD = 0.5;
 let outageSpendUsd = 0;
+
+// The budget read sits on the request path, so it gets a timer like every
+// other request-path query.
+const BUDGET_READ_TIMEOUT_MS = 2_000;
 
 let evaluationRunId: string | null = null;
 let evaluationSpendUsd = 0;
@@ -315,9 +320,17 @@ export async function checkDailyBudget(): Promise<void> {
   const day = today();
   let spent = 0;
   try {
-    const rows = (await sql`
+    // Raced against a timer: this is the last await before the first Gemini
+    // call, and Neon's serverless driver has no AbortSignal support, so a
+    // hung read would otherwise stall /api/ask indefinitely. A timeout is
+    // treated exactly like any other DB error — bounded fail-open below.
+    const rows = (await runWithDbTimeout(
+      "checkDailyBudget",
+      () => sql`
             SELECT spent_usd FROM ai_spend_counter WHERE day = ${day}
-        `) as Array<{ spent_usd: string | number }>;
+        `,
+      BUDGET_READ_TIMEOUT_MS
+    )) as Array<{ spent_usd: string | number }>;
     spent = rows.length > 0 ? Number(rows[0].spent_usd) : 0;
     outageSpendUsd = 0; // DB reachable — clear any accumulated outage estimate
   } catch (err) {

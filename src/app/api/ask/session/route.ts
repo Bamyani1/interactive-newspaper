@@ -28,7 +28,7 @@ import {
   getConversationHistory,
   sessionHasAnyTurns,
 } from "@/src/lib/conversation-store";
-import { fetchArticlesByIds } from "@/src/lib/db";
+import { fetchArticlesByIds, type SessionArticleMeta } from "@/src/lib/db";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -83,7 +83,23 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       })
     )
   );
-  const articleMap = await fetchArticlesByIds(allIds);
+  // A hydrate that cannot reach the articles table still has every pinned
+  // citation snapshot, so degrade to those rather than failing the request:
+  // a partial transcript beats a 500. DbTimeoutError is the motivating case
+  // (the call is now raced against a timer) but any read failure degrades
+  // the same way.
+  const articleMap = await fetchArticlesByIds(allIds).catch((err) => {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        route: "/api/ask/session",
+        stage: "hydrate",
+        msg: "article metadata unavailable; serving snapshot-only sources",
+        err: err instanceof Error ? err.message : String(err),
+      })
+    );
+    return new Map<string, SessionArticleMeta>();
+  });
 
   return NextResponse.json({
     turns: turns.map((t) => ({
