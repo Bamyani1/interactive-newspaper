@@ -362,6 +362,8 @@ export interface UseAskArchiveReturn {
   activeThreadId: string | null;
   submit: (question: string) => void;
   stop: () => void;
+  regenerate: (turnId: string) => void;
+  editAndResend: (turnId: string, question: string) => void;
   retry: (turnId: string) => void;
   clearAllThreads: () => void;
   newConversation: () => void;
@@ -518,7 +520,11 @@ export function useAskArchive(): UseAskArchiveReturn {
   }, [dispatch]);
 
   const streamQuestion = useCallback(
-    async (turnId: string, question: string): Promise<void> => {
+    async (
+      turnId: string,
+      question: string,
+      opts: { previousQuestion?: string } = {}
+    ): Promise<void> => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -535,7 +541,16 @@ export function useAskArchive(): UseAskArchiveReturn {
           headers: { "Content-Type": "application/json" },
           // Omit rather than send "" — the server mints a strong
           // id when the field is absent, but rejects an empty one.
-          body: JSON.stringify(sessionId ? { question, sessionId } : { question }),
+          // `regenerate` names the turn being replaced so the server
+          // drops it from stored history; it needs a session to correct,
+          // so it only travels alongside one.
+          body: JSON.stringify({
+            question,
+            ...(sessionId ? { sessionId } : {}),
+            ...(sessionId && opts.previousQuestion
+              ? { regenerate: { previousQuestion: opts.previousQuestion } }
+              : {}),
+          }),
           signal: controller.signal,
         });
 
@@ -756,16 +771,62 @@ export function useAskArchive(): UseAskArchiveReturn {
   // would see. Aborting on unmount reaches the route's `cancel()`.
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  /**
+   * Re-run the final turn in place: same slot, same id, same position in
+   * the archive. Regenerate, edit-and-resend and retry-the-last-error all
+   * reduce to this. Only the last turn qualifies — re-running an earlier
+   * one would need the server to truncate history behind it.
+   */
+  const rerunLast = useCallback(
+    (turnId: string, question: string) => {
+      const index = state.turns.findIndex((t) => t.id === turnId);
+      if (index === -1 || index !== state.turns.length - 1) return;
+      const existing = state.turns[index];
+      if (existing.status === "streaming") return;
+      const trimmed = question.trim();
+      if (!trimmed) return;
+      interactionRevisionRef.current += 1;
+      // An error turn was never persisted server-side, so there is
+      // nothing to correct. Asking the server to drop "the newest turn
+      // matching this question" would then target the previous good turn.
+      const previousQuestion = existing.status === "error" ? undefined : existing.question;
+      dispatch({ type: "TURN_RESTART", id: turnId, question: trimmed });
+      void streamQuestion(turnId, trimmed, { previousQuestion });
+    },
+    [state.turns, dispatch, streamQuestion]
+  );
+
+  /** Ask the same question again — the answer was wrong, thin, or cut off. */
+  const regenerate = useCallback(
+    (turnId: string) => {
+      const existing = state.turns.find((t) => t.id === turnId);
+      if (existing) rerunLast(turnId, existing.question);
+    },
+    [state.turns, rerunLast]
+  );
+
+  /** Replace the last question with a reworded one and answer that instead. */
+  const editAndResend = useCallback(
+    (turnId: string, question: string) => {
+      rerunLast(turnId, question);
+    },
+    [rerunLast]
+  );
+
   const retry = useCallback(
     (turnId: string) => {
-      // Find the errored turn by id, re-submit its question as a new
-      // turn. We don't mutate the errored turn in place — the
-      // transcript keeps its history honest.
-      const existing = state.turns.find((t) => t.id === turnId);
-      if (!existing) return;
-      submit(existing.question);
+      const index = state.turns.findIndex((t) => t.id === turnId);
+      if (index === -1) return;
+      // The last turn is retried in place. Appending a fresh copy grew a
+      // column of identical error rows, one per press. An older turn
+      // still appends, so the transcript keeps its history in order.
+      if (index === state.turns.length - 1) {
+        rerunLast(turnId, state.turns[index].question);
+        return;
+      }
+      submit(state.turns[index].question);
     },
-    [state.turns, submit]
+    [state.turns, rerunLast, submit]
   );
 
   // Mint a fresh sessionId for the next thread. Updates the ref
@@ -926,6 +987,8 @@ export function useAskArchive(): UseAskArchiveReturn {
     activeThreadId: state.activeThreadId,
     submit,
     stop,
+    regenerate,
+    editAndResend,
     retry,
     clearAllThreads,
     newConversation,

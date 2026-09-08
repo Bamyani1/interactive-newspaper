@@ -18,6 +18,8 @@ interface TranscriptProps {
   emptyReason: EmptyReason;
   onFollowUp: (question: string) => void;
   onRetry: (turnId: string) => void;
+  onRegenerate?: (turnId: string) => void;
+  onEditAndResend?: (turnId: string, question: string) => void;
 }
 
 export const Transcript: React.FC<TranscriptProps> = ({
@@ -28,6 +30,8 @@ export const Transcript: React.FC<TranscriptProps> = ({
   emptyReason,
   onFollowUp,
   onRetry,
+  onRegenerate,
+  onEditAndResend,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const prevTurnCountRef = useRef(turns.length);
@@ -154,6 +158,8 @@ export const Transcript: React.FC<TranscriptProps> = ({
           isLatest={i === turns.length - 1}
           onFollowUp={onFollowUp}
           onRetry={onRetry}
+          onRegenerate={onRegenerate}
+          onEditAndResend={onEditAndResend}
         />
       ))}
     </div>

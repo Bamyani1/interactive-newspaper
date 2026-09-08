@@ -133,6 +133,7 @@ export type AskAction =
       retryAfterSec?: number;
     }
   | { type: "TURN_STOPPED"; id: string }
+  | { type: "TURN_RESTART"; id: string; question: string }
   // Both carry the freshly minted thread pointer so it lands in the same
   // dispatch that empties the transcript, rather than depending on a
   // follow-up SET_THREADS to repair it.
@@ -309,6 +310,18 @@ export function askReducer(state: AskState, action: AskAction): AskState {
         retryAfterSec: action.retryAfterSec,
         stage: undefined,
       }));
+    case "TURN_RESTART":
+      // Reset the turn in place, keeping its id and createdAt so it holds
+      // its position in the transcript and its slot in the archive.
+      // Retrying used to append a fresh turn instead, which grew a column
+      // of identical error rows down the page. This is also what
+      // Regenerate and edit-and-resend are built on.
+      return {
+        ...updateTurn(state, action.id, (t) =>
+          t.status === "streaming" ? t : emptyTurn(t.id, action.question, t.createdAt)
+        ),
+        expiredBanner: false,
+      };
     case "TURN_STOPPED":
       // The reader interrupted, switched thread, or closed the page.
       // Keep every token that did arrive; Regenerate is the way back.

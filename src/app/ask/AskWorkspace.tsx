@@ -42,6 +42,8 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
     activeThreadId,
     submit,
     stop,
+    regenerate,
+    editAndResend,
     retry,
     clearAllThreads,
     newConversation,
@@ -169,6 +171,8 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
               suggestionDate={suggestionDate}
               onFollowUp={handleFollowUp}
               onRetry={retry}
+              onRegenerate={regenerate}
+              onEditAndResend={editAndResend}
             />
             {/*
               The composer stays enabled while an answer streams so the
