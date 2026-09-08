@@ -10,6 +10,8 @@
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
 import { executeTrackedGenerationCall } from "@/src/lib/cost-tracker";
+import { QuotaExhaustedError } from "@/src/lib/embeddings";
+import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import { formatHistoryForPrompt } from "@/src/lib/conversation-store";
 import type { ConversationTurn } from "@/src/lib/conversation-store";
@@ -30,6 +32,131 @@ export interface ReformulatedQuery {
   /** Inferred only from an explicit year/decade/range in the user's query. */
   startDate?: string;
   endDate?: string;
+  /**
+   * The model never answered, so `ftsQuery` is a locally derived keyword
+   * set rather than a reformulation, and `mode`/`coverageIntent` are
+   * defaults rather than judgements. Surfaced as `meta.reformulationDegraded`
+   * so a weak answer can be told apart from a question the reformulator
+   * simply had nothing to add to.
+   */
+  reformulationDegraded?: true;
+}
+
+/**
+ * Function words that carry no retrieval signal but which
+ * `websearch_to_tsquery` still ANDs into the query, so a raw question like
+ * "What happened at OWU in the 1960s?" demands a document containing
+ * "what" AND "at" AND "in" and matches almost nothing. Deliberately short:
+ * anything domain-specific belongs in the model's reformulation, not here.
+ */
+const FTS_STOPWORDS = new Set([
+  "a",
+  "about",
+  "after",
+  "all",
+  "an",
+  "and",
+  "any",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "before",
+  "but",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "during",
+  "ever",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "he",
+  "her",
+  "him",
+  "his",
+  "how",
+  "i",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "many",
+  "me",
+  "much",
+  "my",
+  "of",
+  "on",
+  "or",
+  "our",
+  "over",
+  "she",
+  "should",
+  "some",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "us",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "whom",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your",
+]);
+
+/** More than this and the ANDed tsquery is too narrow to match anything. */
+const MAX_FALLBACK_FTS_TOKENS = 6;
+
+/**
+ * Keyword query to use when the reformulator produced nothing. Lowercases,
+ * strips punctuation, drops the stopwords above, and keeps at most the six
+ * longest survivors in the order they were asked — longest because length
+ * is the cheapest available proxy for specificity without a model. Returns
+ * the raw question only when nothing survives, which is the old behaviour
+ * and is still better than an empty tsquery.
+ */
+export function fallbackFtsQuery(question: string): string {
+  const tokens = question
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(/\s+/)
+    // Single characters are punctuation fallout ("Kennedy's" -> kennedy, s),
+    // never a search term.
+    .filter((token) => token.length > 1);
+  const kept = [...new Set(tokens.filter((token) => !FTS_STOPWORDS.has(token)))];
+  if (kept.length === 0) return normalizeFtsQuery(question);
+  const longest = new Set(
+    [...kept].sort((a, b) => b.length - a.length).slice(0, MAX_FALLBACK_FTS_TOKENS)
+  );
+  return normalizeFtsQuery(kept.filter((token) => longest.has(token)).join(" "));
 }
 
 const REFORMULATION_PROMPT = `You help reformulate modern search queries for The Transcript Archive (Ohio Wesleyan University, 1950-2006).
@@ -84,58 +211,71 @@ export async function reformulateQuery(
     conversationHistory?: ConversationTurn[];
   } = {}
 ): Promise<ReformulatedQuery> {
+  // The degraded shape, not the raw question: a failed reformulation used
+  // to push the whole sentence into websearch_to_tsquery, which ANDs its
+  // function words and collapses recall to near zero.
   const fallback: ReformulatedQuery = {
     embeddingQuery: originalQuestion,
-    ftsQuery: originalQuestion,
+    ftsQuery: fallbackFtsQuery(originalQuestion),
     mode: "text",
     complexity: "simple",
     coverageIntent: "none",
+    reformulationDegraded: true,
   };
 
   try {
     const client = getGeminiClient();
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REFORMULATION_TIMEOUT_MS);
+    const response = await retryOnQuota(
+      "reformulate",
+      () => {
+        // Fresh timeout per attempt: a retried call must get its own
+        // 5s budget, not the remains of the first attempt's.
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), REFORMULATION_TIMEOUT_MS);
 
-    // Combine the outer request signal (from /api/ask's global deadline)
-    // with the internal 5s timeout. Either firing aborts the SDK call.
-    const combinedSignal = opts.signal
-      ? AbortSignal.any([opts.signal, controller.signal])
-      : controller.signal;
+        // Combine the outer request signal (from /api/ask's global deadline)
+        // with the internal 5s timeout. Either firing aborts the SDK call.
+        const combinedSignal = opts.signal
+          ? AbortSignal.any([opts.signal, controller.signal])
+          : controller.signal;
 
-    const response = await executeTrackedGenerationCall({
-      model: REFORMULATION_MODEL,
-      maxOutputTokens: REFORMULATION_MAX_TOKENS,
-      requestId: opts.requestId,
-      op: "reformulate",
-      call: () =>
-        client.models.generateContent({
+        return executeTrackedGenerationCall({
           model: REFORMULATION_MODEL,
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: buildReformulatorInput(originalQuestion, opts.conversationHistory) }],
-            },
-          ],
-          config: {
-            systemInstruction: REFORMULATION_PROMPT,
-            maxOutputTokens: REFORMULATION_MAX_TOKENS,
-            thinkingConfig: {
-              thinkingLevel: RAG_MODEL_CONFIG.reformulate.thinkingLevel,
-            },
-            responseMimeType: "application/json",
-            responseJsonSchema: REFORMULATION_SCHEMA,
-            abortSignal: combinedSignal,
-          },
-        }),
-    });
-
-    clearTimeout(timeout);
+          maxOutputTokens: REFORMULATION_MAX_TOKENS,
+          requestId: opts.requestId,
+          op: "reformulate",
+          call: () =>
+            client.models.generateContent({
+              model: REFORMULATION_MODEL,
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    { text: buildReformulatorInput(originalQuestion, opts.conversationHistory) },
+                  ],
+                },
+              ],
+              config: {
+                systemInstruction: REFORMULATION_PROMPT,
+                maxOutputTokens: REFORMULATION_MAX_TOKENS,
+                thinkingConfig: {
+                  thinkingLevel: RAG_MODEL_CONFIG.reformulate.thinkingLevel,
+                },
+                responseMimeType: "application/json",
+                responseJsonSchema: REFORMULATION_SCHEMA,
+                abortSignal: combinedSignal,
+              },
+            }),
+        }).finally(() => clearTimeout(timeout));
+      },
+      { signal: opts.signal, requestId: opts.requestId }
+    );
 
     const text = response.text?.trim() ?? "";
     return parseReformulationResponse(text, fallback);
   } catch (err) {
+    const quota = isQuotaError(err);
     const isTimeout = err instanceof Error && err.name === "AbortError";
     console.warn(
       JSON.stringify({
@@ -143,12 +283,19 @@ export async function reformulateQuery(
         route: "/api/ask",
         requestId: opts.requestId,
         stage: "reformulate",
-        msg: isTimeout
-          ? "reformulation timed out, using original query"
-          : "reformulation failed, using original query",
+        quota,
+        msg: quota
+          ? "reformulation hit the model quota"
+          : isTimeout
+            ? "reformulation timed out, using degraded keyword query"
+            : "reformulation failed, using degraded keyword query",
         err: err instanceof Error ? err.message : String(err),
       })
     );
+    // A spent quota is not degradable: every later model call in this
+    // request will 429 too, so tell the reader to come back rather than
+    // spending the budget on an answer built from a weakened query.
+    if (quota) throw new QuotaExhaustedError("reformulate", err);
     return fallback;
   }
 }
