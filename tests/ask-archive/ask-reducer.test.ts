@@ -103,7 +103,7 @@ describe("askReducer", () => {
     expect(next.turns[0].createdAt).toBe(42);
   });
 
-  it("APPEND_USER freezes any still-streaming previous turn at 'done'", () => {
+  it("APPEND_USER freezes any still-streaming previous turn at 'stopped'", () => {
     const state: AskState = {
       ...INITIAL_STATE,
       turns: [
@@ -120,7 +120,7 @@ describe("askReducer", () => {
       question: "follow-up",
     });
     expect(next.turns).toHaveLength(2);
-    expect(next.turns[0].status).toBe("done");
+    expect(next.turns[0].status).toBe("stopped");
     expect(next.turns[0].answer).toBe("partial");
     expect(next.turns[1].status).toBe("streaming");
   });
@@ -376,6 +376,77 @@ describe("askReducer", () => {
     });
     expect(next.threads).toEqual(prior.threads);
     expect(next.activeThreadId).toBe("keep");
+  });
+
+  it("TURN_STOPPED freezes a streaming turn and keeps its partial answer", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [
+        makeTurn({
+          id: "t-1",
+          status: "streaming",
+          answer: "Half an ans",
+          stage: "Writing answer…",
+        }),
+      ],
+    };
+    const next = askReducer(state, { type: "TURN_STOPPED", id: "t-1" });
+    expect(next.turns[0].status).toBe("stopped");
+    expect(next.turns[0].answer).toBe("Half an ans");
+    expect(next.turns[0].stage).toBeUndefined();
+  });
+
+  it("TURN_STOPPED leaves an already-finished turn alone", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1", status: "done", answer: "Complete." })],
+    };
+    const next = askReducer(state, { type: "TURN_STOPPED", id: "t-1" });
+    expect(next).toBe(state);
+  });
+
+  // Late frames from a stream the reader abandoned must not reanimate the
+  // turn: a `done` arriving after a stop would swap the full answer back
+  // in, and any of these flipping status back to "streaming" would
+  // re-disable the composer with no stream left to finish it.
+  it.each([
+    ["stopped" as const],
+    ["done" as const],
+    ["error" as const],
+  ])("ignores stream events for a turn already %s", (status) => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1", status, answer: "kept" })],
+    };
+    const actions = [
+      { type: "TURN_STAGE" as const, id: "t-1", stage: "Ranking sources…" },
+      { type: "TURN_DELTA" as const, id: "t-1", text: " more" },
+      {
+        type: "TURN_META" as const,
+        id: "t-1",
+        mode: "visual" as const,
+        requestId: "late",
+        sourceArticles: [],
+        meta: {},
+      },
+      {
+        type: "TURN_DONE" as const,
+        id: "t-1",
+        answer: "the whole answer",
+        citations: [],
+        confidence: "high" as const,
+        meta: META,
+      },
+      {
+        type: "TURN_ERROR" as const,
+        id: "t-1",
+        kind: "network" as const,
+        message: "late failure",
+      },
+    ];
+    for (const action of actions) {
+      expect(askReducer(state, action)).toBe(state);
+    }
   });
 
   it("unknown turn ids are no-ops (state unchanged)", () => {

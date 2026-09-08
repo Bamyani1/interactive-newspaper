@@ -315,6 +315,7 @@ export interface UseAskArchiveReturn {
   threads: ThreadSummary[];
   activeThreadId: string | null;
   submit: (question: string) => void;
+  stop: () => void;
   retry: (turnId: string) => void;
   clearAllThreads: () => void;
   newConversation: () => void;
@@ -324,6 +325,10 @@ export interface UseAskArchiveReturn {
 export function useAskArchive(): UseAskArchiveReturn {
   const [state, dispatch] = useReducer(askReducer, INITIAL_STATE);
   const abortRef = useRef<AbortController | null>(null);
+  // The turn the in-flight stream is writing into. `stop()` needs it to
+  // settle that turn synchronously on the keypress rather than waiting
+  // for the aborted fetch to unwind.
+  const streamingTurnIdRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const interactionRevisionRef = useRef(0);
 
@@ -467,6 +472,7 @@ export function useAskArchive(): UseAskArchiveReturn {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      streamingTurnIdRef.current = turnId;
 
       if (!sessionIdRef.current) {
         sessionIdRef.current = readOrCreateSessionId();
@@ -593,6 +599,10 @@ export function useAskArchive(): UseAskArchiveReturn {
               // turn freezes — TURN_DONE replaces the answer
               // with the authoritative final text.
               await typewriter.settle();
+              // settle() awaits real frames, so a stop during the last
+              // few words lands here. Freezing the turn as "done" would
+              // undo the reader's stop and swap in the full answer.
+              if (controller.signal.aborted) return;
               dispatch({
                 type: "TURN_DONE",
                 id: turnId,
@@ -628,6 +638,33 @@ export function useAskArchive(): UseAskArchiveReturn {
             message: "Connection lost. Check your network and retry.",
           });
         }
+      } finally {
+        // Every exit from this function has to leave the turn in a
+        // terminal status. A stream that ends without `done` or `error`
+        // — a dropped connection, a proxy cutting the response, a
+        // server crash mid-generation — used to leave `status:
+        // "streaming"` forever, which disabled the composer, Export and
+        // Clear-all until the reader reloaded the page.
+        //
+        // Only the stream that still owns `abortRef` may settle: a
+        // `stop()` followed by a regenerate in the same tick has already
+        // replaced the controller, and marking that restarted turn
+        // stopped would strand it. Both dispatches are no-ops on a turn
+        // that already settled.
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+          streamingTurnIdRef.current = null;
+          if (controller.signal.aborted) {
+            dispatch({ type: "TURN_STOPPED", id: turnId });
+          } else {
+            dispatch({
+              type: "TURN_ERROR",
+              id: turnId,
+              kind: "network",
+              message: "The connection closed before the answer finished.",
+            });
+          }
+        }
       }
     },
     [dispatch]
@@ -649,6 +686,25 @@ export function useAskArchive(): UseAskArchiveReturn {
     },
     [dispatch, streamQuestion]
   );
+
+  /**
+   * Interrupt the answer in progress and keep every token that arrived.
+   * Dispatches synchronously so the composer flips back from Stop to
+   * Send on the keypress instead of when the aborted fetch unwinds.
+   */
+  const stop = useCallback(() => {
+    const turnId = streamingTurnIdRef.current;
+    interactionRevisionRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    streamingTurnIdRef.current = null;
+    if (turnId) dispatch({ type: "TURN_STOPPED", id: turnId });
+  }, [dispatch]);
+
+  // Leaving the page mid-answer used to leave the request running: the
+  // server kept generating (and kept billing) into a transcript nobody
+  // would see. Aborting on unmount reaches the route's `cancel()`.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const retry = useCallback(
     (turnId: string) => {
@@ -811,6 +867,7 @@ export function useAskArchive(): UseAskArchiveReturn {
     threads: state.threads,
     activeThreadId: state.activeThreadId,
     submit,
+    stop,
     retry,
     clearAllThreads,
     newConversation,

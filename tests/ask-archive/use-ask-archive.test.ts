@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useAskArchive } from "@/features/ask-archive/hooks/useAskArchive";
 import type { AskResponse } from "@/src/types";
+import { makeSseResponse, type ControlledSse } from "./support/sse-response";
 
 const mockResponse: AskResponse = {
   question: "What happened?",
@@ -602,19 +603,39 @@ describe("useAskArchive", () => {
 });
 
 describe("stream progress reporting", () => {
-  function sseBody(events: object[]): string {
-    return events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+  function routeStream(sse: ControlledSse) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/ask/session")) {
+          return Promise.resolve(makeJsonResponse({ turns: [], expired: false }));
+        }
+        return Promise.resolve(sse.response);
+      })
+    );
   }
 
-  function streamResponse(events: object[]): Response {
-    return new Response(sseBody(events), {
-      status: 200,
-      headers: { "Content-Type": "text/event-stream" },
+  // The stage label is transient by design — the first answer token
+  // replaces it, and so does any terminal frame. So these streams stay
+  // open: closing one would settle the turn and clear the label before
+  // the assertion could read it.
+  async function mountWithOpenStream(sse: ControlledSse, question: string) {
+    routeStream(sse);
+    const view = renderHook(() => useAskArchive());
+    await waitFor(() => expect(view.result.current.isHydrating).toBe(false));
+    await act(async () => {
+      view.result.current.submit(question);
     });
+    return view;
   }
 
   beforeEach(() => {
     window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("labels every stage the server actually emits, including coverage", async () => {
@@ -628,87 +649,228 @@ describe("stream progress reporting", () => {
     ];
 
     for (const stage of stages) {
-      const seen: string[] = [];
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async (url: string) => {
-          if (String(url).includes("/api/ask/session")) {
-            return new Response(JSON.stringify({ turns: [], expired: false }), { status: 200 });
-          }
-          return streamResponse([{ type: "stage", name: stage.name, elapsedMs: 1 }]);
-        })
-      );
-
-      const { result } = renderHook(() => useAskArchive());
-      await waitFor(() => expect(result.current.isHydrating).toBe(false));
+      const sse = makeSseResponse();
+      const view = await mountWithOpenStream(sse, `stage ${stage.name}`);
       await act(async () => {
-        result.current.submit(`stage ${stage.name}`);
+        sse.emit({ type: "stage", name: stage.name, elapsedMs: 1 });
       });
       await waitFor(() => {
-        const turn = result.current.turns.at(-1);
-        if (turn?.stage) seen.push(turn.stage);
-        expect(turn?.stage).toBe(stage.label);
+        expect(view.result.current.turns.at(-1)?.stage).toBe(stage.label);
       });
+      view.unmount();
     }
   });
 
   it("names the archive lookups an agent turn is making", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        if (String(url).includes("/api/ask/session")) {
-          return new Response(JSON.stringify({ turns: [], expired: false }), { status: 200 });
-        }
-        return streamResponse([
-          { type: "stage", name: "agent", elapsedMs: 1 },
-          { type: "tool_call", tool: "search_archive", round: 1, args: { query: "dorm curfew" } },
-        ]);
-      })
-    );
+    const sse = makeSseResponse();
+    const view = await mountWithOpenStream(sse, "what did students say about curfews?");
 
-    const { result } = renderHook(() => useAskArchive());
-    await waitFor(() => expect(result.current.isHydrating).toBe(false));
     await act(async () => {
-      result.current.submit("what did students say about curfews?");
+      sse.emit({ type: "stage", name: "agent", elapsedMs: 1 });
+      sse.emit({ type: "tool_call", tool: "search_archive", round: 1, args: { query: "dorm curfew" } });
     });
 
     await waitFor(() => {
-      expect(result.current.turns.at(-1)?.stage).toBe("Searching for “dorm curfew”…");
+      expect(view.result.current.turns.at(-1)?.stage).toBe("Searching for “dorm curfew”…");
     });
+    view.unmount();
+  });
+
+  it("shows what each archive lookup came back with", async () => {
+    const sse = makeSseResponse();
+    const view = await mountWithOpenStream(sse, "how many editions mention the fire?");
+
+    await act(async () => {
+      sse.emit({ type: "tool_call", tool: "search_archive", round: 1, args: { query: "fire" } });
+      sse.emit({ type: "tool_result", tool: "search_archive", round: 1, summary: "Found 4 articles" });
+    });
+
+    await waitFor(() => {
+      expect(view.result.current.turns.at(-1)?.stage).toBe("Found 4 articles");
+    });
+    view.unmount();
   });
 
   it("carries a mid-stream rate limit and its wait to the turn", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        if (String(url).includes("/api/ask/session")) {
-          return new Response(JSON.stringify({ turns: [], expired: false }), { status: 200 });
-        }
-        return streamResponse([
-          { type: "stage", name: "retrieve", elapsedMs: 1 },
-          {
-            type: "error",
-            kind: "rate_limit",
-            stage: "generate",
-            message: "AI quota reached. Please try again later.",
-            requestId: "req-1",
-            retryAfterSec: 42,
-          },
-        ]);
-      })
-    );
+    const sse = makeSseResponse();
+    const view = await mountWithOpenStream(sse, "quota please");
 
-    const { result } = renderHook(() => useAskArchive());
-    await waitFor(() => expect(result.current.isHydrating).toBe(false));
     await act(async () => {
-      result.current.submit("quota please");
+      sse.emit({ type: "stage", name: "retrieve", elapsedMs: 1 });
+      sse.emit({
+        type: "error",
+        kind: "rate_limit",
+        stage: "generate",
+        message: "AI quota reached. Please try again later.",
+        requestId: "req-1",
+        retryAfterSec: 42,
+      });
+      sse.close();
     });
 
     await waitFor(() => {
-      const turn = result.current.turns.at(-1);
+      const turn = view.result.current.turns.at(-1);
       expect(turn?.status).toBe("error");
       expect(turn?.errorKind).toBe("rate_limit");
       expect(turn?.retryAfterSec).toBe(42);
     });
+    view.unmount();
+  });
+});
+
+/**
+ * Turn lifecycle: every way a stream can end without a `done` frame.
+ *
+ * "streaming" is the status that disables the composer, Export and
+ * Clear-all, so a turn stuck in it is the "halts" symptom — the page
+ * looks alive and accepts nothing until a reload. These tests drive the
+ * reader by hand (see support/sse-response) because the bugs live in the
+ * windows between reads.
+ */
+describe("useAskArchive turn lifecycle", () => {
+  interface Recorded {
+    signal: AbortSignal | undefined;
+  }
+
+  function routeStream(sse: ControlledSse, recorded: Recorded[] = []) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/ask/session")) {
+          return Promise.resolve(makeJsonResponse({ turns: [], expired: false }));
+        }
+        recorded.push({ signal: init?.signal ?? undefined });
+        return Promise.resolve(sse.response);
+      })
+    );
+    return recorded;
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function submitAndStream(sse: ControlledSse, question: string) {
+    const recorded = routeStream(sse);
+    const view = renderHook(() => useAskArchive());
+    await waitFor(() => expect(view.result.current.isHydrating).toBe(false));
+    await act(async () => {
+      view.result.current.submit(question);
+    });
+    await waitFor(() => expect(recorded).toHaveLength(1));
+    return { view, recorded };
+  }
+
+  it("settles a turn whose stream ends without done or error", async () => {
+    const sse = makeSseResponse();
+    const { view } = await submitAndStream(sse, "who closed the observatory?");
+
+    await act(async () => {
+      sse.emit({ type: "stage", name: "retrieve", elapsedMs: 5 });
+    });
+    await waitFor(() => expect(view.result.current.turns[0].stage).toBeTruthy());
+    expect(view.result.current.turns[0].status).toBe("streaming");
+
+    // The connection drops: the body ends, no terminal frame arrives.
+    await act(async () => {
+      sse.close();
+    });
+
+    await waitFor(() => expect(view.result.current.turns[0].status).toBe("error"));
+    expect(view.result.current.turns[0].errorKind).toBe("network");
+    expect(view.result.current.turns[0].errorMessage).toMatch(/connection closed/i);
+  });
+
+  it("stop() freezes the turn as stopped and keeps the words that arrived", async () => {
+    const sse = makeSseResponse();
+    const { view } = await submitAndStream(sse, "what did the trustees decide?");
+
+    await act(async () => {
+      sse.emit({ type: "delta", text: "The trustees voted in favour of " });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    expect(view.result.current.turns[0].answer.length).toBeGreaterThan(0);
+
+    act(() => {
+      view.result.current.stop();
+    });
+
+    expect(view.result.current.turns[0].status).toBe("stopped");
+    expect("The trustees voted in favour of ").toContain(view.result.current.turns[0].answer);
+    expect(view.result.current.turns[0].stage).toBeUndefined();
+  });
+
+  it("a later done frame cannot revive a stopped turn", async () => {
+    const sse = makeSseResponse();
+    const { view } = await submitAndStream(sse, "and the vote after that?");
+
+    await act(async () => {
+      sse.emit({ type: "delta", text: "Partial " });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    act(() => {
+      view.result.current.stop();
+    });
+    expect(view.result.current.turns[0].status).toBe("stopped");
+    const stoppedAnswer = view.result.current.turns[0].answer;
+
+    // A frame already in flight when the reader hit Stop.
+    await act(async () => {
+      sse.emit({
+        type: "done",
+        answer: "The complete answer nobody asked to finish.",
+        citations: [],
+        confidence: "high",
+        outcome: "answered",
+        sessionId: "s-1",
+        requestId: "r-1",
+        meta: mockResponse.meta,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+
+    expect(view.result.current.turns[0].status).toBe("stopped");
+    expect(view.result.current.turns[0].answer).toBe(stoppedAnswer);
+  });
+
+  it("asking something else freezes the abandoned answer as stopped", async () => {
+    const sse = makeSseResponse();
+    const { view } = await submitAndStream(sse, "first question");
+
+    await act(async () => {
+      sse.emit({ type: "delta", text: "Beginning of an answer " });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+
+    await act(async () => {
+      view.result.current.submit("second question");
+    });
+
+    expect(view.result.current.turns).toHaveLength(2);
+    expect(view.result.current.turns[0].status).toBe("stopped");
+    expect(view.result.current.turns[0].answer.length).toBeGreaterThan(0);
+    expect(view.result.current.turns[1].status).toBe("streaming");
+  });
+
+  it("aborts an in-flight answer when the workspace unmounts", async () => {
+    const sse = makeSseResponse();
+    const recorded: Recorded[] = [];
+    routeStream(sse, recorded);
+    const view = renderHook(() => useAskArchive());
+    await waitFor(() => expect(view.result.current.isHydrating).toBe(false));
+    await act(async () => {
+      view.result.current.submit("leaving mid-answer");
+    });
+    await waitFor(() => expect(recorded).toHaveLength(1));
+    expect(recorded[0].signal?.aborted).toBe(false);
+
+    view.unmount();
+
+    expect(recorded[0].signal?.aborted).toBe(true);
   });
 });
