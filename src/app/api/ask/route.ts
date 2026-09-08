@@ -6,6 +6,7 @@
  * Body: { question: string, filters?: { category?, startDate?, endDate? } }
  */
 
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { QuotaExhaustedError } from "@/src/lib/embeddings";
 import { DbTimeoutError, fetchYearDigest, queryArchiveCoverage } from "@/src/lib/db";
@@ -219,9 +220,14 @@ function wrapStage<T>(stage: AskErrorStage, fn: () => Promise<T>): Promise<T> {
   });
 }
 
-/** Generate a short, log-greppable request identifier. */
+/**
+ * Generate a log-greppable request identifier. A UUID, not a short slice of
+ * Math.random(): this is the join key into ask_feedback, and 8 base-36
+ * characters collide often enough at real traffic to misattribute a vote to
+ * the wrong answer. request_id is TEXT, so the extra width is free.
+ */
 function newRequestId(): string {
-  return Math.random().toString(36).slice(2, 10);
+  return randomUUID();
 }
 
 const PERSIST_TURN_TIMEOUT_MS = 1500;

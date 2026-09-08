@@ -419,7 +419,11 @@ describe("POST /api/ask", () => {
 
     expect(response.status).toBe(500);
     expect(body.stage).toBe("reformulate");
-    expect(body.requestId).toMatch(/^[a-z0-9]+$/);
+    // A UUID, not 8 characters of Math.random(): the request id is the join
+    // key into ask_feedback, so a collision silently misattributes a vote.
+    expect(body.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
   });
 
   it("tags reranker errors with stage='rerank'", async () => {

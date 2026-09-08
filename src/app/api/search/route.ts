@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { searchArticles } from "@/src/lib/db";
 
@@ -5,7 +6,7 @@ const MAX_QUERY_LENGTH = 200;
 const SEARCH_TIMEOUT_MS = 8_000;
 
 function newRequestId(): string {
-  return Math.random().toString(36).slice(2, 10);
+  return randomUUID();
 }
 
 function clampParam(raw: string | null, fallback: number, min: number, max: number): number {
