@@ -9,6 +9,7 @@ import {
 } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AskLanding } from "@/features/ask-archive/components/AskLanding";
+import { pickDailyQuestion } from "@/features/ask-archive/data/question-pool";
 
 describe("AskLanding", () => {
     beforeEach(() => {
@@ -19,25 +20,27 @@ describe("AskLanding", () => {
         vi.restoreAllMocks();
     });
 
-    it("renders the hero, lede, and combined footer strip", () => {
+    it("renders the kicker, hero, lede, and provenance strip", () => {
         render(<AskLanding onPickQuestion={vi.fn()} />);
 
-        // H1 with accent on "archive"
         const heading = screen.getByRole("heading", { level: 1 });
-        expect(heading).toHaveTextContent(/Ask the archive/);
+        expect(heading).toHaveTextContent(/What did students say\?/);
 
-        // Lede mentions The Transcript and the verification claim.
+        // Kicker carries the archive's span.
         expect(
-            screen.getByText(/research desk for/i),
-        ).toBeInTheDocument();
-        expect(
-            screen.getByText(/cites the stories it comes from/i),
+            screen.getByText(/Primary-source research/i),
         ).toBeInTheDocument();
 
-        // Single combined footer: verification disclaimer + archive scope.
+        // Lede orients the reader without over-promising.
+        expect(
+            screen.getByText(/Search more than five decades of/i),
+        ).toBeInTheDocument();
+
+        // Provenance strip: the standing verification disclaimer survives
+        // the redesign — answers are generated over OCR'd historical text.
         expect(
             screen.getByText(
-                /Answers cite primary sources\. Always verify\. · 1950\s*[–-]\s*2006 · 351 editions · 11,705 articles/,
+                /Answers cite primary sources\. Always verify\. · 351 editions · 11,705 articles/,
             ),
         ).toBeInTheDocument();
     });
@@ -72,12 +75,17 @@ describe("AskLanding", () => {
         );
         expect(buttons).toHaveLength(3);
 
-        // None of the suggestions should duplicate the excluded question —
-        // keeps the landing varied across days.
+        // The homepage teaser's question of the day is excluded, so a
+        // reader arriving from it is never offered the same prompt twice.
+        const daily = pickDailyQuestion(new Date("2000-01-01T12:00:00.000Z"));
         buttons.forEach((btn) => {
-            expect(btn.textContent).not.toMatch(
-                /Tell me about Homecoming in the 1970s/,
-            );
+            expect(btn.textContent).not.toContain(daily);
+        });
+
+        // Each row is labelled with the research lens it represents.
+        buttons.forEach((btn) => {
+            const lens = btn.querySelector(".ask-landing-suggestion-lens");
+            expect(lens?.textContent ?? "").not.toEqual("");
         });
 
         fireEvent.click(buttons[0]);

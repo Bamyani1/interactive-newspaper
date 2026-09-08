@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
     QUESTION_POOL,
+    QUESTION_LENSES,
+    QUESTION_PROMPTS,
+    getQuestionPrompt,
     pickDailyQuestion,
     pickSuggestions,
 } from "@/features/ask-archive/data/question-pool";
@@ -49,5 +52,35 @@ describe("pickSuggestions", () => {
         const a = pickSuggestions(new Date("2026-04-18T12:00:00Z"));
         const b = pickSuggestions(new Date("2026-04-18T12:00:00Z"));
         expect(b).toEqual(a);
+    });
+
+    it("draws the three suggestions from distinct research lenses", () => {
+        const suggestions = pickSuggestions(new Date("2026-04-18T12:00:00Z"));
+        const lenses = suggestions.map(
+            (question) => getQuestionPrompt(question)?.lens,
+        );
+
+        expect(new Set(lenses).size).toBe(3);
+        lenses.forEach((lens) => expect(QUESTION_LENSES).toContain(lens));
+    });
+
+    it("never repeats a suggestion, on any day of a full rotation", () => {
+        // The lens-per-slot draw is what guarantees distinctness; walk a
+        // full year so an off-by-one in the rotation cannot hide.
+        for (let day = 0; day < 366; day += 1) {
+            const date = new Date(Date.UTC(2026, 0, 1 + day, 12));
+            const suggestions = pickSuggestions(date, pickDailyQuestion(date));
+            expect(new Set(suggestions).size, date.toISOString()).toBe(3);
+            expect(suggestions).not.toContain(pickDailyQuestion(date));
+        }
+    });
+
+    it("every lens is represented by enough prompts to survive an exclusion", () => {
+        for (const lens of QUESTION_LENSES) {
+            const count = QUESTION_PROMPTS.filter(
+                (prompt) => prompt.lens === lens,
+            ).length;
+            expect(count, lens).toBeGreaterThan(1);
+        }
     });
 });

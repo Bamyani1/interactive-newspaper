@@ -34,9 +34,11 @@ describe("LandingAskTeaser", () => {
         expect(QUESTION_POOL).toContain(q);
     });
 
-    it("shows the 'Try asking' label and the italic question text", () => {
+    it("shows the 'Start with a question' label and the italic question text", () => {
         render(<LandingAskTeaser />);
-        expect(screen.getByText(/Try asking/i)).toBeInTheDocument();
+        expect(
+            screen.getByText(/Start with a question/i),
+        ).toBeInTheDocument();
         // The question is rendered wrapped in curly quotes.
         const quoted = document.querySelector(".cinema-ask-teaser-text");
         expect(quoted).not.toBeNull();
