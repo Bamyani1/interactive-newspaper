@@ -29,9 +29,14 @@ function DeepLinkBridge({
 interface AskWorkspaceProps {
   /** Request-time UTC date shared by SSR and hydration for daily prompts. */
   suggestionDate?: string;
+  /** Real corpus size, counted server-side. See page.tsx for the fallback. */
+  corpus?: { editionCount: number; articleCount: number };
 }
 
-export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorkspaceProps) {
+export default function AskWorkspace({
+  suggestionDate = "2000-01-01",
+  corpus,
+}: AskWorkspaceProps) {
   const {
     turns,
     isHydrating,
@@ -178,6 +183,7 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
               expiredBanner={expiredBanner}
               emptyReason={emptyReason}
               suggestionDate={suggestionDate}
+              corpus={corpus}
               onFollowUp={handleFollowUp}
               onRetry={retry}
               onRegenerate={regenerate}
