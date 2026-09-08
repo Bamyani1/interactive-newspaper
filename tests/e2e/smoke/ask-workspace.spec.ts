@@ -349,7 +349,9 @@ test.describe("Ask response states", () => {
     };
 
     await submitQuestion(page, DELAYED_ASK_QUESTION);
-    await expect(page.locator(".ask-thinking-rule")).toContainText("Thinking…");
+    // The fixture releases the first frame with the response, so the pill
+    // is already reporting the reformulate stage by name here.
+    await expect(page.locator(".ask-thinking-rule")).toContainText("Understanding your question…");
     await expect
       .poll(() => readControlledAskStream(page))
       .toMatchObject({
@@ -359,7 +361,7 @@ test.describe("Ask response states", () => {
       });
 
     await advanceControlledAskStream(page);
-    await expect(page.locator(".ask-thinking-rule")).toContainText("Searching archive…");
+    await expect(page.locator(".ask-thinking-rule")).toContainText("Searching the archive…");
     await advanceControlledAskStream(page);
     await expect(page.locator(".ask-thinking-rule")).toContainText("Ranking sources…");
     await advanceControlledAskStream(page);
@@ -527,7 +529,7 @@ test.describe("returning Ask workspace", () => {
 
   test("a deep link answers in a new thread and archives the open conversation", async ({
     page,
-  }) => {
+  }, testInfo) => {
     const deepLinkQuestion = "Do not duplicate this";
     let postCount = 0;
     page.on("request", (request) => {
@@ -548,11 +550,22 @@ test.describe("returning Ask workspace", () => {
     );
 
     // The conversation that was open is archived rather than overwritten:
-    // reachable from the sidebar, and no longer in the live transcript.
-    await expect(
-      page.getByRole("button", { name: `Open thread: ${RETURNING_ASK_QUESTION}` })
-    ).toBeVisible();
+    // kept in the local archive, and no longer in the live transcript.
     await expect(transcript.getByText(RETURNING_ASK_ANSWER)).toHaveCount(0);
+    const archivedQuestions = await page.evaluate(() => {
+      const raw = window.localStorage.getItem("owu-ask-threads");
+      const threads = raw ? (JSON.parse(raw) as { firstQuestion?: string }[]) : [];
+      return threads.map((thread) => thread.firstQuestion);
+    });
+    expect(archivedQuestions).toContain(RETURNING_ASK_QUESTION);
+
+    // Desktop surfaces that archive as the thread rail. Mobile has no
+    // thread list yet, so there is nothing to assert there.
+    if (testInfo.project.name === "chromium-desktop") {
+      await expect(
+        page.getByRole("button", { name: `Open thread: ${RETURNING_ASK_QUESTION}` })
+      ).toBeVisible();
+    }
 
     await page.waitForTimeout(250);
     expect(postCount).toBe(1);

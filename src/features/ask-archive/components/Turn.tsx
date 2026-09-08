@@ -113,7 +113,7 @@ export const Turn: React.FC<TurnProps> = ({
           <>
             {showStagePill ? (
               <div className="ask-thinking-rule" aria-label="Thinking">
-                <span>{turn.stage ?? "Searching the archive"}</span>
+                <span>{turn.stage ?? "Thinking…"}</span>
                 <span className="ask-thinking-dot" aria-hidden="true" />
                 <span className="ask-thinking-dot" aria-hidden="true" />
                 <span className="ask-thinking-dot" aria-hidden="true" />
