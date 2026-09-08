@@ -38,6 +38,28 @@ interface StoredThread {
   lastUpdatedAt: number;
 }
 
+/**
+ * localStorage is a terminal destination: nothing will ever finish a
+ * stream that was archived mid-flight. Writing `status: "streaming"`
+ * bricked a thread permanently — reopening it showed a spinner that
+ * could never resolve, and because the last turn read as streaming the
+ * composer, Export and Clear-all stayed disabled for as long as that
+ * thread was open.
+ *
+ * Normalizing here rather than at each call site means every write path
+ * is covered, including ones that archive a render-time snapshot taken
+ * before the abort landed.
+ */
+function settleForStorage(turns: Turn[]): Turn[] {
+  let changed = false;
+  const settled = turns.map((turn) => {
+    if (turn.status !== "streaming") return turn;
+    changed = true;
+    return { ...turn, status: "stopped" as const, stage: undefined };
+  });
+  return changed ? settled : turns;
+}
+
 function readArchive(): StoredThread[] {
   if (typeof window === "undefined") return [];
   try {
@@ -49,10 +71,21 @@ function readArchive(): StoredThread[] {
     // pruned list back so stale entries clear from storage, not just view.
     const cutoff = Date.now() - THREAD_RETENTION_MS;
     const fresh = parsed.filter(
-      (t) => typeof t.lastUpdatedAt === "number" && t.lastUpdatedAt >= cutoff
+      (t) =>
+        typeof t.lastUpdatedAt === "number" && t.lastUpdatedAt >= cutoff && Array.isArray(t.turns)
     );
-    if (fresh.length !== parsed.length) writeArchive(fresh);
-    return fresh;
+    // Heal threads an earlier version stored mid-stream, then write the
+    // repair back — otherwise the same dead spinner returns on every
+    // load for as long as that thread stays inside the retention window.
+    let healed = false;
+    const settled = fresh.map((thread) => {
+      const turns = settleForStorage(thread.turns);
+      if (turns === thread.turns) return thread;
+      healed = true;
+      return { ...thread, turns };
+    });
+    if (healed || settled.length !== parsed.length) writeArchive(settled);
+    return settled;
   } catch {
     return [];
   }
@@ -80,7 +113,7 @@ function upsertArchive(sessionId: string, turns: Turn[]): StoredThread[] {
   const entry: StoredThread = {
     sessionId,
     firstQuestion,
-    turns,
+    turns: settleForStorage(turns),
     createdAt: idx >= 0 ? archive[idx].createdAt : now,
     lastUpdatedAt: now,
   };
@@ -752,7 +785,7 @@ export function useAskArchive(): UseAskArchiveReturn {
 
   const clearAllThreads = useCallback(() => {
     interactionRevisionRef.current += 1;
-    abortRef.current?.abort();
+    stop();
     // Every session this browser knows about: the archived threads
     // plus the one currently on screen (which is only archived once
     // it has turns).
@@ -772,11 +805,13 @@ export function useAskArchive(): UseAskArchiveReturn {
       threads: [],
       activeThreadId: fresh,
     });
-  }, [dispatch, mintFreshSession, deleteServerSession]);
+  }, [dispatch, mintFreshSession, deleteServerSession, stop]);
 
   const newConversation = useCallback(() => {
     interactionRevisionRef.current += 1;
-    abortRef.current?.abort();
+    // Settle the abandoned answer before it is archived, so the stored
+    // copy records that it was cut off rather than looking unfinished.
+    stop();
     const prevSessionId = sessionIdRef.current;
     // New archives the current thread to the sidebar (so the user
     // can come back to it) and mints a fresh session for the next
@@ -792,13 +827,13 @@ export function useAskArchive(): UseAskArchiveReturn {
       threads: summariesFrom(readArchive()),
       activeThreadId: fresh,
     });
-  }, [dispatch, mintFreshSession, state.turns]);
+  }, [dispatch, mintFreshSession, state.turns, stop]);
 
   const switchThread = useCallback(
     (threadId: string) => {
       if (threadId === sessionIdRef.current) return; // no-op
       interactionRevisionRef.current += 1;
-      abortRef.current?.abort();
+      stop();
       // Snapshot the current thread before leaving so we don't
       // lose any turns that weren't archived yet.
       const prevSessionId = sessionIdRef.current;
@@ -827,7 +862,7 @@ export function useAskArchive(): UseAskArchiveReturn {
         activeThreadId: threadId,
       });
     },
-    [dispatch, state.turns]
+    [dispatch, state.turns, stop]
   );
 
   // Persist the active thread to localStorage at each stable

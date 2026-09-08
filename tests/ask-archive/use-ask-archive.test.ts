@@ -857,6 +857,95 @@ describe("useAskArchive turn lifecycle", () => {
     expect(view.result.current.turns[1].status).toBe("streaming");
   });
 
+  it("archives an abandoned answer as stopped, never as streaming", async () => {
+    window.localStorage.setItem(
+      "owu-ask-threads",
+      JSON.stringify([
+        {
+          sessionId: "other-thread",
+          firstQuestion: "an older question",
+          turns: [
+            {
+              id: "old-1",
+              question: "an older question",
+              answer: "an older answer",
+              status: "done",
+              sourceArticles: [],
+              citations: [],
+              meta: null,
+              confidence: "medium",
+              requestId: "",
+              mode: "text",
+              createdAt: Date.now(),
+            },
+          ],
+          createdAt: Date.now(),
+          lastUpdatedAt: Date.now(),
+        },
+      ])
+    );
+
+    const sse = makeSseResponse();
+    const { view } = await submitAndStream(sse, "leaving this one unfinished");
+    await act(async () => {
+      sse.emit({ type: "delta", text: "Half of an answer " });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+
+    await act(async () => {
+      view.result.current.switchThread("other-thread");
+    });
+
+    const stored = JSON.parse(window.localStorage.getItem("owu-ask-threads") ?? "[]") as Array<{
+      turns: Array<{ status: string; answer: string }>;
+    }>;
+    const statuses = stored.flatMap((thread) => thread.turns.map((turn) => turn.status));
+    expect(statuses).not.toContain("streaming");
+    expect(statuses).toContain("stopped");
+    const abandoned = stored.flatMap((t) => t.turns).find((t) => t.status === "stopped");
+    expect(abandoned?.answer.length).toBeGreaterThan(0);
+  });
+
+  it("heals an archive an earlier version poisoned with a streaming turn", async () => {
+    const bricked = {
+      sessionId: "bricked",
+      firstQuestion: "stuck question",
+      turns: [
+        {
+          id: "stuck-1",
+          question: "stuck question",
+          answer: "answer that never finished",
+          status: "streaming",
+          stage: "Writing answer…",
+          sourceArticles: [],
+          citations: [],
+          meta: null,
+          confidence: "medium",
+          requestId: "",
+          mode: "text",
+          createdAt: Date.now(),
+        },
+      ],
+      createdAt: Date.now(),
+      lastUpdatedAt: Date.now(),
+    };
+    window.localStorage.setItem("owu-ask-threads", JSON.stringify([bricked]));
+    window.localStorage.setItem("owu-ask-session-id", "bricked");
+
+    const sse = makeSseResponse();
+    routeStream(sse);
+    const view = renderHook(() => useAskArchive());
+    await waitFor(() => expect(view.result.current.isHydrating).toBe(false));
+
+    // The repair is written back, not merely applied in memory.
+    const stored = JSON.parse(window.localStorage.getItem("owu-ask-threads") ?? "[]") as Array<{
+      turns: Array<{ status: string; stage?: string }>;
+    }>;
+    expect(stored[0].turns[0].status).toBe("stopped");
+    expect(stored[0].turns[0].stage).toBeUndefined();
+    view.unmount();
+  });
+
   it("aborts an in-flight answer when the workspace unmounts", async () => {
     const sse = makeSseResponse();
     const recorded: Recorded[] = [];
