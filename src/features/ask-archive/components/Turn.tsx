@@ -82,6 +82,7 @@ export const Turn: React.FC<TurnProps> = ({
   // something else before it finished. The text it did receive is real
   // and stays on screen; what it is missing is an ending.
   const isStopped = turn.status === "stopped";
+  const isError = turn.status === "error";
   const hasText = turn.answer.trim().length > 0;
   const showStagePill = isStreaming && !hasText;
 
@@ -91,7 +92,7 @@ export const Turn: React.FC<TurnProps> = ({
   // A stopped answer was cut at an arbitrary character, so it keeps the
   // trim permanently — there is no later frame to complete the syntax.
   const displayAnswer =
-    isStreaming || isStopped ? trimIncompleteMarkdown(turn.answer) : turn.answer;
+    isStreaming || isStopped || isError ? trimIncompleteMarkdown(turn.answer) : turn.answer;
 
   // Sources arrive with the metadata event, several seconds before the
   // first answer token — show them immediately so the wait is spent
@@ -140,6 +141,39 @@ export const Turn: React.FC<TurnProps> = ({
     if (!trimmed || trimmed === turn.question) return;
     onEditAndResend?.(turn.id, trimmed);
   }, [draft, onEditAndResend, turn.id, turn.question]);
+
+  // Hoisted so an error turn shows the same prose an ordinary turn does.
+  // A mid-stream failure used to replace everything the reader had already
+  // read with a bare error row, which looked like the answer was retracted.
+  const answerBlock = hasText ? (
+    <>
+      <p className="ask-turn-assistant-label">The desk replies</p>
+      <div className="ask-turn-answer" data-streaming={isStreaming ? "true" : undefined}>
+        <AnswerImageContext.Provider value={contextValue}>
+          <Markdown articleIdIndex={articleIdIndex} turnId={turn.id}>
+            {displayAnswer}
+          </Markdown>
+        </AnswerImageContext.Provider>
+      </div>
+    </>
+  ) : null;
+
+  // Also outside the success branch: a failed or interrupted answer is
+  // exactly the one a reader most wants to run again.
+  const actionsRow =
+    canRerun && onRegenerate && !isEditing ? (
+      <div className="ask-turn-actions">
+        <Button
+          variant="icon"
+          className="ask-turn-action"
+          onClick={() => onRegenerate(turn.id)}
+          aria-label="Regenerate answer"
+          title="Regenerate answer"
+        >
+          <RotateCcw size={14} aria-hidden="true" />
+        </Button>
+      </div>
+    ) : null;
 
   return (
     <article className="ask-turn">
@@ -198,13 +232,18 @@ export const Turn: React.FC<TurnProps> = ({
       </div>
 
       <div className="ask-turn-assistant" aria-live="polite" aria-atomic="false">
-        {turn.status === "error" ? (
-          <ErrorInline
-            kind={turn.errorKind ?? "server"}
-            message={turn.errorMessage ?? ""}
-            retryAfterSec={turn.retryAfterSec}
-            onRetry={() => onRetry(turn.id)}
-          />
+        {answerBlock}
+        {isError ? (
+          <>
+            <ErrorInline
+              kind={turn.errorKind ?? "server"}
+              message={turn.errorMessage ?? ""}
+              retryAfterSec={turn.retryAfterSec}
+              onRetry={() => onRetry(turn.id)}
+              stoppedEarly={hasText}
+            />
+            {actionsRow}
+          </>
         ) : (
           <>
             {showStagePill ? (
@@ -214,19 +253,6 @@ export const Turn: React.FC<TurnProps> = ({
                 <span className="ask-thinking-dot" aria-hidden="true" />
                 <span className="ask-thinking-dot" aria-hidden="true" />
               </div>
-            ) : null}
-
-            {hasText ? (
-              <>
-                <p className="ask-turn-assistant-label">The desk replies</p>
-                <div className="ask-turn-answer" data-streaming={isStreaming ? "true" : undefined}>
-                  <AnswerImageContext.Provider value={contextValue}>
-                    <Markdown articleIdIndex={articleIdIndex} turnId={turn.id}>
-                      {displayAnswer}
-                    </Markdown>
-                  </AnswerImageContext.Provider>
-                </div>
-              </>
             ) : null}
 
             {isStopped ? (
@@ -253,19 +279,7 @@ export const Turn: React.FC<TurnProps> = ({
               />
             ) : null}
 
-            {canRerun && onRegenerate && !isEditing ? (
-              <div className="ask-turn-actions">
-                <Button
-                  variant="icon"
-                  className="ask-turn-action"
-                  onClick={() => onRegenerate(turn.id)}
-                  aria-label="Regenerate answer"
-                  title="Regenerate answer"
-                >
-                  <RotateCcw size={14} aria-hidden="true" />
-                </Button>
-              </div>
-            ) : null}
+            {actionsRow}
 
             {turn.status === "done" &&
             isLatest &&
