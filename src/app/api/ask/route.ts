@@ -35,7 +35,7 @@ import {
   type AskStreamEvent,
 } from "@/src/lib/ask-stream-events";
 import { isQuotaError, kindForQuota, retryAfterSecFromQuotaError } from "@/src/lib/gemini-quota";
-import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
+import { getClientIp } from "@/src/lib/rate-limit";
 import { checkDailyBudget, DailyBudgetExceededError } from "@/src/lib/cost-tracker";
 import {
   DEDUP_TTL_MS,
@@ -71,8 +71,6 @@ const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
 const GLOBAL_DEADLINE_MS = 55_000;
 const CONVERSATION_HISTORY_TIMEOUT_MS = 2_000;
-
-const askRateLimiter = createRateLimiter({ bucket: "ask", limit: 10, windowMs: 60_000 });
 
 /**
  * Thrown when the request exceeds the global deadline. The top-level catch
@@ -1106,17 +1104,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = newRequestId();
   const deadlineMs = _testDeadlineMsOverride ?? GLOBAL_DEADLINE_MS;
 
-  // ── Rate limit (outside the deadline race so a 429 returns instantly) ──
+  // Rate limiting lives in middleware.ts (the `mw-ask` bucket, 10/min per IP)
+  // — not here. A second bucket in this route meant two Neon writes per
+  // question. The IP is still needed as the dedup key below.
   const ip = getClientIp(request);
-  const rateResult = await askRateLimiter(ip);
-  if (!rateResult.allowed) {
-    return askErrorJson({
-      status: 429,
-      kind: "rate_limit",
-      message: "Too many questions. Please wait a moment and try again.",
-      retryAfterSec: Math.ceil((rateResult.resetAt - Date.now()) / 1000),
-    });
-  }
 
   // ── Global deadline ──
   // Armed before the body is parsed so every await on the request path counts
