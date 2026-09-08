@@ -1212,6 +1212,57 @@ describe("useAskArchive turn lifecycle", () => {
     }
   });
 
+  it("clears an unreadable thread archive instead of failing every read", async () => {
+    // Left in place, the bad value made every future read throw and
+    // silently return nothing: an empty sidebar forever, with no way for
+    // the reader to recover it.
+    window.localStorage.setItem("owu-ask-threads", "{not json at all");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sse = makeSseResponse();
+    routeStream(sse);
+    const view = renderHook(() => useAskArchive());
+    await waitFor(() => expect(view.result.current.isHydrating).toBe(false));
+
+    expect(window.localStorage.getItem("owu-ask-threads")).toBeNull();
+    expect(warn).toHaveBeenCalled();
+    view.unmount();
+    warn.mockRestore();
+  });
+
+  it("never lists a thread that storage refused to save", async () => {
+    // Spied on the prototype: jsdom's Storage is proxy-backed, so an own
+    // property defined on the instance is not what the code path reaches.
+    const realSetItem = Storage.prototype.setItem;
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(function (this: Storage, key: string, value: string) {
+        if (key === "owu-ask-threads") throw new Error("QuotaExceededError");
+        realSetItem.call(this, key, value);
+      });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      vi.stubGlobal("fetch", fetchRouter(makeJsonResponse(mockResponse)));
+      const { result } = renderHook(() => useAskArchive());
+      await waitFor(() => expect(result.current.isHydrating).toBe(false));
+      act(() => {
+        result.current.submit("a question storage cannot hold");
+      });
+      await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+
+      // The live conversation survives — it lives in the reducer — but the
+      // sidebar must not claim a thread that would vanish on reload.
+      expect(result.current.turns).toHaveLength(1);
+      expect(result.current.threads).toEqual([]);
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      setItem.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
   it("aborts an in-flight answer when the workspace unmounts", async () => {
     const sse = makeSseResponse();
     const recorded: Recorded[] = [];

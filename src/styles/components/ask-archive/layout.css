@@ -392,6 +392,16 @@
    Rendered at the top of the transcript when a thread outlives the
    cached session — structurally a layout hint, not answer content.
    ========================================= */
+/* Export failures used to be console-only: the button flickered, no file
+   appeared, and nothing on screen explained why. */
+.ask-export-error {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label-md);
+  color: var(--color-accent-text);
+}
+
 .ask-expired-banner {
   padding: 0.65rem 0.9rem;
   border: 1px dashed var(--stroke-accent-soft);

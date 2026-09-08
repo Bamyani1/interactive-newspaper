@@ -86,19 +86,33 @@ function readArchive(): StoredThread[] {
     });
     if (healed || settled.length !== parsed.length) writeArchive(settled);
     return settled;
-  } catch {
+  } catch (err) {
+    // Unparseable, or the wrong shape. Leaving it in place meant every
+    // future read threw and silently returned nothing, so the sidebar
+    // stayed permanently empty with no way for the reader to recover.
+    // Clearing it costs the old threads once instead of forever.
+    console.warn("Ask thread archive was unreadable and has been cleared.", err);
+    try {
+      window.localStorage.removeItem(THREADS_STORAGE_KEY);
+    } catch {
+      // Storage is unavailable outright; there is nothing to clear.
+    }
     return [];
   }
 }
 
-function writeArchive(threads: StoredThread[]): void {
-  if (typeof window === "undefined") return;
+/** True when the write landed. False means storage refused it. */
+function writeArchive(threads: StoredThread[]): boolean {
+  if (typeof window === "undefined") return false;
   try {
     window.localStorage.setItem(THREADS_STORAGE_KEY, JSON.stringify(threads));
-  } catch {
-    // Quota exceeded or storage disabled — silently skip. The
-    // active thread's turns still live in the reducer, so the
-    // user doesn't lose their live conversation.
+    return true;
+  } catch (err) {
+    // Quota exceeded, or storage disabled. The live conversation is safe —
+    // it lives in the reducer — but the caller must not report the
+    // optimistic list as if it had been stored.
+    console.warn("Could not save the Ask thread archive.", err);
+    return false;
   }
 }
 
@@ -140,8 +154,10 @@ function upsertArchive(sessionId: string, turns: Turn[]): StoredThread[] {
   const next = [...archive];
   if (idx >= 0) next[idx] = entry;
   else next.push(entry);
-  writeArchive(next);
-  return next;
+  // On a refused write, report what storage actually holds. Returning the
+  // optimistic list made the sidebar list threads that were never saved
+  // and would vanish on reload.
+  return writeArchive(next) ? next : archive;
 }
 
 function toSummary(entry: StoredThread): ThreadSummary {
