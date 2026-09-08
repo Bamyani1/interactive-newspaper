@@ -34,10 +34,10 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Search the archive..."
+        placeholder="Search people, places, or events…"
         aria-label="Search the archive"
         aria-busy={isLoading}
-        className="pl-12 pr-16 text-lg"
+        className="pl-12 pr-16 text-base sm:text-lg"
       />
       {value && (
         <button
