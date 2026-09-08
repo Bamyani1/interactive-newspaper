@@ -432,12 +432,15 @@ export const FIREFOX_FRAME_ANCESTORS_COMPATIBILITY_WARNING =
   'warning: [JavaScript Warning: "Content-Security-Policy: Ignoring ‘x-frame-options’ because of ‘frame-ancestors’ directive."]';
 
 /**
- * Framer Motion 12 emits this development-only warning while the first
- * document boots whenever the browser explicitly prefers reduced motion, even
- * when MotionConfig correctly uses `reducedMotion="user"`. The observer uses
- * this predicate only once during the initial load's tightly bounded boot
- * window. The final diagnostics gate remains strict so an application cannot
- * impersonate it after the UI settles.
+ * Framer Motion 12 emits this development-only warning whenever a motion
+ * subtree mounts under the reduced-motion setting the audit context itself
+ * forces, even when MotionConfig correctly uses `reducedMotion="user"` — once
+ * per full document load and again after every client-side route change. The
+ * observer therefore consumes it whenever it appears rather than inside any
+ * boot window. Impersonation is ruled out by the predicate instead: the text
+ * must be exact, the source a local dev chunk, and the server in development
+ * mode. `expectNoUnexpectedDiagnostics` never applies this allowance, so a
+ * warning that reaches the gate stays fatal.
  */
 export function isExpectedFramerMotionReducedMotionDevWarning(warning: string): boolean {
   if (process.env.PLAYWRIGHT_SERVER_MODE === "production") return false;
