@@ -18,7 +18,9 @@ import {
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import type { RetrievedArticle } from "@/src/lib/db";
 import type { RankedArticle } from "@/src/lib/reranker";
-import type { Citation } from "@/src/types";
+import type { AnswerOutcome, AskErrorKind, Citation } from "@/src/types";
+import { QuotaExhaustedError } from "@/src/lib/embeddings";
+import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
 import { groundPipelineAnswer } from "@/src/lib/answer-grounding";
 import { AnswerFieldExtractor } from "@/src/lib/answer-stream-extractor";
 import {
@@ -53,6 +55,20 @@ export interface GeneratedAnswer {
   citations: Citation[];
   confidence: "low" | "medium" | "high";
   followUps: string[];
+  /**
+   * Whether `answer` is a reply at all. `error` means it is a canned
+   * apology: the route turns it into an SSE `error` event or a typed
+   * 429/504/500 and, critically, does not persist it as history.
+   */
+  outcome: AnswerOutcome;
+  /** Only with `outcome: "error"`; picks the recovery the reader is offered. */
+  errorKind?: AskErrorKind;
+  retryAfterSec?: number;
+}
+
+/** Where an answer with citations stands, versus an honest refusal. */
+function outcomeForCitations(citations: Citation[]): AnswerOutcome {
+  return citations.length > 0 ? "answered" : "no_evidence";
 }
 
 /**
@@ -72,6 +88,9 @@ export type AnswerStreamEvent =
       citations: Citation[];
       confidence: "low" | "medium" | "high";
       followUps: string[];
+      outcome: AnswerOutcome;
+      errorKind?: AskErrorKind;
+      retryAfterSec?: number;
     };
 
 // ─── System Prompt ───────────────────────────────────────────────
@@ -357,6 +376,7 @@ export async function generateAnswer(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "no_evidence",
     };
   }
 
@@ -393,6 +413,7 @@ export async function generateAnswer(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "no_evidence",
     };
   }
 
@@ -414,27 +435,35 @@ export async function generateAnswer(
     : controller.signal;
 
   try {
-    const response = await executeTrackedGenerationCall({
-      model: GENERATION_MODEL,
-      maxOutputTokens: MAX_ANSWER_TOKENS,
-      requestId: opts.requestId,
-      op: "generate",
-      call: () =>
-        client.models.generateContent({
+    const response = await retryOnQuota(
+      "generate",
+      () =>
+        executeTrackedGenerationCall({
           model: GENERATION_MODEL,
-          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-          config: {
-            systemInstruction: systemPrompt,
-            maxOutputTokens: MAX_ANSWER_TOKENS,
-            thinkingConfig: {
-              thinkingLevel: RAG_MODEL_CONFIG.answer.thinkingLevel,
-            },
-            responseMimeType: "application/json",
-            responseJsonSchema: ANSWER_SCHEMA,
-            abortSignal: combinedSignal,
-          },
+          maxOutputTokens: MAX_ANSWER_TOKENS,
+          requestId: opts.requestId,
+          op: "generate",
+          call: () =>
+            client.models.generateContent({
+              model: GENERATION_MODEL,
+              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+              config: {
+                systemInstruction: systemPrompt,
+                maxOutputTokens: MAX_ANSWER_TOKENS,
+                thinkingConfig: {
+                  thinkingLevel: RAG_MODEL_CONFIG.answer.thinkingLevel,
+                },
+                responseMimeType: "application/json",
+                responseJsonSchema: ANSWER_SCHEMA,
+                abortSignal: combinedSignal,
+              },
+            }),
         }),
-    });
+      // One controller spans the retries on purpose: the 30s budget is what
+      // the route's deadline math assumes, and a 429 rejects in well under a
+      // second, so a retry does not need a fresh budget to have a chance.
+      { signal: combinedSignal, requestId: opts.requestId }
+    );
 
     clearTimeout(timeout);
 
@@ -457,6 +486,8 @@ export async function generateAnswer(
         citations: [],
         confidence: "low",
         followUps: [],
+        outcome: "error",
+        errorKind: "server",
       };
     }
 
@@ -476,9 +507,15 @@ export async function generateAnswer(
       citations,
       confidence: validatedConfidence,
       followUps,
+      outcome: outcomeForCitations(citations),
     };
   } catch (err) {
     clearTimeout(timeout);
+
+    // A spent quota is the one failure worth waiting out, so it leaves as a
+    // typed error the route can answer with 429 + Retry-After rather than as
+    // an HTTP 200 whose body is an apology.
+    if (isQuotaError(err)) throw new QuotaExhaustedError("generate", err);
 
     if (err instanceof Error && err.name === "AbortError") {
       return {
@@ -486,6 +523,8 @@ export async function generateAnswer(
         citations: [],
         confidence: "low",
         followUps: [],
+        outcome: "error",
+        errorKind: "timeout",
       };
     }
 
@@ -504,6 +543,8 @@ export async function generateAnswer(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "error",
+      errorKind: "server",
     };
   }
 }
@@ -542,6 +583,7 @@ export async function* generateAnswerStream(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "no_evidence",
     };
     return;
   }
@@ -575,6 +617,7 @@ export async function* generateAnswerStream(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "no_evidence",
     };
     return;
   }
@@ -613,20 +656,27 @@ export async function* generateAnswerStream(
   let budgetSettled = false;
 
   try {
-    const stream = await client.models.generateContentStream({
-      model: GENERATION_MODEL,
-      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-      config: {
-        systemInstruction: systemPrompt,
-        maxOutputTokens: MAX_ANSWER_TOKENS,
-        thinkingConfig: {
-          thinkingLevel: RAG_MODEL_CONFIG.answer.thinkingLevel,
-        },
-        responseMimeType: "application/json",
-        responseJsonSchema: ANSWER_SCHEMA,
-        abortSignal: combinedSignal,
-      },
-    });
+    // Only the initial await is retried. A 429 rejects before the first
+    // chunk, so no text can be emitted twice; retrying mid-stream could.
+    const stream = await retryOnQuota(
+      "generate.stream",
+      () =>
+        client.models.generateContentStream({
+          model: GENERATION_MODEL,
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          config: {
+            systemInstruction: systemPrompt,
+            maxOutputTokens: MAX_ANSWER_TOKENS,
+            thinkingConfig: {
+              thinkingLevel: RAG_MODEL_CONFIG.answer.thinkingLevel,
+            },
+            responseMimeType: "application/json",
+            responseJsonSchema: ANSWER_SCHEMA,
+            abortSignal: combinedSignal,
+          },
+        }),
+      { signal: combinedSignal, requestId: opts.requestId }
+    );
 
     for await (const chunk of stream) {
       if (chunk.usageMetadata) finalUsageMetadata = chunk.usageMetadata;
@@ -669,6 +719,8 @@ export async function* generateAnswerStream(
         citations: [],
         confidence: "low",
         followUps: [],
+        outcome: "error",
+        errorKind: "server",
       };
       return;
     }
@@ -688,10 +740,15 @@ export async function* generateAnswerStream(
       citations,
       confidence: validatedConfidence,
       followUps,
+      outcome: outcomeForCitations(citations),
     };
   } catch (err) {
     clearTimeout(timeout);
     if (!budgetSettled) releaseEvaluationGoogleCall(budgetReservation);
+
+    // See generateAnswer: a spent quota leaves as a typed error so the route
+    // can offer a wait instead of an apology.
+    if (isQuotaError(err)) throw new QuotaExhaustedError("generate.stream", err);
 
     if (err instanceof Error && err.name === "AbortError") {
       yield {
@@ -700,6 +757,8 @@ export async function* generateAnswerStream(
         citations: [],
         confidence: "low",
         followUps: [],
+        outcome: "error",
+        errorKind: "timeout",
       };
       return;
     }
@@ -720,6 +779,8 @@ export async function* generateAnswerStream(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "error",
+      errorKind: "server",
     };
   }
 }
