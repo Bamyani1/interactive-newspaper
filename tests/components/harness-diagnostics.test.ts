@@ -7,7 +7,9 @@ import {
   createBrowserDiagnostics,
   expectNoUnexpectedDiagnostics,
   isExpectedFramerMotionReducedMotionDevWarning,
+  isIgnorableMockedAskStreamAbort,
   isIgnorableOptimizedImageAbort,
+  isIgnorableRscPrefetchAbort,
   type FulfilledHttpError,
 } from "../e2e/support/harness";
 
@@ -361,5 +363,129 @@ describe("optimized-image abort exception (isIgnorableOptimizedImageAbort)", () 
     );
 
     expect(() => expectNoUnexpectedDiagnostics(diagnostics)).toThrow();
+  });
+});
+
+describe("mocked Ask stream abort exception (isIgnorableMockedAskStreamAbort)", () => {
+  it.each([
+    {
+      name: "the deterministic Ask stream aborted mid-drain",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "the same endpoint without a query string",
+      input: {
+        method: "post",
+        url: "http://127.0.0.1:3219/api/ask",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+  ])("ignores $name", ({ input }) => {
+    expect(isIgnorableMockedAskStreamAbort(input)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "the session endpoint",
+      input: {
+        method: "DELETE",
+        url: "http://127.0.0.1:3219/api/ask/session?sessionId=abc",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "a GET on the Ask endpoint",
+      input: {
+        method: "GET",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "a connection failure rather than an abort",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_CONNECTION_REFUSED",
+      },
+    },
+    {
+      name: "another route that merely mentions the path",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask-archive",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+  ])("keeps $name fatal", ({ input }) => {
+    expect(isIgnorableMockedAskStreamAbort(input)).toBe(false);
+  });
+
+  it("only filters at collection: a recorded Ask abort still fails the gate", () => {
+    // Same contract as the optimized-image exception — the predicate runs when
+    // the harness records `requestfailed`, so anything already in the array is
+    // fatal by the time the gate reads it.
+    const diagnostics = createBrowserDiagnostics();
+    diagnostics.requestFailures.push(
+      "POST http://127.0.0.1:3219/api/ask?stream=1 — net::ERR_ABORTED",
+    );
+
+    expect(() => expectNoUnexpectedDiagnostics(diagnostics)).toThrow();
+  });
+});
+
+describe("RSC prefetch abort exception (isIgnorableRscPrefetchAbort)", () => {
+  it.each([
+    {
+      name: "a prefetch cancelled by the next navigation",
+      input: {
+        method: "GET",
+        url: "http://127.0.0.1:3102/edition/1950-01-18?_rsc=MlMt8ECJAlrppkZ5",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "a root prefetch",
+      input: {
+        method: "get",
+        url: "http://127.0.0.1:3102/?_rsc=XC-WlyCfq8JIDEk4",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+  ])("ignores $name", ({ input }) => {
+    expect(isIgnorableRscPrefetchAbort(input)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "a document navigation abort",
+      input: {
+        method: "GET",
+        url: "http://127.0.0.1:3102/edition/1950-01-18",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "a prefetch that failed to connect",
+      input: {
+        method: "GET",
+        url: "http://127.0.0.1:3102/ask?_rsc=XC-WlyCfq8JIDEk4",
+        errorText: "net::ERR_CONNECTION_REFUSED",
+      },
+    },
+    {
+      name: "a POST carrying an _rsc param",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3102/ask?_rsc=XC-WlyCfq8JIDEk4",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+  ])("keeps $name fatal", ({ input }) => {
+    expect(isIgnorableRscPrefetchAbort(input)).toBe(false);
   });
 });
