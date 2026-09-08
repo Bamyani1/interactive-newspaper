@@ -199,6 +199,39 @@ describe("Turn controls", () => {
     expect(screen.queryByRole("button", { name: "And after that?" })).not.toBeInTheDocument();
   });
 
+  // A mid-stream failure used to replace everything the reader had already
+  // read with a bare error row, which looked like the answer was retracted.
+  it("keeps streamed text visible under a mid-stream error", () => {
+    renderTurn(
+      makeTurn({
+        status: "error",
+        answer: "The trustees met in March and",
+        errorKind: "timeout",
+        errorMessage: "That took too long.",
+      })
+    );
+    expect(screen.getByText(/the trustees met in march and/i)).toBeInTheDocument();
+    expect(screen.getByText(/stopped early/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry this question" })).toBeInTheDocument();
+  });
+
+  it("an error with no text at all still names the failure", () => {
+    renderTurn(
+      makeTurn({ status: "error", answer: "", errorKind: "timeout", errorMessage: "Too slow." })
+    );
+    expect(screen.getByText("Timed out")).toBeInTheDocument();
+    expect(screen.queryByText(/stopped early/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("The desk replies")).not.toBeInTheDocument();
+  });
+
+  it("an error turn can still be regenerated or reworded", () => {
+    const onRegenerate = vi.fn();
+    renderTurn(makeTurn({ status: "error", answer: "", errorKind: "server" }), { onRegenerate });
+    expect(screen.getByRole("button", { name: "Edit question" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate answer" }));
+    expect(onRegenerate).toHaveBeenCalledWith("t-1");
+  });
+
   it("the export view shows no controls", () => {
     renderTurn(makeTurn(), { exportMode: true });
     expect(screen.queryByRole("button", { name: "Regenerate answer" })).not.toBeInTheDocument();

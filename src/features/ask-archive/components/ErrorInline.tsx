@@ -8,6 +8,12 @@ interface ErrorInlineProps {
   kind: AskErrorKind;
   message: string;
   retryAfterSec?: number;
+  /**
+   * The turn already has prose on screen above this row. The label then
+   * has to say the answer was cut off rather than that nothing happened —
+   * the reader can see that something did.
+   */
+  stoppedEarly?: boolean;
   onRetry: () => void;
 }
 
@@ -58,6 +64,7 @@ export const ErrorInline: React.FC<ErrorInlineProps> = ({
   kind,
   message,
   retryAfterSec,
+  stoppedEarly = false,
   onRetry,
 }) => {
   const [remaining, setRemaining] = useState<number | null>(retryAfterSec ?? null);
@@ -79,7 +86,9 @@ export const ErrorInline: React.FC<ErrorInlineProps> = ({
 
   return (
     <div className="ask-error-inline" role="alert">
-      <p className="ask-error-inline-label">{labelFor(kind)}</p>
+      <p className="ask-error-inline-label">
+        {stoppedEarly ? "Stopped early" : labelFor(kind)}
+      </p>
       <p className="ask-error-inline-message">{displayMessage}</p>
       {remaining !== null && remaining > 0 ? (
         <p className="ask-error-inline-countdown">
