@@ -100,14 +100,19 @@ test("reconciles and sweeps the complete production/local edition union", async 
   const liveDateRows = editionDatesFromApi(await liveResponse.json());
   const liveDates = [...new Set(liveDateRows)].sort();
   const generated = await productionPrerenderInventory();
-  const generatedDates = generated.dates;
+  // Nonce-based CSP (middleware.ts, since 7e7cd2f) stamps a per-request nonce,
+  // which disables static prerendering, so a production build emits no edition
+  // routes. The live API is the published-edition inventory the sweep works
+  // from; the manifest is still read to prove the build was fresh and that
+  // nothing silently returned to prerendering.
+  const publishedDates = liveDates;
   const localOnlyDates = localDates.filter(
-    (date) => !generatedDates.includes(date),
+    (date) => !publishedDates.includes(date),
   );
-  const generatedOnlyDates = generatedDates.filter(
+  const publishedOnlyDates = publishedDates.filter(
     (date) => !localDates.includes(date),
   );
-  const unionDates = [...new Set([...generatedDates, ...localDates])].sort();
+  const unionDates = [...new Set([...publishedDates, ...localDates])].sort();
   const generatedFailures: Array<{ date: string; reason: string }> = [];
   const localOnlyFailures: Array<{ date: string; reason: string }> = [];
   const deferredAssets: Array<{
@@ -120,16 +125,16 @@ test("reconciles and sweeps the complete production/local edition union", async 
 
   expect(liveDateRows).toHaveLength(351);
   expect(liveDates).toHaveLength(351);
-  expect(generatedDates).toHaveLength(351);
-  expect(generated.datePaths).toHaveLength(351);
-  expect(generated.hasIndex).toBe(true);
-  expect(generated.datePaths.length + Number(generated.hasIndex)).toBe(352);
-  expect(localDates).toHaveLength(373);
-  expect(localOnlyDates).toHaveLength(22);
-  expect(generatedOnlyDates).toEqual([]);
-  expect(unionDates).toHaveLength(373);
-  expect(generatedDates).toEqual(liveDates);
-  expect(generatedDates).toEqual(expect.arrayContaining([...DEEP_TEST_EDITIONS]));
+  expect(generated.datePaths).toEqual([]);
+  expect(generated.hasIndex).toBe(false);
+  // 1983-04-21 is ingested locally but was never published to the live DB;
+  // the 21 partial 1983-85 directories that used to sit beside it held no
+  // edition.json and have been removed.
+  expect(localDates).toHaveLength(352);
+  expect(localOnlyDates).toEqual(["1983-04-21"]);
+  expect(publishedOnlyDates).toEqual([]);
+  expect(unionDates).toHaveLength(352);
+  expect(publishedDates).toEqual(expect.arrayContaining([...DEEP_TEST_EDITIONS]));
 
   await writeAuditJson(
     evidencePath({
@@ -141,12 +146,12 @@ test("reconciles and sweeps the complete production/local edition union", async 
     {
       localCount: localDates.length,
       apiCount: liveDates.length,
-      generatedCount: generatedDates.length,
+      publishedCount: publishedDates.length,
       generatedPathCountIncludingIndex:
         generated.datePaths.length + Number(generated.hasIndex),
       localOnlyCount: localOnlyDates.length,
       localOnly404s: localOnlyDates,
-      generatedOnly: generatedOnlyDates,
+      publishedOnly: publishedOnlyDates,
       unionCount: unionDates.length,
       productionBuild: generated,
       deepTestEditions: DEEP_TEST_EDITIONS,
@@ -155,9 +160,9 @@ test("reconciles and sweeps the complete production/local edition union", async 
 
   for (const date of unionDates) {
     const response = await page.goto(`/edition/${date}`);
-    const isGenerated = generatedDates.includes(date);
+    const isPublished = publishedDates.includes(date);
 
-    if (!isGenerated) {
+    if (!isPublished) {
       if (response?.status() !== 404) {
         localOnlyFailures.push({
           date,
