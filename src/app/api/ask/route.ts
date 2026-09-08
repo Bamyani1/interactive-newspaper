@@ -21,6 +21,7 @@ import {
     formatHistoryForPrompt,
 } from "@/src/lib/conversation-store";
 import { runAgentLoop } from "@/src/lib/agent-loop";
+import type { AgentResult } from "@/src/lib/agent-loop";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type {
     AskResponse,
@@ -241,6 +242,40 @@ const PERSIST_TURN_TIMEOUT_MS = 1500;
  * the race where a rapid follow-up could arrive before the prior turn
  * landed in history.
  */
+/**
+ * Sources for an agent turn, in `sourceArticleIds` order: every cited
+ * article, then any article whose image the answer embedded without citing
+ * it. An uncited image owner has no Citation to read a headline from, so it
+ * falls back to the retrieval metadata and is skipped if neither has one.
+ */
+function buildAgentSourceArticles(result: AgentResult) {
+    const citationById = new Map(
+        result.citations.map((citation) => [citation.articleId, citation]),
+    );
+    return result.sourceArticleIds.flatMap((id) => {
+        const meta = result.articleMeta.get(id);
+        const citation = citationById.get(id);
+        const headline = citation?.headline ?? meta?.headline;
+        const editionDate = citation?.editionDate ?? meta?.editionDate;
+        if (!headline || !editionDate) return [];
+        return [
+            {
+                id,
+                contentRevisionId: meta?.contentRevisionId,
+                headline,
+                editionDate,
+                category: meta?.category ?? "",
+                summary: meta?.summary ?? "",
+                byline: meta?.byline ?? null,
+                bodySnippet: meta?.bodySnippet ?? "",
+                distance: null,
+                imageUrls: meta?.imageUrls ?? [],
+                imageCaptions: meta?.imageCaptions ?? [],
+            },
+        ];
+    });
+}
+
 async function persistTurnBounded(
     sessionId: string,
     question: string,
@@ -722,29 +757,15 @@ async function handleStreamingAsk(params: {
                             sessionId,
                             question,
                             agentResult.answer,
-                            agentResult.citations.map((c) => c.articleId),
+                            agentResult.sourceArticleIds,
                             buildCitationSnapshots(
                                 agentResult.citations,
                                 agentSnapshotSources(agentResult.articleMeta),
                             ),
                         );
 
-                        const agentSourceArticles = agentResult.citations.map((c) => {
-                            const meta = agentResult.articleMeta.get(c.articleId);
-                            return {
-                                id: c.articleId,
-                                contentRevisionId: meta?.contentRevisionId,
-                                headline: c.headline,
-                                editionDate: c.editionDate,
-                                category: meta?.category ?? "",
-                                summary: meta?.summary ?? "",
-                                byline: meta?.byline ?? null,
-                                bodySnippet: meta?.bodySnippet ?? "",
-                                distance: null,
-                                imageUrls: meta?.imageUrls ?? [],
-                                imageCaptions: meta?.imageCaptions ?? [],
-                            };
-                        });
+                        const agentSourceArticles =
+                            buildAgentSourceArticles(agentResult);
 
                         const totalTimeMs = Date.now() - totalStart;
 
@@ -1350,29 +1371,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 sessionId,
                 question,
                 agentResult.answer,
-                agentResult.citations.map((c) => c.articleId),
+                agentResult.sourceArticleIds,
                 buildCitationSnapshots(
                     agentResult.citations,
                     agentSnapshotSources(agentResult.articleMeta),
                 ),
             );
 
-            const agentSourceArticles = agentResult.citations.map((c) => {
-                const meta = agentResult.articleMeta.get(c.articleId);
-                return {
-                    id: c.articleId,
-                    contentRevisionId: meta?.contentRevisionId,
-                    headline: c.headline,
-                    editionDate: c.editionDate,
-                    category: meta?.category ?? "",
-                    summary: meta?.summary ?? "",
-                    byline: meta?.byline ?? null,
-                    bodySnippet: meta?.bodySnippet ?? "",
-                    distance: null,
-                    imageUrls: meta?.imageUrls ?? [],
-                    imageCaptions: meta?.imageCaptions ?? [],
-                };
-            });
+            const agentSourceArticles =
+                buildAgentSourceArticles(agentResult);
 
             const response: AskResponse = {
                 question,

@@ -1301,6 +1301,7 @@ describe("Complexity routing", () => {
       citations: [
         { articleId: "1965-03-15-4", headline: "Greek Life Review", editionDate: "1965-03-15" },
       ],
+      sourceArticleIds: ["1965-03-15-4"],
       confidence: "high",
       toolCallCount: 3,
       rounds: 2,
@@ -1350,6 +1351,7 @@ describe("Complexity routing", () => {
       citations: [
         { articleId: "1965-03-15-4", headline: "Parades", editionDate: "1965-03-15" },
       ],
+      sourceArticleIds: ["1965-03-15-4"],
       confidence: "medium",
       toolCallCount: 1,
       rounds: 1,
@@ -1387,6 +1389,7 @@ describe("Complexity routing", () => {
       citations: [
         { articleId: "1965-03-15-4", headline: "Test", editionDate: "1965-03-15" },
       ],
+      sourceArticleIds: ["1965-03-15-4"],
       confidence: "high",
       toolCallCount: 1,
       rounds: 1,
@@ -1414,6 +1417,71 @@ describe("Complexity routing", () => {
     expect(body.sourceArticles[0].imageUrls).toEqual(["img.jpg"]);
   });
 
+  it("surfaces and persists the owner of an uncited inline image", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    // The model embeds a photo from b-2 but only cites a-1 in prose. Without
+    // b-2 in sourceArticles the image renders bare -- no caption, no source
+    // chip, no lightbox -- and stays that way after the turn is restored.
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "Prose [1965-03-15-1]. ![a photo](https://cdn/b.jpg)",
+      citations: [
+        { articleId: "1965-03-15-1", headline: "Cited", editionDate: "1965-03-15" },
+      ],
+      sourceArticleIds: ["1965-03-15-1", "1965-03-15-2"],
+      confidence: "high",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map([
+        ["1965-03-15-1", {
+          headline: "Cited",
+          editionDate: "1965-03-15",
+          category: "News",
+          summary: "",
+          byline: null,
+          bodySnippet: "",
+          imageUrls: [],
+          imageCaptions: [],
+        }],
+        ["1965-03-15-2", {
+          headline: "Photo Owner",
+          editionDate: "1965-03-15",
+          category: "Photo",
+          summary: "",
+          byline: null,
+          bodySnippet: "",
+          imageUrls: ["https://cdn/b.jpg"],
+          imageCaptions: ["A caption"],
+        }],
+      ]),
+    });
+
+    const response = await POST(makeRequest({ question: "complex question" }));
+    const body = await response.json();
+
+    // Cited article keeps position 1 so source numbering does not shift.
+    expect(body.sourceArticles.map((a: { id: string }) => a.id)).toEqual([
+      "1965-03-15-1",
+      "1965-03-15-2",
+    ]);
+    // The uncited owner has no Citation, so its headline comes from metadata.
+    expect(body.sourceArticles[1].headline).toBe("Photo Owner");
+    expect(body.sourceArticles[1].imageUrls).toEqual(["https://cdn/b.jpg"]);
+
+    // Persisted too, or the gallery would be lost on hydration.
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "complex question",
+      expect.any(String),
+      ["1965-03-15-1", "1965-03-15-2"],
+      expect.anything(),
+    );
+  });
+
   it("uses pipeline when complexity=simple", async () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "homecoming 1965",
@@ -1438,6 +1506,7 @@ describe("Complexity routing", () => {
     (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer: "Agent answer.",
       citations: [{ articleId: "a1", headline: "H", editionDate: "1960-01-01" }],
+      sourceArticleIds: ["a1"],
       confidence: "high",
       toolCallCount: 1,
       rounds: 1,
@@ -1617,6 +1686,7 @@ describe("Streaming + agent", () => {
     (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer: "Agent streaming answer.",
       citations: [{ articleId: "1965-03-15-4", headline: "GL", editionDate: "1965-03-15" }],
+      sourceArticleIds: ["1965-03-15-4"],
       confidence: "high",
       toolCallCount: 2,
       rounds: 1,
@@ -1648,6 +1718,7 @@ describe("Streaming + agent", () => {
     (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer: "Streaming agent answer.",
       citations: [],
+      sourceArticleIds: [],
       confidence: "medium",
       toolCallCount: 1,
       rounds: 1,
@@ -1852,6 +1923,7 @@ describe("Answer cache (streaming)", () => {
     (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer: "Agent answer.",
       citations: [],
+      sourceArticleIds: [],
       confidence: "high",
       toolCallCount: 1,
       rounds: 1,

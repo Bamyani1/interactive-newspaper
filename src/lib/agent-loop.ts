@@ -92,6 +92,13 @@ export interface ArticleMeta {
 export interface AgentResult {
     answer: string;
     citations: Citation[];
+    /**
+     * Ordered union of the articles this turn should surface as sources:
+     * every article cited in prose, then any article that owns an image the
+     * model embedded inline without citing it. The route both renders and
+     * persists this list, so it is what a restored turn is rebuilt from.
+     */
+    sourceArticleIds: string[];
     confidence: "low" | "medium" | "high";
     toolCallCount: number;
     rounds: number;
@@ -107,6 +114,69 @@ export interface AgentProgressEvent {
     round: number;
     args?: Record<string, unknown>;
     summary?: string;
+}
+
+// ─── Source Article Ids ─────────────────────────────────────────
+
+const IMAGE_EMBED_RE = /!\[[^\]]*\]\(([^)\s]+)\)/g;
+
+/**
+ * Space and %20 flip between `mdSafeUrl`, the model, and its parser, so a
+ * URL is compared under every form derivable without guessing. Mirrors the
+ * client's `indexImagesByUrl`; kept local because `src/lib` must not import
+ * from a feature module.
+ */
+function urlVariants(url: string): string[] {
+    const out = new Set<string>([url, url.replace(/ /g, "%20")]);
+    try {
+        out.add(decodeURI(url));
+    } catch {
+        // Malformed percent escape — the raw form above still matches.
+    }
+    return [...out];
+}
+
+/**
+ * Citations first, then the owners of any inline image the answer embeds
+ * without citing.
+ *
+ * The prompt tells the model to place an embed immediately after that
+ * article's own citation, so the second group is normally empty. When the
+ * model does not comply, the owner is absent from `sourceArticles` and the
+ * image renders bare — no caption, no source chip, no lightbox — and stays
+ * that way once the turn is restored, because the session rebuilds sources
+ * from exactly this list.
+ */
+export function buildAgentSourceArticleIds(
+    answer: string,
+    citations: Citation[],
+    articleMeta: Map<string, ArticleMeta>,
+): string[] {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    const add = (id: string) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        ids.push(id);
+    };
+
+    citations.forEach((citation) => add(citation.articleId));
+
+    const embedded = new Set<string>();
+    for (const match of answer.matchAll(IMAGE_EMBED_RE)) {
+        urlVariants(match[1]).forEach((variant) => embedded.add(variant));
+    }
+    if (embedded.size === 0) return ids;
+
+    for (const [id, meta] of articleMeta) {
+        if (seen.has(id)) continue;
+        const owns = meta.imageUrls.some((url) =>
+            urlVariants(url).some((variant) => embedded.has(variant)),
+        );
+        if (owns) add(id);
+    }
+
+    return ids;
 }
 
 // ─── Citation Parsing ───────────────────────────────────────────
@@ -435,6 +505,7 @@ export async function runAgentLoop(
                 return {
                     answer: "The request timed out before a complete answer could be generated. Please try a simpler question.",
                     citations: [],
+                    sourceArticleIds: [],
                     confidence: "low",
                     toolCallCount,
                     rounds: round,
@@ -672,6 +743,11 @@ export async function runAgentLoop(
         return {
             answer: answerText,
             citations,
+            sourceArticleIds: buildAgentSourceArticleIds(
+                answerText,
+                citations,
+                articleLookup,
+            ),
             confidence,
             toolCallCount,
             rounds: round,
@@ -686,6 +762,7 @@ export async function runAgentLoop(
             return {
                 answer: "The request timed out before a complete answer could be generated. Please try a simpler question.",
                 citations: [],
+                sourceArticleIds: [],
                 confidence: "low",
                 toolCallCount,
                 rounds: round,
@@ -700,6 +777,7 @@ export async function runAgentLoop(
         return {
             answer: "I encountered an error while researching your question. Please try again.",
             citations: [],
+            sourceArticleIds: [],
             confidence: "low",
             toolCallCount,
             rounds: round,
