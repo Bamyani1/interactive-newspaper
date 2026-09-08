@@ -13,7 +13,6 @@ import type { RetrievedArticle } from "@/src/lib/db";
 import type { RetrievalMethod } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
-import { rerankArticles } from "@/src/lib/reranker";
 import {
     getConversationHistory,
     addConversationTurn,
@@ -48,8 +47,10 @@ import {
 } from "@/src/lib/rerank-signals";
 import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 import {
+    rerankWithCorrectiveRetry,
     retrieveCandidates,
     RetrievalSignalsUnavailableError,
+    RetrievalStageError,
 } from "@/src/lib/retrieval";
 import type { CandidateRetrievalResult } from "@/src/lib/retrieval";
 import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
@@ -309,16 +310,14 @@ function askErrorJson(params: {
 }
 
 /**
- * Rerank articles and, if the reranker filtered all of them out, run ONE
- * corrective retry that reformulates the query for broader recall,
- * re-embeds, re-retrieves, and re-ranks with a lower minScore.
+ * Rerank via the canonical retrieval service, translating its stage tags into
+ * this route's StageError so error responses keep naming the step that failed
+ * ("rerank", "reformulate-retry", "retrieve-retry", "rerank-retry").
  *
- * Both streaming and non-streaming pipelines call this. Each retry stage
- * is wrapped in wrapStage so the top-level catch (non-streaming) and the
- * streaming error-to-SSE mapping can attribute failures to a specific
- * stage ("reformulate-retry", "embed-retry", "retrieve-retry",
- * "rerank-retry") and preserve typed errors (QuotaExhaustedError,
- * DeadlineExceededError) instead of collapsing them into generic 500s.
+ * The retry itself — one broader reformulation, re-retrieval, and a re-rank at
+ * a lower minScore, then the total-veto fallback to fused order — lives in
+ * retrieval.ts, which the agent tools already share. This wrapper only maps
+ * errors; it deliberately holds no pipeline logic of its own.
  */
 async function rerankWithCragRetry(params: {
     question: string;
@@ -334,97 +333,35 @@ async function rerankWithCragRetry(params: {
     signal: AbortSignal;
     requestId: string;
 }): Promise<RankedArticle[]> {
-    const minScore = params.mode === "visual" ? 3 : 4;
-    let ranked = await wrapStage("rerank", () =>
-        rerankArticles(params.question, params.articles, {
-            maxArticles: params.keepTopK,
-            minScore,
+    try {
+        return await rerankWithCorrectiveRetry({
+            question: params.question,
+            articles: params.articles,
             mode: params.mode,
+            maxArticles: params.keepTopK,
+            conversationHistory: params.conversationHistory,
+            filters: params.filters,
+            retrievalLimit: params.retrievalLimit,
+            vectorWeight: params.vectorWeight,
+            onlyWithImages: params.onlyWithImages,
+            timeoutMs: params.retrievalTimeoutMs,
             signal: params.signal,
             requestId: params.requestId,
-        }),
-    );
-
-    if (
-        ranked.length === 0 &&
-        params.articles.length > 0 &&
-        !params.signal.aborted
-    ) {
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                route: "/api/ask",
-                requestId: params.requestId,
-                stage: "crag-retry",
-                msg: "reranker filtered all articles, retrying with broader query",
-            }),
-        );
-        const retry = await wrapStage("reformulate-retry", () =>
-            reformulateQuery(`Try broader search terms for: ${params.question}`, {
-                signal: params.signal,
-                requestId: params.requestId,
-                conversationHistory: params.conversationHistory,
-            }),
-        );
-        let retryArticles: RetrievedArticle[];
-        try {
-            const retrieval = await retrieveCandidates({
-                embeddingQuery: retry.embeddingQuery,
-                ftsQuery: retry.ftsQuery,
-                limit: params.retrievalLimit,
-                filters: params.filters,
-                vectorWeight: params.vectorWeight,
-                onlyWithImages: params.onlyWithImages,
-                timeoutMs: params.retrievalTimeoutMs,
-                signal: params.signal,
-                requestId: params.requestId,
-            });
-            retryArticles = retrieval.articles;
-        } catch (err) {
-            if (err instanceof DeadlineExceededError) throw err;
-            throw new StageError(
-                "retrieve-retry",
-                retrievalTimeout(err) ?? retrievalQuota(err) ?? err,
-            );
-        }
-        ranked = await wrapStage("rerank-retry", () =>
-            rerankArticles(params.question, retryArticles, {
-                maxArticles: params.keepTopK,
-                minScore: params.mode === "visual" ? 2 : 3,
-                mode: params.mode,
-                signal: params.signal,
-                requestId: params.requestId,
-            }),
-        );
+        });
+    } catch (err) {
+        if (!(err instanceof RetrievalStageError)) throw err;
+        if (err.cause instanceof DeadlineExceededError) throw err.cause;
+        // The retry's retrieval failure arrives as RetrievalSignalsUnavailableError
+        // holding both legs' errors; surface the typed one so the top-level catch
+        // maps it to 429/504 instead of a generic 500.
+        const cause =
+            err.stage === "retrieve-retry"
+                ? (retrievalTimeout(err.cause) ??
+                  retrievalQuota(err.cause) ??
+                  err.cause)
+                : err.cause;
+        throw new StageError(err.stage, cause);
     }
-
-    // Total-veto guard: the reranker's job is trimming noise, not overruling
-    // retrieval wholesale. An LLM judge scoring 20 real candidates all-below-
-    // threshold is far more often a judging artifact (broad/thematic
-    // questions score poorly per-article) than a true no-evidence state —
-    // and downstream, zero kept articles becomes a categorical "no matching
-    // evidence" refusal that is simply false. Fall back to fused retrieval
-    // order at relevanceScore 5 — the reranker's own degraded-mode score, and
-    // the minimum the generator will engage with (below RERANK_TANGENTIAL it
-    // refuses without ever calling the model) — so citation allowlisting and
-    // the generator's own confidence machinery stay in charge of honesty.
-    if (ranked.length === 0 && params.articles.length > 0 && !params.signal.aborted) {
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                route: "/api/ask",
-                requestId: params.requestId,
-                stage: "rerank-fallback",
-                msg: "reranker (and retry) kept nothing; falling back to fused retrieval order",
-                candidateCount: params.articles.length,
-            }),
-        );
-        return params.articles
-            .slice(0, params.keepTopK)
-            .map((article) => ({ ...article, relevanceScore: 5 }));
-    }
-
-    return ranked;
 }
 
 // Test hook: tests set this to a short value so they can exercise the
@@ -949,7 +886,7 @@ async function handleStreamingAsk(params: {
                     },
                 });
 
-                // ── Step 5: Generate (streaming) ──
+                // ── Step 4: Generate (streaming) ──
                 const generationStart = Date.now();
                 let finalAnswer = "";
                 let finalCitations: Citation[] = [];
@@ -1468,7 +1405,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // ── Step 3: Re-rank articles by relevance ──
         // Visual mode uses a lower threshold (3 = tangentially related) because
         // the user's goal is seeing photos, not precise answers — "somewhat related"
-        // photos are still valuable. Text mode stays strict at 5.
+        // photos are still valuable. Text mode stays stricter at 4.
         const keepTopK = mode === "visual" ? 15 : 6;
         logRerankSignals(requestId, computeRerankSignals(articles), mode, "default");
 
@@ -1487,7 +1424,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             requestId,
         });
 
-        // ── Step 5: Generate answer (using ORIGINAL question, not reformulated) ──
+        // ── Step 4: Generate answer (using ORIGINAL question, not reformulated) ──
         const generationStart = Date.now();
         const { answer, citations, confidence, followUps } = await wrapStage(
             "generate",

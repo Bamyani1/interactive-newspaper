@@ -5,7 +5,7 @@ import {
 } from "@/src/lib/db";
 import type { RetrievedArticle } from "@/src/lib/db";
 import type { RetrievalMethod } from "@/src/lib/db";
-import { embedQuery } from "@/src/lib/embeddings";
+import { embedQuery, QuotaExhaustedError } from "@/src/lib/embeddings";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import type {
     ConversationTurn,
@@ -37,6 +37,46 @@ export interface CandidateRetrievalResult {
         method: RetrievalMethod;
         signals: CandidateRetrievalResult["signals"];
     };
+}
+
+/** The steps of the corrective retry, in the order they can fail. */
+export type RetrievalStage =
+    | "rerank"
+    | "reformulate-retry"
+    | "retrieve-retry"
+    | "rerank-retry";
+
+/**
+ * Attributes a corrective-retry failure to the step that produced it, so a
+ * caller can name that step without re-implementing the retry to know it. The
+ * ask route re-tags these onto its own StageError; agent tools, which turn any
+ * throw into a tool-result string, only ever read `message`.
+ */
+export class RetrievalStageError extends Error {
+    constructor(
+        public readonly stage: RetrievalStage,
+        public readonly cause: unknown,
+    ) {
+        super(cause instanceof Error ? cause.message : String(cause));
+        this.name = "RetrievalStageError";
+    }
+}
+
+/**
+ * Tags a step's failure with its stage. QuotaExhaustedError passes through
+ * untagged, mirroring the ask route's own wrapStage: callers branch on it by
+ * identity to return 429, and burying it inside a wrapper would cost them that.
+ */
+function withStage<T>(stage: RetrievalStage, fn: () => Promise<T>): Promise<T> {
+    return fn().catch((error: unknown) => {
+        if (
+            error instanceof RetrievalStageError ||
+            error instanceof QuotaExhaustedError
+        ) {
+            throw error;
+        }
+        throw new RetrievalStageError(stage, error);
+    });
 }
 
 export class RetrievalSignalsUnavailableError extends Error {
@@ -347,13 +387,15 @@ export async function rerankWithCorrectiveRetry(params: {
     signal?: AbortSignal;
     requestId?: string;
 }): Promise<RankedArticle[]> {
-    let ranked = await rerankArticles(params.question, params.articles, {
-        maxArticles: params.maxArticles,
-        minScore: params.mode === "visual" ? 3 : 4,
-        mode: params.mode,
-        signal: params.signal,
-        requestId: params.requestId,
-    });
+    let ranked = await withStage("rerank", () =>
+        rerankArticles(params.question, params.articles, {
+            maxArticles: params.maxArticles,
+            minScore: params.mode === "visual" ? 3 : 4,
+            mode: params.mode,
+            signal: params.signal,
+            requestId: params.requestId,
+        }),
+    );
     if (ranked.length > 0 || params.articles.length === 0 || params.signal?.aborted) {
         return ranked;
     }
@@ -367,32 +409,35 @@ export async function rerankWithCorrectiveRetry(params: {
             msg: "reranker rejected all candidates; trying one broader retrieval",
         }),
     );
-    const broader = await reformulateQuery(
-        `Try broader search terms for: ${params.question}`,
-        {
+    const broader = await withStage("reformulate-retry", () =>
+        reformulateQuery(`Try broader search terms for: ${params.question}`, {
             signal: params.signal,
             requestId: params.requestId,
             conversationHistory: params.conversationHistory,
-        },
+        }),
     );
-    const retry = await retrieveCandidates({
-        embeddingQuery: broader.embeddingQuery,
-        ftsQuery: broader.ftsQuery,
-        filters: params.filters,
-        limit: params.retrievalLimit,
-        vectorWeight: params.vectorWeight,
-        onlyWithImages: params.onlyWithImages,
-        timeoutMs: params.timeoutMs,
-        signal: params.signal,
-        requestId: params.requestId,
-    });
-    ranked = await rerankArticles(params.question, retry.articles, {
-        maxArticles: params.maxArticles,
-        minScore: params.mode === "visual" ? 2 : 3,
-        mode: params.mode,
-        signal: params.signal,
-        requestId: params.requestId,
-    });
+    const retry = await withStage("retrieve-retry", () =>
+        retrieveCandidates({
+            embeddingQuery: broader.embeddingQuery,
+            ftsQuery: broader.ftsQuery,
+            filters: params.filters,
+            limit: params.retrievalLimit,
+            vectorWeight: params.vectorWeight,
+            onlyWithImages: params.onlyWithImages,
+            timeoutMs: params.timeoutMs,
+            signal: params.signal,
+            requestId: params.requestId,
+        }),
+    );
+    ranked = await withStage("rerank-retry", () =>
+        rerankArticles(params.question, retry.articles, {
+            maxArticles: params.maxArticles,
+            minScore: params.mode === "visual" ? 2 : 3,
+            mode: params.mode,
+            signal: params.signal,
+            requestId: params.requestId,
+        }),
+    );
     if (ranked.length === 0 && !params.signal?.aborted) {
         // Total-veto guard, mirroring the route pipeline: an all-below-
         // threshold verdict over real retrieval candidates is usually a
