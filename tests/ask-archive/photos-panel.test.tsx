@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { PhotosPanel } from "@/features/ask-archive/components/PhotosPanel";
 import type { TurnImage } from "@/features/ask-archive/lib/dedup-source-images";
 
@@ -56,12 +56,39 @@ describe("PhotosPanel", () => {
         expect(screen.getByText("caption 2")).toBeInTheDocument();
     });
 
-    it("caps tiles at 12 and surfaces an overflow hint", () => {
+    it("caps tiles at 12 and offers a control to reveal the rest", () => {
         render(
             <PhotosPanel images={makeImages(15)} onOpenUrl={() => {}} />,
         );
-        expect(screen.getAllByRole("button")).toHaveLength(12);
-        expect(screen.getByText(/showing first 12/i)).toBeInTheDocument();
+        expect(
+            document.querySelectorAll(".ask-photos-tile"),
+        ).toHaveLength(12);
+        expect(
+            screen.getByRole("button", { name: /show all 15 pictures/i }),
+        ).toBeInTheDocument();
+    });
+
+    it("reveals every remaining tile once the control is used", () => {
+        render(
+            <PhotosPanel images={makeImages(15)} onOpenUrl={() => {}} />,
+        );
+        fireEvent.click(
+            screen.getByRole("button", { name: /show all 15 pictures/i }),
+        );
+        expect(
+            document.querySelectorAll(".ask-photos-tile"),
+        ).toHaveLength(15);
+        // The control retires once there is nothing left to reveal.
+        expect(
+            screen.queryByRole("button", { name: /show all/i }),
+        ).not.toBeInTheDocument();
+    });
+
+    it("omits the reveal control when nothing is capped", () => {
+        render(<PhotosPanel images={makeImages(4)} onOpenUrl={() => {}} />);
+        expect(
+            screen.queryByRole("button", { name: /show all/i }),
+        ).not.toBeInTheDocument();
     });
 
     it("passes the clicked image src to onOpenUrl", () => {
@@ -73,7 +100,9 @@ describe("PhotosPanel", () => {
                 onOpenUrl={(src) => calls.push(src)}
             />,
         );
-        screen.getAllByRole("button")[2].click();
+        document
+            .querySelectorAll<HTMLButtonElement>(".ask-photos-tile button")[2]
+            .click();
         expect(calls).toEqual([images[2].src]);
     });
 

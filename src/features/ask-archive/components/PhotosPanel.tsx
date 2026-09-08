@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import type { TurnImage } from "../lib/dedup-source-images";
 
@@ -24,8 +24,10 @@ export const PhotosPanel: React.FC<PhotosPanelProps> = ({
     images,
     onOpenUrl,
 }) => {
+    const [showAll, setShowAll] = useState(false);
     if (images.length === 0) return null;
-    const visible = images.slice(0, TILE_CAP);
+
+    const visible = showAll ? images : images.slice(0, TILE_CAP);
     const overflow = images.length - visible.length;
 
     return (
@@ -38,9 +40,13 @@ export const PhotosPanel: React.FC<PhotosPanelProps> = ({
                     More pictures — {images.length}
                 </h3>
                 {overflow > 0 ? (
-                    <span className="ask-photos-panel-overflow">
-                        showing first {TILE_CAP}
-                    </span>
+                    <button
+                        type="button"
+                        className="ask-photos-panel-overflow"
+                        onClick={() => setShowAll(true)}
+                    >
+                        Show all {images.length} pictures
+                    </button>
                 ) : null}
             </div>
             <ul className="ask-photos-grid" role="list">
