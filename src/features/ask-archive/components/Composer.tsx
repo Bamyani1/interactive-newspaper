@@ -83,7 +83,7 @@ export const Composer: React.FC<ComposerProps> = ({
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask a question about OWU history…"
+                    placeholder="Ask your own question…"
                     rows={1}
                     disabled={disabled}
                     aria-label="Ask a question"

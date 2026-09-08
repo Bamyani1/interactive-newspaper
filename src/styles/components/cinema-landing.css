@@ -689,12 +689,30 @@
    post-hydration. */
 .cinema-ask-teaser-slot {
     /* Reserve the largest prompt geometry before the client chooses the
-       day-specific question, preventing the CTA and paper from shifting. */
-    min-height: 7rem;
+       day-specific question, preventing the CTA and paper from shifting.
+       Values are measured worst cases over QUESTION_POOL, per breakpoint —
+       re-measure when the pool gains longer prompts. */
+    min-height: 8.75rem;
     display: flex;
     justify-content: center;
     align-items: center;
     width: 100%;
+}
+
+/* These overrides must follow the base rule: same specificity, so the
+   cascade decides on source order, not on the media query. */
+@media (min-width: 641px) and (max-width: 1024px) {
+    /* Narrowest column still using desktop type, so the prompt wraps to
+       the most lines here — this band reserves the tallest slot. */
+    .cinema-ask-teaser-slot {
+        min-height: 13.25rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .cinema-ask-teaser-slot {
+        min-height: 7.25rem;
+    }
 }
 
 /* Block-flow layout: label stacks above, quote + arrow flow inline

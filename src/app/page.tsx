@@ -43,7 +43,9 @@ export default function Home() {
                 <div className="cinema-paper">
                     <header className="cinema-masthead">
                         <h1 className="cinema-title">The Transcript Archive</h1>
-                        <p className="cinema-subtitle">Travel Back in Time. Experience Campus History.</p>
+                        <p className="cinema-subtitle">
+                            Read the paper. Ask across decades.
+                        </p>
                     </header>
 
                     <div className={`cinema-paper-grid ${isPickerOpen ? "cinema-paper-grid--picker-open" : ""}`}>

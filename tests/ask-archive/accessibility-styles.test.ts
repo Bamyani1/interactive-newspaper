@@ -43,9 +43,10 @@ describe("Ask accessibility style contracts", () => {
 
     it("maps compact labels, captions, badges, and stats to the 12px token", () => {
         const contracts: Array<[string, string, string]> = [
-            [landing, ".ask-landing-suggestions-label", "landing suggestions"],
+            [landing, ".ask-landing-suggestion-lens", "suggestion lens"],
             [landing, ".ask-landing-stats", "landing stats"],
             [layout, ".ask-mobile-action", "mobile actions"],
+            [layout, ".ask-clear-dialog-kicker", "clear warning kicker"],
             [layout, ".ask-export-kicker", "export kicker"],
             [caveat, ".ask-caveat-label", "caveat label"],
             [transcript, ".ask-turn-user-label", "question label"],
@@ -77,6 +78,31 @@ describe("Ask accessibility style contracts", () => {
         expect(rule(transcript, ".ask-example-chip")).toContain(
             "min-height: 44px;",
         );
+        // Both choices in the destructive confirmation must be equally
+        // easy to hit — a cramped "Keep threads" is how people lose data.
+        expect(rule(layout, ".ask-clear-dialog-button")).toContain(
+            "min-height: 44px;",
+        );
+        expect(rule(landing, ".ask-landing-suggestion")).toContain(
+            "min-height: 84px;",
+        );
+    });
+
+    it("disables motion across the whole ask-* surface, not just the landing", () => {
+        // Several animations (.ask-answer-enter in transcript.css among
+        // them) have no local reduced-motion rule and depend on this broad
+        // net. Narrowing it to landing selectors silently reintroduces
+        // motion for users who asked for none.
+        const reducedMotion = landing.slice(
+            landing.indexOf("@media (prefers-reduced-motion: reduce)"),
+        );
+        expect(reducedMotion).toContain('[class^="ask-"]');
+        expect(reducedMotion).toContain('[class*=" ask-"]');
+        expect(reducedMotion).toContain("animation: none !important;");
+        // ...and the rows the entry animation parks at opacity:0 must
+        // still be readable once that animation is switched off.
+        expect(reducedMotion).toContain(".ask-landing-suggestions li");
+        expect(reducedMotion).toContain("opacity: 1;");
     });
 
     it("does not dilute source date or source number contrast with opacity", () => {

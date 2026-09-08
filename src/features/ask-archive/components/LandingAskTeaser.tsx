@@ -31,7 +31,7 @@ export const LandingAskTeaser: React.FC = () => {
                     className="cinema-ask-teaser"
                 >
                     <span className="cinema-ask-teaser-label">
-                        Try asking
+                        Start with a question
                     </span>
                     <span className="cinema-ask-teaser-text">
                         &ldquo;{question}&rdquo;
