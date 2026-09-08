@@ -20,6 +20,18 @@
  * reachable" invariant.
  */
 .ask-main {
+  /*
+   * The reading measure the conversation shares.
+   *
+   * The column is `minmax(0, 1fr)` of a 100rem page beside a 280px
+   * sidebar, so at 1440px and above it ran to roughly 1100px while the
+   * answers capped at the 42rem prose measure and aligned left. The text
+   * sat in the left third of the column under an expanse of empty
+   * newsprint. Centring one measure — turns, landing, notices and the
+   * composer alike — keeps them on a common axis at every width. The
+   * sidebar keeps its 280px.
+   */
+  --ask-measure: 52rem;
   display: flex;
   flex-direction: column;
   height: calc(100dvh - var(--header-height, 54px));
@@ -392,6 +404,22 @@
    Rendered at the top of the transcript when a thread outlives the
    cached session — structurally a layout hint, not answer content.
    ========================================= */
+/* Everything in the reading column shares one centred measure. Listed
+   rather than applied with a universal child selector so a future
+   full-bleed element can opt out by not being on this list. */
+.ask-transcript > .ask-turn,
+.ask-transcript > .ask-landing,
+.ask-transcript > .ask-expired-banner,
+.ask-transcript > .ask-hydrating-indicator,
+.ask-transcript > .ask-cleared-indicator,
+.ask-composer > .ask-composer-row,
+.ask-composer > .ask-composer-counter,
+.ask-column > .ask-export-error {
+  width: 100%;
+  max-width: var(--ask-measure);
+  margin-inline: auto;
+}
+
 /* Export failures used to be console-only: the button flickered, no file
    appeared, and nothing on screen explained why. */
 .ask-export-error {
