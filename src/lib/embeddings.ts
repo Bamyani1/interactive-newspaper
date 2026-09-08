@@ -374,20 +374,29 @@ export async function embedQuery(
     : controller.signal;
 
   try {
-    const response = await executeTrackedEmbeddingCall({
-      model: EMBEDDING_MODEL,
-      requestId: opts.requestId,
-      op: "embed.query",
-      call: () =>
-        client.models.embedContent({
+    // A per-minute RPM trip often clears within a second or two, and losing
+    // the vector signal costs recall for the whole request. One controller
+    // spans the retries so the 10s budget the deadline math assumes is not
+    // multiplied, and the backoff itself gives up as soon as it aborts.
+    const response = await retryOnQuota(
+      "embedQuery",
+      () =>
+        executeTrackedEmbeddingCall({
           model: EMBEDDING_MODEL,
-          contents: [{ parts: [{ text: prefixed }] }],
-          config: {
-            outputDimensionality: EMBEDDING_DIMS,
-            abortSignal: combinedSignal,
-          },
+          requestId: opts.requestId,
+          op: "embed.query",
+          call: () =>
+            client.models.embedContent({
+              model: EMBEDDING_MODEL,
+              contents: [{ parts: [{ text: prefixed }] }],
+              config: {
+                outputDimensionality: EMBEDDING_DIMS,
+                abortSignal: combinedSignal,
+              },
+            }),
         }),
-    });
+      { signal: combinedSignal, requestId: opts.requestId }
+    );
 
     clearTimeout(timeout);
 
