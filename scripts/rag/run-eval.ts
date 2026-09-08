@@ -133,7 +133,6 @@ interface AskResponseEnvelope {
     method?: string;
     reformulatedQuery?: string;
     complexity?: string;
-    cacheHit?: boolean;
     indexBuildId?: string | null;
     retrievalTarget?: string;
     coverage?: Record<string, unknown>;
@@ -309,11 +308,7 @@ export async function runEvalQuestions(options: RunEvalOptions): Promise<RunEval
       // Documented gap: the envelope exposes no token usage.
       tokens: { input: null, output: null, thought: null },
       retries,
-      fallbackPath: meta.cacheHit
-        ? "cache"
-        : method !== null && method !== "hybrid"
-          ? `retrieval:${method}`
-          : null,
+      fallbackPath: method !== null && method !== "hybrid" ? `retrieval:${method}` : null,
       costUsd,
       error: ok
         ? null

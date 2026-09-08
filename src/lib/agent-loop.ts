@@ -10,6 +10,7 @@
 import { FunctionCallingConfigMode } from "@google/genai";
 import type { Content, FunctionDeclaration, Part } from "@google/genai";
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import type { AskAgentProgressEvent } from "@/src/lib/ask-stream-events";
 import { executeTrackedGenerationCall } from "@/src/lib/cost-tracker";
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import { AGENT_TOOL_DECLARATIONS, executeTool } from "@/src/lib/agent-tools";
@@ -108,13 +109,12 @@ export interface AgentResult {
   retrievalMethod: RetrievalMethod | "none";
 }
 
-export interface AgentProgressEvent {
-  type: "tool_call" | "tool_result";
-  tool: string;
-  round: number;
-  args?: Record<string, unknown>;
-  summary?: string;
-}
+/**
+ * What the loop reports while it researches. Aliased to the shared SSE
+ * contract so the route can forward these events to the client without a
+ * translation step that could drift from the wire format.
+ */
+export type AgentProgressEvent = AskAgentProgressEvent;
 
 // ─── Source Article Ids ─────────────────────────────────────────
 

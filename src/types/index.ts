@@ -219,7 +219,11 @@ export interface AskResponse {
     complexity?: "simple" | "complex";
     agentSteps?: number;
     agentToolCalls?: number;
-    cacheHit?: boolean;
+    /**
+     * Set when the reranker failed open: no judge scored these articles,
+     * so their relevance was never vetted and confidence is capped.
+     */
+    rerankDegraded?: boolean;
     corpusVersion?: string;
     indexBuildId?: string | null;
     pipelineVersion?: string;
@@ -249,8 +253,20 @@ export interface AskResponse {
  * `error` is kept alongside `message` for compatibility with pre-redesign
  * consumers; prefer `message` going forward.
  */
+/**
+ * Why a request failed, in terms the transcript can act on. `network` is
+ * client-only — the server cannot report that its own reply never
+ * arrived — and `duplicate` means the same question is already being
+ * answered in this conversation.
+ */
 export type AskErrorKind =
-  "rate_limit" | "budget" | "timeout" | "network" | "server" | "bad_request";
+  | "rate_limit"
+  | "budget"
+  | "timeout"
+  | "network"
+  | "server"
+  | "bad_request"
+  | "duplicate";
 
 export interface AskError {
   kind: AskErrorKind;

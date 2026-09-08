@@ -916,20 +916,35 @@ describe("POST /api/ask", () => {
     await readSseEvents(response);
   });
 
-  it("streaming: happy path emits stage*3 → metadata → delta*2 → done", async () => {
+  it("streaming: happy path emits stage*3 → metadata → stage(generate) → delta*2 → done", async () => {
     const response = await POST(
       makeRequest({ question: "streaming happy path" }, { stream: true })
     );
     const events = await readSseEvents(response);
 
     const types = events.map((e) => e.type);
-    // Order matters: reformulate → retrieve → rerank stages,
-    // then metadata (needs reranked source articles), then deltas from
-    // generateAnswerStream, then the final done event.
-    expect(types).toEqual(["stage", "stage", "stage", "metadata", "delta", "delta", "done"]);
+    // Order matters: reformulate → retrieve → rerank stages, then
+    // metadata (needs reranked source articles), then the generate stage
+    // so the reader is told what the longest wait is for, then deltas
+    // from generateAnswerStream, then the final done event.
+    expect(types).toEqual([
+      "stage",
+      "stage",
+      "stage",
+      "metadata",
+      "stage",
+      "delta",
+      "delta",
+      "done",
+    ]);
 
     const stageEvents = events.filter((e) => e.type === "stage");
-    expect(stageEvents.map((e) => e.name)).toEqual(["reformulate", "retrieve", "rerank"]);
+    expect(stageEvents.map((e) => e.name)).toEqual([
+      "reformulate",
+      "retrieve",
+      "rerank",
+      "generate",
+    ]);
     for (const stage of stageEvents) {
       expect(typeof stage.elapsedMs).toBe("number");
     }
@@ -981,6 +996,7 @@ describe("POST /api/ask", () => {
     const errorEvent = events.find((e) => e.type === "error");
     expect(errorEvent).toBeDefined();
     expect(errorEvent!.stage).toBe("reformulate");
+    expect(errorEvent!.kind).toBe("server");
     expect(typeof errorEvent!.requestId).toBe("string");
     expect(events.find((e) => e.type === "done")).toBeUndefined();
   });
@@ -1000,6 +1016,10 @@ describe("POST /api/ask", () => {
     expect(errorEvent).toBeDefined();
     expect(errorEvent!.stage).toBe("retrieve");
     expect(errorEvent!.cause).toBe("quota_exhausted");
+    // A quota exhaustion is a wait, not a bug: the transcript needs the
+    // kind to offer a countdown instead of a "report this" error row.
+    expect(errorEvent!.kind).toBe("rate_limit");
+    expect(typeof errorEvent!.retryAfterSec).toBe("number");
     expect(errorEvent!.message).toMatch(/quota/i);
   });
 
@@ -1015,6 +1035,7 @@ describe("POST /api/ask", () => {
     const errorEvent = events.find((e) => e.type === "error");
     expect(errorEvent).toBeDefined();
     expect(errorEvent!.stage).toBe("retrieve");
+    expect(errorEvent!.kind).toBe("server");
     expect(errorEvent!.cause).toBeUndefined();
   });
 
@@ -1027,6 +1048,7 @@ describe("POST /api/ask", () => {
     const errorEvent = events.find((e) => e.type === "error");
     expect(errorEvent).toBeDefined();
     expect(errorEvent!.stage).toBe("rerank");
+    expect(errorEvent!.kind).toBe("server");
   });
 
   it("streaming: deltas received as emitted (preserves order + text)", async () => {
@@ -1827,7 +1849,6 @@ describe("Every question runs the RAG pipeline (streaming)", () => {
     const second = await POST(makeRequest({ question: "cache test" }, { stream: true }));
     const secondDone = (await readSseEvents(second)).find((e) => e.type === "done");
     expect(secondDone).toBeDefined();
-    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
     expect(secondDone?.answer).toBe("Cached answer.");
     expect(generateAnswerStream).toHaveBeenCalledTimes(2);
     expect(embedQuery).toHaveBeenCalledTimes(2);
@@ -1893,8 +1914,7 @@ describe("Every question runs the RAG pipeline (streaming)", () => {
       makeRequest({ question: "cache test", sessionId: "sess-A" }, { stream: true })
     );
     const secondEvents = await readSseEvents(second);
-    const secondDone = secondEvents.find((e) => e.type === "done");
-    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
+    expect(secondEvents.filter((e) => e.type === "delta").length).toBeGreaterThan(0);
     expect(generateAnswerStream).toHaveBeenCalledTimes(2);
   });
 
@@ -1920,8 +1940,7 @@ describe("Every question runs the RAG pipeline (streaming)", () => {
       makeRequest({ question: "cache test", sessionId: "sess-B" }, { stream: true })
     );
     const secondEvents = await readSseEvents(second);
-    const secondDone = secondEvents.find((e) => e.type === "done");
-    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
+    expect(secondEvents.filter((e) => e.type === "delta").length).toBeGreaterThan(0);
     expect(generateAnswerStream).toHaveBeenCalledTimes(2);
   });
 });

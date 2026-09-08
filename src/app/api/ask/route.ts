@@ -24,6 +24,13 @@ import { runAgentLoop } from "@/src/lib/agent-loop";
 import type { AgentResult } from "@/src/lib/agent-loop";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { AskResponse, AskErrorKind, Citation, CitationSnapshot } from "@/src/types";
+import {
+  encodeAskStreamEvent,
+  type AskAnswerOutcome,
+  type AskErrorStage,
+  type AskStreamEvent,
+} from "@/src/lib/ask-stream-events";
+import { isQuotaError, kindForQuota, retryAfterSecFromQuotaError } from "@/src/lib/gemini-quota";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 import { checkDailyBudget, DailyBudgetExceededError } from "@/src/lib/cost-tracker";
 import {
@@ -82,7 +89,7 @@ class DeadlineExceededError extends Error {
  */
 class StageError extends Error {
   constructor(
-    public readonly stage: string,
+    public readonly stage: AskErrorStage,
     public readonly cause: unknown
   ) {
     super(cause instanceof Error ? cause.message : String(cause));
@@ -195,7 +202,7 @@ function coverageMetadata(coverage?: ArchiveCoverage) {
     : {};
 }
 
-function wrapStage<T>(stage: string, fn: () => Promise<T>): Promise<T> {
+function wrapStage<T>(stage: AskErrorStage, fn: () => Promise<T>): Promise<T> {
   return fn().catch((err) => {
     // Don't wrap errors that the route already handles specifically.
     if (
@@ -508,6 +515,42 @@ function resolveRetrievalFilters(
   };
 }
 
+/**
+ * Whether an answer stands on evidence, so the client can tell "the
+ * archive does not cover this" from a grounded reply.
+ *
+ * Provisional: derived from whether anything survived grounding, because
+ * the generator does not yet report its own outcome. It therefore still
+ * labels a generation failure that returned canned prose as
+ * `no_evidence`. Withholding those is a separate change; this at least
+ * stops an honest refusal from looking like a cited answer.
+ */
+function answerOutcome(citations: Citation[]): AskAnswerOutcome {
+  return citations.length > 0 ? "answered" : "no_evidence";
+}
+
+/**
+ * Classify a thrown pipeline error for the client. A quota exhaustion is
+ * worth waiting out, a timeout is worth retrying now, and anything else
+ * is a bug the reader can only report — the transcript offers a different
+ * affordance for each, so guessing "server" for all three (which is what
+ * an SSE error without a `kind` forced the client to do) is not enough.
+ */
+function askStreamErrorKind(err: unknown): {
+  kind: AskErrorKind;
+  retryAfterSec?: number;
+} {
+  if (err instanceof QuotaExhaustedError || isQuotaError(err)) {
+    const retryAfterSec = retryAfterSecFromQuotaError(err);
+    return { kind: kindForQuota(retryAfterSec), retryAfterSec };
+  }
+  if (err instanceof DeadlineExceededError || err instanceof DbTimeoutError) {
+    return { kind: "timeout" };
+  }
+  if (err instanceof Error && err.name === "AbortError") return { kind: "timeout" };
+  return { kind: "server" };
+}
+
 // ── Streaming (SSE) handler ──
 // When /api/ask is hit with ?stream=1, the route returns a Server-Sent
 // Events stream instead of a JSON response. Events are typed:
@@ -518,11 +561,16 @@ function resolveRetrievalFilters(
 //                                              — citation panel before Gemini
 //                                              — streams the answer text
 //   - { type: "delta", text }                  — partial answer token(s)
-//   - { type: "done", answer, citations, confidence, meta }
+//   - { type: "done", answer, citations, confidence, outcome, meta }
 //                                              — final event with cleaned answer
 //                                              — and full metadata
-//   - { type: "error", stage, message, requestId, cause? }
+//   - { type: "error", kind, stage, message, requestId, retryAfterSec?, cause? }
 //                                              — any failure; stream then closes
+//
+// The event shapes live in src/lib/ask-stream-events.ts and are shared
+// with the client, so a field the client reads cannot quietly stop being
+// sent. Every error carries a `kind`: without it the transcript renders
+// a quota wait, a timeout and a bug identically.
 //
 // Errors mid-stream cannot change HTTP status (headers already flushed);
 // the client differentiates by the "error" event type.
@@ -546,16 +594,14 @@ async function handleStreamingAsk(params: {
   }, deadlineMs);
 
   const encoder = new TextEncoder();
-  const sseEncode = (event: object): Uint8Array =>
-    encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
-      const send = (event: object): void => {
+      const send = (event: AskStreamEvent): void => {
         if (closed) return;
         try {
-          controller.enqueue(sseEncode(event));
+          controller.enqueue(encoder.encode(encodeAskStreamEvent(event)));
         } catch {
           // Consumer disconnected mid-write — swallow.
         }
@@ -598,6 +644,7 @@ async function handleStreamingAsk(params: {
           );
           send({
             type: "error",
+            ...askStreamErrorKind(err),
             stage: "reformulate",
             message: "Failed to reformulate question. Please try again.",
             requestId,
@@ -693,7 +740,9 @@ async function handleStreamingAsk(params: {
               answer: agentResult.answer,
               citations: agentResult.citations,
               confidence: agentResult.confidence,
+              outcome: answerOutcome(agentResult.citations),
               sessionId,
+              requestId,
               sourceArticles: agentSourceArticles,
               meta: {
                 retrievalTimeMs: agentResult.retrievalTimeMs,
@@ -722,6 +771,7 @@ async function handleStreamingAsk(params: {
             );
             send({
               type: "error",
+              ...askStreamErrorKind(err),
               stage: "agent",
               message: "An error occurred while researching your question. Please try again.",
               requestId,
@@ -763,6 +813,7 @@ async function handleStreamingAsk(params: {
           if (timeoutError || globalController.signal.aborted) {
             send({
               type: "error",
+              kind: "timeout",
               stage: "retrieve",
               message: "Retrieval took too long. Please try again.",
               requestId,
@@ -771,6 +822,7 @@ async function handleStreamingAsk(params: {
           }
           send({
             type: "error",
+            ...askStreamErrorKind(quotaError ?? err),
             stage: "retrieve",
             cause: quotaError ? "quota_exhausted" : undefined,
             message: quotaError
@@ -834,6 +886,7 @@ async function handleStreamingAsk(params: {
           );
           send({
             type: "error",
+            ...askStreamErrorKind(cause),
             stage,
             message,
             requestId,
@@ -876,6 +929,10 @@ async function handleStreamingAsk(params: {
         });
 
         // ── Step 5: Generate (streaming) ──
+        // Announced before the first token so the reader sees "Writing
+        // answer" during the generation wait. Without it the pill sat on
+        // "Ranking sources" for the whole slowest stage.
+        send({ type: "stage", name: "generate", elapsedMs: stageElapsed() });
         const generationStart = Date.now();
         let finalAnswer = "";
         let finalCitations: Citation[] = [];
@@ -914,6 +971,7 @@ async function handleStreamingAsk(params: {
           );
           send({
             type: "error",
+            ...askStreamErrorKind(err),
             stage: "generate",
             message: "An error occurred during answer generation. Please try again.",
             requestId,
@@ -937,7 +995,9 @@ async function handleStreamingAsk(params: {
           answer: finalAnswer,
           citations: finalCitations,
           confidence: finalConfidence,
+          outcome: answerOutcome(finalCitations),
           sessionId,
+          requestId,
           followUpQuestions: finalFollowUps,
           meta: {
             retrievalTimeMs,
@@ -969,6 +1029,7 @@ async function handleStreamingAsk(params: {
         );
         send({
           type: "error",
+          kind: isDeadline ? "timeout" : "server",
           stage: isDeadline ? "deadline" : "unknown",
           message,
           requestId,
@@ -1388,6 +1449,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         kind: "timeout",
         message: "Request took too long. Please try a simpler question.",
         stage: "deadline",
+        requestId,
+      });
+    }
+    if (err instanceof QuotaExhaustedError) {
+      // wrapStage deliberately rethrows this one bare (it is already
+      // specific), but the StageError branch below only unwraps a *wrapped*
+      // cause — so an unwrapped quota error used to fall through to the
+      // generic 500 and the reader was told to report a bug instead of to
+      // come back later.
+      const retryAfterSec = retryAfterSecFromQuotaError(err);
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          route: "/api/ask",
+          requestId,
+          stage: "pipeline",
+          msg: "gemini quota exhausted",
+          retryAfterSec,
+        })
+      );
+      return askErrorJson({
+        status: 429,
+        kind: kindForQuota(retryAfterSec),
+        message: "AI quota reached. Please try again later.",
+        retryAfterSec,
+        cause: "quota_exhausted",
+        stage: "pipeline",
         requestId,
       });
     }
