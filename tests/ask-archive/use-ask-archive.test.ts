@@ -440,6 +440,36 @@ describe("useAskArchive", () => {
         expect(result.current.turns[0].sourceArticles).toHaveLength(1);
     });
 
+    it("archives each thread under its own session when a new conversation starts mid-flow", async () => {
+        const { result } = renderHook(() => useAskArchive());
+        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+        act(() => {
+            result.current.submit("First question");
+        });
+        await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
+
+        // A deep link arriving on an open conversation does exactly this:
+        // start a new thread, then submit, in the same tick. The persistence
+        // effect used to read the session id from a ref that newConversation
+        // had already repointed, filing the first thread's turns under the
+        // second thread's session.
+        act(() => {
+            result.current.newConversation();
+            result.current.submit("Second question");
+        });
+        await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
+
+        const archived = JSON.parse(
+            window.localStorage.getItem("owu-ask-threads") ?? "[]",
+        ) as Array<{ sessionId: string; turns: Array<{ question: string }> }>;
+
+        expect(archived).toHaveLength(2);
+        const questions = archived.map((t) => t.turns[0]?.question).sort();
+        expect(questions).toEqual(["First question", "Second question"]);
+        expect(new Set(archived.map((t) => t.sessionId)).size).toBe(2);
+    });
+
     it("submit produces a TURN_ERROR with typed kind when the server returns a typed error", async () => {
         vi.stubGlobal(
             "fetch",

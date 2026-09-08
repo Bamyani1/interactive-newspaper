@@ -15,12 +15,14 @@ function DeepLinkBridge({
     isHydrating,
     turnCount,
     submit,
+    startNewConversation,
 }: {
     isHydrating: boolean;
     turnCount: number;
     submit: (question: string) => void;
+    startNewConversation: () => void;
 }) {
-    useDeepLinkSubmit({ isHydrating, turnCount, submit });
+    useDeepLinkSubmit({ isHydrating, turnCount, submit, startNewConversation });
     return null;
 }
 
@@ -121,6 +123,7 @@ export default function AskWorkspace({
                     isHydrating={isHydrating}
                     turnCount={turns.length}
                     submit={submit}
+                    startNewConversation={newConversation}
                 />
             </Suspense>
             <TimeControls />

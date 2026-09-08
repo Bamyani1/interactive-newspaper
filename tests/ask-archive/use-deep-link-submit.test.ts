@@ -28,7 +28,12 @@ describe("useDeepLinkSubmit", () => {
         const submit = vi.fn();
         paramsGetMock.mockReturnValue("How did OWU respond to Vietnam?");
         renderHook(() =>
-            useDeepLinkSubmit({ isHydrating: false, turnCount: 0, submit }),
+            useDeepLinkSubmit({
+                isHydrating: false,
+                turnCount: 0,
+                submit,
+                startNewConversation: vi.fn(),
+            }),
         );
         expect(submit).toHaveBeenCalledTimes(1);
         expect(submit).toHaveBeenCalledWith(
@@ -41,14 +46,55 @@ describe("useDeepLinkSubmit", () => {
         const submit = vi.fn();
         paramsGetMock.mockReturnValue("a question");
         renderHook(() =>
-            useDeepLinkSubmit({ isHydrating: true, turnCount: 0, submit }),
+            useDeepLinkSubmit({
+                isHydrating: true,
+                turnCount: 0,
+                submit,
+                startNewConversation: vi.fn(),
+            }),
         );
         expect(submit).not.toHaveBeenCalled();
         expect(replaceStateSpy).not.toHaveBeenCalled();
     });
 
-    it("consumes without submitting when a conversation is already in progress", () => {
+    it("opens a new thread and answers when a conversation is already in progress", () => {
         const submit = vi.fn();
+        const startNewConversation = vi.fn();
+        paramsGetMock.mockReturnValue("a question");
+        renderHook(() =>
+            useDeepLinkSubmit({
+                isHydrating: false,
+                turnCount: 1,
+                submit,
+                startNewConversation,
+            }),
+        );
+        // The reader clicked a suggestion; dropping it silently is what made
+        // every question after the first one look like the app had frozen.
+        expect(startNewConversation).toHaveBeenCalledTimes(1);
+        expect(submit).toHaveBeenCalledWith("a question");
+        expect(replaceStateSpy).toHaveBeenCalledWith(null, "", "/ask");
+    });
+
+    it("does not open a new thread when the workspace is already empty", () => {
+        const submit = vi.fn();
+        const startNewConversation = vi.fn();
+        paramsGetMock.mockReturnValue("a question");
+        renderHook(() =>
+            useDeepLinkSubmit({
+                isHydrating: false,
+                turnCount: 0,
+                submit,
+                startNewConversation,
+            }),
+        );
+        expect(startNewConversation).not.toHaveBeenCalled();
+        expect(submit).toHaveBeenCalledWith("a question");
+    });
+
+    it("fires once even as the turn count changes", () => {
+        const submit = vi.fn();
+        const startNewConversation = vi.fn();
         paramsGetMock.mockReturnValue("a question");
         const { rerender } = renderHook(
             (turnCount: number) =>
@@ -56,23 +102,29 @@ describe("useDeepLinkSubmit", () => {
                     isHydrating: false,
                     turnCount,
                     submit,
+                    startNewConversation,
                 }),
             { initialProps: 1 },
         );
-        expect(submit).not.toHaveBeenCalled();
-        expect(replaceStateSpy).toHaveBeenCalledWith(null, "", "/ask");
+        expect(submit).toHaveBeenCalledTimes(1);
 
-        // Clearing the restored conversation must not release the stale
-        // URL question later in the same mount.
+        // Clearing the conversation must not release the stale URL question
+        // a second time within the same mount.
         rerender(0);
-        expect(submit).not.toHaveBeenCalled();
+        expect(submit).toHaveBeenCalledTimes(1);
+        expect(startNewConversation).toHaveBeenCalledTimes(1);
     });
 
     it("skips when the q param is absent", () => {
         const submit = vi.fn();
         paramsGetMock.mockReturnValue(null);
         renderHook(() =>
-            useDeepLinkSubmit({ isHydrating: false, turnCount: 0, submit }),
+            useDeepLinkSubmit({
+                isHydrating: false,
+                turnCount: 0,
+                submit,
+                startNewConversation: vi.fn(),
+            }),
         );
         expect(submit).not.toHaveBeenCalled();
         expect(replaceStateSpy).not.toHaveBeenCalled();
@@ -82,7 +134,12 @@ describe("useDeepLinkSubmit", () => {
         const submit = vi.fn();
         paramsGetMock.mockReturnValue("   ");
         renderHook(() =>
-            useDeepLinkSubmit({ isHydrating: false, turnCount: 0, submit }),
+            useDeepLinkSubmit({
+                isHydrating: false,
+                turnCount: 0,
+                submit,
+                startNewConversation: vi.fn(),
+            }),
         );
         expect(submit).not.toHaveBeenCalled();
         expect(replaceStateSpy).not.toHaveBeenCalled();
