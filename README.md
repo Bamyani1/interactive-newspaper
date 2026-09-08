@@ -560,7 +560,7 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 │   └── validate_candidate.py     # Candidate-edition validation
 │
 ├── scripts/
-│   ├── db/                       # seed, embed, migrate, recreate-hnsw-index
+│   ├── db/                       # seed, embed, migrate, index builds
 │   ├── ocr/                      # Shell wrappers around the Python pipeline
 │   ├── iiif/                     # IIIF archive download tool (OCLC ContentDM)
 │   └── weather/                  # Weather archive builders

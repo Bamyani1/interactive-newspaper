@@ -6,8 +6,8 @@
  * 2. Recompute search_vector for all existing articles
  * 3. Drop the old HNSW index (ef_construction=64)
  *
- * The HNSW index is recreated with ef_construction=128 AFTER re-embedding,
- * via a separate command (see scripts/db/recreate-hnsw-index.mjs).
+ * The HNSW index at ef_construction=128 is recreated by `npm run db:migrate`
+ * (scripts/db/migrations/0002_legacy_core.sql), which is idempotent.
  *
  * Usage:
  *   node --import tsx scripts/db/migrate-rag-improvements.mjs
@@ -91,10 +91,8 @@ async function main() {
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   console.log(`Migration complete in ${elapsed}s.`);
   console.log("\nNext steps:");
-  console.log("  1. Run: npm run db:embed -- --force   (~50 min, re-embeds with new fields)");
-  console.log(
-    "  2. Run: node --import tsx scripts/db/recreate-hnsw-index.mjs   (after embed completes)"
-  );
+  console.log("  1. Run: npm run db:embed -- --legacy-unversioned   (backfills pending vectors)");
+  console.log("  2. Run: npm run db:migrate   (recreates the HNSW index at ef_construction=128)");
 }
 
 main().catch((err) => {
