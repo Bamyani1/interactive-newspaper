@@ -405,6 +405,30 @@ describe("agent-loop", () => {
       expect(modelCalls).toHaveLength(1);
     });
 
+    it("retries a generation quota trip, then reports the wait rather than a bug", async () => {
+      vi.useFakeTimers();
+      try {
+        const quotaError = new Error(
+          'Gemini API quota exhausted: {"error":{"code":429,"details":[{"retryDelay":"31s"}]}}'
+        );
+        quotaError.name = "QuotaExhaustedError";
+        for (let i = 0; i < 3; i++) mockGenerateContentRejection(quotaError);
+
+        const promise = runAgentLoop("q");
+        promise.catch(() => {});
+        await vi.advanceTimersByTimeAsync(3_000);
+        const result = await promise;
+
+        expect(result.outcome).toBe("error");
+        expect(result.errorKind).toBe("rate_limit");
+        expect(result.retryAfterSec).toBe(31);
+        // One attempt plus the two live backoff retries.
+        expect(modelCalls).toHaveLength(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("caps confidence at low when an archive lookup timed out", async () => {
       (executeTool as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce({
