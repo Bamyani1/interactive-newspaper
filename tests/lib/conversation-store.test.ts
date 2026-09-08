@@ -21,6 +21,7 @@ import {
   getConversationHistory,
   addConversationTurn,
   deleteConversationTurns,
+  deleteLatestTurn,
   sessionHasAnyTurns,
   newSessionId,
   formatHistoryForPrompt,
@@ -216,6 +217,52 @@ describe("conversation-store", () => {
     ]);
     const history = await getConversationHistory("sid");
     expect(history[0].citationSnapshots).toEqual([snapshot]);
+  });
+
+  // Regenerate drops the turn it is replacing before generating. The
+  // question check is what makes that safe to call optimistically: a
+  // stopped turn never reached the store, so the newest row there is the
+  // *previous* good turn, and deleting blind would throw it away.
+  it("deletes the newest turn only when its question matches", async () => {
+    sqlMock.mockResolvedValueOnce([{ id: 42 }]);
+    await expect(deleteLatestTurn("sid", "the question being replaced")).resolves.toEqual({
+      ok: true,
+      deleted: true,
+    });
+    const params = sqlMock.mock.calls[0].slice(1);
+    expect(params).toContain("the question being replaced");
+  });
+
+  it("deletes nothing when the newest turn is a different question", async () => {
+    sqlMock.mockResolvedValueOnce([]);
+    await expect(deleteLatestTurn("sid", "a question that was never stored")).resolves.toEqual({
+      ok: true,
+      deleted: false,
+    });
+  });
+
+  it("reports a failed regenerate delete without throwing", async () => {
+    sqlMock.mockRejectedValueOnce(new Error("neon down"));
+    await expect(deleteLatestTurn("sid", "Q")).resolves.toEqual({ ok: false, deleted: false });
+  });
+
+  it("pops the matching in-memory turn in evaluation mode", async () => {
+    vi.stubEnv("RAG_EVALUATION_MODE", "1");
+    await addConversationTurn("eval-regen", "first", "A1", []);
+    await addConversationTurn("eval-regen", "second", "A2", []);
+
+    await expect(deleteLatestTurn("eval-regen", "not the newest")).resolves.toEqual({
+      ok: true,
+      deleted: false,
+    });
+    expect(await getConversationHistory("eval-regen")).toHaveLength(2);
+
+    await expect(deleteLatestTurn("eval-regen", "second")).resolves.toEqual({
+      ok: true,
+      deleted: true,
+    });
+    expect(await getConversationHistory("eval-regen")).toMatchObject([{ question: "first" }]);
+    expect(sqlMock).not.toHaveBeenCalled();
   });
 
   it("uses an ephemeral store and makes no Neon call in evaluation mode", async () => {

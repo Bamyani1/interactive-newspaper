@@ -271,6 +271,69 @@ export async function deleteConversationTurns(
   }
 }
 
+export type DeleteLatestTurnResult = { ok: boolean; deleted: boolean };
+
+/**
+ * Drops the newest stored turn for a session, but only if its question
+ * matches — the caller's proof that it is deleting the turn it thinks it
+ * is. Regenerate needs this: without it the replacement answer would be
+ * appended alongside the one it replaces, and the model would see itself
+ * answering the same question twice in its own context.
+ *
+ * The question check is what makes it safe to call optimistically. A
+ * stopped turn never reached the store, so the newest row there is the
+ * *previous* good turn; deleting blind would throw that away. A
+ * mismatch simply deletes nothing.
+ *
+ * Never throws, and deleting nothing is not an error: history is
+ * best-effort context, not a system of record.
+ */
+export async function deleteLatestTurn(
+  sessionId: string,
+  previousQuestion: string
+): Promise<DeleteLatestTurnResult> {
+  if (isRagEvaluationMode()) {
+    const turns = liveEvaluationTurns(sessionId);
+    if (turns.length === 0 || turns[turns.length - 1].question !== previousQuestion) {
+      return { ok: true, deleted: false };
+    }
+    turns.pop();
+    if (turns.length === 0) evaluationSessions.delete(sessionId);
+    else evaluationSessions.set(sessionId, turns);
+    return { ok: true, deleted: true };
+  }
+  const sql = getSql();
+  if (!sql) return { ok: true, deleted: false };
+  const sessionKey = hashSessionToken(sessionId);
+  try {
+    // `id` breaks a created_at tie: two turns inserted inside the same
+    // clock tick would otherwise make "newest" ambiguous.
+    const rows = (await sql`
+            DELETE FROM ask_session_turns
+            WHERE id = (
+                SELECT id FROM ask_session_turns
+                WHERE session_id = ${sessionKey}
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+              )
+              AND question = ${previousQuestion}
+            RETURNING id
+        `) as Array<Record<string, unknown>>;
+    return { ok: true, deleted: rows.length > 0 };
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        module: "conversation-store",
+        op: "deleteLatestTurn",
+        msg: "db delete failed; the superseded turn stays in history",
+        err: err instanceof Error ? err.message : String(err),
+      })
+    );
+    return { ok: false, deleted: false };
+  }
+}
+
 /**
  * Returns true if any row exists for this session regardless of TTL.
  * Used by the hydration endpoint to distinguish "never existed" from
