@@ -49,8 +49,13 @@
   color: color-mix(in oklab, var(--color-text-secondary) 70%, transparent);
 }
 
+/* Out of flow: the indicator is removed the moment the session restore
+   resolves, and an in-flow indicator makes that removal reflow the whole
+   transcript — a layout shift on every arrival at /ask. */
 .ask-hydrating-indicator {
-  flex: 0 0 auto;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
 }
 
 /* Subtle scrollbar that matches the dark theme */
