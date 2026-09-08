@@ -1,3 +1,10 @@
+.search-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+}
+
 .search-filter-control {
     min-height: 44px;
     padding: var(--space-2) var(--space-3);
@@ -25,6 +32,26 @@
 
 [data-mode="dark"] .search-filter-control {
     color-scheme: dark;
+}
+
+@media (max-width: 640px) {
+    /* Three controls in a row overflow a phone; give the category its own
+       full-width row and pair the two dates beneath it. */
+    .search-filters {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .search-filter-field,
+    .search-filter-control {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .search-filter-field--category {
+        grid-column: 1 / -1;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
