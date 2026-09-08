@@ -706,7 +706,6 @@ The pre-ledger one-off `migrate-*.mjs` scripts in `scripts/db/` are kept as prod
 | `migrate-ask-feedback.mjs`     | Superseded by `0003_runtime_tables.sql`                                                                                                                                 |
 | `migrate-rag-v2.mjs`           | Renamed to `backfill-rag-records.mjs` (`npm run db:backfill:rag-records`); its DDL moved into `0005_rag_evidence_tables.sql`, leaving a deterministic DML-only backfill |
 | `migrate-rag-improvements.mjs` | Legacy whole-article migration, superseded by RAG v2                                                                                                                    |
-| `recreate-hnsw-index.mjs`      | Legacy article-vector index rebuild; the v2 child-table indexes come from `0005`                                                                                        |
 
 Online embedding is deliberately separate from schema migration so it can be cost-previewed, stopped, and resumed (`db:embed`).
 
