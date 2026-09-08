@@ -70,6 +70,7 @@ export default function AboutPage() {
                             href="https://github.com/Bamyani1/interactive-newspaper/tree/main/docs/architecture"
                             target="_blank"
                             rel="noopener noreferrer"
+                            data-audit-inline-text-link="WCAG 2.5.8 exempts a link set inline in a sentence of body copy."
                             className="text-[var(--color-text-primary)] underline decoration-[var(--color-accent)]/40 underline-offset-4 hover:text-[var(--color-accent)] hover:decoration-[var(--color-accent)] transition-colors"
                         >
                             architecture docs
