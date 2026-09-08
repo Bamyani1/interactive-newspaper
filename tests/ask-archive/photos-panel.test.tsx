@@ -54,12 +54,28 @@ describe("PhotosPanel", () => {
     expect(screen.getByRole("button", { name: /show all 15 pictures/i })).toBeInTheDocument();
   });
 
-  it("reveals every remaining tile once the control is used", () => {
+  it("reveals every remaining tile and offers the way back", () => {
     render(<PhotosPanel images={makeImages(15)} onOpenUrl={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /show all 15 pictures/i }));
     expect(document.querySelectorAll(".ask-photos-tile")).toHaveLength(15);
-    // The control retires once there is nothing left to reveal.
-    expect(screen.queryByRole("button", { name: /show all/i })).not.toBeInTheDocument();
+    // "Show all" used to be one-way, so a reader who expanded a long set
+    // had no route back to the short grid.
+    const collapse = screen.getByRole("button", { name: /show fewer/i });
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(collapse);
+    expect(document.querySelectorAll(".ask-photos-tile")).toHaveLength(12);
+    expect(screen.getByRole("button", { name: /show all 15 pictures/i })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+  });
+
+  it("counts what is on screen, not the total, while capped", () => {
+    render(<PhotosPanel images={makeImages(34)} onOpenUrl={() => {}} />);
+    // The heading claimed "More pictures — 34" above twelve tiles.
+    expect(screen.getByRole("heading", { name: /more pictures — 12 of 34/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /show all 34 pictures/i }));
+    expect(screen.getByRole("heading", { name: /more pictures — 34$/i })).toBeInTheDocument();
   });
 
   it("omits the reveal control when nothing is capped", () => {

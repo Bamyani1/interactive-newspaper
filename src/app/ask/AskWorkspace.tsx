@@ -51,6 +51,9 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
   } = useAskArchive();
 
   const [isExporting, setIsExporting] = useState(false);
+  // A failed export used to log to the console and stop. The reader saw
+  // the button flicker and no file appear, with nothing to explain it.
+  const [exportError, setExportError] = useState(false);
   const [isClearWarningOpen, setIsClearWarningOpen] = useState(false);
   const lastTurn = turns[turns.length - 1];
   const isStreaming = lastTurn?.status === "streaming";
@@ -102,12 +105,14 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
     if (turns.length === 0 || isExporting) return;
 
     setIsExporting(true);
+    setExportError(false);
     try {
       const { exportConversationPdf } =
         await import("@/features/ask-archive/lib/export-conversation-pdf");
       await exportConversationPdf(turns);
     } catch (error) {
       console.error("Failed to export conversation PDF", error);
+      setExportError(true);
     } finally {
       setIsExporting(false);
     }
@@ -184,6 +189,11 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
               hydration disables it, because there is genuinely nothing
               to send to yet.
             */}
+            {exportError ? (
+              <p className="ask-export-error" role="alert">
+                The PDF could not be created. Try again, or export a shorter conversation.
+              </p>
+            ) : null}
             <Composer
               disabled={isHydrating}
               isStreaming={isStreaming}
