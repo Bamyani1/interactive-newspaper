@@ -150,7 +150,7 @@ describe("useAskArchive", () => {
     });
   });
 
-  it("on expiry: empties the transcript, removes the expired thread, and mints a fresh session", async () => {
+  it("on expiry: keeps the conversation readable and raises the banner", async () => {
     const expiredSession = "expired-session-1";
     window.localStorage.setItem("owu-ask-session-id", expiredSession);
     window.localStorage.setItem(
@@ -171,11 +171,11 @@ describe("useAskArchive", () => {
               confidence: "medium",
               requestId: "",
               mode: "text",
-              createdAt: 1,
+              createdAt: Date.now() - 60_000,
             },
           ],
-          createdAt: 1,
-          lastUpdatedAt: 1,
+          createdAt: Date.now() - 60_000,
+          lastUpdatedAt: Date.now() - 60_000,
         },
       ])
     );
@@ -193,20 +193,22 @@ describe("useAskArchive", () => {
     const { result } = renderHook(() => useAskArchive());
     await waitFor(() => expect(result.current.isHydrating).toBe(false));
 
-    // Banner shows, but nothing from the dead conversation lingers.
+    // What expired is the server's memory of the conversation, not the
+    // conversation: the transcript is local and still worth reading.
+    // Deleting it here threw away a thread up to a week old, and minting
+    // a new session id orphaned the archived copy from its own key.
     expect(result.current.expiredBanner).toBe(true);
-    expect(result.current.turns).toEqual([]);
-    // The expired thread is gone from the sidebar…
-    expect(result.current.threads).toEqual([]);
-    // …and from localStorage.
-    expect(JSON.parse(window.localStorage.getItem("owu-ask-threads") ?? "[]")).toEqual([]);
-    // A fresh session is active, not the dead one.
-    expect(result.current.activeThreadId).toBeTruthy();
-    expect(result.current.activeThreadId).not.toBe(expiredSession);
-    expect(window.localStorage.getItem("owu-ask-session-id")).not.toBe(expiredSession);
+    expect(result.current.turns.map((t) => t.question)).toEqual([
+      "What coverage did the 1969 moon landing get?",
+    ]);
+    expect(result.current.turns[0].answer).toBe("It got wall-to-wall coverage.");
+    expect(result.current.threads.map((t) => t.id)).toEqual([expiredSession]);
+    expect(result.current.activeThreadId).toBe(expiredSession);
+    expect(window.localStorage.getItem("owu-ask-session-id")).toBe(expiredSession);
+    expect(JSON.parse(window.localStorage.getItem("owu-ask-threads") ?? "[]")).toHaveLength(1);
   });
 
-  it("on expiry: keeps other archived threads while dropping only the expired one", async () => {
+  it("on expiry: leaves every other archived thread exactly where it was", async () => {
     const expiredSession = "expired-session-2";
     const keepSession = "keep-session-2";
     window.localStorage.setItem("owu-ask-session-id", expiredSession);
@@ -249,11 +251,11 @@ describe("useAskArchive", () => {
               confidence: "medium",
               requestId: "",
               mode: "text",
-              createdAt: 2,
+              createdAt: Date.now() - 120_000,
             },
           ],
-          createdAt: 2,
-          lastUpdatedAt: 2,
+          createdAt: Date.now() - 120_000,
+          lastUpdatedAt: Date.now() - 120_000,
         },
       ])
     );
@@ -271,9 +273,9 @@ describe("useAskArchive", () => {
     const { result } = renderHook(() => useAskArchive());
     await waitFor(() => expect(result.current.isHydrating).toBe(false));
 
-    expect(result.current.threads.map((t) => t.id)).toEqual([keepSession]);
-    expect(result.current.activeThreadId).not.toBe(expiredSession);
-    expect(result.current.activeThreadId).not.toBe(keepSession);
+    // Most-recent first, and both are still there.
+    expect(result.current.threads.map((t) => t.id)).toEqual([keepSession, expiredSession]);
+    expect(result.current.activeThreadId).toBe(expiredSession);
   });
 
   it("prunes archived threads older than the 7-day retention window on load", async () => {
@@ -1059,6 +1061,30 @@ describe("useAskArchive turn lifecycle", () => {
     });
     expect(view.result.current.turns[0].answer.length).toBeGreaterThan(partial.length);
     view.unmount();
+  });
+
+  it("settles hydration even when no session id can be minted", async () => {
+    // No CSPRNG: readOrCreateSessionId returns "". The effect used to
+    // return here without dispatching, leaving isHydrating raised — the
+    // composer, Export and Clear-all stayed disabled for the whole
+    // visit, so the page could not be used at all.
+    const realCrypto = window.crypto;
+    Object.defineProperty(window, "crypto", { value: undefined, configurable: true });
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => {
+          throw new Error("no session id means no session fetch");
+        })
+      );
+      const view = renderHook(() => useAskArchive());
+      await waitFor(() => expect(view.result.current.isHydrating).toBe(false));
+      expect(view.result.current.turns).toEqual([]);
+      expect(view.result.current.expiredBanner).toBe(false);
+      view.unmount();
+    } finally {
+      Object.defineProperty(window, "crypto", { value: realCrypto, configurable: true });
+    }
   });
 
   it("aborts an in-flight answer when the workspace unmounts", async () => {

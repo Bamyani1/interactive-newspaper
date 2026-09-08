@@ -108,7 +108,10 @@ export const Transcript: React.FC<TranscriptProps> = ({
       {expiredBanner ? (
         <div className="ask-expired-banner" role="status">
           <span className="ask-expired-banner-label">Notice</span>
-          <span> — Your last conversation expired. Starting fresh.</span>
+          <span>
+            {" "}
+            — Server memory for this conversation has aged out. Follow-ups start fresh context.
+          </span>
         </div>
       ) : null}
 
