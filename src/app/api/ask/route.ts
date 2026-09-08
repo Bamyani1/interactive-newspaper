@@ -30,7 +30,6 @@ import type {
     CitationSnapshot,
 } from "@/src/types";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
-import { getCachedAnswer, setCachedAnswer } from "@/src/lib/answer-cache";
 import { checkDailyBudget, DailyBudgetExceededError } from "@/src/lib/cost-tracker";
 import {
     DEDUP_TTL_MS,
@@ -600,50 +599,6 @@ async function handleStreamingAsk(params: {
             const stageElapsed = () => Date.now() - totalStart;
 
             try {
-                // Cache lookup precedes reformulation: an exact hit performs
-                // zero Google calls; a semantic (paraphrase) hit costs one
-                // query embedding. Contextual follow-ups still bypass it.
-                const earlyCached =
-                    conversationHistory.length === 0
-                        ? await getCachedAnswer(question, explicitFilters, { requestId })
-                        : null;
-                if (earlyCached) {
-                    send({
-                        type: "metadata",
-                        question,
-                        mode: earlyCached.mode,
-                        requestId,
-                        sourceArticles: earlyCached.sourceArticles,
-                        meta: earlyCached.meta,
-                    });
-                    send({ type: "delta", text: earlyCached.answer });
-                    await persistTurnBounded(
-                        sessionId,
-                        question,
-                        earlyCached.answer,
-                        earlyCached.citations.map((citation) => citation.articleId),
-                        buildCitationSnapshots(
-                            earlyCached.citations,
-                            earlyCached.sourceArticles,
-                        ),
-                    );
-                    send({
-                        type: "done",
-                        answer: earlyCached.answer,
-                        citations: earlyCached.citations,
-                        confidence: earlyCached.confidence,
-                        sessionId,
-                        sourceArticles: earlyCached.sourceArticles,
-                        followUpQuestions: earlyCached.followUpQuestions ?? [],
-                        meta: {
-                            ...earlyCached.meta,
-                            totalTimeMs: Date.now() - totalStart,
-                            cacheHit: true,
-                        },
-                    });
-                    return;
-                }
-
                 // ── Step 1: Reformulate ──
                 let embeddingQuery: string;
                 let ftsQuery: string;
@@ -1027,34 +982,6 @@ async function handleStreamingAsk(params: {
                     buildCitationSnapshots(finalCitations, rankedArticles),
                 );
 
-                const streamingResponse: AskResponse = {
-                    question,
-                    answer: finalAnswer,
-                    citations: finalCitations,
-                    confidence: finalConfidence,
-                    mode,
-                    requestId,
-                    sessionId,
-                    sourceArticles,
-                    followUpQuestions: finalFollowUps,
-                    meta: {
-                        retrievalTimeMs,
-                        generationTimeMs,
-                        totalTimeMs,
-                        articlesSearched: articles.length,
-                        method,
-                        reformulatedQuery:
-                            embeddingQuery !== question ? embeddingQuery : undefined,
-                        complexity,
-                        ...retrievalIdentityMetadata(retrievalIdentity),
-                        ...coverageMetadata(coverage),
-                    },
-                };
-
-                if (conversationHistory.length === 0) {
-                    setCachedAnswer(question, explicitFilters, streamingResponse);
-                }
-
                 send({
                     type: "done",
                     answer: finalAnswer,
@@ -1277,39 +1204,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     const pipelinePromise = (async (): Promise<NextResponse> => {
-        const earlyCached =
-            conversationHistory.length === 0
-                ? await getCachedAnswer(question, body.filters, { requestId })
-                : null;
-        if (earlyCached) {
-            const response: AskResponse = {
-                ...earlyCached,
-                // Cache entries are shared across every visitor. Re-attach
-                // this caller's own identity so a semantic hit never echoes
-                // the original asker's question back — this also covers
-                // entries stored before setCachedAnswer began stripping it.
-                question,
-                requestId,
-                sessionId,
-                meta: {
-                    ...earlyCached.meta,
-                    totalTimeMs: Date.now() - totalStart,
-                    cacheHit: true,
-                },
-            };
-            await persistTurnBounded(
-                sessionId,
-                question,
-                earlyCached.answer,
-                earlyCached.citations.map((citation) => citation.articleId),
-                buildCitationSnapshots(
-                    earlyCached.citations,
-                    earlyCached.sourceArticles,
-                ),
-            );
-            return NextResponse.json(response);
-        }
-
         // ── Step 1: Reformulate query for better retrieval ──
         const reformulated = await wrapStage(
             "reformulate",
@@ -1555,10 +1449,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 ...coverageMetadata(coverage),
             },
         };
-
-        if (conversationHistory.length === 0) {
-            setCachedAnswer(question, body.filters, response);
-        }
 
         return NextResponse.json(response);
     })();
