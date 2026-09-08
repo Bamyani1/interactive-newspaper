@@ -272,6 +272,9 @@ describe("agent-loop", () => {
       expect(result.answer).toContain("timed out");
       expect(result.confidence).toBe("low");
       expect(result.rounds).toBe(0);
+      // Not an answer: the route must report it, not store it as history.
+      expect(result.outcome).toBe("error");
+      expect(result.errorKind).toBe("timeout");
     });
 
     it("catches AbortError during API call", async () => {
@@ -282,6 +285,8 @@ describe("agent-loop", () => {
       const result = await runAgentLoop("test");
       expect(result.answer).toContain("timed out");
       expect(result.confidence).toBe("low");
+      expect(result.outcome).toBe("error");
+      expect(result.errorKind).toBe("timeout");
     });
 
     it("catches unexpected errors gracefully", async () => {
@@ -289,6 +294,88 @@ describe("agent-loop", () => {
 
       const result = await runAgentLoop("test");
       expect(result.answer).toContain("encountered an error");
+      expect(result.confidence).toBe("low");
+      expect(result.outcome).toBe("error");
+      expect(result.errorKind).toBe("server");
+    });
+
+    it("reports a cited answer and an uncited one as real outcomes", async () => {
+      (executeTool as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        results: [{ id: "1965-03-15-4", headline: "H", editionDate: "1965-03-15" }],
+      });
+      mockGenerateContent(
+        {
+          functionCalls: [{ name: "search_archive", args: { query: "q" } }],
+          parts: [{ functionCall: { name: "search_archive", args: { query: "q" } } }],
+        },
+        { text: "Answer [1965-03-15-4]." }
+      );
+      expect((await runAgentLoop("q")).outcome).toBe("answered");
+
+      vi.clearAllMocks();
+      mockGenerateContent({ text: "I could not find anything." });
+      expect((await runAgentLoop("q")).outcome).toBe("no_evidence");
+    });
+
+    it("stops researching when an archive lookup hits the model quota", async () => {
+      // Flattened to a bare { error }, a quota failure read as "archive
+      // lookup failed": the loop kept going and answered from whatever
+      // partial evidence it had, at normal confidence.
+      (executeTool as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        error: "Gemini API quota exhausted (rerank)",
+        kind: "quota",
+        retryAfterSec: 24,
+      });
+      mockGenerateContent({
+        functionCalls: [{ name: "search_archive", args: { query: "q" } }],
+        parts: [{ functionCall: { name: "search_archive", args: { query: "q" } } }],
+      });
+
+      const result = await runAgentLoop("q");
+      expect(result.outcome).toBe("error");
+      expect(result.errorKind).toBe("rate_limit");
+      expect(result.retryAfterSec).toBe(24);
+      // Stopped after the failing round rather than running the remaining
+      // two rounds plus a synthesis call on the same spent quota.
+      expect(mockGenerateContentFn).toHaveBeenCalledTimes(1);
+    });
+
+    it("caps confidence at low when an archive lookup timed out", async () => {
+      (executeTool as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({
+          error: "Database operation timed out: hybridSearch after 10000ms",
+          kind: "timeout",
+        })
+        .mockResolvedValueOnce({
+          results: [
+            {
+              id: "1965-03-15-4",
+              headline: "H",
+              editionDate: "1965-03-15",
+              relevanceScore: 9,
+            },
+          ],
+        });
+      mockGenerateContent(
+        {
+          functionCalls: [
+            { name: "search_archive", args: { query: "a" } },
+            { name: "search_archive", args: { query: "b" } },
+          ],
+          parts: [
+            { functionCall: { name: "search_archive", args: { query: "a" } } },
+            { functionCall: { name: "search_archive", args: { query: "b" } } },
+          ],
+        },
+        { text: "Partial answer [1965-03-15-4]." }
+      );
+
+      const result = await runAgentLoop("q");
+      // Still answers — one lookup succeeded — but says the evidence set is
+      // incomplete instead of reporting the confidence two good citations
+      // would normally earn.
+      expect(result.outcome).toBe("answered");
+      expect(result.degraded).toBe(true);
       expect(result.confidence).toBe("low");
     });
 

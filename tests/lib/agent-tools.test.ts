@@ -1,12 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fetchArticleForRagMock, queryEditionsMock, searchAndRankArchiveMock } = vi.hoisted(() => ({
-  fetchArticleForRagMock: vi.fn(),
-  queryEditionsMock: vi.fn(),
-  searchAndRankArchiveMock: vi.fn(),
-}));
+const { fetchArticleForRagMock, queryEditionsMock, searchAndRankArchiveMock, MockDbTimeoutError } =
+  vi.hoisted(() => {
+    class MockDbTimeoutError extends Error {
+      constructor(
+        readonly op: string,
+        readonly timeoutMs: number
+      ) {
+        super(`Database operation timed out: ${op} after ${timeoutMs}ms`);
+        this.name = "DbTimeoutError";
+      }
+    }
+    return {
+      fetchArticleForRagMock: vi.fn(),
+      queryEditionsMock: vi.fn(),
+      searchAndRankArchiveMock: vi.fn(),
+      MockDbTimeoutError,
+    };
+  });
 
 vi.mock("@/src/lib/db", () => ({
+  DbTimeoutError: MockDbTimeoutError,
   fetchArticleForRag: fetchArticleForRagMock,
   queryEditions: queryEditionsMock,
 }));
@@ -240,5 +254,36 @@ describe("agent-tools", () => {
       editions: [{ date: "1965-03-15", articleCount: 12 }],
       pagination: { offset: 10, limit: 100, hasMore: false },
     });
+  });
+
+  // Every typed failure used to flatten into a bare { error }, which the
+  // model reads as "archive lookup failed" and the loop treats as a normal
+  // empty result — so a spent quota kept researching and a timed-out lookup
+  // produced an answer at normal confidence.
+  it("labels a spent model quota, with the wait it reported", async () => {
+    const quotaError = new Error(
+      'Gemini API quota exhausted: {"error":{"code":429,"details":[{"retryDelay":"18s"}]}}'
+    );
+    quotaError.name = "QuotaExhaustedError";
+    searchAndRankArchiveMock.mockRejectedValue(quotaError);
+
+    const result = await executeTool("search_archive", { query: "football" });
+    expect(result.kind).toBe("quota");
+    expect(result.retryAfterSec).toBe(18);
+  });
+
+  it("labels a database timeout", async () => {
+    searchAndRankArchiveMock.mockRejectedValue(new MockDbTimeoutError("hybridSearch", 10_000));
+
+    const result = await executeTool("search_archive", { query: "football" });
+    expect(result.kind).toBe("timeout");
+  });
+
+  it("labels anything else as a plain failure", async () => {
+    searchAndRankArchiveMock.mockRejectedValue(new Error("index exploded"));
+
+    const result = await executeTool("search_archive", { query: "football" });
+    expect(result.kind).toBe("failed");
+    expect(result.error).toBe("index exploded");
   });
 });

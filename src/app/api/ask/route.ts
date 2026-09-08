@@ -765,6 +765,20 @@ async function handleStreamingAsk(params: {
               onProgress: (event) => send(event),
             });
 
+            // A research failure is not a turn. Report it and store nothing,
+            // or the apology comes back as history in the next prompt.
+            if (agentResult.outcome === "error") {
+              send({
+                type: "error",
+                kind: agentResult.errorKind ?? "server",
+                stage: "agent",
+                message: agentResult.answer,
+                requestId,
+                retryAfterSec: agentResult.retryAfterSec,
+              });
+              return;
+            }
+
             await persistTurnBounded(
               sessionId,
               question,
@@ -785,7 +799,7 @@ async function handleStreamingAsk(params: {
               answer: agentResult.answer,
               citations: agentResult.citations,
               confidence: agentResult.confidence,
-              outcome: answerOutcome(agentResult.citations),
+              outcome: agentResult.outcome ?? answerOutcome(agentResult.citations),
               sessionId,
               requestId,
               sourceArticles: agentSourceArticles,
@@ -1333,6 +1347,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           coverage,
         })
       );
+
+      // A research failure is not a turn. Report it typed and store nothing.
+      if (agentResult.outcome === "error") {
+        return askErrorJson({
+          status: answerErrorStatus(agentResult.errorKind),
+          kind: agentResult.errorKind ?? "server",
+          message: agentResult.answer,
+          retryAfterSec: agentResult.retryAfterSec,
+          stage: "agent",
+          requestId,
+        });
+      }
 
       await persistTurnBounded(
         sessionId,
