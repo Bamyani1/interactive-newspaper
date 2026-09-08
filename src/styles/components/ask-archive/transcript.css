@@ -26,18 +26,16 @@
      available space instead of hugging the top. */
 }
 
-.ask-transcript:has(.ask-hydrating-indicator),
-.ask-transcript:has(.ask-cleared-indicator),
-.ask-transcript:has(> .ask-landing) {
+.ask-transcript:has(.ask-cleared-indicator) {
   justify-content: center;
 }
 
-/* When AskLanding renders inline inside the transcript ("New
-   conversation" empty state), drop its first-visit padding so it
-   doesn't push off-screen inside the scrollable container. */
+/* Auto margins centre a short landing in the available transcript space
+   but collapse to zero once the content is taller than the viewport.
+   `justify-content: center` cannot do this: it overflows equally in both
+   directions and the top of the content becomes unreachable by scroll. */
 .ask-transcript > .ask-landing {
-  padding-top: var(--space-6);
-  padding-bottom: var(--space-6);
+  margin-block: auto;
 }
 
 .ask-hydrating-indicator,
@@ -52,9 +50,7 @@
 }
 
 .ask-hydrating-indicator {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline: 0;
+  flex: 0 0 auto;
 }
 
 /* Subtle scrollbar that matches the dark theme */
