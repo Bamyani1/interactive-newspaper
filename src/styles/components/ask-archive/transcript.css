@@ -26,10 +26,6 @@
      available space instead of hugging the top. */
 }
 
-.ask-transcript:has(.ask-cleared-indicator) {
-  justify-content: center;
-}
-
 /* Auto margins centre a short landing in the available transcript space
    but collapse to zero once the content is taller than the viewport.
    `justify-content: center` cannot do this: it overflows equally in both
@@ -184,6 +180,54 @@
   30% {
     opacity: 1;
     transform: translateY(-3px);
+  }
+}
+
+/* =========================================
+   SCROLL TO LATEST
+   Sticky at the bottom edge of the scroller, so a reader who scrolled up
+   to re-read an earlier answer has one press back to the live one instead
+   of a long drag. Zero-height slot so it never displaces a turn.
+   ========================================= */
+.ask-scroll-to-latest-slot {
+  position: sticky;
+  inset-block-end: 0;
+  height: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.ask-scroll-to-latest {
+  pointer-events: auto;
+  transform: translateY(-100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgb(0 0 0 / 12%));
+  cursor: pointer;
+  transition: color var(--duration-fast) ease;
+}
+
+.ask-scroll-to-latest:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.ask-scroll-to-latest:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-scroll-to-latest {
+    transition: none;
   }
 }
 
