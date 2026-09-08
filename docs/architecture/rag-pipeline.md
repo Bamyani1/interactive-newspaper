@@ -231,7 +231,7 @@ The answer cache has two tiers, both used only for history-free simple questions
 
 Cache entries are shared across every visitor, so `setCachedAnswer` strips the storing request's `question`, `sessionId`, and `requestId` before either tier keeps it, and a cache hit re-attaches the reading caller's own.
 
-Query embeddings and hybrid results have five-minute bounded LRUs. Agent answers are not placed in the answer cache.
+Query embeddings have a five-minute bounded LRU. Retrieval results themselves are not cached, so `meta.method` and the retrieval log always describe the current request's own signals. Agent answers are not placed in the answer cache.
 
 Conversation turns live in Neon for 30 minutes. Each successful write transaction:
 
