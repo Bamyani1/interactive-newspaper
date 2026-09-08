@@ -13,6 +13,7 @@ import type { RetrievedArticle } from "@/src/lib/db";
 import type { RetrievalMethod } from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
+import { MAX_QUESTION_LENGTH } from "@/src/lib/ask-limits";
 import { rerankArticles } from "@/src/lib/reranker";
 import {
   deleteLatestTurn,
@@ -64,7 +65,7 @@ export { _clearAskDedupForTests, _askDedupInternalsForTests, _computeRerankSigna
 // finished or failed gracefully.
 export const maxDuration = 60;
 
-const MAX_QUESTION_LENGTH = 1000;
+
 const RETRIEVAL_TIMEOUT_MS = 10_000;
 const GLOBAL_DEADLINE_MS = 55_000;
 

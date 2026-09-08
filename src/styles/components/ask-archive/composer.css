@@ -112,6 +112,17 @@
   cursor: not-allowed;
 }
 
+/* The remaining-characters count only appears near the ceiling, so an
+   ordinary question is never shadowed by a counter. */
+.ask-composer-counter {
+  margin: var(--space-1) 0 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label-md);
+  color: var(--color-text-secondary);
+}
+
 /* Stop reads as the live, actionable control while an answer arrives —
    the accent that Send only borrows on hover. It is never disabled: the
    whole point is that it works at any moment during generation. */
