@@ -129,7 +129,7 @@ export const Transcript: React.FC<TranscriptProps> = ({
                 renders for the explicit "cleared" flag — `null` and
                 "new" fall through to the inline landing so returning
                 users (with archived threads but a fresh current
-                thread) don't see a misleading "Conversation cleared"
+                thread) don't see a misleading "All threads cleared"
                 pill. */}
             {isEmpty && !isHydrating && !expiredBanner && emptyReason === "cleared" ? (
                 <p
@@ -137,7 +137,7 @@ export const Transcript: React.FC<TranscriptProps> = ({
                     role="status"
                     aria-live="polite"
                 >
-                    Conversation cleared — ask a new question below.
+                    All threads cleared — ask a new question below.
                 </p>
             ) : null}
 

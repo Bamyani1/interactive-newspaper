@@ -5,10 +5,10 @@ import { Plus, Eraser, Download } from "lucide-react";
 
 interface AskMobileActionsProps {
     onNewConversation: () => void;
-    onClearConversation: () => void;
+    onClearAllThreads: () => void;
     onExportConversation: () => void;
     canNewConversation: boolean;
-    canClearConversation: boolean;
+    canClearAllThreads: boolean;
     canExportConversation: boolean;
 }
 
@@ -26,10 +26,10 @@ interface AskMobileActionsProps {
  */
 export const AskMobileActions: React.FC<AskMobileActionsProps> = ({
     onNewConversation,
-    onClearConversation,
+    onClearAllThreads,
     onExportConversation,
     canNewConversation,
-    canClearConversation,
+    canClearAllThreads,
     canExportConversation,
 }) => {
     return (
@@ -51,12 +51,12 @@ export const AskMobileActions: React.FC<AskMobileActionsProps> = ({
             <button
                 type="button"
                 className="ask-mobile-action"
-                onClick={onClearConversation}
-                disabled={!canClearConversation}
-                aria-label="Clear the current thread"
+                onClick={onClearAllThreads}
+                disabled={!canClearAllThreads}
+                aria-label="Clear all threads"
             >
                 <Eraser size={14} aria-hidden="true" />
-                <span>Clear</span>
+                <span>Clear all</span>
             </button>
             <button
                 type="button"

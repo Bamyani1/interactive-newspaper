@@ -8,11 +8,11 @@ interface AskSidebarProps {
     threads: ThreadSummary[];
     activeThreadId: string | null;
     onNewConversation: () => void;
-    onClearConversation: () => void;
+    onClearAllThreads: () => void;
     onExportConversation: () => void;
     onSwitchThread: (threadId: string) => void;
     canNewConversation: boolean;
-    canClearConversation: boolean;
+    canClearAllThreads: boolean;
     canExportConversation: boolean;
 }
 
@@ -31,11 +31,11 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
     threads,
     activeThreadId,
     onNewConversation,
-    onClearConversation,
+    onClearAllThreads,
     onExportConversation,
     onSwitchThread,
     canNewConversation,
-    canClearConversation,
+    canClearAllThreads,
     canExportConversation,
 }) => {
     return (
@@ -130,13 +130,13 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
                 <button
                     type="button"
                     className="ask-sidebar-newbtn"
-                    onClick={onClearConversation}
-                    disabled={!canClearConversation}
-                    aria-label="Clear the current thread"
+                    onClick={onClearAllThreads}
+                    disabled={!canClearAllThreads}
+                    aria-label="Clear all threads"
                 >
                     <span className="ask-sidebar-newbtn-label">
                         <Eraser size={12} aria-hidden="true" />
-                        <span>Clear thread</span>
+                        <span>Clear all threads</span>
                     </span>
                     <span
                         className="ask-sidebar-newbtn-plus"

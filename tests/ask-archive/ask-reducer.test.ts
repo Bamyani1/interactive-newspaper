@@ -232,17 +232,36 @@ describe("askReducer", () => {
         expect(next.turns[0].retryAfterSec).toBe(42);
     });
 
-    it("CLEAR_CONVERSATION empties turns, bumps sessionGen, marks emptyReason='cleared'", () => {
+    it("CLEAR_ALL_THREADS empties turns, bumps sessionGen, marks emptyReason='cleared'", () => {
         const state: AskState = {
             ...INITIAL_STATE,
             turns: [makeTurn()],
             expiredBanner: true,
         };
-        const next = askReducer(state, { type: "CLEAR_CONVERSATION" });
+        const next = askReducer(state, { type: "CLEAR_ALL_THREADS" });
         expect(next.turns).toEqual([]);
         expect(next.expiredBanner).toBe(false);
         expect(next.sessionGen).toBe(INITIAL_STATE.sessionGen + 1);
         expect(next.emptyReason).toBe("cleared");
+    });
+
+    it("CLEAR_ALL_THREADS also drops the sidebar archive and the active thread", () => {
+        const state: AskState = {
+            ...INITIAL_STATE,
+            turns: [makeTurn()],
+            activeThreadId: "session-active",
+            threads: [
+                {
+                    id: "session-old",
+                    firstQuestion: "An older question?",
+                    turnCount: 2,
+                    lastUpdatedAt: 1,
+                },
+            ],
+        };
+        const next = askReducer(state, { type: "CLEAR_ALL_THREADS" });
+        expect(next.threads).toEqual([]);
+        expect(next.activeThreadId).toBeNull();
     });
 
     it("NEW_CONVERSATION empties turns, bumps sessionGen, marks emptyReason='new'", () => {

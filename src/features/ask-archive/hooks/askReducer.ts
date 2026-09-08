@@ -123,7 +123,7 @@ export type AskAction =
           message: string;
           retryAfterSec?: number;
       }
-    | { type: "CLEAR_CONVERSATION" }
+    | { type: "CLEAR_ALL_THREADS" }
     | { type: "NEW_CONVERSATION" };
 
 export const INITIAL_STATE: AskState = {
@@ -283,12 +283,17 @@ export function askReducer(state: AskState, action: AskAction): AskState {
                 retryAfterSec: action.retryAfterSec,
                 stage: undefined,
             }));
-        case "CLEAR_CONVERSATION":
+        case "CLEAR_ALL_THREADS":
             // Stay inside the chat chrome; the Transcript renders the
-            // "CONVERSATION CLEARED — ASK A NEW QUESTION BELOW." pill.
+            // "ALL THREADS CLEARED — ASK A NEW QUESTION BELOW." pill.
+            // Unlike the old single-thread clear, this drops the whole
+            // sidebar archive too — the confirmation dialog is what makes
+            // that scope explicit to the user before it happens.
             return {
                 ...state,
                 turns: [],
+                threads: [],
+                activeThreadId: null,
                 expiredBanner: false,
                 sessionGen: state.sessionGen + 1,
                 emptyReason: "cleared",

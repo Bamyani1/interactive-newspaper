@@ -65,7 +65,7 @@ function defaultState() {
         activeThreadId: null as string | null,
         submit: vi.fn(),
         retry: vi.fn(),
-        clearConversation: vi.fn(),
+        clearAllThreads: vi.fn(),
         newConversation: vi.fn(),
         switchThread: vi.fn(),
     };
@@ -168,7 +168,7 @@ describe("AskPage — render decisions", () => {
         render(<AskPage />);
         screen
             .getAllByRole("button", {
-                name: /clear the current thread/i,
+                name: /clear all threads/i,
             })
             .forEach((btn) => expect(btn).toBeDisabled());
         screen
@@ -193,7 +193,7 @@ describe("AskPage — render decisions", () => {
         render(<AskPage />);
         screen
             .getAllByRole("button", {
-                name: /clear the current thread/i,
+                name: /clear all threads/i,
             })
             .forEach((btn) => expect(btn).not.toBeDisabled());
         screen
@@ -287,5 +287,78 @@ describe("AskPage — render decisions", () => {
         expect(container.querySelector(".ask-transcript")).toBe(transcript);
         expect(container.querySelector(".ask-composer")).toBe(composer);
         expect(screen.getByText(/an editor did/i)).toBeInTheDocument();
+    });
+
+    it("warns before clearing every thread and only proceeds after confirmation", () => {
+        const clearAllThreads = vi.fn();
+        mockHook.mockReturnValue({
+            ...defaultState(),
+            turns: [makeDoneTurn("t-1", "What happened?", "An answer.")],
+            threads: [
+                {
+                    id: "thread-1",
+                    firstQuestion: "What happened?",
+                    turnCount: 1,
+                    lastUpdatedAt: 1,
+                },
+                {
+                    id: "thread-2",
+                    firstQuestion: "Who wrote it?",
+                    turnCount: 1,
+                    lastUpdatedAt: 0,
+                },
+            ],
+            activeThreadId: "thread-1",
+            clearAllThreads,
+        });
+        render(<AskPage />);
+
+        fireEvent.click(
+            screen.getAllByRole("button", { name: /clear all threads/i })[0],
+        );
+
+        const warning = screen.getByRole("alertdialog", {
+            name: /clear all threads/i,
+        });
+        expect(warning).toHaveTextContent(
+            /permanently remove 2 saved threads/i,
+        );
+        // Opening the dialog must not itself destroy anything.
+        expect(clearAllThreads).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole("button", { name: /^clear all$/i }));
+        expect(clearAllThreads).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+
+    it("closes the clear warning without touching any thread on cancel", () => {
+        const clearAllThreads = vi.fn();
+        mockHook.mockReturnValue({
+            ...defaultState(),
+            turns: [makeDoneTurn("t-1", "What happened?", "An answer.")],
+            threads: [
+                {
+                    id: "thread-1",
+                    firstQuestion: "What happened?",
+                    turnCount: 1,
+                    lastUpdatedAt: 1,
+                },
+            ],
+            activeThreadId: "thread-1",
+            clearAllThreads,
+        });
+        render(<AskPage />);
+
+        fireEvent.click(
+            screen.getAllByRole("button", { name: /clear all threads/i })[0],
+        );
+        // Singular copy when only one thread is at stake.
+        expect(
+            screen.getByRole("alertdialog", { name: /clear all threads/i }),
+        ).toHaveTextContent(/permanently remove 1 saved thread\b/i);
+
+        fireEvent.click(screen.getByRole("button", { name: /keep threads/i }));
+        expect(clearAllThreads).not.toHaveBeenCalled();
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     });
 });
