@@ -133,8 +133,11 @@ export type AskAction =
       retryAfterSec?: number;
     }
   | { type: "TURN_STOPPED"; id: string }
-  | { type: "CLEAR_ALL_THREADS" }
-  | { type: "NEW_CONVERSATION" };
+  // Both carry the freshly minted thread pointer so it lands in the same
+  // dispatch that empties the transcript, rather than depending on a
+  // follow-up SET_THREADS to repair it.
+  | { type: "CLEAR_ALL_THREADS"; activeThreadId?: string | null; threads?: ThreadSummary[] }
+  | { type: "NEW_CONVERSATION"; activeThreadId?: string | null; threads?: ThreadSummary[] };
 
 export const INITIAL_STATE: AskState = {
   turns: [],
@@ -195,7 +198,18 @@ export function askReducer(state: AskState, action: AskAction): AskState {
       return { ...state, isHydrating: true };
     case "HYDRATE":
       if (action.preserveCurrentState) {
-        return { ...state, isHydrating: false };
+        // The reader interacted while the restore was in flight, so
+        // their turns win — but the thread pointer and the sidebar
+        // summaries still apply. Dropping them left `activeThreadId`
+        // null, and the persist effect keys off it, so a conversation
+        // started during hydration was never archived at all: it
+        // vanished on reload with no way to get it back.
+        return {
+          ...state,
+          isHydrating: false,
+          threads: state.threads.length === 0 && action.threads ? action.threads : state.threads,
+          activeThreadId: state.activeThreadId ?? action.activeThreadId ?? null,
+        };
       }
       return {
         ...state,
@@ -312,8 +326,8 @@ export function askReducer(state: AskState, action: AskAction): AskState {
       return {
         ...state,
         turns: [],
-        threads: [],
-        activeThreadId: null,
+        threads: action.threads ?? [],
+        activeThreadId: action.activeThreadId ?? null,
         expiredBanner: false,
         sessionGen: state.sessionGen + 1,
         emptyReason: "cleared",
@@ -327,6 +341,9 @@ export function askReducer(state: AskState, action: AskAction): AskState {
       return {
         ...state,
         turns: [],
+        threads: action.threads ?? state.threads,
+        activeThreadId:
+          action.activeThreadId !== undefined ? action.activeThreadId : state.activeThreadId,
         expiredBanner: false,
         sessionGen: state.sessionGen + 1,
         emptyReason: "new",

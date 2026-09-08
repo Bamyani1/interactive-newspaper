@@ -443,6 +443,10 @@ export function useAskArchive(): UseAskArchiveReturn {
               type: "HYDRATE",
               turns: [],
               expired: false,
+              threads: summaries,
+              // Their session was deliberately left alone above, so the
+              // pointer still names it — the persist effect needs it.
+              activeThreadId: sessionId,
               preserveCurrentState: true,
             });
             return;
@@ -819,12 +823,7 @@ export function useAskArchive(): UseAskArchiveReturn {
     writeArchive([]);
     sessionIds.forEach((sessionId) => deleteServerSession(sessionId));
     const fresh = mintFreshSession();
-    dispatch({ type: "CLEAR_ALL_THREADS" });
-    dispatch({
-      type: "SET_THREADS",
-      threads: [],
-      activeThreadId: fresh,
-    });
+    dispatch({ type: "CLEAR_ALL_THREADS", threads: [], activeThreadId: fresh });
   }, [dispatch, mintFreshSession, deleteServerSession, stop]);
 
   const newConversation = useCallback(() => {
@@ -841,9 +840,8 @@ export function useAskArchive(): UseAskArchiveReturn {
       upsertArchive(prevSessionId, state.turns);
     }
     const fresh = mintFreshSession();
-    dispatch({ type: "NEW_CONVERSATION" });
     dispatch({
-      type: "SET_THREADS",
+      type: "NEW_CONVERSATION",
       threads: summariesFrom(readArchive()),
       activeThreadId: fresh,
     });

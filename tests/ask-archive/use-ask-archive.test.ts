@@ -138,6 +138,16 @@ describe("useAskArchive", () => {
 
     expect(result.current.turns).toHaveLength(1);
     expect(result.current.turns[0].question).toBe("Keep this new question");
+
+    // The restore also has to leave a thread pointer behind. Without one
+    // the persist effect has nothing to file under, so a conversation
+    // begun during hydration was never archived — it disappeared on the
+    // next reload with no way back to it.
+    expect(result.current.activeThreadId).toBeTruthy();
+    await waitFor(() => {
+      const stored = window.localStorage.getItem("owu-ask-threads") ?? "[]";
+      expect(stored).toContain("Keep this new question");
+    });
   });
 
   it("on expiry: empties the transcript, removes the expired thread, and mints a fresh session", async () => {

@@ -89,6 +89,64 @@ describe("askReducer", () => {
     expect(next).toEqual({ ...state, isHydrating: false });
   });
 
+  it("a preserved hydrate still adopts the thread pointer state lacks", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "typed-during-hydrate" })],
+    };
+    const next = askReducer(state, {
+      type: "HYDRATE",
+      turns: [makeTurn({ id: "stale-restore" })],
+      expired: false,
+      threads: [
+        { id: "s-1", firstQuestion: "older", turnCount: 1, lastUpdatedAt: 10 },
+      ],
+      activeThreadId: "s-1",
+      preserveCurrentState: true,
+    });
+    // The reader's turns win, but the pointer and summaries land: the
+    // persist effect needs an activeThreadId to file anything at all.
+    expect(next.turns[0].id).toBe("typed-during-hydrate");
+    expect(next.activeThreadId).toBe("s-1");
+    expect(next.threads).toHaveLength(1);
+    expect(next.isHydrating).toBe(false);
+  });
+
+  it("a preserved hydrate never repoints a thread the reader already has", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn()],
+      activeThreadId: "mine",
+      threads: [{ id: "mine", firstQuestion: "Q", turnCount: 1, lastUpdatedAt: 99 }],
+    };
+    const next = askReducer(state, {
+      type: "HYDRATE",
+      turns: [],
+      expired: false,
+      threads: [{ id: "theirs", firstQuestion: "other", turnCount: 3, lastUpdatedAt: 1 }],
+      activeThreadId: "theirs",
+      preserveCurrentState: true,
+    });
+    expect(next.activeThreadId).toBe("mine");
+    expect(next.threads[0].id).toBe("mine");
+  });
+
+  it("NEW_CONVERSATION sets the fresh thread pointer in one dispatch", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn()],
+      activeThreadId: "previous",
+    };
+    const next = askReducer(state, {
+      type: "NEW_CONVERSATION",
+      activeThreadId: "fresh",
+      threads: [{ id: "previous", firstQuestion: "Q", turnCount: 1, lastUpdatedAt: 5 }],
+    });
+    expect(next.activeThreadId).toBe("fresh");
+    expect(next.threads.map((t) => t.id)).toEqual(["previous"]);
+    expect(next.turns).toEqual([]);
+  });
+
   it("APPEND_USER adds a new streaming turn", () => {
     const next = askReducer(INITIAL_STATE, {
       type: "APPEND_USER",
