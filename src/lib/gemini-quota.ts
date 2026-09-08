@@ -35,6 +35,83 @@ export function isQuotaError(err: unknown): boolean {
   return /RESOURCE_EXHAUSTED|"code"\s*:\s*429|exceeded your current quota/i.test(msg);
 }
 
+/**
+ * A quota failure the retry loop should back off from. Covers both a raw
+ * SDK 429 and an already-typed `QuotaExhaustedError`, matched by name
+ * rather than by class so this module keeps its zero-dependency stance:
+ * the class lives in embeddings.ts, which imports *this* file.
+ */
+export function isQuotaFailure(err: unknown): boolean {
+  if (err instanceof Error && err.name === "QuotaExhaustedError") return true;
+  return isQuotaError(err);
+}
+
+/**
+ * Backoff for a live request. Some 429s are a per-minute RPM trip that
+ * clears in a second or two; a spent daily allowance falls through both
+ * delays and surfaces to the reader as a wait-and-retry. Two short delays
+ * are all a 55s request deadline can afford — the document-embedding batch
+ * path passes its own, longer list.
+ */
+export const LIVE_QUOTA_RETRY_DELAYS_MS = [1_000, 2_000];
+
+/**
+ * Sleep, but give up the moment the request deadline aborts. Resolves true
+ * if it was cut short, so the caller can rethrow instead of dispatching an
+ * attempt that has no time left to succeed.
+ */
+function sleepUntilAborted(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve(false);
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Run `fn`, retrying only quota failures on the given delays. Every other
+ * error propagates on the first attempt, and the *original* error is
+ * rethrown when the delays run out or the deadline aborts mid-backoff, so
+ * callers can still classify it and report a Retry-After.
+ */
+export async function retryOnQuota<T>(
+  op: string,
+  fn: () => Promise<T>,
+  opts: { signal?: AbortSignal; delaysMs?: number[]; requestId?: string } = {}
+): Promise<T> {
+  const delaysMs = opts.delaysMs ?? LIVE_QUOTA_RETRY_DELAYS_MS;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isQuotaFailure(err) || attempt === delaysMs.length) throw err;
+      const delayMs = delaysMs[attempt];
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          module: "gemini-quota",
+          requestId: opts.requestId,
+          op,
+          msg: "quota exhausted, backing off",
+          attempt: attempt + 1,
+          delayMs,
+        })
+      );
+      if (await sleepUntilAborted(delayMs, opts.signal)) throw err;
+    }
+  }
+  throw lastErr;
+}
+
 /** Lower bound on a useful Retry-After, in seconds. */
 const MIN_RETRY_AFTER_SEC = 5;
 /** Upper bound: an hour. Anything longer is a daily quota, not a burst. */
