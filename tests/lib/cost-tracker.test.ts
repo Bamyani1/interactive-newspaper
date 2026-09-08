@@ -411,6 +411,56 @@ describe("hard evaluation reservations", () => {
   });
 });
 
+describe("RAG_DAILY_BUDGET_USD", () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    _resetEvaluationSpendForTests();
+    _resetOutageSpendForTests();
+    sqlMock.mockReset();
+    // Drop the test override so the env var is what decides.
+    _setDailyBudgetForTests(null);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    _setDailyBudgetForTests(ORIGINAL_BUDGET);
+  });
+
+  it("defaults to $2/day when the variable is unset", () => {
+    expect(_getDailyBudgetForTests()).toBe(2);
+  });
+
+  it("uses a configured value", () => {
+    vi.stubEnv("RAG_DAILY_BUDGET_USD", "7.5");
+    expect(_getDailyBudgetForTests()).toBe(7.5);
+  });
+
+  it("enforces the configured cap, not just the default", async () => {
+    vi.stubEnv("RAG_DAILY_BUDGET_USD", "7.5");
+    sqlMock.mockResolvedValueOnce([{ spent_usd: "7.500000" }]);
+    await expect(checkDailyBudget()).rejects.toMatchObject({ budgetUsd: 7.5 });
+  });
+
+  it("clamps an over-large value to the $50 hard maximum and warns", () => {
+    vi.stubEnv("RAG_DAILY_BUDGET_USD", "5000");
+    expect(_getDailyBudgetForTests()).toBe(50);
+    expect(console.warn).toHaveBeenCalled();
+  });
+
+  it("falls back to $2 and warns on a junk value", () => {
+    vi.stubEnv("RAG_DAILY_BUDGET_USD", "two dollars");
+    expect(_getDailyBudgetForTests()).toBe(2);
+    expect(console.warn).toHaveBeenCalled();
+  });
+
+  it("falls back to $2 and warns on a non-positive value", () => {
+    vi.stubEnv("RAG_DAILY_BUDGET_USD", "0");
+    expect(_getDailyBudgetForTests()).toBe(2);
+    expect(console.warn).toHaveBeenCalled();
+  });
+});
+
 describe("test helpers", () => {
   afterEach(() => _setDailyBudgetForTests(ORIGINAL_BUDGET));
 
