@@ -21,20 +21,12 @@ export const SourceCard: React.FC<SourceCardProps> = ({ source, index, turnId, o
   const hasImage = source.imageUrls.length > 0;
 
   return (
-    <article
-      className="ask-source-card"
-      id={`ask-source-${turnId}-${index + 1}`}
-      role={onOpen ? "button" : undefined}
-      tabIndex={onOpen ? 0 : undefined}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (!onOpen) return;
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-    >
+    // Not itself a button. `role="button"` on an article flattens
+    // everything inside it into one accessible name — the index, the
+    // headline, the byline, the snippet and the photo count read as a
+    // single unbroken label, and the heading stops being a heading. The
+    // "Read" affordance below is a real button instead.
+    <article className="ask-source-card" id={`ask-source-${turnId}-${index + 1}`}>
       <div className="ask-source-card-inner">
         <div className="ask-source-card-text">
           <div className="ask-source-card-meta">
@@ -54,9 +46,14 @@ export const SourceCard: React.FC<SourceCardProps> = ({ source, index, turnId, o
           ) : null}
 
           {onOpen ? (
-            <span className="ask-source-card-hint" aria-hidden="true">
+            <button
+              type="button"
+              className="ask-source-card-hint"
+              onClick={onOpen}
+              aria-label={`Read: ${source.headline || "Untitled"}`}
+            >
               Read →
-            </span>
+            </button>
           ) : null}
         </div>
 

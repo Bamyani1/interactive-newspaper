@@ -12,9 +12,14 @@ vi.mock("next/navigation", () => ({
 
 describe("useDeepLinkSubmit", () => {
   let replaceStateSpy: ReturnType<typeof vi.spyOn>;
+  const realReplaceState = window.history.replaceState.bind(window.history);
+
+  /** Put jsdom on a real /ask URL so the hook has a location to rewrite. */
+  const atUrl = (url: string) => realReplaceState(null, "", url);
 
   beforeEach(() => {
     paramsGetMock.mockReset();
+    atUrl("/ask");
     replaceStateSpy = vi.spyOn(window.history, "replaceState").mockImplementation(() => {});
   });
 
@@ -36,6 +41,29 @@ describe("useDeepLinkSubmit", () => {
     expect(submit).toHaveBeenCalledTimes(1);
     expect(submit).toHaveBeenCalledWith("How did OWU respond to Vietnam?");
     expect(replaceStateSpy).toHaveBeenCalledWith(null, "", "/ask");
+  });
+
+  it("consumes only q, keeping every other parameter the link carried", () => {
+    // Rewriting to a bare "/ask" discarded them all — a campaign tag, a
+    // debug flag, anything travelling alongside the question.
+    atUrl("/ask?utm_source=newsletter&q=Who%20edited%20it%3F&debug=1#sources");
+    replaceStateSpy.mockClear();
+    paramsGetMock.mockReturnValue("Who edited it?");
+
+    renderHook(() =>
+      useDeepLinkSubmit({
+        isHydrating: false,
+        turnCount: 0,
+        submit: vi.fn(),
+        startNewConversation: vi.fn(),
+      })
+    );
+
+    expect(replaceStateSpy).toHaveBeenCalledWith(
+      null,
+      "",
+      "/ask?utm_source=newsletter&debug=1#sources"
+    );
   });
 
   it("skips while the session is still hydrating", () => {
@@ -143,6 +171,7 @@ describe("useDeepLinkSubmit", () => {
 
   it("does not re-submit on re-render with the same props", () => {
     const submit = vi.fn();
+    const startNewConversation = vi.fn();
     paramsGetMock.mockReturnValue("a question");
     const { rerender } = renderHook(
       (props: Parameters<typeof useDeepLinkSubmit>[0]) => useDeepLinkSubmit(props),
@@ -151,11 +180,12 @@ describe("useDeepLinkSubmit", () => {
           isHydrating: false,
           turnCount: 0,
           submit,
+          startNewConversation,
         },
       }
     );
-    rerender({ isHydrating: false, turnCount: 0, submit });
-    rerender({ isHydrating: false, turnCount: 1, submit });
+    rerender({ isHydrating: false, turnCount: 0, submit, startNewConversation });
+    rerender({ isHydrating: false, turnCount: 1, submit, startNewConversation });
     expect(submit).toHaveBeenCalledTimes(1);
   });
 });

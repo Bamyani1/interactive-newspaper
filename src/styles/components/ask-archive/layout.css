@@ -552,25 +552,6 @@
     font-size: var(--text-md);
     padding-left: 0.75rem;
   }
-  .ask-empty-lede {
-    font-size: var(--text-base);
-  }
-  .ask-empty-stats {
-    grid-template-columns: 1fr;
-    gap: var(--space-2);
-    padding: 0.75rem 0;
-  }
-  .ask-empty-stat {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: baseline;
-  }
-  .ask-empty-stat dd {
-    font-size: 1.05rem;
-  }
-  .ask-empty-example {
-    font-size: 0.95rem;
-  }
   .ask-source-card-thumb {
     width: 72px;
   }
@@ -673,14 +654,13 @@
   /* Reset transcript colors for paper. Fixed ink values are intentional
      — print drivers map these without variable resolution. */
   .ask-turn,
-  .ask-turn-question,
+  .ask-turn-user-bubble,
   .ask-turn-answer,
   .ask-turn-answer *,
   .ask-source-list,
-  .ask-source-content,
   .ask-source-card,
-  .ask-source-headline,
-  .ask-source-meta {
+  .ask-source-card-headline,
+  .ask-source-card-meta {
     color: #111 !important;
     background: white !important;
     border-color: #ccc !important;

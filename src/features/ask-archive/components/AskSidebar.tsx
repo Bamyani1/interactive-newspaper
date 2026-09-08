@@ -41,7 +41,9 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
   return (
     <aside className="ask-sidebar">
       <div className="ask-sidebar-title">
-        <h1 className="ask-sidebar-heading">Ask the Archive</h1>
+        {/* h2, not h1: the reading column owns the page's h1, and two of
+            them left assistive tech with no single document title. */}
+        <h2 className="ask-sidebar-heading">Ask the Archive</h2>
       </div>
 
       <div className="ask-sidebar-actions">
@@ -62,7 +64,7 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
         </button>
         <button
           type="button"
-          className="ask-sidebar-newbtn ask-sidebar-exportbtn"
+          className="ask-sidebar-newbtn"
           onClick={onExportConversation}
           disabled={!canExportConversation}
           aria-label="Export the conversation as a PDF"

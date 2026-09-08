@@ -227,7 +227,9 @@ export const Turn: React.FC<TurnProps> = ({
             </div>
           </form>
         ) : (
-          <p className="ask-turn-user-bubble">{turn.question}</p>
+          // An h2 so the questions form the document outline a reader can
+          // navigate by, under the page's single h1.
+          <h2 className="ask-turn-user-bubble">{turn.question}</h2>
         )}
       </div>
 
