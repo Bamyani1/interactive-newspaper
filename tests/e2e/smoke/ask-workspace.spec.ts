@@ -525,7 +525,10 @@ test.describe("returning Ask workspace", () => {
     expectStableBox(before.rail, after.rail);
   });
 
-  test("an existing conversation consumes a deep link without submission", async ({ page }) => {
+  test("a deep link answers in a new thread and archives the open conversation", async ({
+    page,
+  }) => {
+    const deepLinkQuestion = "Do not duplicate this";
     let postCount = 0;
     page.on("request", (request) => {
       if (new URL(request.url()).pathname === "/api/ask" && request.method() === "POST") {
@@ -533,13 +536,26 @@ test.describe("returning Ask workspace", () => {
       }
     });
 
-    await page.goto("/ask?q=Do%20not%20duplicate%20this");
-    await expect(page.getByText(RETURNING_ASK_ANSWER)).toBeVisible();
+    await page.goto(`/ask?q=${encodeURIComponent(deepLinkQuestion)}`);
+
+    // A deep link carries a question, so it gets asked — exactly once —
+    // instead of being swallowed by the conversation already on screen.
+    const transcript = page.locator(".ask-transcript");
+    await expect(transcript.getByText(deepLinkQuestion)).toBeVisible();
+    await expect(transcript.getByText(DETERMINISTIC_ASK_ANSWER)).toBeVisible();
     await expect(page).toHaveURL(
       (url) => url.pathname === "/ask" && url.search === "" && url.hash === ""
     );
+
+    // The conversation that was open is archived rather than overwritten:
+    // reachable from the sidebar, and no longer in the live transcript.
+    await expect(
+      page.getByRole("button", { name: `Open thread: ${RETURNING_ASK_QUESTION}` })
+    ).toBeVisible();
+    await expect(transcript.getByText(RETURNING_ASK_ANSWER)).toHaveCount(0);
+
     await page.waitForTimeout(250);
-    expect(postCount).toBe(0);
+    expect(postCount).toBe(1);
   });
 
   test("warns, then clears all restored threads and deletes their server sessions", async ({
