@@ -581,8 +581,10 @@ describe("useAskArchive", () => {
     expect(deletedSessions.some((url) => url.includes(archivedSession))).toBe(true);
   });
 
-  it("retry re-submits an errored turn's question as a new turn", async () => {
-    // First submit errors out.
+  // Retrying the last turn rewrites it in place. It used to append a
+  // fresh turn, so every press grew the transcript by another identical
+  // error row and the reader lost their place.
+  it("retry rewrites the last errored turn in place", async () => {
     vi.stubGlobal(
       "fetch",
       fetchRouter(makeJsonResponse({ kind: "server", message: "Boom" }, { ok: false, status: 500 }))
@@ -596,21 +598,144 @@ describe("useAskArchive", () => {
     await waitFor(() => {
       expect(result.current.turns[0].status).toBe("error");
     });
+    const turnId = result.current.turns[0].id;
+    const createdAt = result.current.turns[0].createdAt;
 
-    // Swap fetch to succeed the retry.
     vi.stubGlobal("fetch", fetchRouter(makeJsonResponse(mockResponse)));
+    act(() => {
+      result.current.retry(turnId);
+    });
+
+    await waitFor(() => {
+      expect(result.current.turns[0].status).toBe("done");
+    });
+    expect(result.current.turns).toHaveLength(1);
+    expect(result.current.turns[0].id).toBe(turnId);
+    expect(result.current.turns[0].createdAt).toBe(createdAt);
+    expect(result.current.turns[0].question).toBe("ask once");
+    expect(result.current.turns[0].errorKind).toBeUndefined();
+  });
+
+  it("retry on an older turn appends, keeping the transcript in order", async () => {
+    vi.stubGlobal("fetch", fetchRouter(makeJsonResponse(mockResponse)));
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    act(() => {
+      result.current.submit("first question");
+    });
+    await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
+    act(() => {
+      result.current.submit("second question");
+    });
+    await waitFor(() => expect(result.current.turns[1].status).toBe("done"));
 
     act(() => {
       result.current.retry(result.current.turns[0].id);
     });
+    await waitFor(() => expect(result.current.turns).toHaveLength(3));
+    expect(result.current.turns.map((t) => t.question)).toEqual([
+      "first question",
+      "second question",
+      "first question",
+    ]);
+  });
 
-    await waitFor(() => {
-      expect(result.current.turns).toHaveLength(2);
+  it("regenerate re-asks the last question and names the turn it replaces", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/ask/session")) {
+          return Promise.resolve(makeJsonResponse({ turns: [], expired: false }));
+        }
+        bodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+        return Promise.resolve(makeJsonResponse(mockResponse));
+      })
+    );
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    act(() => {
+      result.current.submit("who edited the paper?");
     });
-    await waitFor(() => {
-      expect(result.current.turns[1].status).toBe("done");
+    await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
+    const turnId = result.current.turns[0].id;
+
+    act(() => {
+      result.current.regenerate(turnId);
     });
-    expect(result.current.turns[1].question).toBe("ask once");
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
+
+    expect(result.current.turns).toHaveLength(1);
+    expect(result.current.turns[0].id).toBe(turnId);
+    expect(bodies[0].regenerate).toBeUndefined();
+    expect(bodies[1]).toMatchObject({
+      question: "who edited the paper?",
+      regenerate: { previousQuestion: "who edited the paper?" },
+    });
+  });
+
+  it("editAndResend asks the new question and replaces the old turn", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/ask/session")) {
+          return Promise.resolve(makeJsonResponse({ turns: [], expired: false }));
+        }
+        bodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+        return Promise.resolve(makeJsonResponse(mockResponse));
+      })
+    );
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    act(() => {
+      result.current.submit("who edited it?");
+    });
+    await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
+    const turnId = result.current.turns[0].id;
+
+    act(() => {
+      result.current.editAndResend(turnId, "  who edited it in 1962?  ");
+    });
+    await waitFor(() => expect(bodies).toHaveLength(2));
+
+    expect(result.current.turns).toHaveLength(1);
+    expect(result.current.turns[0].question).toBe("who edited it in 1962?");
+    // The turn being replaced is named by its original question, which is
+    // the only thing the server can match a stored row against.
+    expect(bodies[1]).toMatchObject({
+      question: "who edited it in 1962?",
+      regenerate: { previousQuestion: "who edited it?" },
+    });
+  });
+
+  it("regenerate refuses a turn that is not the last one", async () => {
+    vi.stubGlobal("fetch", fetchRouter(makeJsonResponse(mockResponse)));
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    act(() => {
+      result.current.submit("first");
+    });
+    await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
+    act(() => {
+      result.current.submit("second");
+    });
+    await waitFor(() => expect(result.current.turns[1].status).toBe("done"));
+
+    const firstAnswer = result.current.turns[0].answer;
+    act(() => {
+      result.current.regenerate(result.current.turns[0].id);
+    });
+    expect(result.current.turns).toHaveLength(2);
+    expect(result.current.turns[0].answer).toBe(firstAnswer);
+    expect(result.current.turns[0].status).toBe("done");
   });
 });
 

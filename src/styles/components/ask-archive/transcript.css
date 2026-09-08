@@ -205,6 +205,85 @@
 }
 
 /* =========================================
+   TURN ACTIONS — regenerate, edit
+   Icon buttons at the 44px target the breakpoint audit enforces. They
+   sit on the latest turn only: re-running rewrites the turn in place,
+   which an earlier turn cannot do without the server truncating the
+   history behind it.
+   ========================================= */
+.ask-turn-user-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ask-turn-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+/* The controls recede until the reader goes looking for them, so they
+   never compete with the answer for attention. Focus reveals them too,
+   otherwise they would be invisible to a keyboard reader. */
+.ask-turn-action {
+  opacity: 0.55;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.ask-turn:hover .ask-turn-action,
+.ask-turn-action:hover,
+.ask-turn-action:focus-visible {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-turn-action {
+    transition: none;
+  }
+}
+
+/* Coarse pointers have no hover to reveal anything with. */
+@media (hover: none) {
+  .ask-turn-action {
+    opacity: 1;
+  }
+}
+
+.ask-turn-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ask-turn-edit-field {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-rule);
+  border-left: 2px solid var(--color-accent);
+  border-radius: 0;
+  background: var(--color-bg-inset);
+  font-family: var(--font-header);
+  font-size: 1.25rem;
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--color-text-primary);
+  resize: vertical;
+}
+
+.ask-turn-edit-field:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.ask-turn-edit-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* =========================================
    STOPPED NOTICE
    A turn the reader interrupted keeps its partial text; this line is
    what tells them the ending is missing rather than the archive

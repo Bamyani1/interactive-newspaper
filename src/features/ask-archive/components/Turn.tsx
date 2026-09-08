@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pencil, RotateCcw } from "lucide-react";
+import { Button } from "@/src/components/ui/primitives";
 import type { Turn as TurnData } from "../hooks/askReducer";
 import { Markdown } from "./Markdown";
 import { SourceList } from "./SourceList";
@@ -22,6 +24,10 @@ interface TurnProps {
   isLatest?: boolean;
   onFollowUp: (question: string) => void;
   onRetry: (turnId: string) => void;
+  /** Ask the same question again. Latest turn only — see useAskArchive. */
+  onRegenerate?: (turnId: string) => void;
+  /** Reword the question and answer that instead. Latest turn only. */
+  onEditAndResend?: (turnId: string, question: string) => void;
   exportMode?: boolean;
 }
 
@@ -36,6 +42,8 @@ export const Turn: React.FC<TurnProps> = ({
   isLatest = true,
   onFollowUp,
   onRetry,
+  onRegenerate,
+  onEditAndResend,
   exportMode = false,
 }) => {
   const articleIdIndex = useMemo(
@@ -101,11 +109,84 @@ export const Turn: React.FC<TurnProps> = ({
 
   const showPhotosPanel = turn.mode === "visual" && turn.status === "done" && moreImages.length > 0;
 
+  // Re-running a turn rewrites it in place, which only the final turn can
+  // do: an earlier one would need the server to truncate the history
+  // behind it. Every earlier turn therefore reads as a record.
+  const canRerun = isLatest && !exportMode && !isStreaming;
+  const [draft, setDraft] = useState<string | null>(null);
+  // Derived, not synced: the moment this turn stops being the rerunnable
+  // one — it starts streaming, or a newer turn arrives — the editor is
+  // describing a question the reader can no longer replace, so it closes
+  // on its own rather than through an effect that chases the status.
+  const isEditing = draft !== null && canRerun;
+  const draftRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (isEditing) draftRef.current?.focus();
+  }, [isEditing]);
+
+  const commitEdit = useCallback(() => {
+    if (draft === null) return;
+    const trimmed = draft.trim();
+    setDraft(null);
+    if (!trimmed || trimmed === turn.question) return;
+    onEditAndResend?.(turn.id, trimmed);
+  }, [draft, onEditAndResend, turn.id, turn.question]);
+
   return (
     <article className={`ask-turn${!exportMode && !isLatest ? " ask-turn--previous" : ""}`}>
       <div className="ask-turn-user" aria-label="Your question">
-        <p className="ask-turn-user-label">You asked</p>
-        <p className="ask-turn-user-bubble">{turn.question}</p>
+        <div className="ask-turn-user-head">
+          <p className="ask-turn-user-label">You asked</p>
+          {canRerun && onEditAndResend && !isEditing ? (
+            <Button
+              variant="icon"
+              className="ask-turn-action"
+              onClick={() => setDraft(turn.question)}
+              aria-label="Edit question"
+              title="Edit question"
+            >
+              <Pencil size={14} aria-hidden="true" />
+            </Button>
+          ) : null}
+        </div>
+        {isEditing ? (
+          <form
+            className="ask-turn-edit"
+            onSubmit={(e) => {
+              e.preventDefault();
+              commitEdit();
+            }}
+          >
+            <textarea
+              ref={draftRef}
+              className="ask-turn-edit-field"
+              value={draft ?? ""}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  commitEdit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setDraft(null);
+                }
+              }}
+              rows={2}
+              aria-label="Edit your question"
+            />
+            <div className="ask-turn-edit-actions">
+              <Button type="submit" variant="secondary" className="ask-turn-edit-send">
+                Ask again
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setDraft(null)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <p className="ask-turn-user-bubble">{turn.question}</p>
+        )}
       </div>
 
       <div className="ask-turn-assistant" aria-live="polite" aria-atomic="false">
@@ -159,6 +240,20 @@ export const Turn: React.FC<TurnProps> = ({
                 defaultExpanded={exportMode}
                 interactive={!exportMode}
               />
+            ) : null}
+
+            {canRerun && onRegenerate && !isEditing ? (
+              <div className="ask-turn-actions">
+                <Button
+                  variant="icon"
+                  className="ask-turn-action"
+                  onClick={() => onRegenerate(turn.id)}
+                  aria-label="Regenerate answer"
+                  title="Regenerate answer"
+                >
+                  <RotateCcw size={14} aria-hidden="true" />
+                </Button>
+              </div>
             ) : null}
 
             {turn.status === "done" &&

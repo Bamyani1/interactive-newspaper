@@ -436,6 +436,54 @@ describe("askReducer", () => {
     expect(next.activeThreadId).toBe("keep");
   });
 
+  it("TURN_RESTART resets the turn in place, keeping its id and position", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      expiredBanner: true,
+      turns: [
+        makeTurn({ id: "t-first", question: "first", answer: "kept" }),
+        makeTurn({
+          id: "t-last",
+          question: "who edited it?",
+          answer: "a wrong answer",
+          status: "error",
+          errorKind: "server",
+          errorMessage: "Boom",
+          createdAt: 1234,
+          followUpQuestions: ["stale?"],
+        }),
+      ],
+    };
+    const next = askReducer(state, {
+      type: "TURN_RESTART",
+      id: "t-last",
+      question: "who edited it in 1962?",
+    });
+    expect(next.turns).toHaveLength(2);
+    expect(next.turns[0].answer).toBe("kept");
+    // Same id and createdAt, so it holds its slot in the transcript and
+    // in the archive rather than appending a duplicate row.
+    expect(next.turns[1].id).toBe("t-last");
+    expect(next.turns[1].createdAt).toBe(1234);
+    expect(next.turns[1].question).toBe("who edited it in 1962?");
+    expect(next.turns[1].status).toBe("streaming");
+    expect(next.turns[1].answer).toBe("");
+    expect(next.turns[1].errorKind).toBeUndefined();
+    expect(next.turns[1].followUpQuestions).toBeUndefined();
+    // Re-asking is a fresh question in intent, so the aged-out notice goes.
+    expect(next.expiredBanner).toBe(false);
+  });
+
+  it("TURN_RESTART leaves a turn that is still streaming alone", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1", status: "streaming", answer: "arriving" })],
+    };
+    const next = askReducer(state, { type: "TURN_RESTART", id: "t-1", question: "again" });
+    expect(next.turns[0].answer).toBe("arriving");
+    expect(next.turns[0].status).toBe("streaming");
+  });
+
   it("TURN_STOPPED freezes a streaming turn and keeps its partial answer", () => {
     const state: AskState = {
       ...INITIAL_STATE,
