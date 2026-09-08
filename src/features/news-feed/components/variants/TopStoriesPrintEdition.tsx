@@ -84,17 +84,22 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
               }
               image={
                 heroArticle.imageUrls.length > 0
-                  ? heroArticle.imageUrls.slice(0, 2).map((url, i) => (
-                      <ArticleImage
-                        key={url}
-                        src={url}
-                        alt={heroArticle.headline}
-                        caption={heroArticle.imageCaptions?.[i] ?? (i === 0 ? heroArticle.imageCaption : null)}
-                        onClick={() => setLightboxSrc(url)}
-                        priority={i === 0}
-                        width="full"
-                      />
-                    ))
+                  ? heroArticle.imageUrls
+                      .slice(0, 2)
+                      .map((url, i) => (
+                        <ArticleImage
+                          key={url}
+                          src={url}
+                          alt={heroArticle.headline}
+                          caption={
+                            heroArticle.imageCaptions?.[i] ??
+                            (i === 0 ? heroArticle.imageCaption : null)
+                          }
+                          onClick={() => setLightboxSrc(url)}
+                          priority={i === 0}
+                          width="full"
+                        />
+                      ))
                   : undefined
               }
             />
@@ -112,7 +117,6 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
               {heroArticle.summary}
             </p>
           )}
-
         </article>
       )}
 
@@ -120,9 +124,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
       {featuredArticles.length > 0 && (
         <div>
           {featuredArticles.map((article, _index) => {
-            const paragraphs = article.fullText
-              ? extractParagraphs(article.fullText)
-              : [];
+            const paragraphs = article.fullText ? extractParagraphs(article.fullText) : [];
             const plainText = paragraphs.join(" ");
             const isLong = plainText.length > LONG_ARTICLE_THRESHOLD;
             const hasImage = article.imageUrls.length > 0;
@@ -149,9 +151,7 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                         alt={article.headline}
                         caption={article.imageCaptions?.[0] ?? article.imageCaption}
                         byline={article.byline}
-                        onImageClick={() =>
-                          setLightboxSrc(article.imageUrls[0])
-                        }
+                        onImageClick={() => setLightboxSrc(article.imageUrls[0])}
                         priority={isAboveFold}
                       />
                       {article.imageUrls.length > 1 && (
@@ -188,22 +188,30 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                             >
                               {article.headline}
                             </h2>
-                            <Byline byline={article.byline} writerPosition={article.writerPosition} />
+                            <Byline
+                              byline={article.byline}
+                              writerPosition={article.writerPosition}
+                            />
                           </>
                         }
                         image={
                           hasImage
-                            ? article.imageUrls.slice(0, 2).map((url, i) => (
-                                <ArticleImage
-                                  key={url}
-                                  src={url}
-                                  alt={article.headline}
-                                  caption={article.imageCaptions?.[i] ?? (i === 0 ? article.imageCaption : null)}
-                                  onClick={() => setLightboxSrc(url)}
-                                  priority={isAboveFold && i === 0}
-                                  width="full"
-                                />
-                              ))
+                            ? article.imageUrls
+                                .slice(0, 2)
+                                .map((url, i) => (
+                                  <ArticleImage
+                                    key={url}
+                                    src={url}
+                                    alt={article.headline}
+                                    caption={
+                                      article.imageCaptions?.[i] ??
+                                      (i === 0 ? article.imageCaption : null)
+                                    }
+                                    onClick={() => setLightboxSrc(url)}
+                                    priority={isAboveFold && i === 0}
+                                    width="full"
+                                  />
+                                ))
                             : undefined
                         }
                       />
@@ -230,29 +238,36 @@ export const TopStoriesPrintEdition: React.FC<TopStoriesVariantProps> = ({
                             >
                               {article.headline}
                             </h2>
-                            <Byline byline={article.byline} writerPosition={article.writerPosition} />
+                            <Byline
+                              byline={article.byline}
+                              writerPosition={article.writerPosition}
+                            />
                           </>
                         }
                         image={
                           hasImage
-                            ? article.imageUrls.slice(0, 2).map((url, i) => (
-                                <ArticleImage
-                                  key={url}
-                                  src={url}
-                                  alt={article.headline}
-                                  caption={article.imageCaptions?.[i] ?? (i === 0 ? article.imageCaption : null)}
-                                  onClick={() => setLightboxSrc(url)}
-                                  priority={isAboveFold && i === 0}
-                                  width="full"
-                                />
-                              ))
+                            ? article.imageUrls
+                                .slice(0, 2)
+                                .map((url, i) => (
+                                  <ArticleImage
+                                    key={url}
+                                    src={url}
+                                    alt={article.headline}
+                                    caption={
+                                      article.imageCaptions?.[i] ??
+                                      (i === 0 ? article.imageCaption : null)
+                                    }
+                                    onClick={() => setLightboxSrc(url)}
+                                    priority={isAboveFold && i === 0}
+                                    width="full"
+                                  />
+                                ))
                             : undefined
                         }
                       />
                     </>
                   )}
                 </article>
-
               </React.Fragment>
             );
           })}

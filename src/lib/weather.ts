@@ -1,10 +1,10 @@
-import { createHash } from 'crypto';
-import type { DailyWeatherRecord, WeatherQuery } from '@/src/types';
+import { createHash } from "crypto";
+import type { DailyWeatherRecord, WeatherQuery } from "@/src/types";
 
-const NOAA_DAILY_SUMMARIES_URL = 'https://www.ncei.noaa.gov/access/services/data/v1';
-const ACIS_STN_META_URL = 'https://data.rcc-acis.org/StnMeta';
-const ACIS_STN_DATA_URL = 'https://data.rcc-acis.org/StnData';
-const OPEN_METEO_ARCHIVE_URL = 'https://archive-api.open-meteo.com/v1/archive';
+const NOAA_DAILY_SUMMARIES_URL = "https://www.ncei.noaa.gov/access/services/data/v1";
+const ACIS_STN_META_URL = "https://data.rcc-acis.org/StnMeta";
+const ACIS_STN_DATA_URL = "https://data.rcc-acis.org/StnData";
+const OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
 
 export interface NormalizedWeatherQuery {
   date: string;
@@ -20,7 +20,7 @@ export interface NormalizedWeatherQuery {
 export interface WeatherLookupResult {
   query: NormalizedWeatherQuery;
   record: DailyWeatherRecord | null;
-  reason: 'INVALID_DATE' | 'NO_DATA' | null;
+  reason: "INVALID_DATE" | "NO_DATA" | null;
   attempts: string[];
 }
 
@@ -51,7 +51,7 @@ export interface WeatherRangeResult {
   records: Array<{
     date: string;
     record: DailyWeatherRecord | null;
-    reason: WeatherLookupResult['reason'];
+    reason: WeatherLookupResult["reason"];
   }>;
 }
 
@@ -78,12 +78,12 @@ interface AcisStationMeta {
   ll?: unknown;
 }
 
-const DEFAULT_OHIO_QUERY: Omit<NormalizedWeatherQuery, 'date' | 'station_id' | 'force_fallback'> = {
-  location_name: 'Delaware, Ohio',
+const DEFAULT_OHIO_QUERY: Omit<NormalizedWeatherQuery, "date" | "station_id" | "force_fallback"> = {
+  location_name: "Delaware, Ohio",
   lat: 40.2987,
   lon: -83.0679,
-  state: 'OH',
-  country: 'US',
+  state: "OH",
+  country: "US",
 };
 
 const STATION_ID_RE = /^US[CW]\d{8}$/;
@@ -101,10 +101,10 @@ function isIsoDate(value: string): boolean {
 }
 
 function toFiniteNumber(value: unknown): number | null {
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;
   }
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed) return null;
     const parsed = Number(trimmed);
@@ -164,8 +164,8 @@ function normalizeWeatherQuery(query: WeatherQuery): NormalizedWeatherQuery {
   return {
     date: query.date,
     location_name: query.location_name ?? DEFAULT_OHIO_QUERY.location_name,
-    lat: typeof query.lat === 'number' ? query.lat : DEFAULT_OHIO_QUERY.lat,
-    lon: typeof query.lon === 'number' ? query.lon : DEFAULT_OHIO_QUERY.lon,
+    lat: typeof query.lat === "number" ? query.lat : DEFAULT_OHIO_QUERY.lat,
+    lon: typeof query.lon === "number" ? query.lon : DEFAULT_OHIO_QUERY.lon,
     state: query.state ?? DEFAULT_OHIO_QUERY.state,
     country: query.country ?? DEFAULT_OHIO_QUERY.country,
     station_id: query.station_id,
@@ -179,7 +179,7 @@ function hasMeasuredData(record: DailyWeatherRecord | null): record is DailyWeat
 }
 
 function extractStationToken(value: string): { token: string; network: number | null } {
-  const [token = '', networkPart] = value.trim().split(/\s+/);
+  const [token = "", networkPart] = value.trim().split(/\s+/);
   const network = networkPart ? Number(networkPart) : null;
   return {
     token,
@@ -210,7 +210,7 @@ function pickAcisSid(sids: string[]): string | null {
 
 async function fetchStationCandidates(
   query: NormalizedWeatherQuery,
-  fetcher: Fetcher,
+  fetcher: Fetcher
 ): Promise<StationCandidate[]> {
   if (query.station_id) {
     return [
@@ -229,14 +229,14 @@ async function fetchStationCandidates(
     ll: `${query.lat},${query.lon}`,
     state: query.state,
     date: query.date,
-    elems: 'maxt,mint,pcpn',
+    elems: "maxt,mint,pcpn",
     n: 40,
-    meta: 'name,sids,ll,valid_daterange,state',
+    meta: "name,sids,ll,valid_daterange,state",
   };
 
   const response = await fetcher(ACIS_STN_META_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    method: "POST",
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
 
@@ -249,9 +249,9 @@ async function fetchStationCandidates(
 
   const candidates = rows
     .map((row): StationCandidate | null => {
-      const name = typeof row.name === 'string' ? row.name : 'Unknown Station';
+      const name = typeof row.name === "string" ? row.name : "Unknown Station";
       const rawSids = Array.isArray(row.sids)
-        ? row.sids.filter((sid): sid is string => typeof sid === 'string')
+        ? row.sids.filter((sid): sid is string => typeof sid === "string")
         : [];
       const stationTokens = rawSids.map((sid) => extractStationToken(sid).token);
       const noaaStationIds = unique(stationTokens.filter((token) => STATION_ID_RE.test(token)));
@@ -263,9 +263,7 @@ async function fetchStationCandidates(
       }
 
       const ll = parseCoordinatePair(row.ll);
-      const distanceKm = ll
-        ? haversineKm(query.lat, query.lon, ll.lat, ll.lon)
-        : null;
+      const distanceKm = ll ? haversineKm(query.lat, query.lon, ll.lat, ll.lon) : null;
 
       return {
         name,
@@ -288,7 +286,7 @@ async function fetchStationCandidates(
   const seenStations = new Set<string>();
 
   for (const candidate of candidates) {
-    const key = `${candidate.noaa_station_id ?? ''}|${candidate.acis_sid ?? ''}`;
+    const key = `${candidate.noaa_station_id ?? ""}|${candidate.acis_sid ?? ""}`;
     if (seenStations.has(key)) continue;
 
     seenStations.add(key);
@@ -301,17 +299,17 @@ async function fetchStationCandidates(
 async function fetchNoaaDailySummary(
   stationId: string,
   date: string,
-  fetcher: Fetcher,
+  fetcher: Fetcher
 ): Promise<DailyWeatherRecord | null> {
   const params = new URLSearchParams({
-    dataset: 'daily-summaries',
+    dataset: "daily-summaries",
     stations: stationId,
     startDate: date,
     endDate: date,
-    dataTypes: 'TMAX,TMIN,PRCP',
-    units: 'metric',
-    format: 'json',
-    includeStationName: 'true',
+    dataTypes: "TMAX,TMIN,PRCP",
+    units: "metric",
+    format: "json",
+    includeStationName: "true",
   });
 
   const response = await fetcher(`${NOAA_DAILY_SUMMARIES_URL}?${params.toString()}`);
@@ -334,7 +332,7 @@ async function fetchNoaaDailySummary(
     tmax_c: tmax != null ? round2(tmax) : null,
     tmin_c: tmin != null ? round2(tmin) : null,
     precip_mm: precip != null ? round2(precip) : null,
-    source: 'NOAA_DAILY_SUMMARIES',
+    source: "NOAA_DAILY_SUMMARIES",
     source_station_id: stationId,
     quality_flag: null,
     is_estimated: false,
@@ -343,12 +341,12 @@ async function fetchNoaaDailySummary(
 }
 
 function parseAcisValue(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value !== 'string') return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
 
   const normalized = value.trim().toUpperCase();
-  if (!normalized || normalized === 'M' || normalized === 'NA') return null;
-  if (normalized === 'T') return 0;
+  if (!normalized || normalized === "M" || normalized === "NA") return null;
+  if (normalized === "T") return 0;
 
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
@@ -357,18 +355,18 @@ function parseAcisValue(value: unknown): number | null {
 async function fetchAcisDailySummary(
   acisSid: string,
   date: string,
-  fetcher: Fetcher,
+  fetcher: Fetcher
 ): Promise<DailyWeatherRecord | null> {
   const payload = {
     sid: acisSid,
     sdate: date,
     edate: date,
-    elems: [{ name: 'maxt' }, { name: 'mint' }, { name: 'pcpn' }],
+    elems: [{ name: "maxt" }, { name: "mint" }, { name: "pcpn" }],
   };
 
   const response = await fetcher(ACIS_STN_DATA_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    method: "POST",
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
 
@@ -400,12 +398,14 @@ async function fetchAcisDailySummary(
   if (tmax == null && tmin == null && precip == null) return null;
 
   const qualityFlags: string[] = [];
-  if (typeof rawMax === 'string' && rawMax.trim().toUpperCase() === 'M') qualityFlags.push('MISSING_TMAX');
-  if (typeof rawMin === 'string' && rawMin.trim().toUpperCase() === 'M') qualityFlags.push('MISSING_TMIN');
-  if (typeof rawPrecip === 'string') {
+  if (typeof rawMax === "string" && rawMax.trim().toUpperCase() === "M")
+    qualityFlags.push("MISSING_TMAX");
+  if (typeof rawMin === "string" && rawMin.trim().toUpperCase() === "M")
+    qualityFlags.push("MISSING_TMIN");
+  if (typeof rawPrecip === "string") {
     const normalized = rawPrecip.trim().toUpperCase();
-    if (normalized === 'M') qualityFlags.push('MISSING_PRCP');
-    if (normalized === 'T') qualityFlags.push('TRACE_PRCP');
+    if (normalized === "M") qualityFlags.push("MISSING_PRCP");
+    if (normalized === "T") qualityFlags.push("TRACE_PRCP");
   }
 
   const stationToken = extractStationToken(acisSid).token;
@@ -415,9 +415,9 @@ async function fetchAcisDailySummary(
     tmax_c: tmax,
     tmin_c: tmin,
     precip_mm: precip,
-    source: 'ACIS_STNDATA',
+    source: "ACIS_STNDATA",
     source_station_id: stationToken || null,
-    quality_flag: qualityFlags.length > 0 ? qualityFlags.join(',') : null,
+    quality_flag: qualityFlags.length > 0 ? qualityFlags.join(",") : null,
     is_estimated: false,
     raw: {
       sid: acisSid,
@@ -429,15 +429,15 @@ async function fetchAcisDailySummary(
 
 async function fetchOpenMeteoDaily(
   query: NormalizedWeatherQuery,
-  fetcher: Fetcher,
+  fetcher: Fetcher
 ): Promise<DailyWeatherRecord | null> {
   const params = new URLSearchParams({
     latitude: `${query.lat}`,
     longitude: `${query.lon}`,
     start_date: query.date,
     end_date: query.date,
-    daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum',
-    timezone: 'America/New_York',
+    daily: "temperature_2m_max,temperature_2m_min,precipitation_sum",
+    timezone: "America/New_York",
   });
 
   const response = await fetcher(`${OPEN_METEO_ARCHIVE_URL}?${params.toString()}`);
@@ -474,7 +474,7 @@ async function fetchOpenMeteoDaily(
     tmax_c: tmax != null ? round2(tmax) : null,
     tmin_c: tmin != null ? round2(tmin) : null,
     precip_mm: precip != null ? round2(precip) : null,
-    source: 'OPEN_METEO_ARCHIVE',
+    source: "OPEN_METEO_ARCHIVE",
     source_station_id: null,
     quality_flag: null,
     is_estimated: true,
@@ -486,21 +486,21 @@ async function fetchOpenMeteoDaily(
 }
 
 function stableStringify(value: unknown): string {
-  if (value == null || typeof value !== 'object') {
+  if (value == null || typeof value !== "object") {
     return JSON.stringify(value);
   }
 
   if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
   }
 
   const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-    a.localeCompare(b),
+    a.localeCompare(b)
   );
 
   return `{${entries
     .map(([key, nested]) => `${JSON.stringify(key)}:${stableStringify(nested)}`)
-    .join(',')}}`;
+    .join(",")}}`;
 }
 
 function cacheKey(query: NormalizedWeatherQuery): string {
@@ -510,14 +510,14 @@ function cacheKey(query: NormalizedWeatherQuery): string {
     query.lon.toFixed(4),
     query.state,
     query.country,
-    query.station_id ?? '',
-    query.force_fallback ? 'fallback' : 'full',
-  ].join('|');
+    query.station_id ?? "",
+    query.force_fallback ? "fallback" : "full",
+  ].join("|");
 }
 
 export async function lookupHistoricalWeather(
   query: WeatherQuery,
-  options: WeatherLookupOptions = {},
+  options: WeatherLookupOptions = {}
 ): Promise<WeatherLookupResult> {
   const normalized = normalizeWeatherQuery(query);
   const fetcher = options.fetcher ?? defaultFetcher;
@@ -527,7 +527,7 @@ export async function lookupHistoricalWeather(
     return {
       query: normalized,
       record: null,
-      reason: 'INVALID_DATE',
+      reason: "INVALID_DATE",
       attempts: [],
     };
   }
@@ -540,13 +540,13 @@ export async function lookupHistoricalWeather(
       stationCandidates = await fetchStationCandidates(normalized, fetcher);
       attempts.push(`ACIS_META:${stationCandidates.length}`);
     } catch {
-      attempts.push('ACIS_META_ERROR');
+      attempts.push("ACIS_META_ERROR");
     }
 
     const noaaStations = unique(
       stationCandidates
         .map((candidate) => candidate.noaa_station_id)
-        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
     ).slice(0, maxStationCandidates);
 
     for (const stationId of noaaStations) {
@@ -569,7 +569,7 @@ export async function lookupHistoricalWeather(
     const acisSids = unique(
       stationCandidates
         .map((candidate) => candidate.acis_sid)
-        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
     ).slice(0, maxStationCandidates);
 
     for (const sid of acisSids) {
@@ -590,7 +590,7 @@ export async function lookupHistoricalWeather(
     }
   }
 
-  attempts.push('OPEN_METEO');
+  attempts.push("OPEN_METEO");
   try {
     const fallbackRecord = await fetchOpenMeteoDaily(normalized, fetcher);
     if (hasMeasuredData(fallbackRecord)) {
@@ -602,20 +602,20 @@ export async function lookupHistoricalWeather(
       };
     }
   } catch {
-    attempts.push('OPEN_METEO_ERROR');
+    attempts.push("OPEN_METEO_ERROR");
   }
 
   return {
     query: normalized,
     record: null,
-    reason: 'NO_DATA',
+    reason: "NO_DATA",
     attempts,
   };
 }
 
 export async function lookupHistoricalWeatherCached(
   query: WeatherQuery,
-  options: WeatherLookupOptions = {},
+  options: WeatherLookupOptions = {}
 ): Promise<WeatherLookupResult> {
   const normalized = normalizeWeatherQuery(query);
   const key = cacheKey(normalized);
@@ -659,11 +659,7 @@ function eachIsoDateInclusive(startDate: string, endDate: string): string[] {
   }
 
   const dates: string[] = [];
-  for (
-    const cursor = new Date(start);
-    cursor <= end;
-    cursor.setUTCDate(cursor.getUTCDate() + 1)
-  ) {
+  for (const cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
     dates.push(cursor.toISOString().slice(0, 10));
   }
 
@@ -672,14 +668,14 @@ function eachIsoDateInclusive(startDate: string, endDate: string): string[] {
 
 export async function fetchWeatherRange(
   query: WeatherRangeQuery,
-  options: WeatherLookupOptions = {},
+  options: WeatherLookupOptions = {}
 ): Promise<WeatherRangeResult> {
   if (!isIsoDate(query.start_date) || !isIsoDate(query.end_date)) {
-    throw new Error('start_date and end_date must use YYYY-MM-DD format.');
+    throw new Error("start_date and end_date must use YYYY-MM-DD format.");
   }
 
   const dates = eachIsoDateInclusive(query.start_date, query.end_date);
-  const records: WeatherRangeResult['records'] = [];
+  const records: WeatherRangeResult["records"] = [];
 
   for (const date of dates) {
     const lookup = await lookupHistoricalWeather(
@@ -693,7 +689,7 @@ export async function fetchWeatherRange(
         station_id: query.station_id,
         force_fallback: query.force_fallback,
       },
-      options,
+      options
     );
 
     records.push({
@@ -720,7 +716,7 @@ export async function fetchWeatherRange(
 
 export function calculateDailyDeviation(
   observed: DailyWeatherRecord,
-  fallback: DailyWeatherRecord,
+  fallback: DailyWeatherRecord
 ): DailyDeviation {
   return {
     tmax_c_abs_diff: absoluteDiff(observed.tmax_c, fallback.tmax_c),
@@ -735,7 +731,7 @@ export function isDeviationAboveThreshold(
     tmax_c_abs_diff: number;
     tmin_c_abs_diff: number;
     precip_mm_abs_diff: number;
-  }> = {},
+  }> = {}
 ): boolean {
   const limits = {
     tmax_c_abs_diff: thresholds.tmax_c_abs_diff ?? 8,
@@ -749,7 +745,10 @@ export function isDeviationAboveThreshold(
   if (deviation.tmin_c_abs_diff != null && deviation.tmin_c_abs_diff > limits.tmin_c_abs_diff) {
     return true;
   }
-  if (deviation.precip_mm_abs_diff != null && deviation.precip_mm_abs_diff > limits.precip_mm_abs_diff) {
+  if (
+    deviation.precip_mm_abs_diff != null &&
+    deviation.precip_mm_abs_diff > limits.precip_mm_abs_diff
+  ) {
     return true;
   }
 
@@ -758,7 +757,7 @@ export function isDeviationAboveThreshold(
 
 export function computeDailyWeatherHash(record: DailyWeatherRecord): string {
   const payload = stableStringify(record);
-  return createHash('sha256').update(payload).digest('hex');
+  return createHash("sha256").update(payload).digest("hex");
 }
 
 export function celsiusToFahrenheit(valueC: number): number {

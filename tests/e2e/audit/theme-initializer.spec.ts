@@ -84,14 +84,12 @@ test.describe("one-shot prepaint theme initializer", () => {
       await expectVisibleNonEmptyFirstPaint(
         page,
         route.firstPaint,
-        `${route.path} dark first paint`,
+        `${route.path} dark first paint`
       );
       await waitForSettledUi(page);
       await expect(page.locator("html")).toHaveAttribute("data-mode", "dark");
       const samples = await page.evaluate(
-        () =>
-          (window as Window & { __themeModeSamples?: string[] })
-            .__themeModeSamples ?? [],
+        () => (window as Window & { __themeModeSamples?: string[] }).__themeModeSamples ?? []
       );
       expect(samples.length, `${route.path} should record its saved mode`).toBeGreaterThan(0);
       expect(new Set(samples), `${route.path} mode mutations`).toEqual(new Set(["dark"]));
@@ -118,7 +116,7 @@ test.describe("one-shot prepaint theme initializer", () => {
           await expectVisibleNonEmptyFirstPaint(
             page,
             route.firstPaint,
-            `${route.path} JavaScript-disabled first paint`,
+            `${route.path} JavaScript-disabled first paint`
           );
           await expect(page.locator("html")).not.toHaveAttribute("data-mode");
           expectNoUnexpectedNoJsDiagnostics(diagnostics, {

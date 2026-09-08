@@ -78,9 +78,7 @@ describe("GET /api/search", () => {
   });
 
   it("returns 504 with cause='timeout' when DB call hangs", async () => {
-    (searchArticles as ReturnType<typeof vi.fn>).mockImplementation(
-      () => new Promise(() => {}),
-    );
+    (searchArticles as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise(() => {}));
 
     vi.useFakeTimers();
     try {
@@ -106,7 +104,7 @@ describe("GET /api/search", () => {
 
   it("returns 500 with cause='internal_error' on generic DB failure", async () => {
     (searchArticles as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Neon connection refused"),
+      new Error("Neon connection refused")
     );
 
     const response = await GET(makeRequest("q=test"));
@@ -120,16 +118,12 @@ describe("GET /api/search", () => {
 
   it("respects limit and offset query params", async () => {
     await GET(makeRequest("q=test&limit=5&offset=10"));
-    expect(searchArticles).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 5, offset: 10 }),
-    );
+    expect(searchArticles).toHaveBeenCalledWith(expect.objectContaining({ limit: 5, offset: 10 }));
   });
 
   it("caps limit at 100", async () => {
     await GET(makeRequest("q=test&limit=999"));
-    expect(searchArticles).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 100 }),
-    );
+    expect(searchArticles).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
   });
 
   it("forwards filters to searchArticles", async () => {
@@ -140,7 +134,7 @@ describe("GET /api/search", () => {
         category: "News",
         startDate: "1960-01-01",
         endDate: "1969-12-31",
-      }),
+      })
     );
   });
 });

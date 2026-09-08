@@ -22,15 +22,14 @@ async function fetchEditionsListUncached(): Promise<EditionInfo[]> {
   if (editions.length === 0 && dbError && process.env.NODE_ENV === "production") {
     throw new Error(
       "getEditionsList: DB unreachable during build and no gold edition fallback. " +
-        "Aborting to avoid shipping zero editions. Check DATABASE_URL and Neon status.",
+        "Aborting to avoid shipping zero editions. Check DATABASE_URL and Neon status."
     );
   }
   return editions;
 }
 
 // Tag-invalidatable so `revalidateTag("editions")` after `db:seed` refreshes everywhere.
-export const getEditionsList = unstable_cache(
-  fetchEditionsListUncached,
-  ["editions-list-v1"],
-  { tags: ["editions"], revalidate: 3600 },
-);
+export const getEditionsList = unstable_cache(fetchEditionsListUncached, ["editions-list-v1"], {
+  tags: ["editions"],
+  revalidate: 3600,
+});

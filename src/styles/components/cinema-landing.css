@@ -8,19 +8,19 @@
    ========================================= */
 
 .cinema-container {
-    height: 100svh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    position: relative;
+  height: 100svh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
 }
 
 /* Keep the full-canvas landing tied to the stable mobile viewport. The
    module-scoped PageShell rule uses 100vh as its fallback. */
 .cinema-landing-shell[data-page-shell] {
-    height: 100svh;
-    min-height: 100svh;
-    overflow: hidden;
+  height: 100svh;
+  min-height: 100svh;
+  overflow: hidden;
 }
 
 /* =========================================
@@ -28,69 +28,72 @@
    ========================================= */
 
 .cinema-bg {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    background: var(--page-cinema-bg);
-    cursor: default;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--page-cinema-bg);
+  cursor: default;
 }
 
 /* Animated SVG doodle map — fast fade-in, SVG handles its own animations */
 .cinema-map {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    background: var(--color-accent);
-    animation: mapFadeIn 0.3s ease-out forwards;
-    will-change: opacity;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  background: var(--color-accent);
+  animation: mapFadeIn 0.3s ease-out forwards;
+  will-change: opacity;
 }
 
 .cinema-map-svg {
-    width: 100%;
-    height: auto;
-    display: block;
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 /* Dark gradient overlay — heavier at top & bottom for cinematic framing */
 .cinema-overlay {
-    position: absolute;
-    inset: 0;
-    background:
-        linear-gradient(to bottom,
-            color-mix(in srgb, var(--color-bg-primary) 55%, transparent) 0%,
-            color-mix(in srgb, var(--color-bg-primary) 25%, transparent) 30%,
-            color-mix(in srgb, var(--color-bg-primary) 20%, transparent) 50%,
-            color-mix(in srgb, var(--color-bg-primary) 25%, transparent) 70%,
-            color-mix(in srgb, var(--color-bg-primary) 55%, transparent) 100%);
-    z-index: 1;
-    pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--color-bg-primary) 55%, transparent) 0%,
+    color-mix(in srgb, var(--color-bg-primary) 25%, transparent) 30%,
+    color-mix(in srgb, var(--color-bg-primary) 20%, transparent) 50%,
+    color-mix(in srgb, var(--color-bg-primary) 25%, transparent) 70%,
+    color-mix(in srgb, var(--color-bg-primary) 55%, transparent) 100%
+  );
+  z-index: 1;
+  pointer-events: none;
 }
 
 /* Heavy cinematic vignette — dark edges like a camera lens */
 .cinema-vignette {
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(ellipse at center,
-            transparent 30%,
-            color-mix(in srgb, var(--color-bg-primary) 25%, transparent) 70%,
-            color-mix(in srgb, var(--color-bg-primary) 60%, transparent) 100%);
-    z-index: 2;
-    pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 30%,
+    color-mix(in srgb, var(--color-bg-primary) 25%, transparent) 70%,
+    color-mix(in srgb, var(--color-bg-primary) 60%, transparent) 100%
+  );
+  z-index: 2;
+  pointer-events: none;
 }
 
 /* Film grain — subtle analog noise */
 .cinema-grain {
-    position: absolute;
-    inset: 0;
-    z-index: 3;
-    pointer-events: none;
-    opacity: 0.06;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-    background-repeat: repeat;
-    background-size: 256px 256px;
-    mix-blend-mode: overlay;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+  mix-blend-mode: overlay;
 }
 
 /* =========================================
@@ -98,70 +101,70 @@
    ========================================= */
 
 .cinema-ticker {
-    position: relative;
-    z-index: 10;
-    overflow: hidden;
-    background: var(--page-cinema-ticker-bg);
-    backdrop-filter: blur(4px);
-    flex-shrink: 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
-    opacity: 1;
-    animation: cinemaTickerSettle var(--duration-normal) var(--ease-default) both;
+  position: relative;
+  z-index: 10;
+  overflow: hidden;
+  background: var(--page-cinema-ticker-bg);
+  backdrop-filter: blur(4px);
+  flex-shrink: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
+  opacity: 1;
+  animation: cinemaTickerSettle var(--duration-normal) var(--ease-default) both;
 }
 
 @keyframes cinemaTickerSettle {
-    from {
-        transform: translateY(-4px);
-    }
+  from {
+    transform: translateY(-4px);
+  }
 }
 
 .cinema-ticker-top {
-    order: 1;
-    padding-top: env(safe-area-inset-top);
+  order: 1;
+  padding-top: env(safe-area-inset-top);
 }
 
 .cinema-ticker-bottom {
-    order: 3;
-    padding-bottom: env(safe-area-inset-bottom);
+  order: 3;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .cinema-ticker-track {
-    display: flex;
-    width: max-content;
+  display: flex;
+  width: max-content;
 }
 
 .cinema-ticker-sequence {
-    display: flex;
-    flex-shrink: 0;
+  display: flex;
+  flex-shrink: 0;
 }
 
 .cinema-ticker-reverse {
-    animation-direction: reverse;
+  animation-direction: reverse;
 }
 
 .cinema-ticker-item {
-    flex-shrink: 0;
-    padding: 12px 35px;
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    font-weight: var(--font-bold);
-    text-transform: uppercase;
-    letter-spacing: var(--tracking-wide);
-    white-space: nowrap;
-    color: var(--color-text-muted);
-    border-right: 1px solid color-mix(in srgb, var(--color-accent) 16%, transparent);
-    transition: color var(--duration-normal) ease;
+  flex-shrink: 0;
+  padding: 12px 35px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  border-right: 1px solid color-mix(in srgb, var(--color-accent) 16%, transparent);
+  transition: color var(--duration-normal) ease;
 }
 
 .cinema-ticker-item:hover {
-    color: var(--color-accent-text);
+  color: var(--color-accent-text);
 }
 
 .cinema-ticker-year {
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--color-text-faint);
-    margin-left: 10px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  margin-left: 10px;
 }
 
 /* =========================================
@@ -169,19 +172,19 @@
    ========================================= */
 
 .cinema-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    min-height: 0;
-    padding: var(--space-4);
-    position: relative;
-    z-index: 5;
-    order: 2;
-    overflow-y: auto;
-    overflow-x: hidden;
-    overscroll-behavior: contain;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 0;
+  padding: var(--space-4);
+  position: relative;
+  z-index: 5;
+  order: 2;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 /* =========================================
@@ -189,53 +192,53 @@
    ========================================= */
 
 .cinema-paper {
-    padding: 48px 52px;
-    position: relative;
-    overflow: visible;
-    filter:
-        drop-shadow(8px 12px 50px rgba(0, 0, 0, 0.45)) drop-shadow(2px 4px 12px rgba(0, 0, 0, 0.25));
-    max-width: 1100px;
-    width: 100%;
-    cursor: default;
-    animation: cinemaPaperSettle var(--duration-normal) var(--ease-default) both;
+  padding: 48px 52px;
+  position: relative;
+  overflow: visible;
+  filter: drop-shadow(8px 12px 50px rgba(0, 0, 0, 0.45))
+    drop-shadow(2px 4px 12px rgba(0, 0, 0, 0.25));
+  max-width: 1100px;
+  width: 100%;
+  cursor: default;
+  animation: cinemaPaperSettle var(--duration-normal) var(--ease-default) both;
 
-    /* Paper card is mode-locked (cream with dark text) regardless of body
+  /* Paper card is mode-locked (cream with dark text) regardless of body
        data-mode. Lock the text triad — primary, secondary, inverse — so
        inline descendants like the solid .cinema-btn (dark bg, cream text)
        keep the same contrast in light and dark modes. */
-    --color-text-primary: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
-    --color-text-secondary: color-mix(in srgb, var(--owu-black) 55%, var(--owu-white));
-    --color-text-inverse: var(--newsprint-50);
-    --color-focus-ring: var(--red-700);
-    color: var(--color-text-primary);
+  --color-text-primary: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
+  --color-text-secondary: color-mix(in srgb, var(--owu-black) 55%, var(--owu-white));
+  --color-text-inverse: var(--newsprint-50);
+  --color-focus-ring: var(--red-700);
+  color: var(--color-text-primary);
 }
 
 @keyframes cinemaPaperSettle {
-    from {
-        transform: translateY(8px) scale(0.995);
-    }
+  from {
+    transform: translateY(8px) scale(0.995);
+  }
 }
 
 /* Torn paper image — extends beyond card for natural torn edges */
 .cinema-paper::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) rotate(90deg);
-    width: 65%;
-    aspect-ratio: 635.8 / 969.49;
-    background: url('/shape/landing-paper.webp') center / 100% 100% no-repeat;
-    pointer-events: none;
-    z-index: 0;
-    opacity: 0.95;
-    filter: drop-shadow(0 0 20px rgba(0, 0, 0, 0.65));
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(90deg);
+  width: 65%;
+  aspect-ratio: 635.8 / 969.49;
+  background: url("/shape/landing-paper.webp") center / 100% 100% no-repeat;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.95;
+  filter: drop-shadow(0 0 20px rgba(0, 0, 0, 0.65));
 }
 
 /* Lift content above the torn paper image */
-.cinema-paper>* {
-    position: relative;
-    z-index: 1;
+.cinema-paper > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* =========================================
@@ -243,127 +246,128 @@
    ========================================= */
 
 .cinema-paper-grid {
-    display: grid;
-    grid-template-columns: 1fr 1px 1fr;
-    gap: 0 30px;
-    align-items: stretch;
-    max-width: 576px;
-    margin: 10px auto 0;
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  gap: 0 30px;
+  align-items: stretch;
+  max-width: 576px;
+  margin: 10px auto 0;
 }
 
 .cinema-col-brand {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    gap: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-6);
 }
 
 .cinema-col-brand--hidden {
-    display: none;
+  display: none;
 }
 
 /* When picker is open: hide brand + divider, let action span full width */
 .cinema-paper-grid--picker-open .cinema-divider {
-    display: none;
+  display: none;
 }
 
 .cinema-paper-grid--picker-open .cinema-col-action {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    align-items: center;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  align-items: center;
 }
 
 .cinema-divider {
-    width: 1px;
-    height: 80%;
-    align-self: center;
-    background: linear-gradient(to bottom,
-            transparent 0%,
-            color-mix(in srgb, var(--color-accent) 40%, transparent) 20%,
-            color-mix(in srgb, var(--color-accent) 40%, transparent) 80%,
-            transparent 100%);
+  width: 1px;
+  height: 80%;
+  align-self: center;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--color-accent) 40%, transparent) 20%,
+    color-mix(in srgb, var(--color-accent) 40%, transparent) 80%,
+    transparent 100%
+  );
 }
 
 .cinema-divider-or {
-    display: none;
+  display: none;
 }
 
 .cinema-col-action {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    gap: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-6);
 }
-
 
 /* =========================================
    PAPER CARD CONTENT
    ========================================= */
 
 .cinema-masthead {
-    text-align: center;
-    padding-bottom: 18px;
-    border-bottom: 3px solid var(--color-accent);
-    max-width: 576px;
-    margin: 0 auto 36px;
+  text-align: center;
+  padding-bottom: 18px;
+  border-bottom: 3px solid var(--color-accent);
+  max-width: 576px;
+  margin: 0 auto 36px;
 }
 
 .cinema-title {
-    font-family: var(--font-masthead);
-    font-size: 3.2rem;
-    font-weight: var(--font-bold);
-    line-height: var(--leading-none);
-    margin-bottom: 6px;
-    color: var(--color-text-primary);
+  font-family: var(--font-masthead);
+  font-size: 3.2rem;
+  font-weight: var(--font-bold);
+  line-height: var(--leading-none);
+  margin-bottom: 6px;
+  color: var(--color-text-primary);
 }
 
 .cinema-subtitle {
-    font-family: var(--font-mono);
-    font-size: 1rem;
-    font-weight: 500;
-    letter-spacing: var(--tracking-label-md);
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-text-primary) 72%, transparent);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text-primary) 72%, transparent);
 }
 
 .cinema-edition-info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    text-align: center;
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    letter-spacing: var(--tracking-wider);
-    text-transform: uppercase;
-    color: var(--color-text-secondary);
-    margin-bottom: 0;
-    padding-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  margin-bottom: 0;
+  padding-bottom: 0;
 }
 
 .cinema-date-box {
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-    border: 1px dashed color-mix(in srgb, var(--color-accent) 30%, transparent);
-    padding: 10px;
-    text-align: center;
-    margin-bottom: 18px;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 30%, transparent);
+  padding: 10px;
+  text-align: center;
+  margin-bottom: 18px;
 }
 
 .cinema-date-label {
-    font-family: var(--font-mono);
-    font-size: 0.6rem;
-    letter-spacing: var(--tracking-label-md);
-    text-transform: uppercase;
-    color: var(--color-text-secondary);
-    margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
 }
 
 .cinema-date-value {
-    font-family: var(--font-header);
-    font-size: 1.5rem;
-    font-weight: var(--font-bold);
-    color: var(--color-accent);
+  font-family: var(--font-header);
+  font-size: 1.5rem;
+  font-weight: var(--font-bold);
+  color: var(--color-accent);
 }
 
 /* =========================================
@@ -375,121 +379,143 @@
    rules. Hover: primary rule extends full-width, secondary rule
    nudges right, text goes accent. */
 .cinema-btn {
-    display: inline-flex;
-    justify-content: center;
-    align-items: baseline;
-    margin-top: auto;
-    padding: 4px 14px 14px;
-    background: transparent;
-    color: var(--color-text-primary);
-    border: none;
-    font-family: var(--font-header);
-    font-weight: var(--font-bold);
-    font-size: 1.22rem;
-    line-height: var(--leading-tight);
-    letter-spacing: 0.005em;
-    text-transform: none;
-    text-decoration: none;
-    white-space: nowrap;
-    cursor: pointer;
-    min-height: 44px;
-    transition: color var(--duration-normal) ease;
-    position: relative;
+  display: inline-flex;
+  justify-content: center;
+  align-items: baseline;
+  margin-top: auto;
+  padding: 4px 14px 14px;
+  background: transparent;
+  color: var(--color-text-primary);
+  border: none;
+  font-family: var(--font-header);
+  font-weight: var(--font-bold);
+  font-size: 1.22rem;
+  line-height: var(--leading-tight);
+  letter-spacing: 0.005em;
+  text-transform: none;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  min-height: 44px;
+  transition: color var(--duration-normal) ease;
+  position: relative;
 }
 
 /* Primary rule — thick accent-red */
 .cinema-btn::before {
-    content: '';
-    position: absolute;
-    left: 12%; bottom: 7px;
-    width: 76%; height: 3px;
-    background: var(--color-accent);
-    transition:
-        width var(--duration-normal) ease,
-        left var(--duration-normal) ease;
+  content: "";
+  position: absolute;
+  left: 12%;
+  bottom: 7px;
+  width: 76%;
+  height: 3px;
+  background: var(--color-accent);
+  transition:
+    width var(--duration-normal) ease,
+    left var(--duration-normal) ease;
 }
 
 /* Secondary rule — thinner, offset below */
 .cinema-btn::after {
-    content: '';
-    position: absolute;
-    left: 32%; bottom: 1px;
-    width: 40%; height: 1.5px;
-    background: color-mix(in srgb, var(--color-accent) 75%, transparent);
-    transition: transform var(--duration-normal) ease;
+  content: "";
+  position: absolute;
+  left: 32%;
+  bottom: 1px;
+  width: 40%;
+  height: 1.5px;
+  background: color-mix(in srgb, var(--color-accent) 75%, transparent);
+  transition: transform var(--duration-normal) ease;
 }
 
 /* Hover styles gated to hover-capable pointers so taps on touch devices
    don't leave the CTA stuck in its hover state. */
 @media (hover: hover) {
-    .cinema-btn:hover { color: var(--color-accent); }
-    .cinema-btn:hover::before { width: 100%; left: 0; }
-    .cinema-btn:hover::after { transform: translateX(6px); }
-    .cinema-btn:hover .cinema-btn-arrow { transform: translateX(6px); }
-    .cinema-btn:disabled:hover { color: var(--color-text-primary); }
-    .cinema-btn:disabled:hover::before { width: 76%; left: 12%; }
-    .cinema-btn:disabled:hover::after { transform: none; }
-    .cinema-btn:disabled:hover .cinema-btn-arrow { transform: none; }
+  .cinema-btn:hover {
+    color: var(--color-accent);
+  }
+  .cinema-btn:hover::before {
+    width: 100%;
+    left: 0;
+  }
+  .cinema-btn:hover::after {
+    transform: translateX(6px);
+  }
+  .cinema-btn:hover .cinema-btn-arrow {
+    transform: translateX(6px);
+  }
+  .cinema-btn:disabled:hover {
+    color: var(--color-text-primary);
+  }
+  .cinema-btn:disabled:hover::before {
+    width: 76%;
+    left: 12%;
+  }
+  .cinema-btn:disabled:hover::after {
+    transform: none;
+  }
+  .cinema-btn:disabled:hover .cinema-btn-arrow {
+    transform: none;
+  }
 }
 
 .cinema-btn-arrow {
-    display: inline-block;
-    color: var(--color-accent);
-    margin-left: 8px;
-    transition: transform var(--duration-normal) ease;
+  display: inline-block;
+  color: var(--color-accent);
+  margin-left: 8px;
+  transition: transform var(--duration-normal) ease;
 }
 
 .cinema-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Dateline stamp — Ask CTA variant. Pressed-ink rectangle with a
    cream inner rim and a 1px misregistered accent-red offset. Hover:
    button settles flat onto the offset, rim flashes red. */
 .cinema-btn-stamp {
-    margin-top: auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 11px 26px;
-    min-width: 180px;
-    min-height: 44px;
-    background: color-mix(in srgb, var(--ink-800) 85%, transparent);
-    color: color-mix(in srgb, var(--color-text-inverse) 82%, var(--ink-800));
-    font-family: var(--font-header);
-    font-size: 1.1rem;
-    font-weight: var(--font-bold);
-    letter-spacing: 0.005em;
-    text-transform: none;
-    line-height: 1;
-    white-space: nowrap;
-    text-decoration: none;
-    cursor: pointer;
-    box-shadow:
-        1px 1px 0 0 var(--color-accent),
-        inset 0 0 0 4px color-mix(in srgb, var(--ink-800) 85%, transparent),
-        inset 0 0 0 5px color-mix(in srgb, var(--color-text-inverse) 82%, var(--ink-800));
-    transition:
-        box-shadow var(--duration-normal) ease,
-        transform var(--duration-normal) ease;
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 26px;
+  min-width: 180px;
+  min-height: 44px;
+  background: color-mix(in srgb, var(--ink-800) 85%, transparent);
+  color: color-mix(in srgb, var(--color-text-inverse) 82%, var(--ink-800));
+  font-family: var(--font-header);
+  font-size: 1.1rem;
+  font-weight: var(--font-bold);
+  letter-spacing: 0.005em;
+  text-transform: none;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow:
+    1px 1px 0 0 var(--color-accent),
+    inset 0 0 0 4px color-mix(in srgb, var(--ink-800) 85%, transparent),
+    inset 0 0 0 5px color-mix(in srgb, var(--color-text-inverse) 82%, var(--ink-800));
+  transition:
+    box-shadow var(--duration-normal) ease,
+    transform var(--duration-normal) ease;
 }
 
 .cinema-btn:focus-visible,
 .cinema-btn-stamp:focus-visible,
 .cinema-ask-teaser:focus-visible {
-    outline: 2px solid var(--color-focus-ring);
-    outline-offset: 2px;
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 @media (hover: hover) {
-    .cinema-btn-stamp:hover {
-        transform: translate(1px, 1px);
-        box-shadow:
-            0 0 0 0 var(--color-accent),
-            inset 0 0 0 4px color-mix(in srgb, var(--ink-800) 85%, transparent),
-            inset 0 0 0 5px var(--color-accent);
-    }
+  .cinema-btn-stamp:hover {
+    transform: translate(1px, 1px);
+    box-shadow:
+      0 0 0 0 var(--color-accent),
+      inset 0 0 0 4px color-mix(in srgb, var(--ink-800) 85%, transparent),
+      inset 0 0 0 5px var(--color-accent);
+  }
 }
 
 /* =========================================
@@ -497,62 +523,85 @@
    ========================================= */
 
 .cinema-indicators {
-    display: flex;
-    gap: 12px;
-    margin-top: 25px;
+  display: flex;
+  gap: 12px;
+  margin-top: 25px;
 }
 
 .cinema-dot {
-    width: 10px;
-    height: 10px;
-    border: 2px solid color-mix(in srgb, var(--color-text-primary) 45%, transparent);
-    border-radius: 50%;
-    background: transparent;
-    cursor: pointer;
-    transition: all var(--duration-normal) ease;
-    padding: 0;
+  width: 10px;
+  height: 10px;
+  border: 2px solid color-mix(in srgb, var(--color-text-primary) 45%, transparent);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--duration-normal) ease;
+  padding: 0;
 }
 
 .cinema-dot.active {
-    background: var(--color-text-primary);
-    border-color: var(--color-text-primary);
+  background: var(--color-text-primary);
+  border-color: var(--color-text-primary);
 }
 
 .cinema-dot:hover {
-    border-color: var(--color-text-primary);
+  border-color: var(--color-text-primary);
 }
 
 /* =========================================
    LIGHT MODE TUNING
    ========================================= */
 
-:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cinema-map {
-    filter: none;
+:is(
+    :root[data-mode="light"] [data-page-shell]:not([data-mode]),
+    [data-page-shell][data-mode="light"]
+  )
+  .cinema-map {
+  filter: none;
 }
 
-:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cinema-vignette {
-    background: radial-gradient(ellipse at center,
-            transparent 55%,
-            color-mix(in srgb, var(--owu-charcoal) 15%, transparent) 100%);
+:is(
+    :root[data-mode="light"] [data-page-shell]:not([data-mode]),
+    [data-page-shell][data-mode="light"]
+  )
+  .cinema-vignette {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    color-mix(in srgb, var(--owu-charcoal) 15%, transparent) 100%
+  );
 }
 
-:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cinema-overlay {
-    background:
-        linear-gradient(to bottom,
-            color-mix(in srgb, var(--owu-charcoal) 30%, transparent) 0%,
-            color-mix(in srgb, var(--owu-charcoal) 10%, transparent) 30%,
-            transparent 50%,
-            color-mix(in srgb, var(--owu-charcoal) 10%, transparent) 70%,
-            color-mix(in srgb, var(--owu-charcoal) 30%, transparent) 100%);
+:is(
+    :root[data-mode="light"] [data-page-shell]:not([data-mode]),
+    [data-page-shell][data-mode="light"]
+  )
+  .cinema-overlay {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--owu-charcoal) 30%, transparent) 0%,
+    color-mix(in srgb, var(--owu-charcoal) 10%, transparent) 30%,
+    transparent 50%,
+    color-mix(in srgb, var(--owu-charcoal) 10%, transparent) 70%,
+    color-mix(in srgb, var(--owu-charcoal) 30%, transparent) 100%
+  );
 }
 
-:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cinema-paper {
-    filter:
-        drop-shadow(6px 10px 30px color-mix(in srgb, var(--owu-black) 12%, transparent)) drop-shadow(2px 4px 10px color-mix(in srgb, var(--owu-black) 8%, transparent));
+:is(
+    :root[data-mode="light"] [data-page-shell]:not([data-mode]),
+    [data-page-shell][data-mode="light"]
+  )
+  .cinema-paper {
+  filter: drop-shadow(6px 10px 30px color-mix(in srgb, var(--owu-black) 12%, transparent))
+    drop-shadow(2px 4px 10px color-mix(in srgb, var(--owu-black) 8%, transparent));
 }
 
-:is(:root[data-mode='light'] [data-page-shell]:not([data-mode]), [data-page-shell][data-mode='light']) .cinema-paper::before {
-    filter: drop-shadow(0 0 15px rgba(0, 0, 0, 0.45));
+:is(
+    :root[data-mode="light"] [data-page-shell]:not([data-mode]),
+    [data-page-shell][data-mode="light"]
+  )
+  .cinema-paper::before {
+  filter: drop-shadow(0 0 15px rgba(0, 0, 0, 0.45));
 }
 
 /* =========================================
@@ -561,121 +610,121 @@
 
 /* Tablet */
 @media (min-width: 641px) and (max-width: 1024px) {
-    .cinema-paper {
-        max-width: 900px;
-    }
+  .cinema-paper {
+    max-width: 900px;
+  }
 
-    .cinema-paper::before {
-        width: 75%;
-    }
+  .cinema-paper::before {
+    width: 75%;
+  }
 
-    .cinema-title {
-        font-size: 2.2rem;
-    }
+  .cinema-title {
+    font-size: 2.2rem;
+  }
 
-    .cinema-paper-grid {
-        gap: 0 20px;
-        max-width: 72%;
-    }
+  .cinema-paper-grid {
+    gap: 0 20px;
+    max-width: 72%;
+  }
 }
 
 /* Mobile — single-column portrait. Drops the torn-paper decorative
    image in favor of a clean rectangular card: cream background, thin
    accent rule, subtle shadow. Keeps typography and palette intact. */
 @media (max-width: 640px) {
-    .cinema-paper {
-        max-width: 440px;
-        padding: 32px 24px;
-        background: color-mix(in srgb, var(--owu-white) 94%, var(--owu-black));
-        border: 1px solid color-mix(in srgb, var(--owu-black) 12%, transparent);
-        border-top: 3px solid var(--color-accent);
-        filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.35));
-    }
+  .cinema-paper {
+    max-width: 440px;
+    padding: 32px 24px;
+    background: color-mix(in srgb, var(--owu-white) 94%, var(--owu-black));
+    border: 1px solid color-mix(in srgb, var(--owu-black) 12%, transparent);
+    border-top: 3px solid var(--color-accent);
+    filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.35));
+  }
 
-    .cinema-paper::before {
-        display: none;
-    }
+  .cinema-paper::before {
+    display: none;
+  }
 
-    .cinema-paper-grid {
-        grid-template-columns: 1fr;
-        gap: 20px 0;
-        max-width: none;
-    }
+  .cinema-paper-grid {
+    grid-template-columns: 1fr;
+    gap: 20px 0;
+    max-width: none;
+  }
 
-    /* Mobile divider: horizontal rule with "or" label centered, standing in
+  /* Mobile divider: horizontal rule with "or" label centered, standing in
        for the vertical gradient line that separates the two columns on
        desktop. Uses ::before/::after pseudos as flanking hairlines. */
-    .cinema-divider {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        width: 100%;
-        height: auto;
-        background: none;
-        margin: var(--space-2) 0;
-    }
+  .cinema-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    height: auto;
+    background: none;
+    margin: var(--space-2) 0;
+  }
 
-    .cinema-divider::before,
-    .cinema-divider::after {
-        content: '';
-        flex: 1;
-        height: 1px;
-        background: color-mix(in srgb, var(--color-accent) 25%, transparent);
-    }
+  .cinema-divider::before,
+  .cinema-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  }
 
-    .cinema-divider-or {
-        display: inline-block;
-        font-family: var(--font-mono);
-        font-size: 0.75rem;
-        font-weight: 600;
-        letter-spacing: var(--tracking-label-md);
-        text-transform: uppercase;
-        color: color-mix(in srgb, var(--color-text-primary) 55%, transparent);
-    }
+  .cinema-divider-or {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: var(--tracking-label-md);
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--color-text-primary) 55%, transparent);
+  }
 
-    .cinema-col-action {
-        align-items: center;
-    }
+  .cinema-col-action {
+    align-items: center;
+  }
 
-    .cinema-title {
-        font-size: 2rem;
-    }
+  .cinema-title {
+    font-size: 2rem;
+  }
 
-    .cinema-edition-info {
-        margin-bottom: 20px;
-        padding-bottom: 10px;
-        border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
-    }
+  .cinema-edition-info {
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
+  }
 
-    .cinema-ticker-item {
-        padding: var(--space-2) var(--space-5);
-        font-size: var(--text-xs);
-    }
+  .cinema-ticker-item {
+    padding: var(--space-2) var(--space-5);
+    font-size: var(--text-xs);
+  }
 
-    .cinema-btn {
-        margin-top: var(--space-5);
-    }
+  .cinema-btn {
+    margin-top: var(--space-5);
+  }
 }
 
 @media (max-width: 640px) and (max-height: 720px) {
-    .cinema-paper {
-        padding: var(--space-5) var(--space-4);
-    }
+  .cinema-paper {
+    padding: var(--space-5) var(--space-4);
+  }
 
-    .cinema-masthead {
-        margin-bottom: var(--space-5);
-        padding-bottom: var(--space-3);
-    }
+  .cinema-masthead {
+    margin-bottom: var(--space-5);
+    padding-bottom: var(--space-3);
+  }
 
-    .cinema-paper-grid {
-        gap: var(--space-3) 0;
-    }
+  .cinema-paper-grid {
+    gap: var(--space-3) 0;
+  }
 
-    .cinema-col-brand,
-    .cinema-col-action {
-        gap: var(--space-4);
-    }
+  .cinema-col-brand,
+  .cinema-col-action {
+    gap: var(--space-4);
+  }
 }
 
 /* =========================================
@@ -688,102 +737,102 @@
    button below doesn't jump up when the day-of-year pick lands
    post-hydration. */
 .cinema-ask-teaser-slot {
-    /* Reserve the largest prompt geometry before the client chooses the
+  /* Reserve the largest prompt geometry before the client chooses the
        day-specific question, preventing the CTA and paper from shifting.
        Values are measured worst cases over QUESTION_POOL, per breakpoint —
        re-measure when the pool gains longer prompts. */
-    min-height: 8.75rem;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
+  min-height: 8.75rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
 }
 
 /* These overrides must follow the base rule: same specificity, so the
    cascade decides on source order, not on the media query. */
 @media (min-width: 641px) and (max-width: 1024px) {
-    /* Narrowest column still using desktop type, so the prompt wraps to
+  /* Narrowest column still using desktop type, so the prompt wraps to
        the most lines here — this band reserves the tallest slot. */
-    .cinema-ask-teaser-slot {
-        min-height: 13.25rem;
-    }
+  .cinema-ask-teaser-slot {
+    min-height: 13.25rem;
+  }
 }
 
 @media (max-width: 640px) {
-    .cinema-ask-teaser-slot {
-        min-height: 7.25rem;
-    }
+  .cinema-ask-teaser-slot {
+    min-height: 7.25rem;
+  }
 }
 
 /* Block-flow layout: label stacks above, quote + arrow flow inline
    as a single unit so the arrow lands right after the closing quote
    mark rather than orphaned below on its own line. */
 .cinema-ask-teaser {
-    display: block;
-    text-align: center;
-    text-decoration: none;
-    color: var(--color-text-secondary);
-    transition: color var(--duration-normal) ease;
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  color: var(--color-text-secondary);
+  transition: color var(--duration-normal) ease;
 }
 
 @media (hover: hover) {
-    .cinema-ask-teaser:hover {
-        color: var(--color-accent);
-    }
+  .cinema-ask-teaser:hover {
+    color: var(--color-accent);
+  }
 }
 
 .cinema-ask-teaser-label {
-    display: block;
-    margin-bottom: 0.55rem;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: var(--tracking-label-md);
-    text-transform: uppercase;
-    color: var(--color-accent);
+  display: block;
+  margin-bottom: 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-accent);
 }
 
 .cinema-ask-teaser-text {
-    font-family: var(--font-body);
-    font-weight: 500;
-    font-size: 1.15rem;
-    line-height: 1.45;
-    color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 1.15rem;
+  line-height: 1.45;
+  color: var(--color-text-primary);
 }
 
 .cinema-ask-teaser-arrow {
-    display: inline-block;
-    margin-left: 0.4rem;
-    vertical-align: baseline;
-    font-family: var(--font-mono);
-    color: var(--color-accent);
-    transition: transform var(--duration-normal) ease;
+  display: inline-block;
+  margin-left: 0.4rem;
+  vertical-align: baseline;
+  font-family: var(--font-mono);
+  color: var(--color-accent);
+  transition: transform var(--duration-normal) ease;
 }
 
 .cinema-ask-teaser:hover .cinema-ask-teaser-arrow {
-    transform: translateX(4px);
+  transform: translateX(4px);
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .cinema-ticker,
-    .cinema-paper {
-        animation: none;
-        transform: none;
-    }
+  .cinema-ticker,
+  .cinema-paper {
+    animation: none;
+    transform: none;
+  }
 
-    .cinema-ticker-track {
-        transform: none !important;
-        will-change: auto !important;
-    }
+  .cinema-ticker-track {
+    transform: none !important;
+    will-change: auto !important;
+  }
 
-    .cinema-ticker-item,
-    .cinema-btn,
-    .cinema-btn::before,
-    .cinema-btn::after,
-    .cinema-btn-arrow,
-    .cinema-btn-stamp,
-    .cinema-ask-teaser,
-    .cinema-ask-teaser-arrow {
-        transition: none;
-    }
+  .cinema-ticker-item,
+  .cinema-btn,
+  .cinema-btn::before,
+  .cinema-btn::after,
+  .cinema-btn-arrow,
+  .cinema-btn-stamp,
+  .cinema-ask-teaser,
+  .cinema-ask-teaser-arrow {
+    transition: none;
+  }
 }

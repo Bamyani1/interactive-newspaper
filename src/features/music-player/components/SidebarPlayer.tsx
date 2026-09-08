@@ -19,9 +19,7 @@ interface PlayerTrack {
 function MessageCard({ title, body }: { title: string; body: string }) {
   return (
     <div className="relative w-full mb-6">
-      <h3
-        className="uppercase font-mono text-xs tracking-label-md mb-3 border-b border-dashed border-[var(--stroke-accent-soft)] pb-1"
-      >
+      <h3 className="uppercase font-mono text-xs tracking-label-md mb-3 border-b border-dashed border-[var(--stroke-accent-soft)] pb-1">
         {title}
       </h3>
       <div className="border border-[var(--color-border-default)] bg-[color-mix(in_srgb,var(--color-bg-secondary)_50%,transparent)] p-4 text-sm">
@@ -66,131 +64,145 @@ function TracksPlayer({
 
   return (
     <div className="relative w-full mb-4">
-      <h3
-        className="uppercase font-mono text-xs tracking-label-md mb-2 border-b border-dashed border-[var(--stroke-accent-soft)] pb-1"
-      >
+      <h3 className="uppercase font-mono text-xs tracking-label-md mb-2 border-b border-dashed border-[var(--stroke-accent-soft)] pb-1">
         {header}
       </h3>
 
       <div className="sidebar-player-surface">
-      <div className="relative border border-[var(--color-border-default)] bg-[color-mix(in_srgb,var(--color-bg-secondary)_50%,transparent)] overflow-hidden">
-        {/* bg-black: YouTube-player visual cue (framing of thumbnail). Do not tokenize. */}
-        <div className="bg-black min-h-[140px]">
-          {showEmbed && effectiveTrack.youtubeId ? (
-            isPlaying ? (
-              <iframe
-                src={`https://www.youtube.com/embed/${effectiveTrack.youtubeId}?rel=0&autoplay=1`}
-                width="100%"
-                height="140"
-                frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                title={`${effectiveTrack.title} - ${effectiveTrack.artist}`}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsPlaying(true)}
-                className="relative w-full h-[140px] group cursor-pointer bg-black"
-                aria-label={`Play ${effectiveTrack.title} by ${effectiveTrack.artist}`}
-              >
-                <Image
-                  src={`https://img.youtube.com/vi/${effectiveTrack.youtubeId}/mqdefault.jpg`}
-                  alt=""
-                  fill
-                  sizes="320px"
-                  className="object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+        <div className="relative border border-[var(--color-border-default)] bg-[color-mix(in_srgb,var(--color-bg-secondary)_50%,transparent)] overflow-hidden">
+          {/* bg-black: YouTube-player visual cue (framing of thumbnail). Do not tokenize. */}
+          <div className="bg-black min-h-[140px]">
+            {showEmbed && effectiveTrack.youtubeId ? (
+              isPlaying ? (
+                <iframe
+                  src={`https://www.youtube.com/embed/${effectiveTrack.youtubeId}?rel=0&autoplay=1`}
+                  width="100%"
+                  height="140"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  title={`${effectiveTrack.title} - ${effectiveTrack.artist}`}
                 />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  {/* Intentional YouTube brand red — affordance over the yt thumbnail. Do NOT replace with --color-accent. See docs/design/carve-outs.md item 2. */}
-                  <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                    <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
-                  </div>
-                </div>
-              </button>
-            )
-          ) : (
-            <div className="h-[140px] flex items-center justify-center text-center px-3 text-xs text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]">
-              <div>
-                <p className="font-medium">No verified video for this song</p>
-                <p className="text-xs mt-1">Track list remains available for this month.</p>
-                <a
-                  href={toYoutubeSearchUrl(effectiveTrack)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center mt-3 px-2.5 py-1 text-xs font-medium border border-[var(--color-accent-text)] rounded-sm text-[var(--color-accent-text)] hover:bg-accent/10 transition-colors"
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsPlaying(true)}
+                  className="relative w-full h-[140px] group cursor-pointer bg-black"
+                  aria-label={`Play ${effectiveTrack.title} by ${effectiveTrack.artist}`}
                 >
-                  Open YouTube search
-                </a>
+                  <Image
+                    src={`https://img.youtube.com/vi/${effectiveTrack.youtubeId}/mqdefault.jpg`}
+                    alt=""
+                    fill
+                    sizes="320px"
+                    className="object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    {/* Intentional YouTube brand red — affordance over the yt thumbnail. Do NOT replace with --color-accent. See docs/design/carve-outs.md item 2. */}
+                    <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                      <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
+                    </div>
+                  </div>
+                </button>
+              )
+            ) : (
+              <div className="h-[140px] flex items-center justify-center text-center px-3 text-xs text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]">
+                <div>
+                  <p className="font-medium">No verified video for this song</p>
+                  <p className="text-xs mt-1">Track list remains available for this month.</p>
+                  <a
+                    href={toYoutubeSearchUrl(effectiveTrack)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center mt-3 px-2.5 py-1 text-xs font-medium border border-[var(--color-accent-text)] rounded-sm text-[var(--color-accent-text)] hover:bg-accent/10 transition-colors"
+                  >
+                    Open YouTube search
+                  </a>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        <div className="border-t border-dashed border-[var(--color-border-default)]">
-          <button
-            type="button"
-            onClick={() => setIsTrackListOpen((open) => !open)}
-            className="flex min-h-11 w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-[var(--color-bg-secondary)] focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
-            aria-expanded={isTrackListOpen}
-            aria-controls="sidebar-track-list"
-            id="sidebar-track-toggle"
-          >
-            <span className="flex-1 min-w-0 truncate font-mono text-xs">
-              <span className="font-medium">{effectiveTrack.title}</span>
-              <span className="text-[var(--color-text-secondary)]"> — {effectiveTrack.artist}</span>
-            </span>
-            <ChevronDown
-              className={`w-3.5 h-3.5 flex-shrink-0 opacity-60 transition-transform motion-reduce:transition-none ${isTrackListOpen ? "rotate-180" : ""}`}
-              aria-hidden
-            />
-          </button>
-          <div
-            id="sidebar-track-list"
-            role="region"
-            aria-labelledby="sidebar-track-toggle"
-            className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:duration-0 ${isTrackListOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
-          >
-            <div className="min-h-0 overflow-hidden">
-              <div className="divide-y" style={{ '--tw-divide-color': 'var(--color-border-default)' } as React.CSSProperties}>
-                {tracks.map((track, index) => {
-                  const isActive = index === currentTrackIndex;
-                  return (
-                    <button
-                      key={track.id}
-                      type="button"
-                      onClick={() => {
-                        setCurrentTrackIndex(index);
-                        setIsTrackListOpen(false);
-                      }}
-                      className={`group w-full flex items-center gap-2 px-2.5 py-2 text-left transition-all ${
-                        isActive
-                          ? "bg-[var(--color-bg-secondary)] text-text-primary"
-                          : "hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:text-text-primary"
-                      }`}
-                    >
-                      <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
-                        {isActive ? (
-                          <Music className="w-3 h-3 text-[var(--color-text-secondary)]" />
-                        ) : (
-                          <span className="text-xs text-[var(--color-text-secondary)] font-mono">{index + 1}</span>
+          <div className="border-t border-dashed border-[var(--color-border-default)]">
+            <button
+              type="button"
+              onClick={() => setIsTrackListOpen((open) => !open)}
+              className="flex min-h-11 w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-[var(--color-bg-secondary)] focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
+              aria-expanded={isTrackListOpen}
+              aria-controls="sidebar-track-list"
+              id="sidebar-track-toggle"
+            >
+              <span className="flex-1 min-w-0 truncate font-mono text-xs">
+                <span className="font-medium">{effectiveTrack.title}</span>
+                <span className="text-[var(--color-text-secondary)]">
+                  {" "}
+                  — {effectiveTrack.artist}
+                </span>
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 flex-shrink-0 opacity-60 transition-transform motion-reduce:transition-none ${isTrackListOpen ? "rotate-180" : ""}`}
+                aria-hidden
+              />
+            </button>
+            <div
+              id="sidebar-track-list"
+              role="region"
+              aria-labelledby="sidebar-track-toggle"
+              className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:duration-0 ${isTrackListOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <div
+                  className="divide-y"
+                  style={
+                    { "--tw-divide-color": "var(--color-border-default)" } as React.CSSProperties
+                  }
+                >
+                  {tracks.map((track, index) => {
+                    const isActive = index === currentTrackIndex;
+                    return (
+                      <button
+                        key={track.id}
+                        type="button"
+                        onClick={() => {
+                          setCurrentTrackIndex(index);
+                          setIsTrackListOpen(false);
+                        }}
+                        className={`group w-full flex items-center gap-2 px-2.5 py-2 text-left transition-all ${
+                          isActive
+                            ? "bg-[var(--color-bg-secondary)] text-text-primary"
+                            : "hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:text-text-primary"
+                        }`}
+                      >
+                        <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
+                          {isActive ? (
+                            <Music className="w-3 h-3 text-[var(--color-text-secondary)]" />
+                          ) : (
+                            <span className="text-xs text-[var(--color-text-secondary)] font-mono">
+                              {index + 1}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div
+                            className={`font-mono text-xs truncate ${isActive ? "font-medium" : ""}`}
+                          >
+                            {track.title}
+                          </div>
+                          <div className="font-mono text-xs text-[var(--color-text-secondary)] truncate">
+                            {track.artist}
+                          </div>
+                        </div>
+                        {!isActive && (
+                          <Play className="w-3 h-3 text-text-primary/30 opacity-0 group-hover:opacity-100 flex-shrink-0" />
                         )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className={`font-mono text-xs truncate ${isActive ? "font-medium" : ""}`}>{track.title}</div>
-                        <div className="font-mono text-xs text-[var(--color-text-secondary)] truncate">{track.artist}</div>
-                      </div>
-                      {!isActive && (
-                        <Play className="w-3 h-3 text-text-primary/30 opacity-0 group-hover:opacity-100 flex-shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
       </div>
     </div>
   );
@@ -209,13 +221,14 @@ export const SidebarPlayer: React.FC<SidebarPlayerProps> = ({ currentDate = null
   } = useMonthlyTrendingMusic(currentDate);
 
   const monthlyPlayerTracks = useMemo<PlayerTrack[]>(
-    () => monthlyTracks.map((track) => ({
-      id: String(track.rank),
-      title: track.title,
-      artist: track.artist,
-      youtubeId: track.youtubeId,
-    })),
-    [monthlyTracks],
+    () =>
+      monthlyTracks.map((track) => ({
+        id: String(track.rank),
+        title: track.title,
+        artist: track.artist,
+        youtubeId: track.youtubeId,
+      })),
+    [monthlyTracks]
   );
 
   useEffect(() => {
@@ -238,7 +251,9 @@ export const SidebarPlayer: React.FC<SidebarPlayerProps> = ({ currentDate = null
   }
 
   if (error) {
-    return <MessageCard title="Monthly Top 10" body="Unable to load monthly chart data right now." />;
+    return (
+      <MessageCard title="Monthly Top 10" body="Unable to load monthly chart data right now." />
+    );
   }
 
   if (reason === "NO_DATA") {

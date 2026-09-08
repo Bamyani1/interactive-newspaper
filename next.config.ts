@@ -24,9 +24,9 @@ const nextConfig: NextConfig = {
   },
   images: {
     dangerouslyAllowSVG: true,
-    contentDispositionType: 'attachment',
+    contentDispositionType: "attachment",
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
-    formats: ['image/avif', 'image/webp'],
+    formats: ["image/avif", "image/webp"],
     minimumCacheTTL: 31_536_000,
     qualities: [75, 95],
     deviceSizes: [640, 828, 1200, 1920],
@@ -47,8 +47,8 @@ const nextConfig: NextConfig = {
     ],
     localPatterns: [
       {
-        pathname: '/api/editions/**',
-        search: '',
+        pathname: "/api/editions/**",
+        search: "",
       },
     ],
   },

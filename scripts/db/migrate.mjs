@@ -22,9 +22,9 @@ const { loadLocalEnv } = localEnvModule.default ?? localEnvModule;
 loadLocalEnv(path.resolve(scriptDir, "../../.env.local"));
 
 if (!process.env.DATABASE_URL) {
-    console.error("ERROR: DATABASE_URL is required.");
-    console.error("Set it in .env.local or export it before running this script.");
-    process.exit(1);
+  console.error("ERROR: DATABASE_URL is required.");
+  console.error("Set it in .env.local or export it before running this script.");
+  process.exit(1);
 }
 
 const migrationRunnerModule = await import("./lib/migration-runner.ts");
@@ -35,29 +35,29 @@ const { createNeonExecutor } = neonExecutorModule.default ?? neonExecutorModule;
 const isStatus = process.argv.includes("--status");
 
 function printList(label, ids) {
-    console.log(`${label} (${ids.length}):${ids.length === 0 ? " none" : ""}`);
-    for (const id of ids) {
-        console.log(`  ${id}`);
-    }
+  console.log(`${label} (${ids.length}):${ids.length === 0 ? " none" : ""}`);
+  for (const id of ids) {
+    console.log(`  ${id}`);
+  }
 }
 
 async function main() {
-    const executor = createNeonExecutor(process.env.DATABASE_URL);
+  const executor = createNeonExecutor(process.env.DATABASE_URL);
 
-    if (isStatus) {
-        const status = await migrationStatus(executor);
-        printList("Applied", status.applied);
-        printList("Pending", status.pending);
-        return;
-    }
+  if (isStatus) {
+    const status = await migrationStatus(executor);
+    printList("Applied", status.applied);
+    printList("Pending", status.pending);
+    return;
+  }
 
-    const result = await runMigrations(executor);
-    printList("Applied", result.applied);
-    printList("Skipped (concurrent runner won)", result.skipped);
-    printList("Already applied", result.alreadyApplied);
+  const result = await runMigrations(executor);
+  printList("Applied", result.applied);
+  printList("Skipped (concurrent runner won)", result.skipped);
+  printList("Already applied", result.alreadyApplied);
 }
 
 main().catch((error) => {
-    console.error("Migration failed:", error instanceof Error ? error.message : error);
-    process.exit(1);
+  console.error("Migration failed:", error instanceof Error ? error.message : error);
+  process.exit(1);
 });

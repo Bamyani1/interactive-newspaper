@@ -5,7 +5,7 @@ import { SourceList } from "@/features/ask-archive";
 import type { AskResponse } from "@/src/types";
 
 vi.mock("next/navigation", () => ({
-    useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
 type SourceArticle = AskResponse["sourceArticles"][number];
@@ -27,10 +27,7 @@ function makeSource(overrides: Partial<SourceArticle> = {}): SourceArticle {
 
 describe("SourceList", () => {
   it("renders source cards when expanded (default)", () => {
-    const sources = [
-      makeSource(),
-      makeSource({ id: "1960-01-07-1", headline: "Second Article" }),
-    ];
+    const sources = [makeSource(), makeSource({ id: "1960-01-07-1", headline: "Second Article" })];
     render(<SourceList sources={sources} />);
 
     expect(screen.getByText(/Test Article/)).toBeInTheDocument();
@@ -38,23 +35,16 @@ describe("SourceList", () => {
   });
 
   it("shows the correct source count in the toggle button", () => {
-    const sources = [
-      makeSource(),
-      makeSource({ id: "1960-01-07-1", headline: "Second Article" }),
-    ];
+    const sources = [makeSource(), makeSource({ id: "1960-01-07-1", headline: "Second Article" })];
     render(<SourceList sources={sources} />);
 
-    expect(
-      screen.getByRole("button", { name: /sources — 2 articles/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sources — 2 articles/i })).toBeInTheDocument();
   });
 
   it("shows singular 'article' for single source", () => {
     render(<SourceList sources={[makeSource()]} />);
 
-    expect(
-      screen.getByRole("button", { name: /sources — 1 article/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sources — 1 article/i })).toBeInTheDocument();
   });
 
   it("collapses and expands on toggle click", () => {
@@ -91,9 +81,7 @@ describe("SourceList", () => {
     expect(screen.getByText(/Phone Fraud Story/)).toBeInTheDocument();
     expect(screen.getByText("News")).toBeInTheDocument();
     expect(screen.getByText("1960-02-03")).toBeInTheDocument();
-    expect(
-      screen.getByText("Students were fined for phone fraud..."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Students were fined for phone fraud...")).toBeInTheDocument();
   });
 
   it("renders headline with source index prefix", () => {
@@ -105,12 +93,8 @@ describe("SourceList", () => {
 
     expect(screen.getByText("[1]")).toBeInTheDocument();
     expect(screen.getByText("[2]")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /First Story/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /Second Story/ }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /First Story/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Second Story/ })).toBeInTheDocument();
   });
 
   it("makes each source card an activatable button for the reader drawer", () => {

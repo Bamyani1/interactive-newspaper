@@ -57,7 +57,6 @@ export function CathedralBackground() {
       {/* Layer 2: Ambient color bleed */}
       <div className="cathedral-ambient" />
 
-
       {/* Layer 5: Gothic vignette */}
       <div className="cathedral-vignette" />
 
@@ -67,16 +66,18 @@ export function CathedralBackground() {
           <div
             key={mote.id}
             className="cathedral-mote"
-            style={{
-              width: mote.size,
-              height: mote.size,
-              left: `${mote.left}%`,
-              top: `${mote.startY}%`,
-              "--mote-opacity-start": mote.opacityStart,
-              "--mote-opacity-mid": mote.opacityMid,
-              "--mote-opacity-end": mote.opacityEnd,
-              animation: `cathedralMoteFloat ${mote.duration}s ease-in-out ${mote.delay}s infinite`,
-            } as React.CSSProperties}
+            style={
+              {
+                width: mote.size,
+                height: mote.size,
+                left: `${mote.left}%`,
+                top: `${mote.startY}%`,
+                "--mote-opacity-start": mote.opacityStart,
+                "--mote-opacity-mid": mote.opacityMid,
+                "--mote-opacity-end": mote.opacityEnd,
+                animation: `cathedralMoteFloat ${mote.duration}s ease-in-out ${mote.delay}s infinite`,
+              } as React.CSSProperties
+            }
           />
         ))}
       </div>

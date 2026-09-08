@@ -35,16 +35,12 @@ export default function SearchPage() {
             Search 56 years of The Transcript
           </h1>
           <p className="max-w-2xl text-base text-[var(--color-text-secondary)] leading-relaxed mb-6">
-            Find people, places, headlines, and campus events across editions
-            published from 1950 through 2006.
+            Find people, places, headlines, and campus events across editions published from 1950
+            through 2006.
           </p>
 
           <div className="flex flex-col gap-4 mb-8">
-            <SearchBar
-              value={query}
-              onChange={setQuery}
-              isLoading={isLoading}
-            />
+            <SearchBar value={query} onChange={setQuery} isLoading={isLoading} />
             <SearchFilters
               category={category}
               onCategoryChange={setCategory}

@@ -33,9 +33,7 @@ const CSV_URL =
 // chart-1960-2000.json over re-fetched data, so it is safe to ask for
 // the full 1958-08..2010 span — only slots the old archive left null
 // (e.g. 1969-11 and 1969-12) will be backfilled.
-const RANGES = [
-  { startYear: 1950, startMonth: 1, endYear: 2010, endMonth: 12 },
-];
+const RANGES = [{ startYear: 1950, startMonth: 1, endYear: 2010, endMonth: 12 }];
 const HOT100_MIN_DATE = "1958-08-04"; // first ever Hot 100
 
 async function ensureCsvDownloaded() {

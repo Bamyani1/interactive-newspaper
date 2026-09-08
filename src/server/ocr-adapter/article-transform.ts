@@ -8,11 +8,7 @@ import {
   isBodyMostlyCaption,
   isValidImageFile,
 } from "./image-rules";
-import {
-  bodyToHtml,
-  cleanBodyPreamble,
-  extractSummary,
-} from "./text-cleaning";
+import { bodyToHtml, cleanBodyPreamble, extractSummary } from "./text-cleaning";
 
 export function computePageCount(edition: OcrEdition): number {
   if (!Array.isArray(edition.articles)) return 1;
@@ -39,7 +35,7 @@ export function transformArticles(edition: OcrEdition): Article[] {
 
   for (let i = 0; i < edition.articles.length; i++) {
     const a = edition.articles[i];
-    const authorRaw = a.author === "null" ? "" : (a.author || "");
+    const authorRaw = a.author === "null" ? "" : a.author || "";
     const hasAuthor = Boolean(authorRaw);
     const preamble = cleanBodyPreamble(a.body ?? "", hasAuthor);
     let cleanBody = preamble.body;
@@ -55,7 +51,7 @@ export function transformArticles(edition: OcrEdition): Article[] {
     const rawImageUrls = rawEntries.map(({ f }) => resolveImageUrl(date, f));
 
     const rawImageCaptions: (string | null)[] = rawEntries.map(
-      ({ idx }) => a.images?.[idx]?.caption || null,
+      ({ idx }) => a.images?.[idx]?.caption || null
     );
 
     // Filter out author headshots
@@ -114,7 +110,10 @@ export function transformArticles(edition: OcrEdition): Article[] {
 
   // Reclassify photo-only items as Arts & Entertainment
   for (const article of articles) {
-    const plainText = article.fullText.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    const plainText = article.fullText
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
     const hasHeadline = article.headline.trim().length > 0;
     const hasBody = plainText.length > 0;
     const hasImages = article.imageUrls.length > 0;
@@ -125,7 +124,10 @@ export function transformArticles(edition: OcrEdition): Article[] {
 
   // Filter out empty and very-short text-only articles
   const filtered = articles.filter((article) => {
-    const plainText = article.fullText.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    const plainText = article.fullText
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
     const hasImages = article.imageUrls.length > 0;
     const hasHeadline = article.headline.trim().length > 0;
 
@@ -152,9 +154,7 @@ export function transformArticles(edition: OcrEdition): Article[] {
 
   // Assign hero & featured: prioritize articles with images (excluding photo-only items)
   const isPhotoOnly = (a: Article) =>
-    a.imageUrls.length > 0 &&
-    !a.headline.trim() &&
-    !a.fullText.replace(/<[^>]+>/g, "").trim();
+    a.imageUrls.length > 0 && !a.headline.trim() && !a.fullText.replace(/<[^>]+>/g, "").trim();
 
   const withImages = filtered.filter((a) => a.imageUrls.length > 0 && !isPhotoOnly(a));
   const withoutImages = filtered.filter((a) => a.imageUrls.length === 0);

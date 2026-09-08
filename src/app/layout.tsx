@@ -1,10 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import {
-  Playfair_Display,
-  Source_Serif_4,
-  JetBrains_Mono,
-} from "next/font/google";
+import { Playfair_Display, Source_Serif_4, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { ArchiveProvider } from "@/features/archive";
@@ -70,9 +66,7 @@ export default async function RootLayout({
         </a>
         <MotionProvider>
           <ArchiveProvider initialEditions={editionDates}>
-            <ErrorBoundary>
-              {children}
-            </ErrorBoundary>
+            <ErrorBoundary>{children}</ErrorBoundary>
           </ArchiveProvider>
         </MotionProvider>
         {isVercelDeployment ? <Analytics /> : null}

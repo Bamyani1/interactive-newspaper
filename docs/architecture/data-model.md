@@ -10,12 +10,12 @@
 
 As of this writing:
 
-| Metric | Value |
-|---|---|
-| Editions | 351 |
-| Articles | 11,705 |
-| Ads | 6,846 |
-| Embedding dimension | 768 |
+| Metric                | Value                                                      |
+| --------------------- | ---------------------------------------------------------- |
+| Editions              | 351                                                        |
+| Articles              | 11,705                                                     |
+| Ads                   | 6,846                                                      |
+| Embedding dimension   | 768                                                        |
 | Active vector records | Query with `npm run db:embed -- --dry-run` after migration |
 
 Every tuning decision in this doc is anchored in that scale. "RRF K=40 because the corpus is small" means "small relative to ~12k articles."
@@ -147,12 +147,12 @@ GET /api/editions/[date]
 
 Source: `scripts/db/migrations/0002_legacy_core.sql:6-11`.
 
-| Column | Type | Notes |
-|---|---|---|
-| `date` | `TEXT PRIMARY KEY` | `YYYY-MM-DD` string |
-| `publication_info` | `TEXT NOT NULL DEFAULT ''` | masthead text |
-| `page_count` | `INTEGER NOT NULL DEFAULT 1` |  |
-| `article_count` | `INTEGER NOT NULL DEFAULT 0` |  |
+| Column             | Type                         | Notes               |
+| ------------------ | ---------------------------- | ------------------- |
+| `date`             | `TEXT PRIMARY KEY`           | `YYYY-MM-DD` string |
+| `publication_info` | `TEXT NOT NULL DEFAULT ''`   | masthead text       |
+| `page_count`       | `INTEGER NOT NULL DEFAULT 1` |                     |
+| `article_count`    | `INTEGER NOT NULL DEFAULT 0` |                     |
 
 No secondary indexes. `date` is the FK target for `articles` and `ads`. Written by `seed.mjs` with `ON CONFLICT DO UPDATE`.
 
@@ -164,48 +164,48 @@ Columns grouped by access pattern:
 
 **Hot — read on every query**
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | `TEXT PRIMARY KEY` | `'{date}-{index}'` |
-| `edition_date` | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target |
-| `headline` | `TEXT NOT NULL DEFAULT ''` | result display + FTS weight A |
-| `body_plain` | `TEXT NOT NULL DEFAULT ''` | canonical plain text and legacy fallback evidence |
-| `search_vector` | `TSVECTOR` | auto-populated by trigger; GIN indexed |
-| `embedding` | `VECTOR(768)` | legacy rollback/cutover vector; active v2 vectors live in child tables |
+| Column          | Type                                      | Notes                                                                  |
+| --------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
+| `id`            | `TEXT PRIMARY KEY`                        | `'{date}-{index}'`                                                     |
+| `edition_date`  | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target                                                   |
+| `headline`      | `TEXT NOT NULL DEFAULT ''`                | result display + FTS weight A                                          |
+| `body_plain`    | `TEXT NOT NULL DEFAULT ''`                | canonical plain text and legacy fallback evidence                      |
+| `search_vector` | `TSVECTOR`                                | auto-populated by trigger; GIN indexed                                 |
+| `embedding`     | `VECTOR(768)`                             | legacy rollback/cutover vector; active v2 vectors live in child tables |
 
 **Warm — read on result hydration**
 
-| Column | Type | Notes |
-|---|---|---|
-| `position` | `INTEGER NOT NULL` | preserves adapter ordering |
-| `category` | `TEXT NOT NULL DEFAULT 'News'` | filter facet |
-| `summary` | `TEXT NOT NULL DEFAULT ''` | result display + FTS weight B |
-| `byline` | `TEXT` | result display; FTS weight C |
-| `image_urls` | `JSONB NOT NULL DEFAULT '[]'` | result display |
-| `image_caption` | `TEXT` | result display |
-| `full_text` | `TEXT NOT NULL DEFAULT ''` | HTML body for article reader |
+| Column          | Type                           | Notes                         |
+| --------------- | ------------------------------ | ----------------------------- |
+| `position`      | `INTEGER NOT NULL`             | preserves adapter ordering    |
+| `category`      | `TEXT NOT NULL DEFAULT 'News'` | filter facet                  |
+| `summary`       | `TEXT NOT NULL DEFAULT ''`     | result display + FTS weight B |
+| `byline`        | `TEXT`                         | result display; FTS weight C  |
+| `image_urls`    | `JSONB NOT NULL DEFAULT '[]'`  | result display                |
+| `image_caption` | `TEXT`                         | result display                |
+| `full_text`     | `TEXT NOT NULL DEFAULT ''`     | HTML body for article reader  |
 
 **Cold — written once by adapter, rarely read**
 
-| Column | Type | Notes |
-|---|---|---|
-| `writer_position` | `TEXT` | ALTER TABLE addition |
-| `page` | `INTEGER NOT NULL DEFAULT 1` |  |
-| `is_hero` | `BOOLEAN NOT NULL DEFAULT FALSE` | hero card on edition page |
-| `is_featured` | `BOOLEAN NOT NULL DEFAULT FALSE` |  |
-| `image_captions` | `JSONB NOT NULL DEFAULT '[]'` | parallel to `image_urls` |
-| `embedding_model` | `TEXT` | records model name; used for migrations |
-| `embedding_input_hash`, `embedding_input_version` | `TEXT` | legacy vector identity metadata |
+| Column                                            | Type                             | Notes                                   |
+| ------------------------------------------------- | -------------------------------- | --------------------------------------- |
+| `writer_position`                                 | `TEXT`                           | ALTER TABLE addition                    |
+| `page`                                            | `INTEGER NOT NULL DEFAULT 1`     |                                         |
+| `is_hero`                                         | `BOOLEAN NOT NULL DEFAULT FALSE` | hero card on edition page               |
+| `is_featured`                                     | `BOOLEAN NOT NULL DEFAULT FALSE` |                                         |
+| `image_captions`                                  | `JSONB NOT NULL DEFAULT '[]'`    | parallel to `image_urls`                |
+| `embedding_model`                                 | `TEXT`                           | records model name; used for migrations |
+| `embedding_input_hash`, `embedding_input_version` | `TEXT`                           | legacy vector identity metadata         |
 
 Indexes:
 
-| Index | Columns | Type |
-|---|---|---|
-| `idx_articles_edition` | `(edition_date)` | B-tree |
-| `idx_articles_category` | `(category)` | B-tree |
-| `idx_articles_byline` | `(byline) WHERE byline IS NOT NULL` | partial B-tree |
-| `idx_articles_search` | `(search_vector)` | GIN |
-| `idx_articles_embedding` | `(embedding vector_cosine_ops)` | HNSW (`m=16, ef_construction=128`) |
+| Index                    | Columns                             | Type                               |
+| ------------------------ | ----------------------------------- | ---------------------------------- |
+| `idx_articles_edition`   | `(edition_date)`                    | B-tree                             |
+| `idx_articles_category`  | `(category)`                        | B-tree                             |
+| `idx_articles_byline`    | `(byline) WHERE byline IS NOT NULL` | partial B-tree                     |
+| `idx_articles_search`    | `(search_vector)`                   | GIN                                |
+| `idx_articles_embedding` | `(embedding vector_cosine_ops)`     | HNSW (`m=16, ef_construction=128`) |
 
 The `search_vector` is maintained by a `BEFORE INSERT OR UPDATE` trigger (`articles_search_vector_trig`) that calls `articles_search_vector_update()`. Weights: `headline(A)`, `summary(B)`, `byline(C)`, `body_plain(C)`.
 
@@ -215,16 +215,16 @@ Source: `scripts/db/migrations/0005_rag_evidence_tables.sql` plus `0009_revision
 
 Each row is one deterministic sentence-aware article segment. `id` is `{article_id}:{chunk_index padded to four digits}`. `article_id` cascades on delete.
 
-| Column | Type | Notes |
-|---|---|---|
-| `index_build_id` | `TEXT REFERENCES rag_index_builds(id)` | **nullable** — `NULL` marks legacy seed rows, which versioned retrieval never serves (runtime SQL filters by an explicit build id); build-scoped rows are written only by the index build tool |
-| `content_revision_id` | `TEXT REFERENCES content_revisions(id)` | nullable; keys versioned rows to an immutable content revision; legacy rows keep `NULL` |
-| `chunk_text` | `TEXT NOT NULL` | evidence sent to reranking/generation when matched |
-| `search_vector` | `TSVECTOR` | trigger-maintained and GIN indexed |
-| `embedding` | `VECTOR(768)` | HNSW cosine index |
-| `embedding_model` | `TEXT` | must equal the query embedding model |
-| `embedding_input_version` | `TEXT` | currently `article-chunk-v1` |
-| `embedding_input_hash` | `TEXT NOT NULL` | SHA-256 identity of canonical model/version/input |
+| Column                    | Type                                    | Notes                                                                                                                                                                                          |
+| ------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index_build_id`          | `TEXT REFERENCES rag_index_builds(id)`  | **nullable** — `NULL` marks legacy seed rows, which versioned retrieval never serves (runtime SQL filters by an explicit build id); build-scoped rows are written only by the index build tool |
+| `content_revision_id`     | `TEXT REFERENCES content_revisions(id)` | nullable; keys versioned rows to an immutable content revision; legacy rows keep `NULL`                                                                                                        |
+| `chunk_text`              | `TEXT NOT NULL`                         | evidence sent to reranking/generation when matched                                                                                                                                             |
+| `search_vector`           | `TSVECTOR`                              | trigger-maintained and GIN indexed                                                                                                                                                             |
+| `embedding`               | `VECTOR(768)`                           | HNSW cosine index                                                                                                                                                                              |
+| `embedding_model`         | `TEXT`                                  | must equal the query embedding model                                                                                                                                                           |
+| `embedding_input_version` | `TEXT`                                  | currently `article-chunk-v1`                                                                                                                                                                   |
+| `embedding_input_hash`    | `TEXT NOT NULL`                         | SHA-256 identity of canonical model/version/input                                                                                                                                              |
 
 Uniqueness is two partial unique indexes, not one table constraint: `uq_article_chunks_legacy` on `(article_id, chunk_index) WHERE index_build_id IS NULL` and `uq_article_chunks_build` on `(index_build_id, article_id, chunk_index) WHERE index_build_id IS NOT NULL`.
 
@@ -234,16 +234,16 @@ Source: `scripts/db/migrations/0005_rag_evidence_tables.sql` plus `0009_revision
 
 Each row represents one image, not one article. `id` is `{article_id}:image:{image_index padded to three digits}`.
 
-| Column | Type | Notes |
-|---|---|---|
-| `index_build_id` | `TEXT REFERENCES rag_index_builds(id)` | **nullable** — `NULL` marks legacy seed rows, never served by versioned retrieval |
-| `content_revision_id` | `TEXT REFERENCES content_revisions(id)` | nullable; legacy rows keep `NULL` |
-| `image_url` | `TEXT NOT NULL` | source image/CDN identity |
-| `caption` | `TEXT` | semantic text paired with the image |
-| `embedding` | `VECTOR(768)` | one multimodal vector; HNSW indexed |
-| `embedding_model` | `TEXT` | current stable embedding model |
-| `embedding_input_version` | `TEXT` | currently `article-image-v1` |
-| `embedding_input_hash` | `TEXT` | includes model, version, text, MIME type, and image bytes |
+| Column                    | Type                                    | Notes                                                                             |
+| ------------------------- | --------------------------------------- | --------------------------------------------------------------------------------- |
+| `index_build_id`          | `TEXT REFERENCES rag_index_builds(id)`  | **nullable** — `NULL` marks legacy seed rows, never served by versioned retrieval |
+| `content_revision_id`     | `TEXT REFERENCES content_revisions(id)` | nullable; legacy rows keep `NULL`                                                 |
+| `image_url`               | `TEXT NOT NULL`                         | source image/CDN identity                                                         |
+| `caption`                 | `TEXT`                                  | semantic text paired with the image                                               |
+| `embedding`               | `VECTOR(768)`                           | one multimodal vector; HNSW indexed                                               |
+| `embedding_model`         | `TEXT`                                  | current stable embedding model                                                    |
+| `embedding_input_version` | `TEXT`                                  | currently `article-image-v1`                                                      |
+| `embedding_input_hash`    | `TEXT`                                  | includes model, version, text, MIME type, and image bytes                         |
 
 Same uniqueness pattern as chunks: `uq_article_images_legacy` on `(article_id, image_index) WHERE index_build_id IS NULL` and `uq_article_images_build` on `(index_build_id, article_id, image_index) WHERE index_build_id IS NOT NULL`.
 
@@ -251,18 +251,18 @@ Same uniqueness pattern as chunks: `uq_article_images_legacy` on `(article_id, i
 
 Source: `scripts/db/migrations/0002_legacy_core.sql:47-70`.
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | `SERIAL PRIMARY KEY` |  |
-| `edition_date` | `TEXT NOT NULL REFERENCES editions(date)` |  |
-| `position` | `INTEGER NOT NULL` |  |
-| `title` | `TEXT NOT NULL DEFAULT ''` | maps from `business_name` |
-| `body` | `TEXT NOT NULL DEFAULT ''` |  |
-| `category` | `TEXT` | validated against `VALID_AD_CATEGORIES` |
-| `ad_type` | `TEXT` | `'display'` or `'classified'` |
-| `display_text` | `TEXT` | nullable |
-| `phone`, `address`, `price` | `TEXT` | nullable |
-| `image_urls` | `JSONB NOT NULL DEFAULT '[]'` |  |
+| Column                      | Type                                      | Notes                                   |
+| --------------------------- | ----------------------------------------- | --------------------------------------- |
+| `id`                        | `SERIAL PRIMARY KEY`                      |                                         |
+| `edition_date`              | `TEXT NOT NULL REFERENCES editions(date)` |                                         |
+| `position`                  | `INTEGER NOT NULL`                        |                                         |
+| `title`                     | `TEXT NOT NULL DEFAULT ''`                | maps from `business_name`               |
+| `body`                      | `TEXT NOT NULL DEFAULT ''`                |                                         |
+| `category`                  | `TEXT`                                    | validated against `VALID_AD_CATEGORIES` |
+| `ad_type`                   | `TEXT`                                    | `'display'` or `'classified'`           |
+| `display_text`              | `TEXT`                                    | nullable                                |
+| `phone`, `address`, `price` | `TEXT`                                    | nullable                                |
+| `image_urls`                | `JSONB NOT NULL DEFAULT '[]'`             |                                         |
 
 Index: `idx_ads_edition` on `(edition_date)`. The SERIAL PK means ads can't be upserted — seed does a `DELETE WHERE edition_date = $date` before insert.
 
@@ -363,7 +363,7 @@ CREATE INDEX IF NOT EXISTS answer_cache_scope_idx
   ON answer_cache (cache_identity, filters_hash, created_at DESC);
 ```
 
-Durable half of the semantic answer cache (`answer-cache.ts`): a stored answer is reused only when a new question's embedding is close enough *within the same* `cache_identity` scope, so any pipeline/model/corpus/retrieval change invalidates by scoping rather than deletion. Low volume — an exact scan, no vector index. Bypassed when conversation history is non-empty, and agent-loop answers are never cached. See [rag-pipeline.md](./rag-pipeline.md).
+Durable half of the semantic answer cache (`answer-cache.ts`): a stored answer is reused only when a new question's embedding is close enough _within the same_ `cache_identity` scope, so any pipeline/model/corpus/retrieval change invalidates by scoping rather than deletion. Low volume — an exact scan, no vector index. Bypassed when conversation history is non-empty, and agent-loop answers are never cached. See [rag-pipeline.md](./rag-pipeline.md).
 
 ### `year_digests`
 
@@ -393,24 +393,24 @@ Source: `scripts/db/migrations/0002_legacy_core.sql:85-93`. Composite PK `(year,
 
 Created by migrations `0004` and `0006`–`0009`. Column-by-column detail lives in those migration files, deliberately not duplicated here. Nothing in the runtime writes these yet; the writers are `backfill-identities.mjs`, `register-corpus-version.mjs`, and the Phase 4 publisher below (all data-only, `--yes`-gated, local/test databases only in this phase).
 
-| Table | Purpose |
-|---|---|
-| `schema_migrations` | Migration ledger: `id`, `checksum`, `applied_at`, `duration_ms`, `runner_version`. Created by the runner itself, not by a numbered migration |
-| `rag_index_builds` | Immutable index-build identity + status state machine (`building`→`validated`→`active`/`failed`/`retired`); partial unique index enforces one active build per corpus version |
-| `source_records` | Immutable external source identity: `(source_system, pointer)` unique, classified by `kind` |
-| `issues` | Stable internal issue identity per canonical date; points at the active edition revision |
-| `legacy_edition_aliases` | Maps legacy `editions.date` to an issue id |
-| `edition_revisions` | Immutable per-run edition snapshots, unique on `(issue_id, revision_hash)` |
-| `edition_revision_pages` | Page-level provenance and `processed`/`failed`/`missing` status per revision |
-| `content_items` | Stable content identity per issue: `(issue_id, identity_key)` unique, with identity evidence and an active-revision pointer |
-| `content_revisions` | Immutable content snapshots; a `BEFORE UPDATE` trigger (`content_revisions_immutable_trig`) rejects any `UPDATE` |
-| `legacy_content_aliases` | Maps legacy article ids to content items/revisions (articles only in Phase 3) |
-| `content_identity_conflicts` | Review queue for ambiguous re-OCR identity matches |
-| `assets` | Content-addressed asset registry keyed by `sha256`; rows are immutable |
-| `asset_references` | Per-revision image references `(content_revision_id, position)` → asset, with role and printed caption |
-| `publication_runs` | Publication state machine (`discovered` → … → `active`/`failed`/`rolled_back`) |
-| `publication_run_events` | Append-only transition log per run |
-| `corpus_versions` | Corpus version registry; the frozen legacy snapshot row is registered by `register-corpus-version.mjs`, never by migrations |
+| Table                        | Purpose                                                                                                                                                                       |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_migrations`          | Migration ledger: `id`, `checksum`, `applied_at`, `duration_ms`, `runner_version`. Created by the runner itself, not by a numbered migration                                  |
+| `rag_index_builds`           | Immutable index-build identity + status state machine (`building`→`validated`→`active`/`failed`/`retired`); partial unique index enforces one active build per corpus version |
+| `source_records`             | Immutable external source identity: `(source_system, pointer)` unique, classified by `kind`                                                                                   |
+| `issues`                     | Stable internal issue identity per canonical date; points at the active edition revision                                                                                      |
+| `legacy_edition_aliases`     | Maps legacy `editions.date` to an issue id                                                                                                                                    |
+| `edition_revisions`          | Immutable per-run edition snapshots, unique on `(issue_id, revision_hash)`                                                                                                    |
+| `edition_revision_pages`     | Page-level provenance and `processed`/`failed`/`missing` status per revision                                                                                                  |
+| `content_items`              | Stable content identity per issue: `(issue_id, identity_key)` unique, with identity evidence and an active-revision pointer                                                   |
+| `content_revisions`          | Immutable content snapshots; a `BEFORE UPDATE` trigger (`content_revisions_immutable_trig`) rejects any `UPDATE`                                                              |
+| `legacy_content_aliases`     | Maps legacy article ids to content items/revisions (articles only in Phase 3)                                                                                                 |
+| `content_identity_conflicts` | Review queue for ambiguous re-OCR identity matches                                                                                                                            |
+| `assets`                     | Content-addressed asset registry keyed by `sha256`; rows are immutable                                                                                                        |
+| `asset_references`           | Per-revision image references `(content_revision_id, position)` → asset, with role and printed caption                                                                        |
+| `publication_runs`           | Publication state machine (`discovered` → … → `active`/`failed`/`rolled_back`)                                                                                                |
+| `publication_run_events`     | Append-only transition log per run                                                                                                                                            |
+| `corpus_versions`            | Corpus version registry; the frozen legacy snapshot row is registered by `register-corpus-version.mjs`, never by migrations                                                   |
 
 ### Versioned publisher (Phase 4)
 
@@ -481,29 +481,29 @@ TypeScript mirror: `src/types/index.ts:147-155` (`OcrEdition`).
 
 ### Top-level shape
 
-| Field | Type | Required? | Notes |
-|---|---|---|---|
-| `edition_date` | `string` | yes | `YYYY-MM-DD` |
-| `publication_info` | `string` | yes | masthead text |
-| `articles` | `MergedArticle[]` | yes | may be empty |
-| `ads` | `Ad[]` | no | raw, no enrichment |
-| `enriched_ads` | `EnrichedAd[]` | no | added by Phase 4; adapter prefers this over `ads` |
-| `categories` | `string[]` | no | parallel to `articles[]`; optional classification override; adapter checks it before falling back to `article.category` then heuristics |
-| `other_content` | `{title, body}[]` | no | triage rejects — not written to the legacy tables; the Phase 4 revision writer stages substantive entries (non-empty body) as versioned content |
+| Field              | Type              | Required? | Notes                                                                                                                                           |
+| ------------------ | ----------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `edition_date`     | `string`          | yes       | `YYYY-MM-DD`                                                                                                                                    |
+| `publication_info` | `string`          | yes       | masthead text                                                                                                                                   |
+| `articles`         | `MergedArticle[]` | yes       | may be empty                                                                                                                                    |
+| `ads`              | `Ad[]`            | no        | raw, no enrichment                                                                                                                              |
+| `enriched_ads`     | `EnrichedAd[]`    | no        | added by Phase 4; adapter prefers this over `ads`                                                                                               |
+| `categories`       | `string[]`        | no        | parallel to `articles[]`; optional classification override; adapter checks it before falling back to `article.category` then heuristics         |
+| `other_content`    | `{title, body}[]` | no        | triage rejects — not written to the legacy tables; the Phase 4 revision writer stages substantive entries (non-empty body) as versioned content |
 
 ### `MergedArticle` per item
 
-| Field | Type | Required? | Notes |
-|---|---|---|---|
-| `headline` | `string` | yes (default `""`) | primary title only |
-| `author` | `string` | no (default `""`) | may include section tag |
-| `writer_position` | `string` | no (default `""`) | role line if present |
-| `category` | `Literal[...]` | yes (default `"News"`) | one of five fixed values |
-| `body` | `string` | yes (default `""`) | raw paragraph text |
-| `images` | `ArticleImage[]` | no | each has `caption`, `position` |
-| `image_files` | `string[]` | no | filenames; adapter filters to valid extensions |
-| `source_pages` | `string[]` | no | used to compute `page` and `page_count` |
-| `continues_on`, `continued_from` | `string` | no | normalized; `"?"` means uncertain |
+| Field                            | Type             | Required?              | Notes                                          |
+| -------------------------------- | ---------------- | ---------------------- | ---------------------------------------------- |
+| `headline`                       | `string`         | yes (default `""`)     | primary title only                             |
+| `author`                         | `string`         | no (default `""`)      | may include section tag                        |
+| `writer_position`                | `string`         | no (default `""`)      | role line if present                           |
+| `category`                       | `Literal[...]`   | yes (default `"News"`) | one of five fixed values                       |
+| `body`                           | `string`         | yes (default `""`)     | raw paragraph text                             |
+| `images`                         | `ArticleImage[]` | no                     | each has `caption`, `position`                 |
+| `image_files`                    | `string[]`       | no                     | filenames; adapter filters to valid extensions |
+| `source_pages`                   | `string[]`       | no                     | used to compute `page` and `page_count`        |
+| `continues_on`, `continued_from` | `string`         | no                     | normalized; `"?"` means uncertain              |
 
 Invariant: `images.length === image_files.length` with matching order. A mismatch fails candidate validation before publication.
 
@@ -614,10 +614,10 @@ driven by the input version, not by a command-line switch: bump
 `RAG_TEXT_EMBEDDING_INPUT_VERSION` or `RAG_IMAGE_EMBEDDING_INPUT_VERSION` in
 `src/lib/rag-model-config.ts`, which makes every existing row stale, then run `db:embed`.
 
-| Command | Effect |
-|---|---|
-| `npm run db:embed -- --dry-run` | Counts pending chunks/images and estimates online cost; no model call |
-| `npm run db:embed` | Missing/stale model or version rows only |
+| Command                                    | Effect                                                                      |
+| ------------------------------------------ | --------------------------------------------------------------------------- |
+| `npm run db:embed -- --dry-run`            | Counts pending chunks/images and estimates online cost; no model call       |
+| `npm run db:embed`                         | Missing/stale model or version rows only                                    |
 | `npm run db:embed -- --legacy-unversioned` | Targets the pre-build legacy article vectors instead of the versioned index |
 
 - Script text batch size: 50 chunks.
@@ -638,13 +638,13 @@ score(article) = vectorWeight / (RRF_K + vectorRank)
 
 Defaults (all tunable per-call):
 
-| Parameter | Default | Notes |
-|---|---|---|
-| `vectorWeight` | 0.7 |  |
-| `ftsWeight` | 0.3 | = `1 - vectorWeight` |
-| `limit` | 8 | final results |
-| `fetchK` | `min(3 * limit, 100)` | candidates fetched from each source before fusion |
-| `RRF_K` | 40 | standard is 60; lowered for better differentiation on small corpus |
+| Parameter      | Default               | Notes                                                              |
+| -------------- | --------------------- | ------------------------------------------------------------------ |
+| `vectorWeight` | 0.7                   |                                                                    |
+| `ftsWeight`    | 0.3                   | = `1 - vectorWeight`                                               |
+| `limit`        | 8                     | final results                                                      |
+| `fetchK`       | `min(3 * limit, 100)` | candidates fetched from each source before fusion                  |
+| `RRF_K`        | 40                    | standard is 60; lowered for better differentiation on small corpus |
 
 Route.ts overrides by mode:
 
@@ -659,10 +659,10 @@ Articles appearing in both result sets get both scores summed and their `source`
 
 Canonical system: numbered SQL files in `scripts/db/migrations/` (`NNNN_snake_case.sql`, currently `0001`–`0011`), applied by `scripts/db/lib/migration-runner.ts` through the CLI `scripts/db/migrate.mjs`. All schema comes from here — nothing else runs DDL. `scripts/db/schema.sql` no longer exists; the old file is frozen as `tests/db/fixtures/legacy-draft-schema.sql`, where the upgrade-path tests prove the canonical migrations converge a database that was created from it.
 
-| Command | Effect |
-|---|---|
-| `npm run db:migrate` | Apply pending migrations |
-| `npm run db:migrate:status` | Show applied/pending without applying |
+| Command                      | Effect                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `npm run db:migrate`         | Apply pending migrations                                                                                                 |
+| `npm run db:migrate:status`  | Show applied/pending without applying                                                                                    |
 | `npm run db:schema:snapshot` | Apply every migration to in-memory PGlite and regenerate `scripts/db/schema-snapshot.json`; run after adding a migration |
 
 ### Ledger
@@ -698,15 +698,15 @@ Each pending migration is submitted as **one non-interactive transaction** over 
 
 The pre-ledger one-off `migrate-*.mjs` scripts in `scripts/db/` are kept as production-history artifacts. The canonical migrations converge a database to the same shape regardless of whether they ever ran; do not run them for new work.
 
-| Script | Status |
-|---|---|
-| `migrate-ai-spend-counter.mjs` | Superseded by `0003_runtime_tables.sql` |
-| `migrate-api-rate-bucket.mjs` | Superseded by `0003_runtime_tables.sql` |
-| `migrate-ask-sessions.mjs` | Superseded by `0003_runtime_tables.sql` |
-| `migrate-ask-feedback.mjs` | Superseded by `0003_runtime_tables.sql` |
-| `migrate-rag-v2.mjs` | Renamed to `backfill-rag-records.mjs` (`npm run db:backfill:rag-records`); its DDL moved into `0005_rag_evidence_tables.sql`, leaving a deterministic DML-only backfill |
-| `migrate-rag-improvements.mjs` | Legacy whole-article migration, superseded by RAG v2 |
-| `recreate-hnsw-index.mjs` | Legacy article-vector index rebuild; the v2 child-table indexes come from `0005` |
+| Script                         | Status                                                                                                                                                                  |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `migrate-ai-spend-counter.mjs` | Superseded by `0003_runtime_tables.sql`                                                                                                                                 |
+| `migrate-api-rate-bucket.mjs`  | Superseded by `0003_runtime_tables.sql`                                                                                                                                 |
+| `migrate-ask-sessions.mjs`     | Superseded by `0003_runtime_tables.sql`                                                                                                                                 |
+| `migrate-ask-feedback.mjs`     | Superseded by `0003_runtime_tables.sql`                                                                                                                                 |
+| `migrate-rag-v2.mjs`           | Renamed to `backfill-rag-records.mjs` (`npm run db:backfill:rag-records`); its DDL moved into `0005_rag_evidence_tables.sql`, leaving a deterministic DML-only backfill |
+| `migrate-rag-improvements.mjs` | Legacy whole-article migration, superseded by RAG v2                                                                                                                    |
+| `recreate-hnsw-index.mjs`      | Legacy article-vector index rebuild; the v2 child-table indexes come from `0005`                                                                                        |
 
 Online embedding is deliberately separate from schema migration so it can be cost-previewed, stopped, and resumed (`db:embed`).
 
@@ -916,7 +916,7 @@ npm run db:embed
 ```
 
 Do this only when the model, canonical input format, or source image bytes changed
-without a corresponding hash bump. The version bump *is* the force switch; there is no
+without a corresponding hash bump. The version bump _is_ the force switch; there is no
 `--force` flag.
 
 ### Investigate a slow query

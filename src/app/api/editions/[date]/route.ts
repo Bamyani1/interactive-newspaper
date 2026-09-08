@@ -30,15 +30,12 @@ function isIsoDate(value: string): boolean {
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: Promise<{ date: string }> },
+  { params }: { params: Promise<{ date: string }> }
 ) {
   const { date } = await params;
 
   if (!isIsoDate(date)) {
-    return NextResponse.json(
-      { error: "Invalid date format" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Invalid date format" }, { status: 400 });
   }
 
   try {
@@ -49,10 +46,7 @@ export async function GET(
         const goldResponse = buildGoldResponse();
         if (goldResponse) return NextResponse.json(goldResponse);
       }
-      return NextResponse.json(
-        { error: "Edition not found" },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: "Edition not found" }, { status: 404 });
     }
 
     return NextResponse.json({
@@ -67,9 +61,6 @@ export async function GET(
     });
   } catch (error) {
     console.error(`Failed to load edition ${date}:`, error);
-    return NextResponse.json(
-      { error: "Failed to load edition" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to load edition" }, { status: 500 });
   }
 }

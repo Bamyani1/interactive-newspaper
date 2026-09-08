@@ -1,61 +1,61 @@
 .search-filters {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .search-filter-control {
-    min-height: 44px;
-    padding: var(--space-2) var(--space-3);
-    font-family: var(--font-body);
-    font-size: var(--text-base);
-    line-height: var(--leading-base);
-    color: var(--color-text-body);
-    background-color: var(--color-bg-paper-soft);
-    border: 1px solid var(--color-text-body);
-    border-radius: var(--radius-sm);
-    color-scheme: light;
-    transition: border-color var(--duration-fast) var(--ease-default);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  color: var(--color-text-body);
+  background-color: var(--color-bg-paper-soft);
+  border: 1px solid var(--color-text-body);
+  border-radius: var(--radius-sm);
+  color-scheme: light;
+  transition: border-color var(--duration-fast) var(--ease-default);
 }
 
 .search-filter-control:focus-visible {
-    border-color: var(--color-focus-ring);
-    outline: 2px solid var(--color-focus-ring);
-    outline-offset: 2px;
+  border-color: var(--color-focus-ring);
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 .search-filter-control:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 [data-mode="dark"] .search-filter-control {
-    color-scheme: dark;
+  color-scheme: dark;
 }
 
 @media (max-width: 640px) {
-    /* Three controls in a row overflow a phone; give the category its own
+  /* Three controls in a row overflow a phone; give the category its own
        full-width row and pair the two dates beneath it. */
-    .search-filters {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        width: 100%;
-    }
+  .search-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
 
-    .search-filter-field,
-    .search-filter-control {
-        width: 100%;
-        min-width: 0;
-    }
+  .search-filter-field,
+  .search-filter-control {
+    width: 100%;
+    min-width: 0;
+  }
 
-    .search-filter-field--category {
-        grid-column: 1 / -1;
-    }
+  .search-filter-field--category {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .search-filter-control {
-        transition: none;
-    }
+  .search-filter-control {
+    transition: none;
+  }
 }

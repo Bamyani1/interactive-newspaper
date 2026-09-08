@@ -39,11 +39,7 @@ interface MobileNavProps {
   onSelect: (section: SectionId) => void;
 }
 
-export const MobileNav: React.FC<MobileNavProps> = ({
-  sections,
-  activeSection,
-  onSelect,
-}) => {
+export const MobileNav: React.FC<MobileNavProps> = ({ sections, activeSection, onSelect }) => {
   const pathname = usePathname();
   const isSearchActive = pathname?.startsWith("/search") ?? false;
   const isAskActive = pathname?.startsWith("/ask") ?? false;
@@ -56,9 +52,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
   const getMenuItems = () =>
     Array.from(
-      moreMenuRef.current?.querySelectorAll<HTMLButtonElement>(
-        '[role="menuitem"]',
-      ) ?? [],
+      moreMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []
     ).filter((item) => {
       const style = window.getComputedStyle(item);
       return style.display !== "none" && style.visibility !== "hidden";
@@ -121,9 +115,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   };
 
   return (
-    <nav
-      className="fixed bottom-0 left-0 right-0 lg:hidden z-[var(--z-header)] bg-[var(--color-bg-primary)]/95 backdrop-blur-md border-t border-[var(--stroke-accent-soft)]"
-    >
+    <nav className="fixed bottom-0 left-0 right-0 lg:hidden z-[var(--z-header)] bg-[var(--color-bg-primary)]/95 backdrop-blur-md border-t border-[var(--stroke-accent-soft)]">
       <div className="flex items-center justify-around px-2 py-2 max-w-lg mx-auto">
         {sections.slice(0, 5).map((section, idx) => {
           const Icon = SECTION_ICONS[section.id] || Newspaper;
@@ -137,9 +129,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               className={`
                 relative flex-col items-center justify-center gap-1 py-2 px-2 sm:px-3 rounded-sm transition-colors min-w-[48px] sm:min-w-[60px]
                 ${hideOnMobile ? "hidden sm:flex" : "flex"}
-                ${isActive
-                  ? "text-[var(--color-accent-text)]"
-                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                ${
+                  isActive
+                    ? "text-[var(--color-accent-text)]"
+                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
                 }
               `}
               aria-current={isActive ? "true" : undefined}
@@ -165,17 +158,16 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           href="/search"
           className={`
             relative flex flex-col items-center justify-center gap-1 py-2 px-2 sm:px-3 rounded-sm transition-colors min-w-[48px] sm:min-w-[60px]
-            ${isSearchActive
-              ? "text-[var(--color-accent-text)]"
-              : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            ${
+              isSearchActive
+                ? "text-[var(--color-accent-text)]"
+                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
             }
           `}
           aria-label="Search the archive"
         >
           <Search size={20} strokeWidth={isSearchActive ? 2.5 : 2} />
-          <span className="text-xs font-medium uppercase tracking-label-sm">
-            Search
-          </span>
+          <span className="text-xs font-medium uppercase tracking-label-sm">Search</span>
           {isSearchActive && (
             <motion.div
               className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--color-rule-accent)]"
@@ -189,17 +181,16 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           href="/ask"
           className={`
             relative flex flex-col items-center justify-center gap-1 py-2 px-2 sm:px-3 rounded-sm transition-colors min-w-[48px] sm:min-w-[60px]
-            ${isAskActive
-              ? "text-[var(--color-accent-text)]"
-              : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            ${
+              isAskActive
+                ? "text-[var(--color-accent-text)]"
+                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
             }
           `}
           aria-label="Ask the archive"
         >
           <MessageCircleQuestion size={20} strokeWidth={isAskActive ? 2.5 : 2} />
-          <span className="text-xs font-medium uppercase tracking-label-sm">
-            Ask
-          </span>
+          <span className="text-xs font-medium uppercase tracking-label-sm">Ask</span>
           {isAskActive && (
             <motion.div
               className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--color-rule-accent)]"
@@ -255,9 +246,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 <span className="w-1 h-1 rounded-full bg-current" />
                 <span className="w-1 h-1 rounded-full bg-current" />
               </div>
-              <span className="text-xs font-medium uppercase tracking-label-sm">
-                More
-              </span>
+              <span className="text-xs font-medium uppercase tracking-label-sm">More</span>
             </button>
 
             {/* Dropdown for additional sections */}
@@ -279,12 +268,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                     const Icon = SECTION_ICONS[section.id] || Newspaper;
                     const isActive = activeSection === section.id;
                     // On mobile (<sm), indices 3+ show here; on sm+, indices 5+ show here.
-                    const classes =
-                      idx >= 5
-                        ? "flex"
-                        : idx >= 3
-                          ? "flex sm:hidden"
-                          : "hidden";
+                    const classes = idx >= 5 ? "flex" : idx >= 3 ? "flex sm:hidden" : "hidden";
 
                     return (
                       <button
@@ -295,9 +279,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                         aria-current={isActive ? "page" : undefined}
                         className={`
                           ${classes} items-center gap-3 w-full px-4 py-2.5 text-left transition-colors min-h-[44px]
-                          ${isActive
-                            ? "text-[var(--color-accent-text)] bg-[var(--color-accent)]/10"
-                            : "text-[var(--color-text-primary)] hover:bg-[var(--color-accent)]/5"
+                          ${
+                            isActive
+                              ? "text-[var(--color-accent-text)] bg-[var(--color-accent)]/10"
+                              : "text-[var(--color-text-primary)] hover:bg-[var(--color-accent)]/5"
                           }
                         `}
                       >

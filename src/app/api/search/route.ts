@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
         headers: {
           "Retry-After": String(Math.ceil((rate.resetAt - Date.now()) / 1000)),
         },
-      },
+      }
     );
   }
 
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
   if (!q) {
     return NextResponse.json(
       { error: "Missing required query parameter: q", requestId },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
         error: `Query too long (${q.length} chars). Maximum is ${MAX_QUERY_LENGTH}.`,
         requestId,
       },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -67,10 +67,7 @@ export async function GET(request: NextRequest) {
   // Wrap the DB call in a timeout race so a hung Neon request can't block
   // /api/search forever. 504 on fire matches /api/ask retrieval semantics.
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(
-      () => reject(new Error("Search timeout")),
-      SEARCH_TIMEOUT_MS,
-    ),
+    setTimeout(() => reject(new Error("Search timeout")), SEARCH_TIMEOUT_MS)
   );
 
   try {
@@ -98,16 +95,14 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Search timeout") {
-      console.warn(
-        `[search requestId=${requestId}] timed out after ${SEARCH_TIMEOUT_MS}ms`,
-      );
+      console.warn(`[search requestId=${requestId}] timed out after ${SEARCH_TIMEOUT_MS}ms`);
       return NextResponse.json(
         {
           error: "Search took too long. Please try a more specific query.",
           cause: "timeout",
           requestId,
         },
-        { status: 504 },
+        { status: 504 }
       );
     }
     console.error(`[search requestId=${requestId}] failed:`, error);
@@ -117,7 +112,7 @@ export async function GET(request: NextRequest) {
         cause: "internal_error",
         requestId,
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }

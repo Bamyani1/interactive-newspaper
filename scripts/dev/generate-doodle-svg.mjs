@@ -55,11 +55,7 @@ async function preprocessImage() {
   // No resize — trace at full resolution for maximum detail.
   // Grayscale + threshold isolates doodles (dark, ~48) from background (lighter, ~103).
   // Result: black doodles on white — exactly what potrace expects (dark-on-light).
-  const buffer = await sharp(SOURCE_IMAGE)
-    .grayscale()
-    .threshold(THRESHOLD)
-    .png()
-    .toBuffer();
+  const buffer = await sharp(SOURCE_IMAGE).grayscale().threshold(THRESHOLD).png().toBuffer();
 
   return { buffer, sourceW: metadata.width, sourceH: metadata.height };
 }
@@ -237,10 +233,14 @@ function clusterPaths(pathsWithBBoxes) {
       const bboxI = pathsWithBBoxes[i].bbox;
       const bboxJ = pathsWithBBoxes[j].bbox;
       const contained =
-        (bboxJ.minX >= bboxI.minX && bboxJ.maxX <= bboxI.maxX &&
-         bboxJ.minY >= bboxI.minY && bboxJ.maxY <= bboxI.maxY) ||
-        (bboxI.minX >= bboxJ.minX && bboxI.maxX <= bboxJ.maxX &&
-         bboxI.minY >= bboxJ.minY && bboxI.maxY <= bboxJ.maxY);
+        (bboxJ.minX >= bboxI.minX &&
+          bboxJ.maxX <= bboxI.maxX &&
+          bboxJ.minY >= bboxI.minY &&
+          bboxJ.maxY <= bboxI.maxY) ||
+        (bboxI.minX >= bboxJ.minX &&
+          bboxI.maxX <= bboxJ.maxX &&
+          bboxI.minY >= bboxJ.minY &&
+          bboxI.maxY <= bboxJ.maxY);
 
       if (!contained) {
         // Only enforce MAX_CLUSTER_DIM for non-containment merges
@@ -293,7 +293,9 @@ function clusterPaths(pathsWithBBoxes) {
     }
   }
 
-  console.log(`  Clusters after filtering: ${clusters.length} (${groups.size - clusters.length} noise filtered)`);
+  console.log(
+    `  Clusters after filtering: ${clusters.length} (${groups.size - clusters.length} noise filtered)`
+  );
 
   // Sort by position (top-left to bottom-right) for deterministic output
   clusters.sort((a, b) => a.bbox.minY - b.bbox.minY || a.bbox.minX - b.bbox.minX);
@@ -763,7 +765,9 @@ async function main() {
   const rawPaths = extractPaths(svgString, scale);
   console.log(`  Raw subpaths from potrace: ${rawPaths.length}`);
 
-  const pathsWithBBoxes = rawPaths.map((d) => ({ d, bbox: computeBBox(d) })).filter((p) => p.bbox !== null);
+  const pathsWithBBoxes = rawPaths
+    .map((d) => ({ d, bbox: computeBBox(d) }))
+    .filter((p) => p.bbox !== null);
   console.log(`  Paths with valid bboxes: ${pathsWithBBoxes.length}`);
 
   const clusters = clusterPaths(pathsWithBBoxes);

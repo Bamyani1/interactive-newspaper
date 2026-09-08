@@ -26,30 +26,30 @@ const retentionModule = await import("../../src/lib/retention.ts");
 const { runRetentionSweep } = retentionModule.default ?? retentionModule;
 
 function fail(message) {
-    console.error(`ERROR: ${message}`);
-    process.exit(1);
+  console.error(`ERROR: ${message}`);
+  process.exit(1);
 }
 
 async function main() {
-    loadLocalEnv();
-    if (!process.env.DATABASE_URL) fail("DATABASE_URL is required.");
-    if (!process.argv.includes("--yes")) {
-        fail(
-            "This phase authorizes local/test databases only. Re-run with --yes to confirm the target database is not production.",
-        );
-    }
+  loadLocalEnv();
+  if (!process.env.DATABASE_URL) fail("DATABASE_URL is required.");
+  if (!process.argv.includes("--yes")) {
+    fail(
+      "This phase authorizes local/test databases only. Re-run with --yes to confirm the target database is not production."
+    );
+  }
 
-    const executor = createNeonExecutor(process.env.DATABASE_URL);
-    await assertMigrationsCurrent(executor);
+  const executor = createNeonExecutor(process.env.DATABASE_URL);
+  await assertMigrationsCurrent(executor);
 
-    const counts = await runRetentionSweep(executor);
-    console.log(JSON.stringify(counts, null, 2));
+  const counts = await runRetentionSweep(executor);
+  console.log(JSON.stringify(counts, null, 2));
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
 if (invokedPath === path.resolve(fileURLToPath(import.meta.url))) {
-    main().catch((error) => {
-        console.error(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
-        process.exit(1);
-    });
+  main().catch((error) => {
+    console.error(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
 }

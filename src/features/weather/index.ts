@@ -1,2 +1,2 @@
 // Weather Feature - Public API
-export { useHistoricalWeather } from './hooks/useHistoricalWeather';
+export { useHistoricalWeather } from "./hooks/useHistoricalWeather";

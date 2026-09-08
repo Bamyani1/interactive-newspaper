@@ -14,10 +14,7 @@ async function setFeedScroll(page: Page, top: number) {
   return feed;
 }
 
-test("edition feed restores across App Router Back and Forward", async ({
-  page,
-  isMobile,
-}) => {
+test("edition feed restores across App Router Back and Forward", async ({ page, isMobile }) => {
   test.skip(isMobile, "The inner feed is independently scrollable on desktop.");
 
   await page.goto(SOURCE_EDITION);

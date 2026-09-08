@@ -138,6 +138,6 @@
    Light Mode Surface Parity (Edition Page)
    ========================================= */
 
-[data-mode='light'] .edition-background-shell .nav-fleuron {
+[data-mode="light"] .edition-background-shell .nav-fleuron {
   background: transparent;
 }

@@ -20,8 +20,7 @@ const dateNamedDirs = existsSync(EDITIONS_DIR)
 // Filtering matters beyond tidiness: this module reads each edition.json at
 // collection time, so a single partial directory used to throw here and
 // prevent *every* edition from being validated.
-const hasEdition = (date: string) =>
-  existsSync(path.join(EDITIONS_DIR, date, "edition.json"));
+const hasEdition = (date: string) => existsSync(path.join(EDITIONS_DIR, date, "edition.json"));
 const editionDirs = dateNamedDirs.filter(hasEdition);
 const partiallyIngested = dateNamedDirs.filter((date) => !hasEdition(date));
 
@@ -76,7 +75,7 @@ describe("edition corpus", () => {
     let otherWithoutPages = 0;
     for (const date of editionDirs) {
       const edition = JSON.parse(
-        readFileSync(path.join(EDITIONS_DIR, date, "edition.json"), "utf-8"),
+        readFileSync(path.join(EDITIONS_DIR, date, "edition.json"), "utf-8")
       );
       for (const article of edition.articles ?? []) {
         if ((article.source_pages || []).length > 0) continue;
@@ -88,9 +87,7 @@ describe("edition corpus", () => {
     // Anything missing page provenance that is NOT a rescued promotion is a
     // genuine pipeline failure, not legacy debt.
     expect(otherWithoutPages).toBe(0);
-    expect(promotedWithoutPages).toBeLessThanOrEqual(
-      PROMOTED_WITHOUT_PAGES_BASELINE,
-    );
+    expect(promotedWithoutPages).toBeLessThanOrEqual(PROMOTED_WITHOUT_PAGES_BASELINE);
   });
 
   it("reports directories still awaiting ingestion", () => {
@@ -98,7 +95,7 @@ describe("edition corpus", () => {
     // local checkout (public/editions is gitignored, so CI sees none).
     if (partiallyIngested.length > 0) {
       console.warn(
-        `[pipeline-invariants] ${partiallyIngested.length} directory(ies) have no edition.json and were skipped: ${partiallyIngested.join(", ")}`,
+        `[pipeline-invariants] ${partiallyIngested.length} directory(ies) have no edition.json and were skipped: ${partiallyIngested.join(", ")}`
       );
     }
     expect(partiallyIngested.every((d) => !editionDirs.includes(d))).toBe(true);
@@ -124,12 +121,10 @@ for (const date of editionDirs) {
         if (knownEmpty.has(i)) continue; // skip known legacy issues
         const hasHeadline = (article.headline || "").trim().length > 0;
         const hasBody = (article.body || "").trim().length > 0;
-        const hasImages = (article.image_files || []).some(
-          (f: string) => f.length > 0,
-        );
+        const hasImages = (article.image_files || []).some((f: string) => f.length > 0);
         expect(
           hasHeadline || hasBody || hasImages,
-          `Article ${i} has no headline, body, or images`,
+          `Article ${i} has no headline, body, or images`
         ).toBe(true);
       }
     });
@@ -139,20 +134,18 @@ for (const date of editionDirs) {
         for (const imgFile of article.image_files || []) {
           if (!imgFile) continue;
           const fullPath = path.join(EDITIONS_DIR, date, imgFile);
-          expect(
-            existsSync(fullPath),
-            `Article ${i}: image file "${imgFile}" does not exist`,
-          ).toBe(true);
+          expect(existsSync(fullPath), `Article ${i}: image file "${imgFile}" does not exist`).toBe(
+            true
+          );
         }
       }
       for (const [i, ad] of (edition.ads || []).entries()) {
         for (const imgFile of ad.image_files || []) {
           if (!imgFile) continue;
           const fullPath = path.join(EDITIONS_DIR, date, imgFile);
-          expect(
-            existsSync(fullPath),
-            `Ad ${i}: image file "${imgFile}" does not exist`,
-          ).toBe(true);
+          expect(existsSync(fullPath), `Ad ${i}: image file "${imgFile}" does not exist`).toBe(
+            true
+          );
         }
       }
     });
@@ -168,7 +161,7 @@ for (const date of editionDirs) {
         if (article.triage_promoted === true) continue;
         expect(
           (article.source_pages || []).length,
-          `Article ${i} "${(article.headline || "").slice(0, 50)}" has no source_pages`,
+          `Article ${i} "${(article.headline || "").slice(0, 50)}" has no source_pages`
         ).toBeGreaterThan(0);
       }
     });
@@ -179,9 +172,7 @@ for (const date of editionDirs) {
         for (const p of article.source_pages || []) {
           if (knownNonNumeric.has(p)) continue; // legacy section marker
           const n = parseInt(p, 10);
-          expect(isNaN(n), `Edition ${date}: page "${p}" is not numeric`).toBe(
-            false,
-          );
+          expect(isNaN(n), `Edition ${date}: page "${p}" is not numeric`).toBe(false);
           expect(n).toBeGreaterThan(0);
         }
       }
@@ -197,7 +188,7 @@ for (const date of editionDirs) {
       for (const [i, body] of bodies.entries()) {
         expect(
           seen.has(body),
-          `Article ${i} has an exact duplicate body (${body.slice(0, 60)}...)`,
+          `Article ${i} has an exact duplicate body (${body.slice(0, 60)}...)`
         ).toBe(false);
         seen.add(body);
       }

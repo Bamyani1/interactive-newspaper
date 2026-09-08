@@ -30,7 +30,7 @@ export function getGeminiClient(): GoogleGenAI {
       const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
       if (!apiKey) {
         throw new Error(
-          "Gemini auth is not configured: set GOOGLE_CLOUD_PROJECT for Vertex ADC, or GEMINI_API_KEY / GOOGLE_API_KEY for API-key mode.",
+          "Gemini auth is not configured: set GOOGLE_CLOUD_PROJECT for Vertex ADC, or GEMINI_API_KEY / GOOGLE_API_KEY for API-key mode."
         );
       }
       _client = new GoogleGenAI({ apiKey, apiVersion: "v1" });

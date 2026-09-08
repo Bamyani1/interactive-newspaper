@@ -104,15 +104,9 @@ export function OrnamentRow({ variant }: { variant: "top" | "bottom" }) {
       aria-hidden="true"
       style={{ fontFamily: "var(--font-header)", fontSize: "14px" }}
     >
-      <span
-        className="flex-1"
-        style={{ borderTop: "1px solid var(--color-accent-hover)" }}
-      />
+      <span className="flex-1" style={{ borderTop: "1px solid var(--color-accent-hover)" }} />
       <span style={{ letterSpacing: "0.2em" }}>— § —</span>
-      <span
-        className="flex-1"
-        style={{ borderTop: "1px solid var(--color-accent-hover)" }}
-      />
+      <span className="flex-1" style={{ borderTop: "1px solid var(--color-accent-hover)" }} />
     </div>
   );
 }
@@ -208,7 +202,14 @@ export function ArticleImage({
   maxWidth?: string;
 }) {
   return (
-    <div style={{ width: width === "full" ? "100%" : `${width}px`, maxWidth, flexShrink: 0, margin: "0 auto" }}>
+    <div
+      style={{
+        width: width === "full" ? "100%" : `${width}px`,
+        maxWidth,
+        flexShrink: 0,
+        margin: "0 auto",
+      }}
+    >
       <button
         type="button"
         className="relative block w-full border-3 border-[var(--color-text-primary)] overflow-hidden cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
@@ -345,9 +346,7 @@ export function ColumnText({
       }}
     >
       {header && (
-        <div style={{ breakInside: "avoid", textAlign: "left", hyphens: "manual" }}>
-          {header}
-        </div>
+        <div style={{ breakInside: "avoid", textAlign: "left", hyphens: "manual" }}>{header}</div>
       )}
       {flow}
     </div>

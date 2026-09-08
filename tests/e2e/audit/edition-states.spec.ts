@@ -1,8 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../fixtures";
-import {
-  DEFAULT_STORAGE_SEED,
-} from "../support/deterministic";
+import { DEFAULT_STORAGE_SEED } from "../support/deterministic";
 import {
   consumeExpectedDocumentHttpError,
   expectNoSeriousOrCriticalAxeViolations,
@@ -18,7 +16,7 @@ const CHART_URL = "**/top-10-music/chart-1950-2010.json";
 
 function packedMonth(
   month: string,
-  tracks: TrackTuple[] | null,
+  tracks: TrackTuple[] | null
 ): { start: string; end: string; months: Array<TrackTuple[] | null> } {
   const [year, monthNumber] = month.split("-").map(Number);
   const months = new Array<TrackTuple[] | null>(monthNumber).fill(null);
@@ -37,15 +35,12 @@ function editionDateText(page: Page, dateLabel: RegExp): Locator {
   return page.getByText(dateLabel).first();
 }
 
-async function expectCoherentEdition(
-  page: Page,
-  dateLabel: RegExp,
-): Promise<void> {
+async function expectCoherentEdition(page: Page, dateLabel: RegExp): Promise<void> {
   await expect(page.locator(".edition-feed-surface")).toBeVisible();
   await expect(page.getByRole("heading", { name: "The Transcript" })).toBeVisible();
   await expect(editionDateText(page, dateLabel)).toBeVisible();
   const fits = await page.evaluate(
-    () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+    () => document.documentElement.scrollWidth <= window.innerWidth + 1
   );
   expect(fits).toBe(true);
 }
@@ -115,10 +110,7 @@ test.describe("deep edition state matrix", () => {
         await expect(page.getByText("April 2006 Top 10")).toBeVisible();
         await expect(page.getByText("Archive Song").first()).toBeVisible();
         expect(contextRequests).toEqual(
-          expect.arrayContaining([
-            "/api/weather",
-            "/top-10-music/chart-1950-2010.json",
-          ]),
+          expect.arrayContaining(["/api/weather", "/top-10-music/chart-1950-2010.json"])
         );
       }
 
@@ -138,9 +130,7 @@ test.describe("deep edition state matrix", () => {
 
       await page.getByRole("button", { name: "Toggle color theme" }).click();
       await expect(page.locator("html")).toHaveAttribute("data-mode", "dark");
-      expect(
-        await page.evaluate(() => localStorage.getItem("transcript-mode")),
-      ).toBe("dark");
+      expect(await page.evaluate(() => localStorage.getItem("transcript-mode"))).toBe("dark");
       await expectCoherentEdition(page, /Thursday, April 20, 2006/);
       await expectNoSeriousOrCriticalAxeViolations(page);
       expectNoUnexpectedDiagnostics(diagnostics);
@@ -163,17 +153,13 @@ test.describe("deep edition state matrix", () => {
 
       if (!isMobile) {
         await expect(page.getByText("Weather data unavailable")).toBeVisible();
-        await expect(
-          page.getByText("No chart data was found for this month."),
-        ).toBeVisible();
+        await expect(page.getByText("No chart data was found for this month.")).toBeVisible();
       }
 
       await selectSection(page, "Ads");
       await expect(page.getByRole("heading", { name: "Display Ads" })).toBeVisible();
       await selectSection(page, "Classifieds");
-      await expect(
-        page.getByRole("heading", { name: "Classified Listings" }),
-      ).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Classified Listings" })).toBeVisible();
       await expectCoherentEdition(page, /Wednesday, January 19, 1994/);
       expectNoUnexpectedDiagnostics(diagnostics);
     });
@@ -209,16 +195,10 @@ test.describe("deep edition state matrix", () => {
       await expect(page.locator("html")).toHaveAttribute("data-mode", "dark");
 
       if (!isMobile) {
-        await expect(
-          page.getByText("Unable to load weather data right now"),
-        ).toBeVisible();
-        await expect(
-          page.getByText("Unable to load monthly chart data right now."),
-        ).toBeVisible();
+        await expect(page.getByText("Unable to load weather data right now")).toBeVisible();
+        await expect(page.getByText("Unable to load monthly chart data right now.")).toBeVisible();
         await expect(page.getByText("Weather data unavailable")).toHaveCount(0);
-        await expect(
-          page.getByText("No chart data was found for this month."),
-        ).toHaveCount(0);
+        await expect(page.getByText("No chart data was found for this month.")).toHaveCount(0);
       }
 
       await expectNoSeriousOrCriticalAxeViolations(page);
@@ -275,9 +255,7 @@ test("next-edition pending state preserves the current edition until the delayed
 
   releaseTarget();
   await expect(page).toHaveURL(new RegExp(`/edition/${targetDate}$`));
-  await expect(editionDateText(page, /Wednesday, January 19, 1994/)).toHaveCount(
-    0,
-  );
+  await expect(editionDateText(page, /Wednesday, January 19, 1994/)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "See Next Edition" })).toBeEnabled();
   expectNoUnexpectedDiagnostics(diagnostics);
 });
