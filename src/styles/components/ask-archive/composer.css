@@ -112,6 +112,17 @@
   cursor: not-allowed;
 }
 
+/* Stop reads as the live, actionable control while an answer arrives —
+   the accent that Send only borrows on hover. It is never disabled: the
+   whole point is that it works at any moment during generation. */
+.ask-composer-stop {
+  color: var(--color-accent);
+}
+
+.ask-composer-stop:hover {
+  background: color-mix(in oklab, var(--color-accent) 14%, transparent);
+}
+
 .ask-composer-send-label {
   display: inline-block;
 }

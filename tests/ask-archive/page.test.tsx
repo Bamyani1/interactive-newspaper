@@ -64,6 +64,7 @@ function defaultState() {
     }>,
     activeThreadId: null as string | null,
     submit: vi.fn(),
+    stop: vi.fn(),
     retry: vi.fn(),
     clearAllThreads: vi.fn(),
     newConversation: vi.fn(),

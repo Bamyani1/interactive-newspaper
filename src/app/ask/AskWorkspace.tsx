@@ -41,6 +41,7 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
     threads,
     activeThreadId,
     submit,
+    stop,
     retry,
     clearAllThreads,
     newConversation,
@@ -169,9 +170,17 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
               onFollowUp={handleFollowUp}
               onRetry={retry}
             />
+            {/*
+              The composer stays enabled while an answer streams so the
+              reader can reach Stop and draft their next question. Only
+              hydration disables it, because there is genuinely nothing
+              to send to yet.
+            */}
             <Composer
-              disabled={isHydrating || isStreaming}
+              disabled={isHydrating}
+              isStreaming={isStreaming}
               onSubmit={submit}
+              onStop={stop}
               focusSignal={focusSignal}
             />
           </div>
