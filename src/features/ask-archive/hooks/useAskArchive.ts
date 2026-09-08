@@ -102,19 +102,39 @@ function writeArchive(threads: StoredThread[]): void {
   }
 }
 
+/**
+ * An id-independent fingerprint of a thread's content.
+ *
+ * Turn ids are minted fresh on every hydrate, so comparing them would
+ * report every thread as changed the moment it was opened. Question,
+ * status and answer length survive a storage round-trip and still move
+ * whenever a turn is added, streams further, or settles.
+ */
+function conversationSignature(turns: Turn[]): string {
+  return turns.map((t) => `${t.question}|${t.status}|${t.answer.length}`).join("\u0000");
+}
+
 function upsertArchive(sessionId: string, turns: Turn[]): StoredThread[] {
   // Empty threads don't earn a sidebar slot — keeps the list from
   // filling up with abandoned starts.
   if (turns.length === 0) return readArchive();
   const archive = readArchive();
-  const now = Date.now();
-  const firstQuestion = turns[0].question;
+  const settled = settleForStorage(turns);
   const idx = archive.findIndex((t) => t.sessionId === sessionId);
+  const existing = idx >= 0 ? archive[idx] : undefined;
+  // Opening a thread runs this with content identical to what is already
+  // stored. Rewriting it there moved the thread to the top of the
+  // sidebar and relabelled it "Just now" for the crime of being read,
+  // which made the history reorder itself under the reader.
+  if (existing && conversationSignature(existing.turns) === conversationSignature(settled)) {
+    return archive;
+  }
+  const now = Date.now();
   const entry: StoredThread = {
     sessionId,
-    firstQuestion,
-    turns: settleForStorage(turns),
-    createdAt: idx >= 0 ? archive[idx].createdAt : now,
+    firstQuestion: settled[0].question,
+    turns: settled,
+    createdAt: existing ? existing.createdAt : now,
     lastUpdatedAt: now,
   };
   const next = [...archive];

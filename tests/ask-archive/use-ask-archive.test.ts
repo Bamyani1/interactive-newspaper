@@ -946,6 +946,86 @@ describe("useAskArchive turn lifecycle", () => {
     view.unmount();
   });
 
+  it("reading a thread leaves its sidebar position and timestamp alone", async () => {
+    const ONE_HOUR = 60 * 60 * 1000;
+    const openedAt = Date.now() - 3 * ONE_HOUR;
+    const newerAt = Date.now() - ONE_HOUR;
+    const storedTurn = {
+      id: "archived-1",
+      question: "who ran the observatory?",
+      answer: "Professor Perkins ran it from 1952.",
+      status: "done",
+      sourceArticles: [],
+      citations: [],
+      meta: null,
+      confidence: "medium",
+      requestId: "",
+      mode: "text",
+      createdAt: openedAt,
+    };
+    window.localStorage.setItem(
+      "owu-ask-threads",
+      JSON.stringify([
+        {
+          sessionId: "opened",
+          firstQuestion: storedTurn.question,
+          turns: [storedTurn],
+          createdAt: openedAt,
+          lastUpdatedAt: openedAt,
+        },
+        {
+          sessionId: "newer",
+          firstQuestion: "a more recent question",
+          turns: [{ ...storedTurn, id: "archived-2", question: "a more recent question" }],
+          createdAt: newerAt,
+          lastUpdatedAt: newerAt,
+        },
+      ])
+    );
+    window.localStorage.setItem("owu-ask-session-id", "opened");
+
+    // The session API returns the same turn the archive holds, which is
+    // what the persist effect then sees.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/ask/session")) {
+          return Promise.resolve(
+            makeJsonResponse({
+              turns: [
+                {
+                  question: storedTurn.question,
+                  answer: storedTurn.answer,
+                  citedArticleIds: [],
+                  timestamp: openedAt,
+                },
+              ],
+              expired: false,
+            })
+          );
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      })
+    );
+
+    const view = renderHook(() => useAskArchive());
+    await waitFor(() => expect(view.result.current.turns).toHaveLength(1));
+    // Let the persist effect run.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    const stored = JSON.parse(window.localStorage.getItem("owu-ask-threads") ?? "[]") as Array<{
+      sessionId: string;
+      lastUpdatedAt: number;
+    }>;
+    expect(stored.find((t) => t.sessionId === "opened")?.lastUpdatedAt).toBe(openedAt);
+    // And the sidebar still lists the genuinely newer thread first.
+    expect(view.result.current.threads.map((t) => t.id)).toEqual(["newer", "opened"]);
+    view.unmount();
+  });
+
   it("aborts an in-flight answer when the workspace unmounts", async () => {
     const sse = makeSseResponse();
     const recorded: Recorded[] = [];
