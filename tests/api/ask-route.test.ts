@@ -1509,6 +1509,68 @@ describe("Complexity routing", () => {
     );
   });
 
+  it("persists only the sources the live turn rendered", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    // b-2 owns the embedded image but has neither a citation nor metadata to
+    // read a headline and date from, so the live turn drops it from
+    // sourceArticles. Persisting the unfiltered id list meant a restored turn
+    // rebuilt a source the reader never saw.
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: 'Prose [1965-03-15-1]. ![](https://cdn/b.jpg "A caption")',
+      citations: [{ articleId: "1965-03-15-1", headline: "Cited", editionDate: "1965-03-15" }],
+      sourceArticleIds: ["1965-03-15-1", "1965-03-15-2"],
+      confidence: "high",
+      outcome: "answered",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map([
+        [
+          "1965-03-15-1",
+          {
+            headline: "Cited",
+            editionDate: "1965-03-15",
+            category: "News",
+            summary: "",
+            byline: null,
+            bodySnippet: "",
+            imageUrls: [],
+            imageCaptions: [],
+          },
+        ],
+        [
+          "1965-03-15-2",
+          {
+            headline: "",
+            editionDate: "",
+            category: "",
+            summary: "",
+            byline: null,
+            bodySnippet: "",
+            imageUrls: ["https://cdn/b.jpg"],
+            imageCaptions: [],
+          },
+        ],
+      ]),
+    });
+
+    const response = await POST(makeRequest({ question: "complex question" }));
+    const body = await response.json();
+
+    expect(body.sourceArticles.map((a: { id: string }) => a.id)).toEqual(["1965-03-15-1"]);
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "complex question",
+      expect.any(String),
+      ["1965-03-15-1"],
+      expect.anything()
+    );
+  });
+
   it("uses pipeline when complexity=simple", async () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "homecoming 1965",

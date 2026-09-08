@@ -779,18 +779,23 @@ async function handleStreamingAsk(params: {
               return;
             }
 
+            const agentSourceArticles = buildAgentSourceArticles(agentResult);
+
+            // Persist what the turn actually rendered, not the raw id list:
+            // buildAgentSourceArticles drops an id with no headline or date,
+            // and a restored turn rebuilds its sources from what is stored,
+            // so the unfiltered list resurrected a source the reader never
+            // saw.
             await persistTurnBounded(
               sessionId,
               question,
               agentResult.answer,
-              agentResult.sourceArticleIds,
+              agentSourceArticles.map((article) => article.id),
               buildCitationSnapshots(
                 agentResult.citations,
                 agentSnapshotSources(agentResult.articleMeta)
               )
             );
-
-            const agentSourceArticles = buildAgentSourceArticles(agentResult);
 
             const totalTimeMs = Date.now() - totalStart;
 
@@ -1360,15 +1365,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
       }
 
+      const agentSourceArticles = buildAgentSourceArticles(agentResult);
+
+      // Persist what the turn actually rendered — see the streaming branch.
       await persistTurnBounded(
         sessionId,
         question,
         agentResult.answer,
-        agentResult.sourceArticleIds,
+        agentSourceArticles.map((article) => article.id),
         buildCitationSnapshots(agentResult.citations, agentSnapshotSources(agentResult.articleMeta))
       );
-
-      const agentSourceArticles = buildAgentSourceArticles(agentResult);
 
       const response: AskResponse = {
         question,

@@ -784,6 +784,20 @@ describe("buildAgentSourceArticleIds", () => {
     expect(raw).toEqual(["b"]);
   });
 
+  it("finds an owner behind a markdown title attribute", () => {
+    // `![](url "title")` is valid CommonMark and the client renders it, but
+    // the owner lookup used to see no embed at all and drop the source.
+    const ids = buildAgentSourceArticleIds(
+      'Cited [a]. ![](https://cdn/photo.jpg "Homecoming parade")',
+      [cite("a")],
+      new Map([
+        ["a", meta([])],
+        ["b", meta(["https://cdn/photo.jpg"])],
+      ])
+    );
+    expect(ids).toEqual(["a", "b"]);
+  });
+
   it("ignores images that belong to no known article", () => {
     const ids = buildAgentSourceArticleIds(
       "Cited [a]. ![stray](https://cdn/unknown.jpg)",
