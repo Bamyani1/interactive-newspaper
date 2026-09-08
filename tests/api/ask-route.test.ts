@@ -82,6 +82,7 @@ vi.mock("@/src/lib/agent-loop", () => ({
 }));
 
 vi.mock("@/src/lib/conversation-store", () => ({
+  deleteLatestTurn: vi.fn(() => ({ ok: true, deleted: true })),
   getConversationHistory: vi.fn(() => []),
   addConversationTurn: vi.fn(),
   newSessionId: vi.fn(() => "test-session-id"),
@@ -109,6 +110,7 @@ import { rerankArticles } from "@/src/lib/reranker";
 import { runAgentLoop } from "@/src/lib/agent-loop";
 import {
   addConversationTurn,
+  deleteLatestTurn,
   getConversationHistory,
   formatHistoryForPrompt,
 } from "@/src/lib/conversation-store";
@@ -312,6 +314,66 @@ describe("POST /api/ask", () => {
     expect(response.status).toBe(400);
     expect(body.error).toContain("Question too long");
     expect(body.error).toContain("1001 chars");
+  });
+
+  // Regenerate replaces the last turn rather than appending beside it.
+  // The server has to drop the superseded turn from stored history first,
+  // or the model sees itself answering the same question twice.
+  it("drops the superseded turn before reading history on regenerate", async () => {
+    const response = await POST(
+      makeRequest({
+        question: "What happened?",
+        sessionId: "session-regenerating",
+        regenerate: { previousQuestion: "What happened?" },
+      })
+    );
+    expect(response.status).toBe(200);
+
+    const del = deleteLatestTurn as ReturnType<typeof vi.fn>;
+    const read = getConversationHistory as ReturnType<typeof vi.fn>;
+    expect(del).toHaveBeenCalledWith("session-regenerating", "What happened?");
+    expect(del.mock.invocationCallOrder[0]).toBeLessThan(read.mock.invocationCallOrder[0]);
+  });
+
+  it("never deletes a stored turn for an ordinary question", async () => {
+    await POST(makeRequest({ question: "What happened?", sessionId: "session-plain" }));
+    expect(deleteLatestTurn as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when regenerate arrives without a session to correct", async () => {
+    const response = await POST(
+      makeRequest({
+        question: "What happened?",
+        regenerate: { previousQuestion: "What happened?" },
+      })
+    );
+    const body = await response.json();
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("regenerate requires sessionId");
+    expect(deleteLatestTurn as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{}, "regenerate.previousQuestion must be a non-empty string"],
+    [{ previousQuestion: "" }, "regenerate.previousQuestion must be a non-empty string"],
+    [{ previousQuestion: "   " }, "regenerate.previousQuestion must be a non-empty string"],
+    [{ previousQuestion: 7 }, "regenerate.previousQuestion must be a non-empty string"],
+  ])("rejects a malformed regenerate payload %j", async (regenerate, message) => {
+    const response = await POST(
+      makeRequest({ question: "What happened?", sessionId: "s-1", regenerate })
+    );
+    const body = await response.json();
+    expect(response.status).toBe(400);
+    expect(body.error).toBe(message);
+  });
+
+  it("rejects a regenerate field that is not an object", async () => {
+    const response = await POST(
+      makeRequest({ question: "What happened?", sessionId: "s-1", regenerate: "yes" })
+    );
+    const body = await response.json();
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("regenerate must be an object");
   });
 
   it("continues with full-text retrieval when embedding fails", async () => {

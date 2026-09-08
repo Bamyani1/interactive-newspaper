@@ -15,6 +15,7 @@ import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
 import {
+  deleteLatestTurn,
   getConversationHistory,
   addConversationTurn,
   newSessionId,
@@ -451,6 +452,15 @@ export function _setRetrievalTimeoutForTests(ms: number | null): void {
 interface AskRequestBody {
   question: string;
   sessionId?: string;
+  /**
+   * The reader asked for this answer again, or edited the question. The
+   * turn named here is the one being replaced: it is dropped from stored
+   * history before the new answer is generated, so the model does not
+   * see itself answering the same question twice in its own context.
+   */
+  regenerate?: {
+    previousQuestion: string;
+  };
   filters?: {
     category?: string;
     startDate?: string;
@@ -478,6 +488,23 @@ function validateAskContext(body: AskRequestBody): string | null {
     (typeof body.sessionId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(body.sessionId))
   ) {
     return "sessionId has an invalid format";
+  }
+  if (body.regenerate !== undefined) {
+    const { regenerate } = body;
+    if (typeof regenerate !== "object" || regenerate === null || Array.isArray(regenerate)) {
+      return "regenerate must be an object";
+    }
+    if (
+      typeof regenerate.previousQuestion !== "string" ||
+      regenerate.previousQuestion.trim().length === 0
+    ) {
+      return "regenerate.previousQuestion must be a non-empty string";
+    }
+    // Without a session there is no stored history to correct, so a
+    // regenerate flag would silently do nothing.
+    if (body.sessionId === undefined) {
+      return "regenerate requires sessionId";
+    }
   }
   if (body.filters === undefined) return null;
   if (typeof body.filters !== "object" || body.filters === null || Array.isArray(body.filters)) {
@@ -1158,6 +1185,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // ── Session handling ──
   const sessionId = body.sessionId ?? newSessionId();
+  // Drop the superseded turn before reading history, never after: the
+  // replacement answer would otherwise be generated with the answer it
+  // replaces still in context. Validation guarantees a sessionId here.
+  if (body.regenerate && body.sessionId) {
+    await deleteLatestTurn(body.sessionId, body.regenerate.previousQuestion);
+  }
   const conversationHistory = body.sessionId ? await getConversationHistory(body.sessionId) : [];
 
   // ── Streaming branch ──
