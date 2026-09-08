@@ -17,11 +17,11 @@ export const FIRST_PAINT = {
   },
   ask: {
     selector: 'textarea[aria-label="Ask a question"]',
-    expectedText: "Ask a question about OWU history",
+    expectedText: "Ask your own question",
   },
   search: {
     selector: "main h1",
-    expectedText: "Search the Archive",
+    expectedText: "Search 56 years of The Transcript",
   },
   edition: {
     selector: ".edition-feed-surface h2",
@@ -33,7 +33,7 @@ export const FIRST_PAINT = {
   },
   contact: {
     selector: "main h1",
-    expectedText: "Reach the Archive Team",
+    expectedText: "Found something we should revisit?",
   },
   notFound: {
     selector: "main h1",

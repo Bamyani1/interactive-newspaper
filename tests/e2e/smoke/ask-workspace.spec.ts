@@ -278,7 +278,7 @@ test.describe("Ask workspace shell", () => {
     expect(response?.status()).toBe(200);
     await expect(page.locator("main#main-content")).toBeVisible();
     await expect(page.locator(".ask-landing-title")).toHaveText(
-      /Ask the archive/i,
+      /What did students say/i,
     );
     await expect(page.getByLabel("Ask a question")).toBeVisible();
     await expect(page.getByLabel("Ask a question")).toBeDisabled();
@@ -421,7 +421,18 @@ test.describe("Ask response states", () => {
       "Writing answer…",
     );
     await advanceControlledAskStream(page);
-    await expect(page.getByText(DELAYED_ASK_PARTIAL_ANSWER)).toBeVisible();
+    // The typewriter deliberately parks on a partial word until the next
+    // delta arrives (see DeltaTypewriter: emitting mid-word makes the line
+    // re-wrap and tremble). Mid-stream the reader therefore sees the burst
+    // minus its final word, so assert the prefix that is actually painted
+    // rather than the whole delta — the full text is asserted after `done`.
+    const partialPrefix = DELAYED_ASK_PARTIAL_ANSWER.slice(
+      0,
+      DELAYED_ASK_PARTIAL_ANSWER.lastIndexOf(" "),
+    );
+    await expect(page.locator(".ask-turn").last()).toContainText(
+      partialPrefix,
+    );
     await expect(page.locator(".ask-thinking-rule")).toHaveCount(0);
 
     await advanceControlledAskStream(page);
@@ -609,7 +620,7 @@ test.describe("returning Ask workspace", () => {
     expect(postCount).toBe(0);
   });
 
-  test("clears the restored thread locally and deletes only its server session", async ({
+  test("warns, then clears all restored threads and deletes their server sessions", async ({
     page,
   }, testInfo) => {
     const deletedSessionUrls: string[] = [];
@@ -639,9 +650,14 @@ test.describe("returning Ask workspace", () => {
     const clear = visibleConversationAction(
       page,
       testInfo.project.name,
-      /clear the current thread/i,
+      /clear all threads/i,
     );
     await expect(clear).toBeEnabled();
+    await clear.click();
+    const warning = page.getByRole("alertdialog", {
+      name: /clear all threads/i,
+    });
+    await expect(warning).toContainText(/cannot be undone/i);
     const deleteResponse = page.waitForResponse((response) => {
       const request = response.request();
       return (
@@ -649,11 +665,11 @@ test.describe("returning Ask workspace", () => {
         request.method() === "DELETE"
       );
     });
-    await clear.click();
+    await warning.getByRole("button", { name: /^clear all$/i }).click();
     await deleteResponse;
 
     await expect(page.getByRole("status")).toContainText(
-      "Conversation cleared — ask a new question below.",
+      "All threads cleared — ask a new question below.",
     );
     await expect(page.getByText(RETURNING_ASK_ANSWER)).toHaveCount(0);
     await expect(page.getByLabel("Ask a question")).toBeEnabled();
