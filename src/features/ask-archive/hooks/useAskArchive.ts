@@ -3,6 +3,11 @@
 import { useReducer, useRef, useCallback, useEffect } from "react";
 import type { AskResponse, AskErrorKind } from "@/src/types";
 import {
+  parseAskStreamFrame,
+  type AskStage,
+  type AskStreamEvent,
+} from "@/src/lib/ask-stream-events";
+import {
   askReducer,
   INITIAL_STATE,
   type Turn,
@@ -111,50 +116,12 @@ function summariesFrom(archive: StoredThread[]): ThreadSummary[] {
   );
 }
 
-// ── Shape of SSE events the /api/ask?stream=1 endpoint emits. ──
-export type AskStage = "reformulate" | "embed" | "retrieve" | "rerank" | "generate" | "agent";
-
-type StreamEvent =
-  | { type: "stage"; name: AskStage; elapsedMs: number; detail?: string }
-  | {
-      type: "metadata";
-      question: string;
-      mode: "text" | "visual";
-      requestId: string;
-      sourceArticles: AskResponse["sourceArticles"];
-      meta: Partial<AskResponse["meta"]>;
-    }
-  | { type: "delta"; text: string }
-  | {
-      type: "done";
-      answer: string;
-      citations: AskResponse["citations"];
-      confidence: AskResponse["confidence"];
-      sourceArticles?: AskResponse["sourceArticles"];
-      sessionId?: string;
-      followUpQuestions?: string[];
-      meta: AskResponse["meta"];
-    }
-  | {
-      type: "tool_call";
-      tool: string;
-      round: number;
-      args?: Record<string, unknown>;
-    }
-  | {
-      type: "tool_result";
-      tool: string;
-      round: number;
-      summary?: string;
-    }
-  | {
-      type: "error";
-      stage?: string;
-      cause?: string;
-      kind?: AskErrorKind;
-      message: string;
-      requestId?: string;
-    };
+// The wire format lives in src/lib/ask-stream-events.ts and is shared
+// with the route. This file used to keep its own copy, which had drifted:
+// it declared an `embed` stage the server no longer emits and lacked the
+// `coverage` stage the server does emit, so that one was parsed and
+// dropped on the floor.
+export type { AskStage };
 
 // Smooths incoming answer text into a steady word-by-word flow. Real SSE
 // deltas arrive as multi-word bursts every ~100-300ms; queueing them and
@@ -251,18 +218,6 @@ export class DeltaTypewriter {
   }
 }
 
-function parseEventFrame(frame: string): StreamEvent | null {
-  const trimmed = frame.trim();
-  if (!trimmed) return null;
-  const match = trimmed.match(/^data:\s*([\s\S]*)$/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[1]) as StreamEvent;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * The session id is the only credential guarding a conversation
  * transcript, so it must come from a CSPRNG — a Math.random()+Date.now()
@@ -316,11 +271,11 @@ function stageDisplay(name?: AskStage): StageDisplay | null {
   if (!name) return null;
   switch (name) {
     case "reformulate":
-      return { label: "Thinking…" };
-    case "embed":
-      return { label: "Searching archive…" };
+      return { label: "Understanding your question…" };
+    case "coverage":
+      return { label: "Checking archive coverage…" };
     case "retrieve":
-      return { label: "Searching archive…" };
+      return { label: "Searching the archive…" };
     case "rerank":
       return { label: "Ranking sources…" };
     case "generate":
@@ -329,6 +284,25 @@ function stageDisplay(name?: AskStage): StageDisplay | null {
       return { label: "Researching…" };
     default:
       return null;
+  }
+}
+
+/**
+ * Turn one agent tool call into something a reader recognises. The loop
+ * can spend most of a minute here across several rounds, and a single
+ * unchanging "Researching…" gives no sign it is still moving.
+ */
+function toolCallLabel(event: Extract<AskStreamEvent, { type: "tool_call" }>): string {
+  const query = typeof event.args?.query === "string" ? event.args.query.trim() : "";
+  switch (event.tool) {
+    case "search_archive":
+      return query ? `Searching for “${query}”…` : "Searching the archive…";
+    case "read_article":
+      return "Reading an article…";
+    case "list_editions":
+      return "Listing editions…";
+    default:
+      return "Researching…";
   }
 }
 
@@ -573,7 +547,7 @@ export function useAskArchive(): UseAskArchiveReturn {
           while (sepIdx !== -1) {
             const frame = buf.slice(0, sepIdx);
             buf = buf.slice(sepIdx + 2);
-            const event = parseEventFrame(frame);
+            const event = parseAskStreamFrame(frame);
             if (!event || controller.signal.aborted) {
               sepIdx = buf.indexOf("\n\n");
               continue;
@@ -600,8 +574,14 @@ export function useAskArchive(): UseAskArchiveReturn {
               dispatch({
                 type: "TURN_STAGE",
                 id: turnId,
-                stage: "Researching…",
+                stage: toolCallLabel(event),
               });
+            } else if (event.type === "tool_result") {
+              // The loop reports what each lookup found; showing it is the
+              // difference between visible progress and a frozen label.
+              if (event.summary) {
+                dispatch({ type: "TURN_STAGE", id: turnId, stage: event.summary });
+              }
             } else if (event.type === "delta") {
               receivedDelta = true;
               typewriter.push(event.text);
@@ -627,8 +607,9 @@ export function useAskArchive(): UseAskArchiveReturn {
               dispatch({
                 type: "TURN_ERROR",
                 id: turnId,
-                kind: event.kind ?? "server",
+                kind: event.kind,
                 message: event.message || "Something went wrong. Please try again.",
+                retryAfterSec: event.retryAfterSec,
               });
             }
             sepIdx = buf.indexOf("\n\n");

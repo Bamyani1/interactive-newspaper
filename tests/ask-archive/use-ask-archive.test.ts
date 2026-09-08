@@ -600,3 +600,115 @@ describe("useAskArchive", () => {
     expect(result.current.turns[1].question).toBe("ask once");
   });
 });
+
+describe("stream progress reporting", () => {
+  function sseBody(events: object[]): string {
+    return events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("");
+  }
+
+  function streamResponse(events: object[]): Response {
+    return new Response(sseBody(events), {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("labels every stage the server actually emits, including coverage", async () => {
+    const stages = [
+      { name: "reformulate", label: "Understanding your question…" },
+      { name: "coverage", label: "Checking archive coverage…" },
+      { name: "retrieve", label: "Searching the archive…" },
+      { name: "rerank", label: "Ranking sources…" },
+      { name: "generate", label: "Writing answer…" },
+      { name: "agent", label: "Researching…" },
+    ];
+
+    for (const stage of stages) {
+      const seen: string[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          if (String(url).includes("/api/ask/session")) {
+            return new Response(JSON.stringify({ turns: [], expired: false }), { status: 200 });
+          }
+          return streamResponse([{ type: "stage", name: stage.name, elapsedMs: 1 }]);
+        })
+      );
+
+      const { result } = renderHook(() => useAskArchive());
+      await waitFor(() => expect(result.current.isHydrating).toBe(false));
+      await act(async () => {
+        result.current.submit(`stage ${stage.name}`);
+      });
+      await waitFor(() => {
+        const turn = result.current.turns.at(-1);
+        if (turn?.stage) seen.push(turn.stage);
+        expect(turn?.stage).toBe(stage.label);
+      });
+    }
+  });
+
+  it("names the archive lookups an agent turn is making", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/api/ask/session")) {
+          return new Response(JSON.stringify({ turns: [], expired: false }), { status: 200 });
+        }
+        return streamResponse([
+          { type: "stage", name: "agent", elapsedMs: 1 },
+          { type: "tool_call", tool: "search_archive", round: 1, args: { query: "dorm curfew" } },
+        ]);
+      })
+    );
+
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+    await act(async () => {
+      result.current.submit("what did students say about curfews?");
+    });
+
+    await waitFor(() => {
+      expect(result.current.turns.at(-1)?.stage).toBe("Searching for “dorm curfew”…");
+    });
+  });
+
+  it("carries a mid-stream rate limit and its wait to the turn", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/api/ask/session")) {
+          return new Response(JSON.stringify({ turns: [], expired: false }), { status: 200 });
+        }
+        return streamResponse([
+          { type: "stage", name: "retrieve", elapsedMs: 1 },
+          {
+            type: "error",
+            kind: "rate_limit",
+            stage: "generate",
+            message: "AI quota reached. Please try again later.",
+            requestId: "req-1",
+            retryAfterSec: 42,
+          },
+        ]);
+      })
+    );
+
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+    await act(async () => {
+      result.current.submit("quota please");
+    });
+
+    await waitFor(() => {
+      const turn = result.current.turns.at(-1);
+      expect(turn?.status).toBe("error");
+      expect(turn?.errorKind).toBe("rate_limit");
+      expect(turn?.retryAfterSec).toBe(42);
+    });
+  });
+});
