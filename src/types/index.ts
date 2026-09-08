@@ -224,6 +224,13 @@ export interface AskResponse {
      * so their relevance was never vetted and confidence is capped.
      */
     rerankDegraded?: boolean;
+    /**
+     * Set when the reformulator never answered, so retrieval ran on a
+     * locally derived keyword set instead of a rewritten query. Tells a
+     * thin answer apart from a question the reformulator had nothing to
+     * add to — both of which leave `reformulatedQuery` undefined.
+     */
+    reformulationDegraded?: boolean;
     corpusVersion?: string;
     indexBuildId?: string | null;
     pipelineVersion?: string;
@@ -260,13 +267,7 @@ export interface AskResponse {
  * answered in this conversation.
  */
 export type AskErrorKind =
-  | "rate_limit"
-  | "budget"
-  | "timeout"
-  | "network"
-  | "server"
-  | "bad_request"
-  | "duplicate";
+  "rate_limit" | "budget" | "timeout" | "network" | "server" | "bad_request" | "duplicate";
 
 export interface AskError {
   kind: AskErrorKind;

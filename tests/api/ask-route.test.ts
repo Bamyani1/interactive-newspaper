@@ -2257,3 +2257,57 @@ describe("typed AskError response body", () => {
     expect(body.stage).toBe("rerank");
   });
 });
+
+describe("honest degradation metadata", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+  });
+
+  it("reports a degraded reformulation instead of leaving it indistinguishable", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "What happened at OWU?",
+      ftsQuery: "happened owu",
+      mode: "text",
+      complexity: "simple",
+      coverageIntent: "none",
+      reformulationDegraded: true,
+    });
+
+    const response = await POST(makeRequest({ question: "What happened at OWU?" }));
+    const body = await response.json();
+
+    expect(body.meta.reformulationDegraded).toBe(true);
+    // A no-op reformulation leaves reformulatedQuery undefined too, which is
+    // exactly the ambiguity the flag resolves.
+    expect(body.meta.reformulatedQuery).toBeUndefined();
+  });
+
+  it("omits the degradation flags on a healthy pipeline", async () => {
+    const response = await POST(makeRequest({ question: "healthy question" }));
+    const body = await response.json();
+
+    expect(body.meta.reformulationDegraded).toBeUndefined();
+    expect(body.meta.rerankDegraded).toBeUndefined();
+  });
+
+  it("reports a degraded reformulation on the streaming metadata and done events", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "streamed question",
+      ftsQuery: "streamed question",
+      mode: "text",
+      complexity: "simple",
+      coverageIntent: "none",
+      reformulationDegraded: true,
+    });
+
+    const response = await POST(makeRequest({ question: "streamed question" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    const metadata = events.find((e) => e.type === "metadata");
+    const done = events.find((e) => e.type === "done");
+    expect((metadata?.meta as Record<string, unknown>)?.reformulationDegraded).toBe(true);
+    expect((done?.meta as Record<string, unknown>)?.reformulationDegraded).toBe(true);
+  });
+});

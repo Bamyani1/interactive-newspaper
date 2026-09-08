@@ -645,6 +645,7 @@ async function handleStreamingAsk(params: {
         let coverageIntent: CoverageIntent | undefined;
         let inferredStartDate: string | undefined;
         let inferredEndDate: string | undefined;
+        let reformulationDegraded: boolean | undefined;
         try {
           const reformulated = await reformulateQuery(question, {
             signal: globalController.signal,
@@ -658,6 +659,7 @@ async function handleStreamingAsk(params: {
           coverageIntent = reformulated.coverageIntent;
           inferredStartDate = reformulated.startDate;
           inferredEndDate = reformulated.endDate;
+          reformulationDegraded = reformulated.reformulationDegraded;
         } catch (err) {
           console.error(
             JSON.stringify({
@@ -728,6 +730,7 @@ async function handleStreamingAsk(params: {
             sourceArticles: [],
             meta: {
               reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+              ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
               ...coverageMetadata(coverage),
             },
           });
@@ -778,6 +781,7 @@ async function handleStreamingAsk(params: {
                 articlesSearched: agentResult.articleMeta.size,
                 method: agentResult.retrievalMethod ?? "none",
                 reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+                ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
                 complexity,
                 agentSteps: agentResult.rounds,
                 agentToolCalls: agentResult.toolCallCount,
@@ -951,6 +955,7 @@ async function handleStreamingAsk(params: {
             articlesSearched: articles.length,
             method,
             reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+            ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
             ...retrievalIdentityMetadata(retrievalIdentity),
           },
         });
@@ -1033,6 +1038,7 @@ async function handleStreamingAsk(params: {
             articlesSearched: articles.length,
             method,
             reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+            ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
             complexity,
             ...retrievalIdentityMetadata(retrievalIdentity),
             ...coverageMetadata(coverage),
@@ -1249,7 +1255,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         conversationHistory,
       })
     );
-    const { embeddingQuery, ftsQuery, mode, complexity, coverageIntent } = reformulated;
+    const { embeddingQuery, ftsQuery, mode, complexity, coverageIntent, reformulationDegraded } =
+      reformulated;
     const filters = resolveRetrievalFilters(body.filters, reformulated);
     // Coverage is supplementary caveat metadata — a failed stats query
     // degrades to "no coverage" rather than failing the whole request.
@@ -1310,6 +1317,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           articlesSearched: agentResult.articleMeta.size,
           method: agentResult.retrievalMethod ?? "none",
           reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+          ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
           complexity,
           agentSteps: agentResult.rounds,
           agentToolCalls: agentResult.toolCallCount,
@@ -1456,6 +1464,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         articlesSearched: articles.length,
         method,
         reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+        ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
         complexity,
         ...retrievalIdentityMetadata(retrievalIdentity),
         ...coverageMetadata(coverage),
