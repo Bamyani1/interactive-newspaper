@@ -1036,6 +1036,31 @@ describe("useAskArchive turn lifecycle", () => {
     view.unmount();
   });
 
+  it("a click on a thread that is gone leaves the live answer running", async () => {
+    const sse = makeSseResponse();
+    const { view } = await submitAndStream(sse, "keep answering this");
+    await act(async () => {
+      sse.emit({ type: "delta", text: "Still writing " });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    const partial = view.result.current.turns[0].answer;
+    expect(view.result.current.turns[0].status).toBe("streaming");
+
+    await act(async () => {
+      view.result.current.switchThread("a-thread-that-aged-out");
+    });
+
+    // Nowhere to go, so nothing is spent: the answer keeps arriving.
+    expect(view.result.current.turns[0].status).toBe("streaming");
+    expect(view.result.current.threads).toEqual([]);
+    await act(async () => {
+      sse.emit({ type: "delta", text: "and finishing." });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    expect(view.result.current.turns[0].answer.length).toBeGreaterThan(partial.length);
+    view.unmount();
+  });
+
   it("aborts an in-flight answer when the workspace unmounts", async () => {
     const sse = makeSseResponse();
     const recorded: Recorded[] = [];

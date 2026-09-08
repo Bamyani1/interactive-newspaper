@@ -850,17 +850,29 @@ export function useAskArchive(): UseAskArchiveReturn {
   const switchThread = useCallback(
     (threadId: string) => {
       if (threadId === sessionIdRef.current) return; // no-op
+      // Confirm the destination exists before touching anything. This
+      // used to stop the live answer and archive the thread first, then
+      // bail on a missing target — a stale sidebar click (a thread aged
+      // out, or cleared in another tab) cost the reader their answer and
+      // left them exactly where they already were.
+      const before = readArchive();
+      if (!before.some((t) => t.sessionId === threadId)) {
+        dispatch({ type: "SET_THREADS", threads: summariesFrom(before) });
+        return;
+      }
       interactionRevisionRef.current += 1;
       stop();
       // Snapshot the current thread before leaving so we don't
       // lose any turns that weren't archived yet.
       const prevSessionId = sessionIdRef.current;
-      if (prevSessionId) {
-        upsertArchive(prevSessionId, state.turns);
-      }
-      const archive = readArchive();
+      const archive = prevSessionId ? upsertArchive(prevSessionId, state.turns) : before;
       const target = archive.find((t) => t.sessionId === threadId);
-      if (!target) return; // gone — stale sidebar click
+      if (!target) {
+        // Vanished between the two reads. Nothing to open, so re-sync
+        // the sidebar rather than switching to an empty transcript.
+        dispatch({ type: "SET_THREADS", threads: summariesFrom(archive) });
+        return;
+      }
       sessionIdRef.current = threadId;
       if (typeof window !== "undefined") {
         try {
