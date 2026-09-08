@@ -6,7 +6,7 @@
  * (JS or DB).
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { runMigrations } from "../../scripts/db/lib/migration-runner";
 import { createTestDb, MIGRATIONS_DIR, type TestDb } from "../db/helpers/pglite";
 import { runRetentionSweep } from "@/src/lib/retention";
@@ -72,10 +72,10 @@ describe("runRetentionSweep", () => {
   }
 
   it("deletes expired rows from all three tables and returns the counts", async () => {
-    // Session TTL default 30 min → cutoff 11:30:00Z.
-    await seedSessionTurn(minutesBefore(120)); // expired
-    await seedSessionTurn(minutesBefore(31)); // expired
-    await seedSessionTurn(minutesBefore(15)); // fresh
+    // Session TTL default 7 days (ASK_SESSION_TTL_DAYS) → cutoff 2026-07-25.
+    await seedSessionTurn(daysBefore(30)); // expired
+    await seedSessionTurn(daysBefore(8)); // expired
+    await seedSessionTurn(daysBefore(6)); // fresh
     // Feedback default 90 days → cutoff 2026-05-03T12:00:00Z.
     await seedFeedback(daysBefore(91)); // expired
     await seedFeedback(daysBefore(2)); // fresh
@@ -93,7 +93,7 @@ describe("runRetentionSweep", () => {
   });
 
   it("retains rows exactly at each cutoff (strict less-than)", async () => {
-    await seedSessionTurn(minutesBefore(30)); // exactly at TTL cutoff
+    await seedSessionTurn(daysBefore(7)); // exactly at TTL cutoff
     await seedFeedback(daysBefore(90)); // exactly at retention cutoff
     await seedRateBucket("ask:1.1.1.1", minutesBefore(60)); // exactly at grace cutoff
 
@@ -120,7 +120,7 @@ describe("runRetentionSweep", () => {
   });
 
   it("is idempotent: a second sweep at the same time deletes nothing", async () => {
-    await seedSessionTurn(minutesBefore(120));
+    await seedSessionTurn(daysBefore(30));
     await seedFeedback(daysBefore(365));
     await seedRateBucket("ask:1.1.1.1", minutesBefore(180));
 
@@ -129,6 +129,37 @@ describe("runRetentionSweep", () => {
 
     const second = await runRetentionSweep(db.executor, { now: NOW });
     expect(second).toEqual({ sessionTurns: 0, feedback: 0, rateBuckets: 0 });
+  });
+
+  it("takes its session window from ASK_SESSION_TTL_DAYS, clamped to [1, 30]", async () => {
+    // The default and the clamp both matter: the sweep is what actually
+    // enforces the recall window the sidebar promises.
+    for (const [raw, ttlDays] of [
+      ["2", 2],
+      ["365", 30],
+      ["0", 1],
+      ["a week", 7],
+    ] as const) {
+      await db.pg.exec("TRUNCATE ask_session_turns");
+      vi.stubEnv("ASK_SESSION_TTL_DAYS", raw);
+      await seedSessionTurn(daysBefore(ttlDays + 1));
+      await seedSessionTurn(daysBefore(Math.max(0, ttlDays - 1)));
+
+      const result = await runRetentionSweep(db.executor, { now: NOW });
+
+      expect(result.sessionTurns, `ASK_SESSION_TTL_DAYS=${raw}`).toBe(1);
+      expect(await countRows("ask_session_turns")).toBe(1);
+    }
+    vi.unstubAllEnvs();
+  });
+
+  it("still honors an explicit sessionTtlMinutes override", async () => {
+    await seedSessionTurn(minutesBefore(31));
+    await seedSessionTurn(minutesBefore(15));
+
+    const result = await runRetentionSweep(db.executor, { now: NOW, sessionTtlMinutes: 30 });
+
+    expect(result.sessionTurns).toBe(1);
   });
 
   it("throws on feedbackRetentionDays < 1 or non-numeric values", async () => {

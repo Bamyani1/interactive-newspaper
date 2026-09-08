@@ -4,8 +4,8 @@
  * The session endpoint hydrates a scrolling transcript after reload.
  * Key behaviors:
  *  - turns come back with full `answer` and per-turn sourceArticles
- *  - `expired: true` distinguishes "session aged out" from "never
- *    existed"
+ *  - `expired: true` distinguishes "session aged out of the
+ *    ASK_SESSION_TTL_DAYS window" from "never existed"
  *  - missing / malformed sessionId returns an empty, non-expired body
  */
 
@@ -64,7 +64,11 @@ describe("GET /api/ask/session", () => {
     expect(body.expired).toBe(false);
   });
 
-  it("returns empty turns + expired:true when the session existed but aged out of the TTL window", async () => {
+  it("returns empty turns + expired:true when the session existed but aged out of the recall window", async () => {
+    // `expired` keeps its server-side meaning — rows exist, none inside the
+    // window — and that window is now ASK_SESSION_TTL_DAYS (default 7), so a
+    // thread the sidebar still lists is only ever reported expired once its
+    // rows really are a week old.
     (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (sessionHasAnyTurns as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 

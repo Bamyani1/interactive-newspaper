@@ -75,7 +75,7 @@ Ohio Wesleyan University's student newspaper, _The Transcript_, has been publish
 - **Browse the archive.** Navigate digitized editions with period-accurate typography, date controls, and an era-aware reading experience.
 - **Ask the Archive.** Natural-language chat over the archive with a full RAG pipeline: query reformulation, hybrid vector + full-text search, Gemini reranking, cited answer generation, and streaming SSE responses.
 - **Complex queries get an agent.** Multi-era, comparative, or multi-hop questions trigger a Gemini function-calling agent with `search_archive`, `read_article`, and `list_editions` tools instead of the linear pipeline.
-- **Multi-thread conversations.** Sessions persist to Neon (5 turns, 30-min TTL). A sidebar shows the current thread plus an archive of past threads. Follow-up questions carry context.
+- **Multi-thread conversations.** Sessions persist to Neon (5 turns of prompt context; rows kept `ASK_SESSION_TTL_DAYS` (default 7) to match the sidebar). A sidebar shows the current thread plus an archive of past threads. Follow-up questions carry context.
 - **Export a conversation.** Any Ask thread exports to a formatted PDF client-side (`jspdf` + `html2canvas`) for sharing or citation.
 - **Budget-aware by default.** A $2/day hard kill switch stops the pipeline before a runaway loop can drain the Gemini quota.
 - **Multimodal visual queries.** "Show me protest photos" returns a visual-mode answer with a `TimelineGallery` of matching article thumbnails. Text and image embeddings live in the same vector space.
@@ -215,7 +215,7 @@ The answer generator receives the **original** user question plus the matched pa
 
 ### Conversation threading
 
-`conversation-store.ts` persists turns to Neon `ask_session_turns` (5 turns, 30-min window). `persistTurnBounded` caps the write at 1500 ms so a slow DB never stutters the final `done` event. The sidebar surfaces active thread + archived threads from localStorage. "New conversation" mints a fresh session; "Clear thread" wipes the Neon rows.
+`conversation-store.ts` persists turns to Neon `ask_session_turns` (5 turns of prompt context; rows kept `ASK_SESSION_TTL_DAYS` (default 7) to match the sidebar). `persistTurnBounded` caps the write at 1500 ms so a slow DB never stutters the final `done` event. The sidebar surfaces active thread + archived threads from localStorage. "New conversation" mints a fresh session; "Clear thread" wipes the Neon rows.
 
 ### Guards
 

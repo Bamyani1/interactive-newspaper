@@ -233,11 +233,14 @@ Cache entries are shared across every visitor, so `setCachedAnswer` strips the s
 
 Query embeddings and hybrid results have five-minute bounded LRUs. Agent answers are not placed in the answer cache.
 
-Conversation turns live in Neon for 30 minutes. Each successful write transaction:
+Conversation turns live in Neon for `ASK_SESSION_TTL_DAYS` (default 7, clamped to
+[1, 30]) — the same window the browser-side sidebar keeps a thread for, so a
+reopened thread never loses its follow-up context. Each successful write
+transaction:
 
 1. inserts the turn, cited IDs, and bounded citation snapshots when the expand-only column is available;
 2. deletes expired global rows;
-3. keeps only the newest five rows for that session.
+3. keeps only the newest five rows for that session (the prompt-context budget, separate from the recall window).
 
 Each snapshot pins a content revision, headline/date metadata, a bounded evidence
 excerpt, and registered image metadata. Session hydration uses the snapshot
