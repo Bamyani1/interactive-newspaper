@@ -213,6 +213,7 @@ beforeEach(() => {
     ],
     confidence: "high",
     followUps: [],
+    outcome: "answered",
   });
   (generateAnswerStream as ReturnType<typeof vi.fn>).mockReset().mockImplementation(() =>
     (async function* () {
@@ -223,6 +224,7 @@ beforeEach(() => {
         citations: [],
         confidence: "medium",
         followUps: [],
+        outcome: "no_evidence",
       };
     })()
   );
@@ -2255,6 +2257,118 @@ describe("typed AskError response body", () => {
     expect(response.status).toBe(500);
     expect(body.kind).toBe("server");
     expect(body.stage).toBe("rerank");
+  });
+});
+
+describe("canned error answers are never stored as history", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+  });
+
+  it("returns 504 and stores nothing when generation times out", async () => {
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "The answer took too long to generate. Please try a simpler question.",
+      citations: [],
+      confidence: "low",
+      followUps: [],
+      outcome: "error",
+      errorKind: "timeout",
+    });
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(504);
+    expect(body.kind).toBe("timeout");
+    expect(body.stage).toBe("generate");
+    expect(addConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 and stores nothing when generation fails", async () => {
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "I encountered an error while generating an answer. Please try again.",
+      citations: [],
+      confidence: "low",
+      followUps: [],
+      outcome: "error",
+      errorKind: "server",
+    });
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.kind).toBe("server");
+    expect(addConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("still stores an honest no-evidence answer as real follow-up context", async () => {
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "I don't have enough information in the archive to answer this question.",
+      citations: [],
+      confidence: "low",
+      followUps: [],
+      outcome: "no_evidence",
+    });
+
+    const response = await POST(makeRequest({ question: "obscure q" }));
+
+    expect(response.status).toBe(200);
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "obscure q",
+      "I don't have enough information in the archive to answer this question.",
+      [],
+      expect.any(Array)
+    );
+  });
+
+  it("emits an SSE error instead of a done frame when streaming generation fails", async () => {
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield {
+          type: "done",
+          answer: "I encountered an error while generating an answer. Please try again.",
+          citations: [],
+          confidence: "low",
+          followUps: [],
+          outcome: "error",
+          errorKind: "server",
+        };
+      })()
+    );
+
+    const response = await POST(makeRequest({ question: "q" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    expect(events.find((e) => e.type === "done")).toBeUndefined();
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent?.kind).toBe("server");
+    expect(errorEvent?.stage).toBe("generate");
+    expect(addConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("streams a no-evidence answer through to done and stores it", async () => {
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield {
+          type: "done",
+          answer: "I don't have enough information in the archive to answer this question.",
+          citations: [],
+          confidence: "low",
+          followUps: [],
+          outcome: "no_evidence",
+        };
+      })()
+    );
+
+    const response = await POST(makeRequest({ question: "obscure q" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    expect(events.find((e) => e.type === "done")?.outcome).toBe("no_evidence");
+    expect(addConversationTurn).toHaveBeenCalled();
   });
 });
 
