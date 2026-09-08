@@ -205,6 +205,22 @@
 }
 
 /* =========================================
+   STOPPED NOTICE
+   A turn the reader interrupted keeps its partial text; this line is
+   what tells them the ending is missing rather than the archive
+   having nothing more to say.
+   ========================================= */
+.ask-turn-stopped {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+/* =========================================
    FOLLOW-UP QUESTIONS + EXAMPLE CHIPS
    ========================================= */
 

@@ -2,9 +2,17 @@
  * askReducer — pure state machine for the transcript UI.
  *
  * Each Turn is a Q/A pair with its own `status` ("streaming" | "done" |
- * "error"). Submitting a question appends an optimistic user turn; SSE
- * events fill in the assistant fields; a `done` event freezes the turn;
- * a `TURN_ERROR` replaces the assistant region with a typed error row.
+ * "stopped" | "error"). Submitting a question appends an optimistic user
+ * turn; SSE events fill in the assistant fields; a `done` event freezes
+ * the turn; a `TURN_ERROR` replaces the assistant region with a typed
+ * error row; `TURN_STOPPED` freezes it with whatever text arrived.
+ *
+ * "streaming" is the only non-terminal status, and it is the gate on
+ * every assistant-side event: a turn that has already settled cannot be
+ * reanimated by a frame that arrives after the reader stopped it, left
+ * the thread, or asked something else. Without that gate a late `done`
+ * from an abandoned stream would overwrite a turn the reader considers
+ * finished, and the composer would flip back to disabled.
  *
  * The reducer has no I/O — the hook that owns it handles fetch, SSE
  * parsing, session-id mint, and localStorage. Keeping this file pure
@@ -14,7 +22,7 @@
 
 import type { AskResponse, AskErrorKind } from "@/src/types";
 
-export type TurnStatus = "streaming" | "done" | "error";
+export type TurnStatus = "streaming" | "done" | "stopped" | "error";
 
 export interface Turn {
   id: string;
@@ -124,6 +132,7 @@ export type AskAction =
       message: string;
       retryAfterSec?: number;
     }
+  | { type: "TURN_STOPPED"; id: string }
   | { type: "CLEAR_ALL_THREADS" }
   | { type: "NEW_CONVERSATION" };
 
@@ -160,10 +169,24 @@ function updateTurn(state: AskState, id: string, updater: (t: Turn) => Turn): As
   let changed = false;
   const turns = state.turns.map((t) => {
     if (t.id !== id) return t;
+    const next = updater(t);
+    // An updater that declines the update (a settled turn, an event for
+    // a turn that no longer exists) must not produce a new array — the
+    // archive effect keys off `state.turns` identity.
+    if (next === t) return t;
     changed = true;
-    return updater(t);
+    return next;
   });
   return changed ? { ...state, turns } : state;
+}
+
+/**
+ * Apply an assistant-side stream event only while the turn is still
+ * streaming. Every other status is terminal, so a frame that arrives
+ * after the reader stopped the answer or moved on is dropped.
+ */
+function updateStreamingTurn(state: AskState, id: string, updater: (t: Turn) => Turn): AskState {
+  return updateTurn(state, id, (t) => (t.status === "streaming" ? updater(t) : t));
 }
 
 export function askReducer(state: AskState, action: AskAction): AskState {
@@ -209,11 +232,14 @@ export function askReducer(state: AskState, action: AskAction): AskState {
       };
     case "APPEND_USER": {
       // If the most recent turn is still "streaming" when a new
-      // question arrives, freeze it with whatever partial answer
-      // it has — avoids a zombie spinner in the transcript.
+      // question arrives, freeze it with whatever partial answer it
+      // has — avoids a zombie spinner in the transcript. It settles to
+      // "stopped", not "done": the answer was cut off, and calling a
+      // truncated paragraph "done" hides that from the reader and from
+      // the archive.
       const frozen = state.turns.map((t, i) =>
         i === state.turns.length - 1 && t.status === "streaming"
-          ? { ...t, status: "done" as const }
+          ? { ...t, status: "stopped" as const, stage: undefined }
           : t
       );
       return {
@@ -228,7 +254,7 @@ export function askReducer(state: AskState, action: AskAction): AskState {
       };
     }
     case "TURN_META":
-      return updateTurn(state, action.id, (t) => ({
+      return updateStreamingTurn(state, action.id, (t) => ({
         ...t,
         mode: action.mode,
         requestId: action.requestId,
@@ -236,12 +262,12 @@ export function askReducer(state: AskState, action: AskAction): AskState {
         meta: { ...(t.meta ?? ({} as AskResponse["meta"])), ...action.meta } as AskResponse["meta"],
       }));
     case "TURN_STAGE":
-      return updateTurn(state, action.id, (t) => ({
+      return updateStreamingTurn(state, action.id, (t) => ({
         ...t,
         stage: action.stage,
       }));
     case "TURN_DELTA":
-      return updateTurn(state, action.id, (t) => ({
+      return updateStreamingTurn(state, action.id, (t) => ({
         ...t,
         answer: t.answer + action.text,
         // First delta removes the stage pill — streaming text now
@@ -249,7 +275,7 @@ export function askReducer(state: AskState, action: AskAction): AskState {
         stage: undefined,
       }));
     case "TURN_DONE":
-      return updateTurn(state, action.id, (t) => ({
+      return updateStreamingTurn(state, action.id, (t) => ({
         ...t,
         status: "done",
         answer: action.answer,
@@ -261,12 +287,20 @@ export function askReducer(state: AskState, action: AskAction): AskState {
         stage: undefined,
       }));
     case "TURN_ERROR":
-      return updateTurn(state, action.id, (t) => ({
+      return updateStreamingTurn(state, action.id, (t) => ({
         ...t,
         status: "error",
         errorKind: action.kind,
         errorMessage: action.message,
         retryAfterSec: action.retryAfterSec,
+        stage: undefined,
+      }));
+    case "TURN_STOPPED":
+      // The reader interrupted, switched thread, or closed the page.
+      // Keep every token that did arrive; Regenerate is the way back.
+      return updateStreamingTurn(state, action.id, (t) => ({
+        ...t,
+        status: "stopped",
         stage: undefined,
       }));
     case "CLEAR_ALL_THREADS":

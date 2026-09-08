@@ -62,13 +62,20 @@ export const Turn: React.FC<TurnProps> = ({
   );
 
   const isStreaming = turn.status === "streaming";
+  // The reader stopped this answer, switched away from it, or asked
+  // something else before it finished. The text it did receive is real
+  // and stays on screen; what it is missing is an ending.
+  const isStopped = turn.status === "stopped";
   const hasText = turn.answer.trim().length > 0;
   const showStagePill = isStreaming && !hasText;
 
   // While streaming, hold back half-arrived markdown (a partial image
   // URL, a dangling "[Source", an unclosed "**") so raw syntax never
   // flashes. The reducer keeps the full text; done renders untrimmed.
-  const displayAnswer = isStreaming ? trimIncompleteMarkdown(turn.answer) : turn.answer;
+  // A stopped answer was cut at an arbitrary character, so it keeps the
+  // trim permanently — there is no later frame to complete the syntax.
+  const displayAnswer =
+    isStreaming || isStopped ? trimIncompleteMarkdown(turn.answer) : turn.answer;
 
   // Sources arrive with the metadata event, several seconds before the
   // first answer token — show them immediately so the wait is spent
@@ -129,6 +136,12 @@ export const Turn: React.FC<TurnProps> = ({
                   </AnswerImageContext.Provider>
                 </div>
               </>
+            ) : null}
+
+            {isStopped ? (
+              <p className="ask-turn-stopped">
+                {hasText ? "Stopped before the answer finished." : "Stopped before it answered."}
+              </p>
             ) : null}
 
             {turn.status === "done" ? (

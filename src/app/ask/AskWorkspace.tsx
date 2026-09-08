@@ -68,10 +68,12 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
         ]
       : threads;
   const hasThreads = visibleThreads.length > 0 || turns.length > 0;
+  // Refocus once the last turn reaches any terminal status. Testing for
+  // "not streaming" rather than listing statuses means a stopped turn
+  // hands the caret back too — the reader pressed Escape to type
+  // something else.
   const focusSignal = `${sessionGen}:${
-    lastTurn?.status === "done" || lastTurn?.status === "error"
-      ? `${lastTurn.id}:${lastTurn.status}`
-      : "idle"
+    lastTurn && lastTurn.status !== "streaming" ? `${lastTurn.id}:${lastTurn.status}` : "idle"
   }`;
 
   const canStartConversation =
