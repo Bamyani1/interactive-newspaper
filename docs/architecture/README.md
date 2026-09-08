@@ -22,7 +22,7 @@ Terms that appear across multiple docs:
 - **`edition.json`** — The canonical OCR output. Shape defined in `ocr/src/transcript_ocr/contracts/content_models.py`.
 - **FTS** — Postgres full-text search. Uses GIN-indexed `tsvector` column `search_vector`.
 - **HNSW** — Hierarchical Navigable Small World. The pgvector ANN index used for embedding similarity search. Parameters: `m=16, ef_construction=128, hnsw.ef_search=100`.
-- **hybrid search** — The combined vector + FTS retrieval in `db.ts :: hybridSearch`. Merged via RRF.
+- **hybrid search** — The combined vector + FTS retrieval in `retrieval.ts :: retrieveCandidates`, which runs both signals independently and merges them with `db.ts :: fuseArticleResults` via RRF. When both signals succeed and return nothing, the reported method is `none`, not `hybrid`.
 - **RRF** — Reciprocal Rank Fusion. The algorithm that merges vector and FTS rank lists: `score = weight / (K + rank)` with `K=40`.
 - **simple pipeline** — The 5-stage non-agent path in `/api/ask`: reformulate → embed → retrieve → rerank → generate.
 - **turn** — One (question, answer) pair in a conversation. Multiple turns form a session (up to 5 within 30 min, stored in `ask_session_turns`).

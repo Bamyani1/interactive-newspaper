@@ -123,9 +123,10 @@ CDN: IMAGE_BASE_URL/ocr-assets/<sha256>.webp    (hash-shaped filenames)
 POST /api/ask
   → reformulateQuery(question)
   → embedQuery(semantic query)    (embeddings.ts, 10s timeout, 5-min LRU)
-  → hybridSearch()          (db.ts: vector + FTS → RRF, 5-min LRU)
+  → retrieveCandidates()    (retrieval.ts: both signals in parallel, then RRF)
     ├── queryArticlesByEmbedding()   (chunk or image HNSW cosine)
     └── searchArticlesForRag()       (chunk/article FTS)
+    → fuseArticleResults()           (db.ts: pure RRF merge)
   → rerankArticles()
   → generateAnswer() or runAgentLoop()
 
@@ -629,7 +630,9 @@ driven by the input version, not by a command-line switch: bump
 
 ## Hybrid search
 
-`db.ts :: hybridSearch` combines vector and FTS via Reciprocal Rank Fusion (RRF):
+`retrieval.ts :: retrieveCandidates` issues both signals in parallel and merges them with the pure
+`db.ts :: fuseArticleResults` via Reciprocal Rank Fusion (RRF). Keeping fusion pure lets the
+retrieval service and the evaluation harness inspect each raw signal before it is merged:
 
 ```
 score(article) = vectorWeight / (RRF_K + vectorRank)
@@ -651,7 +654,7 @@ Route.ts overrides by mode:
 - `visual` mode → 0.7 vector / 0.3 FTS
 - `text` mode → 0.6 vector / 0.4 FTS
 
-Articles appearing in both result sets get both scores summed and their `source` field set to `"both"`. Their unique matched passages are combined. The module-level LRU (50 entries, five-minute TTL) keys on lexical query, semantic-vector digest, filters, pipeline version, and corpus version.
+Articles appearing in both result sets get both scores summed and their `source` field set to `"both"`. Their unique matched passages are combined. Retrieval is not cached: each request issues both signals so `meta.method` and the retrieval log always describe that request's own signals.
 
 ---
 
@@ -843,7 +846,7 @@ In `cost-tracker.ts`, `conversation-store.ts`, and `rate-limit.ts`, Neon clients
 
 ### Integration-level coverage
 
-`tests/lib/db-vector-search.test.ts` covers `hybridSearch` and the vector/FTS merge logic with a mocked Neon client.
+`tests/lib/db-vector-search.test.ts` covers the vector and FTS query builders with a mocked Neon client; `tests/lib/retrieval.test.ts` covers signal combination, the reported method (including `none`), and the corrective retry's stage tagging.
 
 ### Migration-system tests
 
@@ -924,8 +927,9 @@ without a corresponding hash bump. The version bump *is* the force switch; there
 1. **Confirm v2 indexes exist**. Use `\d article_chunks` and `\d article_images` in `psql` to verify both HNSW indexes.
 2. **Check the daily budget**. `SELECT * FROM ai_spend_counter WHERE day = CURRENT_DATE`. A request that looks stuck may be budget-blocked before the query reached the DB.
 3. **Check `api_rate_bucket`**. Look for IP-level throttling.
-4. **Hybrid search timeout**. `hybridSearch` has an 8-second timeout (`HYBRID_SEARCH_TIMEOUT_MS`); a `DbTimeoutError` in logs means the DB exceeded that budget.
-5. **Neon slow-query log**. Examine the Neon console for slow or repeatedly cancelled queries.
+4. **Query timeout**. Each retrieval query defaults to an 8-second budget (`HYBRID_SEARCH_TIMEOUT_MS`); a `DbTimeoutError` in logs means the DB exceeded it.
+5. **Serving filter reaches no rows**. Run `npm run rag:health`. A `served.predicate` count of 0 means the configured filter matches nothing, so the vector leg returns zero rows without erroring — the retrieval log warns `vector signal returned 0 rows while full-text returned rows` when that happens in production.
+6. **Neon slow-query log**. Examine the Neon console for slow or repeatedly cancelled queries.
 
 ### Restore from gold
 
