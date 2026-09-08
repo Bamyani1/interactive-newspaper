@@ -471,57 +471,6 @@
   cursor: not-allowed;
 }
 
-@keyframes askFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.ask-answer-enter {
-  animation: askFadeIn var(--duration-normal) var(--ease-default) both;
-}
-
-/* =========================================
-   CONFIDENCE BADGE
-   ========================================= */
-
-.ask-confidence-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: var(--text-xs);
-  font-family: var(--font-mono, monospace);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label-sm);
-}
-
-.ask-confidence-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-}
-
-/* Confidence dot colours — traffic-light semantics mapped to specific
-   hues rather than semantic accent so the high/medium/low distinction
-   stays legible even when --color-accent/--color-warning collide to
-   brand red. Kept as literal hex. */
-.ask-confidence-dot--high {
-  background: #22c55e;
-}
-
-.ask-confidence-dot--medium {
-  background: #f59e0b;
-}
-
-.ask-confidence-dot--low {
-  background: #9ca3af;
-}
-
 /* =========================================
    REDUCED MOTION
    ========================================= */

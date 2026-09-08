@@ -97,14 +97,28 @@ describe("SourceList", () => {
     expect(screen.getByRole("heading", { name: /Second Story/ })).toBeInTheDocument();
   });
 
-  it("makes each source card an activatable button for the reader drawer", () => {
+  it("gives each card a real Read control instead of being one itself", () => {
     const source = makeSource({ editionDate: "1960-02-03" });
     render(<SourceList sources={[source]} turnId="t-1" />);
 
-    const card = screen.getByRole("button", { name: /Test Article/ });
+    // The card carried role="button" on an <article>, which flattened the
+    // index, headline, byline, snippet and photo count into one accessible
+    // name and stopped the headline being a heading.
+    const read = screen.getByRole("button", { name: "Read: Test Article" });
+    expect(read.tagName).toBe("BUTTON");
+    expect(screen.getByRole("heading", { name: /Test Article/ })).toBeInTheDocument();
+
     // The id is scoped to its turn: `ask-source-1` repeated across every
     // turn, so a citation in a later answer scrolled to the first answer.
+    const card = read.closest("article");
     expect(card).toHaveAttribute("id", "ask-source-t-1-1");
-    expect(card).toHaveAttribute("tabIndex", "0");
+    expect(card).not.toHaveAttribute("role");
+    expect(card).not.toHaveAttribute("tabIndex");
+  });
+
+  it("the Read control opens the article reader", () => {
+    render(<SourceList sources={[makeSource({ headline: "Trustees Vote" })]} turnId="t-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Read: Trustees Vote" }));
+    expect(screen.getByRole("dialog", { name: /Trustees Vote/ })).toBeInTheDocument();
   });
 });

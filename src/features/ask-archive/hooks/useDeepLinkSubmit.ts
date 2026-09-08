@@ -44,10 +44,21 @@ export function useDeepLinkSubmit({
     if (turnCount > 0) startNewConversation();
     submit(q);
 
-    // This only consumes a URL parameter; it is not a route navigation.
-    // Next patches native history calls so the App Router stays in sync,
-    // including in optimized production builds where same-route replaces
-    // can preserve the route cache's original canonical query string.
-    window.history.replaceState(null, "", "/ask");
+    // Consume only `q`. Rewriting the URL to a bare "/ask" discarded every
+    // other parameter with it — a campaign tag, a debug flag, anything a
+    // link carried alongside the question.
+    //
+    // This is a parameter edit, not a route navigation. Next patches native
+    // history calls so the App Router stays in sync, including in optimized
+    // production builds where a same-route replace can otherwise preserve
+    // the route cache's original canonical query string.
+    const remaining = new URLSearchParams(window.location.search);
+    remaining.delete("q");
+    const query = remaining.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`
+    );
   }, [isHydrating, turnCount, searchParams, submit, startNewConversation]);
 }

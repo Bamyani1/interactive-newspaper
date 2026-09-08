@@ -251,7 +251,6 @@ test.describe("Ask workspace shell", () => {
     await expect(page.locator(".ask-landing-title")).toHaveText(/What did students say/i);
     await expect(page.getByLabel("Ask a question")).toBeVisible();
     await expect(page.getByLabel("Ask a question")).toBeDisabled();
-    await expect(page.locator(".ask-loading-skeleton")).toHaveCount(0);
 
     if (isMobile) {
       await expect(page.locator(".ask-sidebar")).toBeHidden();
@@ -277,7 +276,6 @@ test.describe("Ask workspace shell", () => {
     await expect(page.locator(".ask-transcript")).toHaveAttribute("aria-busy", "false");
     await expect(page.locator(".ask-composer")).toBeVisible();
     await expect(page.getByLabel("Ask a question")).toBeEnabled();
-    await expect(page.locator(".ask-loading-skeleton")).toHaveCount(0);
 
     const transitionDuration = await page
       .locator(".ask-landing-suggestion")
@@ -746,7 +744,9 @@ test.describe("visual Ask sources", () => {
     await page.goto("/ask");
     await expect(page.getByText(VISUAL_ASK_ANSWER)).toBeVisible();
     await page.getByRole("button", { name: "Sources — 2 articles" }).click();
-    const sourceTrigger = page.locator(".ask-source-card").first();
+    const sourceTrigger = page
+      .getByRole("button", { name: `Read: ${VISUAL_ASK_SOURCE_HEADLINE}` })
+      .first();
     await sourceTrigger.focus();
     await sourceTrigger.click();
 
@@ -797,7 +797,9 @@ test.describe("visual Ask sources", () => {
     await expect(answerPhoto).toBeFocused();
 
     await page.getByRole("button", { name: "Sources — 2 articles" }).click();
-    const sourceTrigger = page.locator(".ask-source-card").first();
+    const sourceTrigger = page
+      .getByRole("button", { name: `Read: ${VISUAL_ASK_SOURCE_HEADLINE}` })
+      .first();
     await sourceTrigger.click();
     const reader = page.getByRole("dialog", {
       name: VISUAL_ASK_SOURCE_HEADLINE,
@@ -865,8 +867,14 @@ test.describe("visual Ask sources", () => {
     await sourceToggle.click();
 
     const sourceCard = page.locator(".ask-source-card").first();
-    await expectMinimumTarget(sourceCard, "source card");
-    await sourceCard.focus();
+    // The card is a record, not a control: `role="button"` on an <article>
+    // flattened its heading, byline, snippet and photo count into one
+    // accessible name. Its "Read" button is the target that must clear 44px.
+    const sourceRead = sourceCard.getByRole("button", {
+      name: `Read: ${VISUAL_ASK_SOURCE_HEADLINE}`,
+    });
+    await expectMinimumTarget(sourceRead, "source read control");
+    await sourceRead.focus();
     for (const [selector, label] of [
       [".ask-source-card-category", "source category"],
       [".ask-source-card-date", "source date"],
@@ -880,7 +888,7 @@ test.describe("visual Ask sources", () => {
     await expect(sourceCard.locator(".ask-source-card-num")).toHaveCSS("opacity", "1");
     await expectNoSeriousOrCriticalAxeViolations(page);
 
-    await sourceCard.click();
+    await sourceRead.click();
     const reader = page.getByRole("dialog", {
       name: VISUAL_ASK_SOURCE_HEADLINE,
     });

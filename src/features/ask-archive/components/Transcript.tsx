@@ -161,6 +161,11 @@ export const Transcript: React.FC<TranscriptProps> = ({
         {liveStatus}
       </p>
 
+      {/* The landing supplies the page's h1 while the transcript is empty.
+          Once turns replace it the document had no h1 at all, so this
+          stands in — exactly one, either way. */}
+      {isEmpty ? null : <h1 className="sr-only">Ask the Archive</h1>}
+
       {expiredBanner ? (
         <div className="ask-expired-banner" role="status">
           <span className="ask-expired-banner-label">Notice</span>
