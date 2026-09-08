@@ -130,7 +130,7 @@ describe("AskPage — render decisions", () => {
       expiredBanner: true,
     });
     render(<AskPage />);
-    expect(screen.getByText(/your last conversation expired/i)).toBeInTheDocument();
+    expect(screen.getByText(/server memory for this conversation has aged out/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/suggested questions, refreshed daily/i)).toBeInTheDocument();
   });
 

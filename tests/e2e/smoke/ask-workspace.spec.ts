@@ -482,7 +482,7 @@ test.describe("expired Ask workspace", () => {
     });
     await page.goto("/ask");
     await expect(page.getByRole("status")).toContainText(
-      "Your last conversation expired. Starting fresh."
+      "Server memory for this conversation has aged out. Follow-ups start fresh context."
     );
     await expect(page.locator(".ask-landing-title")).toBeVisible();
     await expect(page.getByLabel("Ask a question")).toBeEnabled();

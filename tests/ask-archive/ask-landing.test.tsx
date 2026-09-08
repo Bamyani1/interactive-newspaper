@@ -43,7 +43,9 @@ describe("AskLanding", () => {
     expect(screen.queryByLabelText(/example of how an answer looks/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Example answer/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Research Desk · Vol\. LVI/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/your last conversation expired/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/server memory for this conversation has aged out/i)
+    ).not.toBeInTheDocument();
   });
 
   it("renders three daily suggestions and fires onPickQuestion on click", () => {

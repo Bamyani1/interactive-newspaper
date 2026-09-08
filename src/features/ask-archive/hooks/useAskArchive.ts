@@ -144,13 +144,6 @@ function upsertArchive(sessionId: string, turns: Turn[]): StoredThread[] {
   return next;
 }
 
-function removeFromArchive(sessionId: string): StoredThread[] {
-  const archive = readArchive();
-  const next = archive.filter((t) => t.sessionId !== sessionId);
-  writeArchive(next);
-  return next;
-}
-
 function toSummary(entry: StoredThread): ThreadSummary {
   return {
     id: entry.sessionId,
@@ -390,7 +383,14 @@ export function useAskArchive(): UseAskArchiveReturn {
     if (typeof window === "undefined") return undefined;
     const sessionId = readOrCreateSessionId();
     sessionIdRef.current = sessionId;
-    if (!sessionId) return undefined;
+    if (!sessionId) {
+      // No CSPRNG and no storage, so there is nothing to restore and
+      // never will be. Hydration still has to settle: leaving the flag
+      // raised disabled the composer for good, and the page became
+      // unusable rather than merely session-less.
+      dispatch({ type: "HYDRATE", turns: [], expired: false });
+      return undefined;
+    }
     const restoreRevision = interactionRevisionRef.current;
 
     // Read archived threads from localStorage — survives server
@@ -430,11 +430,13 @@ export function useAskArchive(): UseAskArchiveReturn {
           expired?: boolean;
         };
         if (cancelled) return;
-        // Session aged out server-side. Honor "Starting fresh":
-        // drop the dead thread from the local archive, mint a new
-        // session id, and hydrate into an empty transcript so the
-        // banner sits above the landing suggestions — nothing from
-        // the expired conversation lingers in the sidebar.
+        // Server-side memory for this conversation has aged out. The
+        // transcript itself is local and still perfectly readable, so it
+        // stays: deleting it threw away a conversation the reader may
+        // still want, and minting a fresh session id orphaned the
+        // archived copy from the id it was filed under. The banner is
+        // what explains that follow-ups here start without prior
+        // context; the first follow-up clears it.
         if (json.expired) {
           if (interactionRevisionRef.current !== restoreRevision) {
             // The user already interacted during the fetch;
@@ -451,21 +453,12 @@ export function useAskArchive(): UseAskArchiveReturn {
             });
             return;
           }
-          const remaining = removeFromArchive(sessionId);
-          try {
-            window.localStorage.removeItem(SESSION_STORAGE_KEY);
-          } catch {
-            // storage disabled — the ref update below still applies
-          }
-          sessionIdRef.current = null;
-          const fresh = readOrCreateSessionId();
-          sessionIdRef.current = fresh;
           dispatch({
             type: "HYDRATE",
-            turns: [],
+            turns: archivedActive?.turns ?? [],
             expired: true,
-            threads: summariesFrom(remaining),
-            activeThreadId: fresh,
+            threads: summaries,
+            activeThreadId: sessionId,
           });
           return;
         }

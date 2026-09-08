@@ -86,7 +86,7 @@ describe("Transcript — empty-state indicators", () => {
       />
     );
     expect(screen.queryByText(/all threads cleared/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/your last conversation expired/i)).toBeInTheDocument();
+    expect(screen.getByText(/server memory for this conversation has aged out/i)).toBeInTheDocument();
   });
 
   it("keeps the inline landing mounted while hydrating", () => {
