@@ -234,7 +234,7 @@ describe("AskPage — render decisions", () => {
     expect(screen.getByLabelText(/suggested questions, refreshed daily/i)).toBeInTheDocument();
     expect(screen.getByText(/checking for a saved conversation/i)).toBeInTheDocument();
     expect(screen.getByRole("complementary")).toBeInTheDocument();
-    expect(screen.getByRole("log", { name: /conversation transcript/i })).toHaveAttribute(
+    expect(screen.getByRole("region", { name: /conversation transcript/i })).toHaveAttribute(
       "aria-busy",
       "true"
     );

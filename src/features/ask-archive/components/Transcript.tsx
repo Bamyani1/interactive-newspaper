@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowDown } from "lucide-react";
 import type { Turn as TurnData, EmptyReason } from "../hooks/askReducer";
 import { Turn } from "./Turn";
 import { AskLanding } from "./AskLanding";
@@ -11,9 +12,9 @@ interface TranscriptProps {
   expiredBanner: boolean;
   suggestionDate?: string;
   /**
-   * When the transcript is empty, this tells us what to render:
-   * "cleared" shows a muted pill, while null/"new" keeps the
-   * AskLanding suggestions/lede/stats inline during restoration.
+   * Why the transcript is empty, when it is. It only ever adds a pill
+   * above the landing — the landing itself renders for every empty state,
+   * so no combination of flags can produce a blank scroller.
    */
   emptyReason: EmptyReason;
   onFollowUp: (question: string) => void;
@@ -46,21 +47,37 @@ export const Transcript: React.FC<TranscriptProps> = ({
   // Set when we move scrollTop ourselves so the scroll listener can
   // tell programmatic scrolls from user intent.
   const programmaticScrollRef = useRef(false);
+  // Mirrors "the reader has scrolled away from the bottom" into state so
+  // the return-to-latest button can render. `followRef` cannot: it is a
+  // ref precisely so streaming ticks don't re-render on scroll.
+  const [isAwayFromLatest, setIsAwayFromLatest] = useState(false);
   const FOLLOW_THRESHOLD_PX = 200;
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return undefined;
     const onScroll = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      // Updated for programmatic scrolls too — the button has to
+      // disappear when we jump the reader to the bottom ourselves.
+      setIsAwayFromLatest(distanceFromBottom > FOLLOW_THRESHOLD_PX);
       if (programmaticScrollRef.current) {
         programmaticScrollRef.current = false;
         return;
       }
-      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       followRef.current = distanceFromBottom <= FOLLOW_THRESHOLD_PX;
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const scrollToLatest = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    programmaticScrollRef.current = true;
+    el.scrollTop = el.scrollHeight;
+    followRef.current = true;
+    setIsAwayFromLatest(false);
   }, []);
 
   // When a new turn is added, anchor the viewport to the top of that
@@ -101,14 +118,46 @@ export const Transcript: React.FC<TranscriptProps> = ({
 
   const isEmpty = turns.length === 0;
 
+  // What the single live region says: the progress of the current turn,
+  // which nothing else announces, and its terminal state. Never the answer
+  // text, which assistive tech would re-read on every streamed word, and
+  // never anything a visible status element already announces — the
+  // restoration line, the cleared pill and the expiry notice each carry
+  // their own role, and the error row is a `role="alert"`.
+  const lastTurn = turns[turns.length - 1];
+  const liveStatus = (() => {
+    if (!lastTurn) return "";
+    switch (lastTurn.status) {
+      case "streaming":
+        return lastTurn.stage ?? "Working on your question.";
+      case "stopped":
+        return "Answer stopped.";
+      case "error":
+        return "";
+      default:
+        return "Answer ready.";
+    }
+  })();
+
   return (
     <div
       ref={containerRef}
       className="ask-transcript"
-      role="log"
+      role="region"
       aria-label="Conversation transcript"
       aria-busy={isHydrating}
     >
+      {/*
+        One polite live region for progress and status, and nothing else.
+        The scroller used to be a `role="log"`, which makes assistive tech
+        announce every descendant as it changes: the landing suggestions
+        on arrival, then each turn, then each streamed word. Announcing
+        the stage instead is the useful half.
+      */}
+      <p className="sr-only" aria-live="polite">
+        {liveStatus}
+      </p>
+
       {expiredBanner ? (
         <div className="ask-expired-banner" role="status">
           <span className="ask-expired-banner-label">Notice</span>
@@ -119,36 +168,32 @@ export const Transcript: React.FC<TranscriptProps> = ({
         </div>
       ) : null}
 
-      {isHydrating && isEmpty ? (
-        <p className="ask-hydrating-indicator" role="status" aria-live="polite">
-          Checking for a saved conversation…
-        </p>
-      ) : null}
-
-      {/* Cleared empty state: a quiet one-liner pill. Only
-                renders for the explicit "cleared" flag — `null` and
-                "new" fall through to the inline landing so returning
-                users (with archived threads but a fresh current
-                thread) don't see a misleading "All threads cleared"
-                pill. */}
-      {isEmpty && !isHydrating && !expiredBanner && emptyReason === "cleared" ? (
-        <p className="ask-cleared-indicator" role="status" aria-live="polite">
-          All threads cleared — ask a new question below.
-        </p>
-      ) : null}
-
-      {/* Inline landing surface for every other empty state:
-                post-New, expired-session returns, and initial loads
-                where the user has prior archived threads but no
-                current turns. The expired banner above stays visible;
-                the landing renders below it so the user has
-                suggestions to click instead of a void. */}
-      {isEmpty && emptyReason !== "cleared" ? (
-        <AskLanding
-          onPickQuestion={onFollowUp}
-          disabled={isHydrating}
-          suggestionDate={suggestionDate}
-        />
+      {/*
+        Every empty state renders the landing, so there is always
+        something to click. Above it: the restoration line while a saved
+        session is being checked, or the cleared pill after Clear all.
+        The two used to be exclusive branches, and the combination of an
+        expiry notice with a cleared transcript matched neither — that
+        state rendered an entirely blank scroller.
+      */}
+      {isEmpty ? (
+        <>
+          {isHydrating ? (
+            <p className="ask-hydrating-indicator" role="status" aria-live="polite">
+              Checking for a saved conversation…
+            </p>
+          ) : null}
+          {emptyReason === "cleared" ? (
+            <p className="ask-cleared-indicator" role="status" aria-live="polite">
+              All threads cleared — ask a new question below.
+            </p>
+          ) : null}
+          <AskLanding
+            onPickQuestion={onFollowUp}
+            disabled={isHydrating}
+            suggestionDate={suggestionDate}
+          />
+        </>
       ) : null}
 
       {turns.map((turn, i) => (
@@ -162,6 +207,25 @@ export const Transcript: React.FC<TranscriptProps> = ({
           onEditAndResend={onEditAndResend}
         />
       ))}
+
+      {/*
+        Sticky, and last in the scroller so it pins to the bottom edge.
+        A reader who scrolls up to re-read an earlier answer loses the
+        stream and previously had to drag all the way back down.
+      */}
+      {!isEmpty && isAwayFromLatest ? (
+        <div className="ask-scroll-to-latest-slot">
+          <button
+            type="button"
+            className="ask-scroll-to-latest"
+            onClick={scrollToLatest}
+            aria-label="Scroll to the latest answer"
+            title="Scroll to the latest answer"
+          >
+            <ArrowDown size={16} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 };
