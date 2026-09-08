@@ -133,7 +133,12 @@ export type AgentProgressEvent = AskAgentProgressEvent;
 
 // ─── Source Article Ids ─────────────────────────────────────────
 
-const IMAGE_EMBED_RE = /!\[[^\]]*\]\(([^)\s]+)\)/g;
+// Also matches the `![](url "title")` form, which is valid CommonMark and
+// which the client renders: without the optional title group the whole
+// embed failed to match, so its owner was dropped from the sources. A URL
+// containing a raw space stays a documented non-goal — CommonMark requires
+// angle brackets for that, and mdSafeUrl escapes spaces upstream anyway.
+const IMAGE_EMBED_RE = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g;
 
 /**
  * Space and %20 flip between `mdSafeUrl`, the model, and its parser, so a
