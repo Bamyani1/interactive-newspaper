@@ -1835,7 +1835,7 @@ describe("Streaming + agent", () => {
   });
 });
 
-describe("Answer cache (streaming)", () => {
+describe("Every question runs the RAG pipeline (streaming)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
@@ -1871,35 +1871,29 @@ describe("Answer cache (streaming)", () => {
     );
   });
 
-  it("replays the cached response with meta.cacheHit:true on the second streaming POST", async () => {
-    // First request populates the cache
+  it("re-runs retrieval and generation for an identical repeat question", async () => {
     const first = await POST(
       makeRequest({ question: "cache test" }, { stream: true }),
     );
-    const firstEvents = await readSseEvents(first);
-    const firstDone = firstEvents.find((e) => e.type === "done");
+    const firstDone = (await readSseEvents(first)).find((e) => e.type === "done");
     expect(firstDone).toBeDefined();
-    expect((firstDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
     expect(generateAnswerStream).toHaveBeenCalledTimes(1);
-    expect(embedQuery).toHaveBeenCalledTimes(1);
 
-    // Second request hits the cache — skips embed/retrieve/rerank/generate
+    // The same question again must not be replayed from anywhere: no answer
+    // is ever served without the pipeline that produced it running again.
     const second = await POST(
       makeRequest({ question: "cache test" }, { stream: true }),
     );
-    const secondEvents = await readSseEvents(second);
-    const secondDone = secondEvents.find((e) => e.type === "done");
+    const secondDone = (await readSseEvents(second)).find((e) => e.type === "done");
     expect(secondDone).toBeDefined();
-    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBe(true);
+    expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
     expect(secondDone?.answer).toBe("Cached answer.");
-    expect(secondDone?.followUpQuestions).toEqual(["Tell me more?", "Any sources?"]);
-    // Cache hit must not re-invoke the downstream pipeline
-    expect(generateAnswerStream).toHaveBeenCalledTimes(1);
-    expect(embedQuery).toHaveBeenCalledTimes(1);
-    expect(rerankArticles).toHaveBeenCalledTimes(1);
+    expect(generateAnswerStream).toHaveBeenCalledTimes(2);
+    expect(embedQuery).toHaveBeenCalledTimes(2);
+    expect(rerankArticles).toHaveBeenCalledTimes(2);
   });
 
-  it("emits a delta with the full cached answer before the done event on cache hit", async () => {
+  it("streams the answer as deltas before the done event on a repeat", async () => {
     await readSseEvents(
       await POST(makeRequest({ question: "cache test" }, { stream: true })),
     );
@@ -1913,7 +1907,7 @@ describe("Answer cache (streaming)", () => {
     expect(concatenated).toBe("Cached answer.");
   });
 
-  it("does not cache agent-path (complexity=complex) answers", async () => {
+  it("never marks an agent-path (complexity=complex) answer as replayed", async () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "complex q",
       ftsQuery: "complex q",
