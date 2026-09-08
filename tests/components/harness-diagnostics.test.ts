@@ -330,6 +330,7 @@ describe("mocked Ask stream abort exception (isIgnorableMockedAskStreamAbort)", 
         method: "POST",
         url: "http://127.0.0.1:3219/api/ask?stream=1",
         errorText: "net::ERR_ABORTED",
+        fulfilledByMock: true,
       },
     },
     {
@@ -338,6 +339,7 @@ describe("mocked Ask stream abort exception (isIgnorableMockedAskStreamAbort)", 
         method: "post",
         url: "http://127.0.0.1:3219/api/ask",
         errorText: "net::ERR_ABORTED",
+        fulfilledByMock: true,
       },
     },
   ])("ignores $name", ({ input }) => {
@@ -346,11 +348,24 @@ describe("mocked Ask stream abort exception (isIgnorableMockedAskStreamAbort)", 
 
   it.each([
     {
+      name: "an Ask POST no mock ever answered",
+      // The signature of a double submit or a switch mid-stream: the client
+      // cancelled the request itself, so no mock reached `route.fulfill()`.
+      // This is the failure the exemption exists to stay out of the way of.
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_ABORTED",
+        fulfilledByMock: false,
+      },
+    },
+    {
       name: "the session endpoint",
       input: {
         method: "DELETE",
         url: "http://127.0.0.1:3219/api/ask/session?sessionId=abc",
         errorText: "net::ERR_ABORTED",
+        fulfilledByMock: true,
       },
     },
     {
@@ -359,6 +374,7 @@ describe("mocked Ask stream abort exception (isIgnorableMockedAskStreamAbort)", 
         method: "GET",
         url: "http://127.0.0.1:3219/api/ask?stream=1",
         errorText: "net::ERR_ABORTED",
+        fulfilledByMock: true,
       },
     },
     {
@@ -367,6 +383,7 @@ describe("mocked Ask stream abort exception (isIgnorableMockedAskStreamAbort)", 
         method: "POST",
         url: "http://127.0.0.1:3219/api/ask?stream=1",
         errorText: "net::ERR_CONNECTION_REFUSED",
+        fulfilledByMock: true,
       },
     },
     {
@@ -375,6 +392,7 @@ describe("mocked Ask stream abort exception (isIgnorableMockedAskStreamAbort)", 
         method: "POST",
         url: "http://127.0.0.1:3219/api/ask-archive",
         errorText: "net::ERR_ABORTED",
+        fulfilledByMock: true,
       },
     },
   ])("keeps $name fatal", ({ input }) => {
