@@ -75,11 +75,6 @@ function checkInMemory(
     };
 }
 
-// Module-level fallback store used by createRateLimiter factories when
-// no per-instance map is wanted. Callers that want full isolation pass
-// their own. Exposed via _clearRateLimitFallbackForTests for test hygiene.
-const sharedFallback = new Map<string, RateLimitEntry>();
-
 async function checkNeon(
     sql: ReturnType<typeof neon>,
     options: RateLimiterOptions,
@@ -164,9 +159,4 @@ export function getClientIp(request: Request): string {
         if (hops.length > 0) return hops[hops.length - 1];
     }
     return "127.0.0.1";
-}
-
-/** Test helper — clears the shared fallback so tests don't leak. */
-export function _clearRateLimitFallbackForTests(): void {
-    sharedFallback.clear();
 }
