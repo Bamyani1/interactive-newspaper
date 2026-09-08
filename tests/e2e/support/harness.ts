@@ -95,27 +95,69 @@ export function isIgnorableOptimizedImageAbort(input: {
   return isImageOptimizerRequest && input.errorText.includes("ERR_ABORTED");
 }
 
+/**
+ * Playwright fulfils the deterministic Ask stream in a single shot, so the
+ * whole SSE body is already buffered before the workspace asks for it. The
+ * workspace drains that body lazily — it types each delta out and awaits the
+ * typewriter between reads — and Chrome tears the intercepted request down
+ * during that pause, reporting `net::ERR_ABORTED` even though the reader
+ * still receives its final `done` and the turn completes normally. A live SSE
+ * connection just applies backpressure instead, so this is an artifact of
+ * route interception, not app behaviour. Scoped to POSTs at the Ask endpoint;
+ * a genuine duplicate submission is caught by the request counts in
+ * `ask-workspace.spec.ts`, not here.
+ */
+export function isIgnorableMockedAskStreamAbort(input: {
+  method: string;
+  url: string;
+  errorText: string;
+}): boolean {
+  const path = input.url.split("?")[0];
+  return (
+    input.method.toUpperCase() === "POST" &&
+    path.endsWith("/api/ask") &&
+    input.errorText.includes("ERR_ABORTED")
+  );
+}
+
+/**
+ * Next prefetches route payloads speculatively, and the browser cancels any
+ * still in flight when the page navigates. A sweep that walks hundreds of
+ * routes therefore cancels prefetches constantly — `net::ERR_ABORTED` on a
+ * `?_rsc=` GET is that cancellation, never a failed navigation: the route the
+ * sweep actually visits is asserted through its own first-paint check.
+ */
+export function isIgnorableRscPrefetchAbort(input: {
+  method: string;
+  url: string;
+  errorText: string;
+}): boolean {
+  if (input.method.toUpperCase() !== "GET") return false;
+  if (!input.errorText.includes("ERR_ABORTED")) return false;
+  try {
+    return new URL(input.url).searchParams.has("_rsc");
+  } catch {
+    return false;
+  }
+}
+
 export function observeBrowserDiagnostics(
   page: Page,
   diagnostics: BrowserDiagnostics,
 ): () => void {
-  let mayConsumeDocumentBootMotionWarning = true;
-  let documentBootTimer: ReturnType<typeof setTimeout> | undefined;
-  const openDocumentBootWindow = () => {
-    mayConsumeDocumentBootMotionWarning = true;
-    if (documentBootTimer) clearTimeout(documentBootTimer);
-    documentBootTimer = undefined;
-  };
   const onConsole = (message: ConsoleMessage) => {
     const text = consoleMessageText(message);
     if (message.type() === "error") diagnostics.consoleErrors.push(text);
+    // Motion emits this warning every time a motion subtree mounts under the
+    // reduced-motion setting the audit context itself forces — once per full
+    // document load and again after each client-side route change. It reports
+    // nothing about the app, and the predicate already refuses to match unless
+    // the text is exact, the source is a local dev chunk, and the server is in
+    // development mode, so consume it whenever it appears.
     if (
       message.type() === "warning" &&
-      mayConsumeDocumentBootMotionWarning &&
       isExpectedFramerMotionReducedMotionDevWarning(text)
     ) {
-      mayConsumeDocumentBootMotionWarning = false;
-      if (documentBootTimer) clearTimeout(documentBootTimer);
       return;
     }
     if (message.type() === "warning") {
@@ -123,23 +165,6 @@ export function observeBrowserDiagnostics(
     }
     if (/hydration|did not match|server rendered html/i.test(text)) {
       diagnostics.hydrationErrors.push(text);
-    }
-  };
-  const onLoad = () => {
-    // Motion's reduced-motion effect runs just after the load event. Keep the
-    // exception one-shot per full document and close its boot window before
-    // settled assertions. Client-side navigations never reopen this window.
-    documentBootTimer = setTimeout(() => {
-      mayConsumeDocumentBootMotionWarning = false;
-    }, 250);
-  };
-  const onRequest = (request: Request) => {
-    if (
-      request.isNavigationRequest() &&
-      request.resourceType() === "document" &&
-      request.frame() === page.mainFrame()
-    ) {
-      openDocumentBootWindow();
     }
   };
   const onPageError = (error: Error) => {
@@ -154,6 +179,24 @@ export function observeBrowserDiagnostics(
     if (
       isIgnorableOptimizedImageAbort({
         resourceType: request.resourceType(),
+        url: request.url(),
+        errorText,
+      })
+    ) {
+      return;
+    }
+    if (
+      isIgnorableMockedAskStreamAbort({
+        method: request.method(),
+        url: request.url(),
+        errorText,
+      })
+    ) {
+      return;
+    }
+    if (
+      isIgnorableRscPrefetchAbort({
+        method: request.method(),
         url: request.url(),
         errorText,
       })
@@ -176,20 +219,15 @@ export function observeBrowserDiagnostics(
   };
 
   page.on("console", onConsole);
-  page.on("load", onLoad);
-  page.on("request", onRequest);
   page.on("pageerror", onPageError);
   page.on("requestfailed", onRequestFailed);
   page.on("response", onResponse);
 
   return () => {
     page.off("console", onConsole);
-    page.off("load", onLoad);
-    page.off("request", onRequest);
     page.off("pageerror", onPageError);
     page.off("requestfailed", onRequestFailed);
     page.off("response", onResponse);
-    if (documentBootTimer) clearTimeout(documentBootTimer);
   };
 }
 
