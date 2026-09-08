@@ -14,6 +14,12 @@ interface MarkdownProps {
    * scrollable anchors as the pipeline's [Source N] citations.
    */
   articleIdIndex?: Map<string, number>;
+  /**
+   * The turn this answer belongs to. Citation anchors are scoped to it,
+   * matching the ids SourceCard renders, so a citation resolves within
+   * its own turn instead of jumping to the first turn in the transcript.
+   */
+  turnId: string;
   className?: string;
 }
 
@@ -26,14 +32,21 @@ interface MarkdownProps {
 const PIPELINE_CITATION_RE = /\[Source (\d+)\]/g;
 const AGENT_CITATION_RE = /\[(\d{4}-\d{2}-\d{2}-\d+(?:\s*,\s*\d{4}-\d{2}-\d{2}-\d+)*)\]/g;
 
-function replaceCitations(text: string, articleIdIndex?: Map<string, number>): string {
-  let out = text.replace(PIPELINE_CITATION_RE, (_match, n: string) => `[[${n}]](#ask-source-${n})`);
+function replaceCitations(
+  text: string,
+  turnId: string,
+  articleIdIndex?: Map<string, number>
+): string {
+  let out = text.replace(
+    PIPELINE_CITATION_RE,
+    (_match, n: string) => `[[${n}]](#ask-source-${turnId}-${n})`
+  );
   out = out.replace(AGENT_CITATION_RE, (_match, inner: string) => {
     const ids = inner.split(/\s*,\s*/);
     const linked = ids
       .map((id) => {
         const num = articleIdIndex?.get(id);
-        return num === undefined ? null : `[[${num}]](#ask-source-${num})`;
+        return num === undefined ? null : `[[${num}]](#ask-source-${turnId}-${num})`;
       })
       .filter((x): x is string => x !== null);
     // If none of the IDs resolved, drop the bracket entirely — it's
@@ -74,7 +87,9 @@ const renderPre: React.FC<React.HTMLAttributes<HTMLPreElement> & { node?: unknow
 // the usual safety attributes.
 const renderAnchor: React.FC<AnchorProps> = ({ href, children, ...rest }) => {
   if (href && href.startsWith("#ask-source-")) {
-    const num = href.replace("#ask-source-", "");
+    // The href already carries the turn-scoped element id, so take it
+    // whole rather than reassembling it from a parsed index.
+    const targetId = href.slice(1);
     return (
       <a
         {...rest}
@@ -83,7 +98,7 @@ const renderAnchor: React.FC<AnchorProps> = ({ href, children, ...rest }) => {
         onClick={(e) => {
           e.preventDefault();
           const flashTarget = (): boolean => {
-            const target = document.getElementById(`ask-source-${num}`);
+            const target = document.getElementById(targetId);
             if (!target) return false;
             target.scrollIntoView({
               behavior: "smooth",
@@ -177,10 +192,15 @@ MarkdownBlock.displayName = "MarkdownBlock";
  * links that scroll to the matching source card, then renders per-block
  * with memoization so streaming ticks re-parse only the growing block.
  */
-export const Markdown: React.FC<MarkdownProps> = ({ children, articleIdIndex, className }) => {
+export const Markdown: React.FC<MarkdownProps> = ({
+  children,
+  articleIdIndex,
+  turnId,
+  className,
+}) => {
   const blocks = useMemo(
-    () => splitMarkdownBlocks(replaceCitations(children, articleIdIndex)),
-    [children, articleIdIndex]
+    () => splitMarkdownBlocks(replaceCitations(children, turnId, articleIdIndex)),
+    [children, turnId, articleIdIndex]
   );
 
   const rendered = blocks.map((block, i) => <MarkdownBlock key={i} text={block} />);

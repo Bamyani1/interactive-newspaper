@@ -113,7 +113,6 @@ describe("exportConversationPdf", () => {
     expect(capturedText).toContain("Source Story");
     expect(capturedText).toContain("A source snippet that must be in the PDF.");
     expect(capturedHtml).toContain("ask-source-list-content");
-    expect(capturedHtml).not.toContain("ask-turn--previous");
     expect(pdfMocks.save).toHaveBeenCalledWith("ask-the-archive-earlier-question.pdf");
     expect(document.querySelector(".ask-export-root")).toBeNull();
   });

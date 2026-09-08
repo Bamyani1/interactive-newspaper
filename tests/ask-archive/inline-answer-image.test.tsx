@@ -13,14 +13,14 @@ function renderWithContext(
   const metaByUrl = new Map(images.map((img, index) => [img.src, { ...img, index }] as const));
   return render(
     <AnswerImageContext.Provider value={{ metaByUrl, openLightbox: onOpen }}>
-      <Markdown>{md}</Markdown>
+      <Markdown turnId="t-1">{md}</Markdown>
     </AnswerImageContext.Provider>
   );
 }
 
 describe("Markdown inline images", () => {
   it("renders a plain <img> when no context is provided", () => {
-    const { container } = render(<Markdown>{"![alt](https://x/p.webp)"}</Markdown>);
+    const { container } = render(<Markdown turnId="t-1">{"![alt](https://x/p.webp)"}</Markdown>);
     const img = container.querySelector("img");
     expect(img).not.toBeNull();
     expect(container.querySelector(".ask-answer-figure")).toBeNull();
@@ -28,7 +28,7 @@ describe("Markdown inline images", () => {
   });
 
   it("drops empty-src images silently", () => {
-    const { container } = render(<Markdown>{"![alt]()"}</Markdown>);
+    const { container } = render(<Markdown turnId="t-1">{"![alt]()"}</Markdown>);
     expect(container.querySelector("img")).toBeNull();
   });
 
