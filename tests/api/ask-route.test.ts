@@ -72,8 +72,16 @@ vi.mock("@/src/lib/reranker", () => ({
   rerankArticles: vi.fn(),
 }));
 
+// Buckets created at import time. Recorded in a plain array rather than on a
+// spy because the suite's vi.clearAllMocks() would erase spy call history
+// before any assertion could read it.
+const { rateLimiterBuckets } = vi.hoisted(() => ({ rateLimiterBuckets: [] as string[] }));
+
 vi.mock("@/src/lib/rate-limit", () => ({
-  createRateLimiter: () => () => ({ allowed: true, resetAt: Date.now() + 60000 }),
+  createRateLimiter: (options: { bucket: string }) => {
+    rateLimiterBuckets.push(options.bucket);
+    return () => ({ allowed: true, resetAt: Date.now() + 60000 });
+  },
   getClientIp: () => "127.0.0.1",
 }));
 
@@ -662,6 +670,12 @@ describe("POST /api/ask", () => {
     } finally {
       _setGlobalDeadlineForTests(null);
     }
+  });
+
+  it("leaves rate limiting to the middleware", async () => {
+    // /api/ask was limited twice — an `mw-ask` bucket in middleware and a
+    // second `ask` bucket here — costing two Neon writes on every question.
+    expect(rateLimiterBuckets).toEqual([]);
   });
 
   it("degrades to an empty history when the history read hangs", async () => {
