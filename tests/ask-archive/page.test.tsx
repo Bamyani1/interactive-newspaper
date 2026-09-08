@@ -278,6 +278,33 @@ describe("AskPage — render decisions", () => {
     expect(screen.getByText(/an editor did/i)).toBeInTheDocument();
   });
 
+  it("gives the transcript a clean scroller when the reader changes thread", () => {
+    mockHook.mockReturnValue({
+      ...defaultState(),
+      turns: [makeDoneTurn("t-1", "Who edited it?", "An editor did.")],
+      activeThreadId: "thread-1",
+      sessionGen: 1,
+    });
+    const { container, rerender } = render(<AskPage />);
+    const transcript = container.querySelector(".ask-transcript");
+
+    // SWITCH_THREAD bumps sessionGen; the transcript's scroll position,
+    // follow flag and previous-turn-count live in refs, so it has to be
+    // a new element rather than the same one carrying stale state.
+    mockHook.mockReturnValue({
+      ...defaultState(),
+      turns: [makeDoneTurn("t-2", "And the photographer?", "Someone else did.")],
+      activeThreadId: "thread-2",
+      sessionGen: 2,
+    });
+    rerender(<AskPage />);
+
+    expect(container.querySelector(".ask-transcript")).not.toBe(transcript);
+    // The chrome around it is untouched.
+    expect(container.querySelector(".ask-composer")).toBeTruthy();
+    expect(screen.getByText(/someone else did/i)).toBeInTheDocument();
+  });
+
   it("warns before clearing every thread and only proceeds after confirmation", () => {
     const clearAllThreads = vi.fn();
     mockHook.mockReturnValue({

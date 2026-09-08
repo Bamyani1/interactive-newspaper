@@ -145,7 +145,22 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
               canClearAllThreads={canClearAllThreads}
               canExportConversation={canExportConversation}
             />
+            {/*
+              Keyed on sessionGen so switching thread, starting a new
+              conversation, or clearing gives the scroller a clean slate.
+              Its scroll position, its "is the reader following the
+              stream" flag and its previous-turn-count all live in refs,
+              and carrying them into another thread landed the reader
+              part-way down a conversation they had just opened, chasing
+              text that was not growing.
+
+              Not keyed on activeThreadId: that pointer moves from null
+              to a real id on every page load, which would remount the
+              transcript mid-hydration and throw away the restored
+              scroll position on every visit.
+            */}
             <Transcript
+              key={sessionGen}
               turns={turns}
               isHydrating={isHydrating}
               expiredBanner={expiredBanner}
