@@ -471,7 +471,7 @@ describe("useAskArchive", () => {
         expect(result.current.turns[0].retryAfterSec).toBe(42);
     });
 
-    it("clearConversation clears turns, bumps sessionGen, and DELETEs the server session", async () => {
+    it("clearAllThreads clears turns, bumps sessionGen, and DELETEs the server session", async () => {
         const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
             const url = typeof input === "string" ? input : input.toString();
             if (url.includes("/api/ask/session")) {
@@ -501,7 +501,7 @@ describe("useAskArchive", () => {
         const genBefore = result.current.sessionGen;
         fetchSpy.mockClear();
         act(() => {
-            result.current.clearConversation();
+            result.current.clearAllThreads();
         });
         expect(result.current.turns).toEqual([]);
         expect(result.current.sessionGen).toBe(genBefore + 1);
@@ -511,6 +511,77 @@ describe("useAskArchive", () => {
         );
         expect(deleteCall).toBeDefined();
         expect(String(deleteCall?.[0])).toContain("/api/ask/session?sessionId=");
+    });
+
+    it("clearAllThreads empties the sidebar archive and DELETEs every session it held", async () => {
+        const archivedSession = "archived-session-9";
+        window.localStorage.setItem("owu-ask-session-id", "current-session-9");
+        window.localStorage.setItem(
+            "owu-ask-threads",
+            JSON.stringify([
+                {
+                    sessionId: archivedSession,
+                    firstQuestion: "An older thread",
+                    turns: [
+                        {
+                            id: "a1",
+                            question: "An older thread",
+                            answer: "kept until cleared",
+                            status: "done",
+                            sourceArticles: [],
+                            citations: [],
+                            meta: null,
+                            confidence: "medium",
+                            requestId: "",
+                            mode: "text",
+                            createdAt: 1,
+                        },
+                    ],
+                    createdAt: Date.now() - 60_000,
+                    lastUpdatedAt: Date.now() - 60_000,
+                },
+            ]),
+        );
+
+        const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === "string" ? input : input.toString();
+            if (url.includes("/api/ask/session")) {
+                if (init?.method === "DELETE") {
+                    return Promise.resolve(
+                        makeJsonResponse(null, { ok: true, status: 204 }),
+                    );
+                }
+                return Promise.resolve(
+                    makeJsonResponse({ turns: [], expired: false }),
+                );
+            }
+            return Promise.resolve(makeJsonResponse(mockResponse));
+        });
+        vi.stubGlobal("fetch", fetchSpy);
+
+        const { result } = renderHook(() => useAskArchive());
+        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+        await waitFor(() => expect(result.current.threads).toHaveLength(1));
+
+        fetchSpy.mockClear();
+        act(() => {
+            result.current.clearAllThreads();
+        });
+
+        expect(result.current.threads).toEqual([]);
+        expect(window.localStorage.getItem("owu-ask-threads")).toBe("[]");
+
+        const deletedSessions = fetchSpy.mock.calls
+            .filter(
+                ([, init]) =>
+                    (init as RequestInit | undefined)?.method === "DELETE",
+            )
+            .map(([url]) => String(url));
+        // The archived thread's session is deleted too, not just the
+        // one currently on screen.
+        expect(
+            deletedSessions.some((url) => url.includes(archivedSession)),
+        ).toBe(true);
     });
 
     it("retry re-submits an errored turn's question as a new turn", async () => {

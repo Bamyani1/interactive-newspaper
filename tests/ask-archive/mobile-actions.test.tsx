@@ -14,10 +14,10 @@ import { AskMobileActions } from "@/features/ask-archive/components/AskMobileAct
 describe("AskMobileActions", () => {
     const baseProps = {
         onNewConversation: vi.fn(),
-        onClearConversation: vi.fn(),
+        onClearAllThreads: vi.fn(),
         onExportConversation: vi.fn(),
         canNewConversation: true,
-        canClearConversation: true,
+        canClearAllThreads: true,
         canExportConversation: true,
     };
 
@@ -28,7 +28,7 @@ describe("AskMobileActions", () => {
         ).toBeInTheDocument();
         expect(
             screen.getByRole("button", {
-                name: /clear the current thread/i,
+                name: /clear all threads/i,
             }),
         ).toBeInTheDocument();
         expect(
@@ -43,7 +43,7 @@ describe("AskMobileActions", () => {
             <AskMobileActions
                 {...baseProps}
                 canNewConversation={false}
-                canClearConversation={false}
+                canClearAllThreads={false}
                 canExportConversation={false}
             />,
         );
@@ -52,7 +52,7 @@ describe("AskMobileActions", () => {
         ).toBeDisabled();
         expect(
             screen.getByRole("button", {
-                name: /clear the current thread/i,
+                name: /clear all threads/i,
             }),
         ).toBeDisabled();
         expect(
@@ -70,7 +70,7 @@ describe("AskMobileActions", () => {
             <AskMobileActions
                 {...baseProps}
                 onNewConversation={onNew}
-                onClearConversation={onClear}
+                onClearAllThreads={onClear}
                 onExportConversation={onExport}
             />,
         );
@@ -79,7 +79,7 @@ describe("AskMobileActions", () => {
         );
         fireEvent.click(
             screen.getByRole("button", {
-                name: /clear the current thread/i,
+                name: /clear all threads/i,
             }),
         );
         fireEvent.click(

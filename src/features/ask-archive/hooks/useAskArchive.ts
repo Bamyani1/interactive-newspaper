@@ -353,7 +353,7 @@ export interface UseAskArchiveReturn {
     activeThreadId: string | null;
     submit: (question: string) => void;
     retry: (turnId: string) => void;
-    clearConversation: () => void;
+    clearAllThreads: () => void;
     newConversation: () => void;
     switchThread: (threadId: string) => void;
 }
@@ -731,7 +731,7 @@ export function useAskArchive(): UseAskArchiveReturn {
         return fresh;
     }, []);
 
-    // DELETE the server-side session. Only called from Clear — New
+    // DELETE a server-side session. Only called from Clear all — New
     // and switchThread leave the server alone so the archived thread
     // can still reference server-side conversation context on the
     // off chance the user switches back before the 30-min TTL.
@@ -745,22 +745,28 @@ export function useAskArchive(): UseAskArchiveReturn {
         });
     }, []);
 
-    const clearConversation = useCallback(() => {
+    const clearAllThreads = useCallback(() => {
         interactionRevisionRef.current += 1;
         abortRef.current?.abort();
-        const prevSessionId = sessionIdRef.current;
-        // Clear is destructive: wipe the server session AND remove
-        // the thread from the sidebar archive. The user is asking to
-        // throw this conversation away, not park it.
-        if (prevSessionId) {
-            deleteServerSession(prevSessionId);
-            removeFromArchive(prevSessionId);
-        }
+        // Every session this browser knows about: the archived threads
+        // plus the one currently on screen (which is only archived once
+        // it has turns).
+        const sessionIds = new Set(
+            readArchive().map((thread) => thread.sessionId),
+        );
+        const activeSessionId = sessionIdRef.current;
+        if (activeSessionId) sessionIds.add(activeSessionId);
+
+        // The confirmation dialog makes this destructive scope explicit:
+        // drop every local thread, then best-effort DELETE each matching
+        // server session. The server TTL is the fallback if one fails.
+        writeArchive([]);
+        sessionIds.forEach((sessionId) => deleteServerSession(sessionId));
         const fresh = mintFreshSession();
-        dispatch({ type: "CLEAR_CONVERSATION" });
+        dispatch({ type: "CLEAR_ALL_THREADS" });
         dispatch({
             type: "SET_THREADS",
-            threads: summariesFrom(readArchive()),
+            threads: [],
             activeThreadId: fresh,
         });
     }, [dispatch, mintFreshSession, deleteServerSession]);
@@ -857,7 +863,7 @@ export function useAskArchive(): UseAskArchiveReturn {
         activeThreadId: state.activeThreadId,
         submit,
         retry,
-        clearConversation,
+        clearAllThreads,
         newConversation,
         switchThread,
     };

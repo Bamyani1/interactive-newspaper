@@ -280,6 +280,105 @@
 }
 
 /* =========================================
+   CLEAR-ALL CONFIRMATION
+   Interrupts to warn before every local thread and its server session
+   are dropped. Sits above the transcript chrome but below the lightbox.
+   ========================================= */
+.ask-clear-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: color-mix(in oklab, var(--color-text-primary) 46%, transparent);
+}
+
+.ask-clear-dialog {
+  width: min(30rem, 100%);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border-default);
+  border-top: 3px solid var(--color-accent);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  box-shadow: 0 1.5rem 4rem color-mix(in oklab, #000 28%, transparent);
+}
+
+.ask-clear-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.ask-clear-dialog-heading > svg {
+  flex: none;
+  margin-top: 0.15rem;
+  color: var(--color-accent);
+}
+
+.ask-clear-dialog-kicker {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-accent-text);
+}
+
+.ask-clear-dialog h2 {
+  margin: 0;
+  font-family: var(--font-header);
+  font-size: var(--text-xl);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-display);
+}
+
+.ask-clear-dialog-copy {
+  margin: var(--space-4) 0 0;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.ask-clear-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+
+.ask-clear-dialog-button {
+  min-height: 44px;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-default);
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-label-sm);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.ask-clear-dialog-button:hover {
+  border-color: var(--color-accent);
+}
+
+.ask-clear-dialog-confirm {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-bg-primary);
+}
+
+.ask-clear-dialog-confirm:hover {
+  background: var(--color-accent-text);
+}
+
+/* =========================================
    SESSION-EXPIRED BANNER
    Rendered at the top of the transcript when a thread outlives the
    cached session — structurally a layout hint, not answer content.
@@ -312,9 +411,11 @@
 .ask-sidebar-newbtn:focus-visible,
 .ask-sidebar-thread:focus-visible,
 .ask-mobile-action:focus-visible,
+.ask-clear-dialog-button:focus-visible,
 .ask-error-inline-retry:focus-visible,
 .ask-example-chip:focus-visible,
 .ask-source-toggle:focus-visible,
+.ask-photos-panel-overflow:focus-visible,
 .ask-source-card:focus-visible,
 .ask-reader-close:focus-visible,
 .ask-reader-edition-link:focus-visible {
@@ -504,6 +605,7 @@
   .ask-expired-banner,
   .ask-hydrating-indicator,
   .ask-cleared-indicator,
+  .ask-clear-dialog-overlay,
   .ask-followups,
   .color-customizer-toggle,
   .color-customizer-panel,

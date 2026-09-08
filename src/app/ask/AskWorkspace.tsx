@@ -9,6 +9,7 @@ import { Transcript } from "@/features/ask-archive/components/Transcript";
 import { Composer } from "@/features/ask-archive/components/Composer";
 import { AskSidebar } from "@/features/ask-archive/components/AskSidebar";
 import { AskMobileActions } from "@/features/ask-archive/components/AskMobileActions";
+import { ClearThreadsDialog } from "@/features/ask-archive/components/ClearThreadsDialog";
 
 function DeepLinkBridge({
     isHydrating,
@@ -41,14 +42,34 @@ export default function AskWorkspace({
         activeThreadId,
         submit,
         retry,
-        clearConversation,
+        clearAllThreads,
         newConversation,
         switchThread,
     } = useAskArchive();
 
     const [isExporting, setIsExporting] = useState(false);
+    const [isClearWarningOpen, setIsClearWarningOpen] = useState(false);
     const lastTurn = turns[turns.length - 1];
     const isStreaming = lastTurn?.status === "streaming";
+    // `threads` only gains the current thread once it is archived, so the
+    // live one is prepended for display; otherwise a user mid-first-thread
+    // would see an empty sidebar and a dialog claiming nothing to clear.
+    const activeThreadIsArchived = threads.some(
+        (thread) => thread.id === activeThreadId,
+    );
+    const visibleThreads =
+        turns.length > 0 && activeThreadId && !activeThreadIsArchived
+            ? [
+                  {
+                      id: activeThreadId,
+                      firstQuestion: turns[0].question,
+                      turnCount: turns.length,
+                      lastUpdatedAt: lastTurn?.createdAt ?? Date.now(),
+                  },
+                  ...threads,
+              ]
+            : threads;
+    const hasThreads = visibleThreads.length > 0 || turns.length > 0;
     const focusSignal = `${sessionGen}:${
         lastTurn?.status === "done" || lastTurn?.status === "error"
             ? `${lastTurn.id}:${lastTurn.status}`
@@ -60,6 +81,9 @@ export default function AskWorkspace({
         (turns.length > 0 || sessionGen > 0 || threads.length > 0);
     const canMutateConversation =
         !isHydrating && turns.length > 0 && !isStreaming;
+    // Clearing reaches the archive, so it stays available whenever any
+    // thread exists — not only while the current one has turns.
+    const canClearAllThreads = !isHydrating && hasThreads && !isStreaming;
     const canExportConversation = canMutateConversation && !isExporting;
 
     const handleFollowUp = useCallback(
@@ -85,6 +109,11 @@ export default function AskWorkspace({
         }
     }, [isExporting, turns]);
 
+    const handleConfirmClearAll = useCallback(() => {
+        clearAllThreads();
+        setIsClearWarningOpen(false);
+    }, [clearAllThreads]);
+
     return (
         <PageShell variant="default" hasHeader>
             <Suspense fallback={null}>
@@ -98,24 +127,24 @@ export default function AskWorkspace({
             <main id="main-content" tabIndex={-1} className="ask-main">
                 <div className="ask-page">
                     <AskSidebar
-                        threads={threads}
+                        threads={visibleThreads}
                         activeThreadId={activeThreadId}
                         onNewConversation={newConversation}
-                        onClearConversation={clearConversation}
+                        onClearAllThreads={() => setIsClearWarningOpen(true)}
                         onExportConversation={handleExport}
                         onSwitchThread={switchThread}
                         canNewConversation={canStartConversation}
-                        canClearConversation={canMutateConversation}
+                        canClearAllThreads={canClearAllThreads}
                         canExportConversation={canExportConversation}
                     />
 
                     <div className="ask-column">
                         <AskMobileActions
                             onNewConversation={newConversation}
-                            onClearConversation={clearConversation}
+                            onClearAllThreads={() => setIsClearWarningOpen(true)}
                             onExportConversation={handleExport}
                             canNewConversation={canStartConversation}
-                            canClearConversation={canMutateConversation}
+                            canClearAllThreads={canClearAllThreads}
                             canExportConversation={canExportConversation}
                         />
                         <Transcript
@@ -135,6 +164,12 @@ export default function AskWorkspace({
                     </div>
                 </div>
             </main>
+            <ClearThreadsDialog
+                isOpen={isClearWarningOpen}
+                threadCount={Math.max(visibleThreads.length, 1)}
+                onCancel={() => setIsClearWarningOpen(false)}
+                onConfirm={handleConfirmClearAll}
+            />
         </PageShell>
     );
 }
