@@ -73,6 +73,7 @@ const MAX_QUESTION_LENGTH = 1000;
 const RETRIEVAL_TIMEOUT_MS = 10_000;
 const GLOBAL_DEADLINE_MS = 55_000;
 const CONVERSATION_HISTORY_TIMEOUT_MS = 2_000;
+const YEAR_DIGEST_TIMEOUT_MS = 3_000;
 
 /**
  * Thrown when the request exceeds the global deadline. The top-level catch
@@ -150,8 +151,17 @@ async function resolveArchiveCoverage(
   if (intent === "exhaustive" && filters.startDate && filters.endDate) {
     const startYear = filters.startDate.slice(0, 4);
     if (startYear === filters.endDate.slice(0, 4)) {
+      // Non-citable guidance, and the only DB read here without a budget of
+      // its own: without the timer a hung digest read could spend the whole
+      // 55s global deadline on something the answer can do without. The
+      // request's own signal still goes to the driver, so an outer abort
+      // cancels the fetch; the timer only stops the route waiting on it.
       yearDigest =
-        (await fetchYearDigest(Number(startYear), signal).catch((err) => {
+        (await runWithDbTimeout(
+          "fetchYearDigest",
+          () => fetchYearDigest(Number(startYear), signal),
+          YEAR_DIGEST_TIMEOUT_MS
+        ).catch((err) => {
           console.warn(
             JSON.stringify({
               level: "warn",
@@ -234,14 +244,6 @@ function newRequestId(): string {
 const PERSIST_TURN_TIMEOUT_MS = 1500;
 
 /**
- * Await a conversation-turn write but cap total latency so a slow Neon
- * never blocks the user's `done` event. If the timer wins, the write
- * continues in the background — `addConversationTurn` swallows its own
- * errors, so no unhandled rejection. Emitting `done` after this closes
- * the race where a rapid follow-up could arrive before the prior turn
- * landed in history.
- */
-/**
  * Sources for an agent turn, in `sourceArticleIds` order: every cited
  * article, then any article whose image the answer embedded without citing
  * it. An uncited image owner has no Citation to read a headline from, so it
@@ -273,6 +275,14 @@ function buildAgentSourceArticles(result: AgentResult) {
   });
 }
 
+/**
+ * Await a conversation-turn write but cap total latency so a slow Neon
+ * never blocks the user's `done` event. If the timer wins, the write
+ * continues in the background — `addConversationTurn` swallows its own
+ * errors, so no unhandled rejection. Emitting `done` after this closes
+ * the race where a rapid follow-up could arrive before the prior turn
+ * landed in history.
+ */
 async function persistTurnBounded(
   sessionId: string,
   question: string,
