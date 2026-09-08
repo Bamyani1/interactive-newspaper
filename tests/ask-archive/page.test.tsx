@@ -131,7 +131,9 @@ describe("AskPage — render decisions", () => {
       expiredBanner: true,
     });
     render(<AskPage />);
-    expect(screen.getByText(/server memory for this conversation has aged out/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/server memory for this conversation has aged out/i)
+    ).toBeInTheDocument();
     expect(screen.getByLabelText(/suggested questions, refreshed daily/i)).toBeInTheDocument();
   });
 
@@ -342,6 +344,60 @@ describe("AskPage — render decisions", () => {
     fireEvent.click(screen.getByRole("button", { name: /^clear all$/i }));
     expect(clearAllThreads).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("first thread not yet archived is counted once in the sidebar and the clear dialog", () => {
+    // `threads` only gains the current thread once it is archived, so the live
+    // one is prepended for display — otherwise a user mid-first-thread sees an
+    // empty sidebar and a dialog offering to clear nothing. The prepend must
+    // not double-count once the archive catches up.
+    const live = {
+      ...defaultState(),
+      turns: [makeDoneTurn("t-1", "Who edited it?", "An editor did.")],
+      activeThreadId: "thread-live",
+      threads: [] as ReturnType<typeof defaultState>["threads"],
+    };
+    mockHook.mockReturnValue(live);
+    const { rerender } = render(<AskPage />);
+
+    const liveThreadRows = () =>
+      screen.queryAllByRole("button", { name: /^open thread: who edited it\?$/i });
+    const expectThreadsAtStake = (copy: RegExp) => {
+      fireEvent.click(screen.getAllByRole("button", { name: /clear all threads/i })[0]);
+      expect(screen.getByRole("alertdialog", { name: /clear all threads/i })).toHaveTextContent(
+        copy
+      );
+      fireEvent.click(screen.getByRole("button", { name: /keep threads/i }));
+    };
+
+    expect(liveThreadRows()).toHaveLength(1);
+    expectThreadsAtStake(/permanently remove 1 saved thread\b/i);
+
+    // Same thread, now archived: still one row, still one thread at stake.
+    mockHook.mockReturnValue({
+      ...live,
+      threads: [
+        {
+          id: "thread-live",
+          firstQuestion: "Who edited it?",
+          turnCount: 1,
+          lastUpdatedAt: 1,
+        },
+      ],
+    });
+    rerender(<AskPage />);
+
+    expect(liveThreadRows()).toHaveLength(1);
+    expectThreadsAtStake(/permanently remove 1 saved thread\b/i);
+
+    // Before the live thread has an id there is nothing to list, but clearing
+    // still reaches the current conversation, so the dialog floors its count at
+    // one rather than offering to remove zero threads.
+    mockHook.mockReturnValue({ ...live, activeThreadId: null });
+    rerender(<AskPage />);
+
+    expect(liveThreadRows()).toHaveLength(0);
+    expectThreadsAtStake(/permanently remove 1 saved thread\b/i);
   });
 
   it("closes the clear warning without touching any thread on cancel", () => {
