@@ -11,6 +11,7 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
+import { isQuotaError } from "@/src/lib/gemini-quota";
 import { executeTrackedEmbeddingCall } from "@/src/lib/cost-tracker";
 import {
   RAG_EMBEDDING_MODEL,
@@ -65,26 +66,6 @@ export class QuotaExhaustedError extends Error {
     super(`Gemini API quota exhausted (${op})`);
     this.name = "QuotaExhaustedError";
   }
-}
-
-/**
- * Detect a Gemini RESOURCE_EXHAUSTED / 429 error across the various shapes
- * the SDK might surface (raw fetch error, JSON-stringified error body,
- * structured object). Returns true if any signal matches.
- */
-function isQuotaError(err: unknown): boolean {
-  if (!err) return false;
-  const e = err as {
-    code?: number;
-    status?: string;
-    error?: { code?: number; status?: string };
-  };
-  if (e.code === 429) return true;
-  if (e.status === "RESOURCE_EXHAUSTED") return true;
-  if (e.error?.code === 429) return true;
-  if (e.error?.status === "RESOURCE_EXHAUSTED") return true;
-  const msg = err instanceof Error ? err.message : String(err);
-  return /RESOURCE_EXHAUSTED|"code"\s*:\s*429|exceeded your current quota/i.test(msg);
 }
 
 /**
