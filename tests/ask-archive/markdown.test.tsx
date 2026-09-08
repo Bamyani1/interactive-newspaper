@@ -69,6 +69,37 @@ describe("Markdown renderer", () => {
     expect(links).toHaveLength(0);
   });
 
+  it("tidies the space the model leaves in front of punctuation", () => {
+    // The agent writes "West Campus [id] ." — a space before the full
+    // stop — which rendered as a floating "[3] ." mid-sentence.
+    const index = new Map([["1963-02-14-3", 3]]);
+    const { container } = render(
+      <Markdown articleIdIndex={index} turnId="t-1">
+        {"restricted to West Campus [1963-02-14-3] . Next sentence."}
+      </Markdown>
+    );
+    expect(container.textContent).toContain("West Campus [3]. Next sentence.");
+  });
+
+  it("leaves no orphan punctuation when a citation cannot be resolved", () => {
+    // An agent answer streams before its source list arrives, so for the
+    // whole of it nothing resolves. Dropping the bracket alone left " .".
+    const { container } = render(
+      <Markdown turnId="t-1">{"a claim about dress codes [1963-02-14-3] ."}</Markdown>
+    );
+    expect(container.textContent).toBe("a claim about dress codes.");
+  });
+
+  it("never glues a citation to the word after it", () => {
+    const index = new Map([["1963-02-14-3", 3]]);
+    const { container } = render(
+      <Markdown articleIdIndex={index} turnId="t-1">
+        {"reported [1963-02-14-3] and repeated later"}
+      </Markdown>
+    );
+    expect(container.textContent).toContain("reported [3] and repeated later");
+  });
+
   it("external links open in a new tab", () => {
     render(<Markdown turnId="t-1">{"See [the docs](https://example.com/docs) for more."}</Markdown>);
     const link = screen.getByRole("link");

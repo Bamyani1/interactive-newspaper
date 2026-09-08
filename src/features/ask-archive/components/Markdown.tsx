@@ -29,29 +29,41 @@ interface MarkdownProps {
 // Pre-process them into markdown anchor links so react-markdown's default
 // <a> renderer handles them; the custom link renderer below adds smooth-
 // scroll behavior + the ask-citation-link class.
-const PIPELINE_CITATION_RE = /\[Source (\d+)\]/g;
-const AGENT_CITATION_RE = /\[(\d{4}-\d{2}-\d{2}-\d+(?:\s*,\s*\d{4}-\d{2}-\d{2}-\d+)*)\]/g;
+//
+// Each pattern also swallows the space in front of the citation, and the
+// space behind it when punctuation follows. Two visible defects came from
+// not doing that: the model writes "West Campus [id] ." with a space
+// before the full stop, which rendered as a floating "[3] ."; and an
+// agent citation that cannot be resolved is dropped entirely, which left
+// a bare " ." — for the whole of an agent answer, since the source list
+// only arrives with the final frame. Trailing space is taken only ahead
+// of punctuation, so "[id] and" never becomes "[3]and".
+const CITATION_TRAILING = "(?:[ \\t]+(?=[.,;:!?]))?";
+const PIPELINE_CITATION_RE = new RegExp(
+  `[ \\t]*\\[Source (\\d+)\\]${CITATION_TRAILING}`,
+  "g"
+);
+const AGENT_CITATION_RE = new RegExp(
+  `[ \\t]*\\[(\\d{4}-\\d{2}-\\d{2}-\\d+(?:\\s*,\\s*\\d{4}-\\d{2}-\\d{2}-\\d+)*)\\]${CITATION_TRAILING}`,
+  "g"
+);
 
 function replaceCitations(
   text: string,
   turnId: string,
   articleIdIndex?: Map<string, number>
 ): string {
-  let out = text.replace(
-    PIPELINE_CITATION_RE,
-    (_match, n: string) => `[[${n}]](#ask-source-${turnId}-${n})`
-  );
+  const link = (n: number | string) => `[[${n}]](#ask-source-${turnId}-${n})`;
+  let out = text.replace(PIPELINE_CITATION_RE, (_match, n: string) => ` ${link(n)}`);
   out = out.replace(AGENT_CITATION_RE, (_match, inner: string) => {
-    const ids = inner.split(/\s*,\s*/);
-    const linked = ids
-      .map((id) => {
-        const num = articleIdIndex?.get(id);
-        return num === undefined ? null : `[[${num}]](#ask-source-${turnId}-${num})`;
-      })
-      .filter((x): x is string => x !== null);
-    // If none of the IDs resolved, drop the bracket entirely — it's
-    // noise. If at least one resolved, join with a thin space.
-    return linked.length === 0 ? "" : linked.join(" ");
+    const linked = inner
+      .split(/\s*,\s*/)
+      .map((id) => articleIdIndex?.get(id))
+      .filter((num): num is number => num !== undefined)
+      .map(link);
+    // None resolved: the bracket is noise to a reader. Join the rest with
+    // a thin space.
+    return linked.length === 0 ? "" : ` ${linked.join(" ")}`;
   });
   return out;
 }
