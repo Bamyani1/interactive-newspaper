@@ -7,16 +7,23 @@ type SourceArticle = AskResponse["sourceArticles"][number];
 interface SourceCardProps {
   source: SourceArticle;
   index: number;
+  /**
+   * The turn this card belongs to. Required, and part of the element id:
+   * `ask-source-3` alone repeated across every turn in the transcript, so
+   * a citation in the fourth answer scrolled to the first answer's third
+   * source. `getElementById` returns the first match in the document.
+   */
+  turnId: string;
   onOpen?: () => void;
 }
 
-export const SourceCard: React.FC<SourceCardProps> = ({ source, index, onOpen }) => {
+export const SourceCard: React.FC<SourceCardProps> = ({ source, index, turnId, onOpen }) => {
   const hasImage = source.imageUrls.length > 0;
 
   return (
     <article
       className="ask-source-card"
-      id={`ask-source-${index + 1}`}
+      id={`ask-source-${turnId}-${index + 1}`}
       role={onOpen ? "button" : undefined}
       tabIndex={onOpen ? 0 : undefined}
       onClick={onOpen}

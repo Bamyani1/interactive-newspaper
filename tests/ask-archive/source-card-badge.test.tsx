@@ -39,25 +39,25 @@ function makeSource(imageUrls: string[]): Source {
 
 describe("SourceCard image-count badge", () => {
   it("hides the badge when there is only one photo", () => {
-    render(<SourceCard source={makeSource(["u1"])} index={0} />);
+    render(<SourceCard source={makeSource(["u1"])} index={0} turnId="t-1" />);
     expect(document.querySelector(".ask-source-thumb-count")).toBeNull();
   });
 
   it("shows +N when the article carries multiple photos", () => {
-    render(<SourceCard source={makeSource(["u1", "u2", "u3", "u4"])} index={0} />);
+    render(<SourceCard source={makeSource(["u1", "u2", "u3", "u4"])} index={0} turnId="t-1" />);
     const badge = document.querySelector(".ask-source-thumb-count");
     expect(badge).not.toBeNull();
     expect(badge?.textContent).toBe("+3");
   });
 
   it("hides the badge (and thumbnail) when there are no photos", () => {
-    render(<SourceCard source={makeSource([])} index={0} />);
+    render(<SourceCard source={makeSource([])} index={0} turnId="t-1" />);
     expect(document.querySelector(".ask-source-card-thumb")).toBeNull();
     expect(document.querySelector(".ask-source-thumb-count")).toBeNull();
   });
 
   it("labels the badge for assistive tech", () => {
-    render(<SourceCard source={makeSource(["u1", "u2"])} index={0} />);
+    render(<SourceCard source={makeSource(["u1", "u2"])} index={0} turnId="t-1" />);
     expect(screen.getByLabelText(/2 photos in this article/i)).toBeInTheDocument();
   });
 });

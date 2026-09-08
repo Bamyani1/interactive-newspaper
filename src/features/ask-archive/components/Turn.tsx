@@ -31,6 +31,10 @@ interface TurnProps {
   exportMode?: boolean;
 }
 
+// A stable identity for "no images", so the closed Lightbox doesn't see a
+// fresh array on every render.
+const EMPTY_IMAGES: Array<{ src: string; caption?: string }> = [];
+
 function buildArticleIdIndex(sources: TurnData["sourceArticles"]): Map<string, number> {
   const map = new Map<string, number>();
   sources.forEach((s, i) => map.set(s.id, i + 1));
@@ -55,6 +59,10 @@ export const Turn: React.FC<TurnProps> = ({
   const imageIndex = useMemo(() => indexImagesByUrl(turnImages), [turnImages]);
 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const lightboxImages = useMemo(
+    () => turnImages.map((img) => ({ src: img.src, caption: img.caption })),
+    [turnImages]
+  );
 
   const openLightbox = useCallback(
     (url: string) => {
@@ -134,7 +142,7 @@ export const Turn: React.FC<TurnProps> = ({
   }, [draft, onEditAndResend, turn.id, turn.question]);
 
   return (
-    <article className={`ask-turn${!exportMode && !isLatest ? " ask-turn--previous" : ""}`}>
+    <article className="ask-turn">
       <div className="ask-turn-user" aria-label="Your question">
         <div className="ask-turn-user-head">
           <p className="ask-turn-user-label">You asked</p>
@@ -213,7 +221,9 @@ export const Turn: React.FC<TurnProps> = ({
                 <p className="ask-turn-assistant-label">The desk replies</p>
                 <div className="ask-turn-answer" data-streaming={isStreaming ? "true" : undefined}>
                   <AnswerImageContext.Provider value={contextValue}>
-                    <Markdown articleIdIndex={articleIdIndex}>{displayAnswer}</Markdown>
+                    <Markdown articleIdIndex={articleIdIndex} turnId={turn.id}>
+                      {displayAnswer}
+                    </Markdown>
                   </AnswerImageContext.Provider>
                 </div>
               </>
@@ -237,6 +247,7 @@ export const Turn: React.FC<TurnProps> = ({
             {showSources ? (
               <SourceList
                 sources={turn.sourceArticles}
+                turnId={turn.id}
                 defaultExpanded={exportMode}
                 interactive={!exportMode}
               />
@@ -257,13 +268,14 @@ export const Turn: React.FC<TurnProps> = ({
             ) : null}
 
             {turn.status === "done" &&
+            isLatest &&
             !exportMode &&
             turn.followUpQuestions &&
             turn.followUpQuestions.length > 0 ? (
               <FollowUpQuestions
                 questions={turn.followUpQuestions}
                 onSelect={onFollowUp}
-                disabled={false}
+                disabled={isStreaming}
               />
             ) : null}
           </>
@@ -272,14 +284,7 @@ export const Turn: React.FC<TurnProps> = ({
 
       {exportMode ? null : (
         <Lightbox
-          images={
-            lightboxIndex !== null
-              ? turnImages.map((img) => ({
-                  src: img.src,
-                  caption: img.caption,
-                }))
-              : []
-          }
+          images={lightboxIndex !== null ? lightboxImages : EMPTY_IMAGES}
           initialIndex={lightboxIndex ?? 0}
           onClose={() => setLightboxIndex(null)}
         />

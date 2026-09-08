@@ -134,6 +134,71 @@ describe("Turn controls", () => {
     expect(screen.getByText(/stopped before it answered/i)).toBeInTheDocument();
   });
 
+  // The whole reason source ids carry a turn id: `getElementById` returns
+  // the first match in the document, so an unscoped `ask-source-3` in the
+  // fourth answer scrolled the reader back to the first answer.
+  it("a citation resolves inside its own turn, not the first one", () => {
+    const source = {
+      id: "1960-01-07-0",
+      headline: "Trustees Vote",
+      editionDate: "1960-01-07",
+      category: "News",
+      summary: "",
+      byline: null,
+      bodySnippet: "Body",
+      distance: 0.2,
+      imageUrls: [],
+    } as unknown as TurnData["sourceArticles"][number];
+
+    const { container: first } = renderTurn(
+      makeTurn({ id: "turn-a", answer: "As reported [Source 1].", sourceArticles: [source] }),
+      { isLatest: false }
+    );
+    const { container: second } = renderTurn(
+      makeTurn({ id: "turn-b", answer: "Also reported [Source 1].", sourceArticles: [source] })
+    );
+
+    // Sources start collapsed, so the cards mount on expand.
+    for (const root of [first, second]) {
+      const toggle = root.querySelector<HTMLButtonElement>(".ask-source-toggle");
+      expect(toggle).not.toBeNull();
+      fireEvent.click(toggle as HTMLButtonElement);
+    }
+
+    expect(first.querySelector("#ask-source-turn-a-1")).not.toBeNull();
+    expect(second.querySelector("#ask-source-turn-b-1")).not.toBeNull();
+    expect(second.querySelector("#ask-source-turn-a-1")).toBeNull();
+    const links = second.querySelectorAll<HTMLAnchorElement>("a.ask-citation-link");
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute("href")).toBe("#ask-source-turn-b-1");
+  });
+
+  // Earlier turns used to be truncated by CSS to their first two
+  // paragraphs with an ellipsis appended and their sources hidden, while
+  // the sources toggle still flipped aria-expanded on nothing.
+  it("an earlier turn renders its whole answer and keeps its sources", () => {
+    renderTurn(
+      makeTurn({
+        id: "turn-old",
+        answer: "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.",
+      }),
+      { isLatest: false }
+    );
+    expect(screen.getByText("First paragraph.")).toBeInTheDocument();
+    expect(screen.getByText("Second paragraph.")).toBeInTheDocument();
+    expect(screen.getByText("Third paragraph.")).toBeInTheDocument();
+  });
+
+  it("follow-up chips belong to the latest turn only", () => {
+    const withFollowUps = makeTurn({ followUpQuestions: ["And after that?"] });
+    const { unmount } = renderTurn(withFollowUps);
+    expect(screen.getByRole("button", { name: "And after that?" })).toBeInTheDocument();
+    unmount();
+
+    renderTurn(withFollowUps, { isLatest: false });
+    expect(screen.queryByRole("button", { name: "And after that?" })).not.toBeInTheDocument();
+  });
+
   it("the export view shows no controls", () => {
     renderTurn(makeTurn(), { exportMode: true });
     expect(screen.queryByRole("button", { name: "Regenerate answer" })).not.toBeInTheDocument();

@@ -28,7 +28,7 @@ function makeSource(overrides: Partial<SourceArticle> = {}): SourceArticle {
 describe("SourceList", () => {
   it("renders source cards when expanded (default)", () => {
     const sources = [makeSource(), makeSource({ id: "1960-01-07-1", headline: "Second Article" })];
-    render(<SourceList sources={sources} />);
+    render(<SourceList sources={sources} turnId="t-1" />);
 
     expect(screen.getByText(/Test Article/)).toBeInTheDocument();
     expect(screen.getByText(/Second Article/)).toBeInTheDocument();
@@ -36,20 +36,20 @@ describe("SourceList", () => {
 
   it("shows the correct source count in the toggle button", () => {
     const sources = [makeSource(), makeSource({ id: "1960-01-07-1", headline: "Second Article" })];
-    render(<SourceList sources={sources} />);
+    render(<SourceList sources={sources} turnId="t-1" />);
 
     expect(screen.getByRole("button", { name: /sources — 2 articles/i })).toBeInTheDocument();
   });
 
   it("shows singular 'article' for single source", () => {
-    render(<SourceList sources={[makeSource()]} />);
+    render(<SourceList sources={[makeSource()]} turnId="t-1" />);
 
     expect(screen.getByRole("button", { name: /sources — 1 article/i })).toBeInTheDocument();
   });
 
   it("collapses and expands on toggle click", () => {
     const sources = [makeSource()];
-    render(<SourceList sources={sources} />);
+    render(<SourceList sources={sources} turnId="t-1" />);
 
     const toggle = screen.getByRole("button", { name: /sources/i });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
@@ -64,7 +64,7 @@ describe("SourceList", () => {
   });
 
   it("returns null when sources array is empty", () => {
-    const { container } = render(<SourceList sources={[]} />);
+    const { container } = render(<SourceList sources={[]} turnId="t-1" />);
 
     expect(container.innerHTML).toBe("");
   });
@@ -76,7 +76,7 @@ describe("SourceList", () => {
       editionDate: "1960-02-03",
       bodySnippet: "Students were fined for phone fraud...",
     });
-    render(<SourceList sources={[source]} />);
+    render(<SourceList sources={[source]} turnId="t-1" />);
 
     expect(screen.getByText(/Phone Fraud Story/)).toBeInTheDocument();
     expect(screen.getByText("News")).toBeInTheDocument();
@@ -89,7 +89,7 @@ describe("SourceList", () => {
       makeSource({ headline: "First Story" }),
       makeSource({ id: "1960-01-07-1", headline: "Second Story" }),
     ];
-    render(<SourceList sources={sources} />);
+    render(<SourceList sources={sources} turnId="t-1" />);
 
     expect(screen.getByText("[1]")).toBeInTheDocument();
     expect(screen.getByText("[2]")).toBeInTheDocument();
@@ -99,10 +99,12 @@ describe("SourceList", () => {
 
   it("makes each source card an activatable button for the reader drawer", () => {
     const source = makeSource({ editionDate: "1960-02-03" });
-    render(<SourceList sources={[source]} />);
+    render(<SourceList sources={[source]} turnId="t-1" />);
 
     const card = screen.getByRole("button", { name: /Test Article/ });
-    expect(card).toHaveAttribute("id", "ask-source-1");
+    // The id is scoped to its turn: `ask-source-1` repeated across every
+    // turn, so a citation in a later answer scrolled to the first answer.
+    expect(card).toHaveAttribute("id", "ask-source-t-1-1");
     expect(card).toHaveAttribute("tabIndex", "0");
   });
 });

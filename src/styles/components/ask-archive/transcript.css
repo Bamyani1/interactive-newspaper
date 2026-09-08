@@ -136,23 +136,6 @@
   margin: 0 0 0.2rem;
 }
 
-/* Previous-turn compaction: older turns trim to the lede and hide
-   scaffolding, so the latest turn owns the viewport. */
-.ask-turn--previous .ask-turn-answer p:nth-of-type(n + 3) {
-  display: none;
-}
-.ask-turn--previous .ask-turn-answer::after {
-  content: "…";
-  color: var(--color-text-secondary);
-  margin-left: 0.1rem;
-}
-.ask-turn--previous .ask-source-list-content {
-  display: none;
-}
-.ask-turn--previous .ask-followups {
-  display: none;
-}
-
 /* =========================================
    THINKING RULE
    "Consulting the archive…" — editorial in-progress rule, no pill,
