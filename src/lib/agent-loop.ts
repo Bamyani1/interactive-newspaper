@@ -98,7 +98,7 @@ export interface AgentResult {
     articleMeta: Map<string, ArticleMeta>;
     retrievalTimeMs: number;
     generationTimeMs: number;
-    retrievalMethod: RetrievalMethod | "none";
+    retrievalMethod: RetrievalMethod;
 }
 
 export interface AgentProgressEvent {
@@ -375,7 +375,7 @@ function textFromParts(parts: Part[] | undefined): string {
 
 function combinedRetrievalMethod(
     methods: Set<RetrievalMethod>,
-): RetrievalMethod | "none" {
+): RetrievalMethod {
     if (methods.size === 0) return "none";
     if (methods.has("hybrid") || methods.size > 1) return "hybrid";
     return [...methods][0];

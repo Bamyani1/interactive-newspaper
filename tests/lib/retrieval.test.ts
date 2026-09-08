@@ -33,6 +33,32 @@ import {
   retrieveCandidates,
   searchAndRankArchive,
 } from "@/src/lib/retrieval";
+import {
+  RAG_EMBEDDING_MODEL,
+  RAG_TEXT_EMBEDDING_INPUT_VERSION,
+} from "@/src/lib/rag-model-config";
+
+type LogEntry = Record<string, unknown>;
+type LogSpy = { mock: { calls: unknown[][] } };
+
+function parsedLogs(spy: LogSpy): LogEntry[] {
+  return spy.mock.calls.map((call) => JSON.parse(String(call[0])) as LogEntry);
+}
+
+/** The most recent "retrieval completed" telemetry line. */
+function lastRetrievalLog(spy: LogSpy): LogEntry {
+  const entries = parsedLogs(spy).filter(
+    (entry) => entry.msg === "retrieval completed",
+  );
+  expect(entries.length).toBeGreaterThan(0);
+  return entries[entries.length - 1];
+}
+
+function darkVectorWarning(spy: LogSpy): LogEntry | undefined {
+  return parsedLogs(spy).find((entry) =>
+    String(entry.msg).startsWith("vector signal returned 0 rows"),
+  );
+}
 
 const ftsCandidate = {
   id: "1965-03-15-4",
@@ -244,6 +270,90 @@ describe("canonical RAG retrieval", () => {
       limit: 20,
       vectorWeight: 0.6,
     });
+  });
+
+  it("reports method 'none' when both signals succeed with zero rows", async () => {
+    searchArticlesForRagMock.mockResolvedValue([]);
+    queryArticlesByEmbeddingMock.mockResolvedValue([]);
+    fuseArticleResultsMock.mockReturnValue([]);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    const result = await retrieveCandidates(candidateParams());
+
+    expect(result.method).toBe("none");
+    expect(result.articles).toEqual([]);
+    expect(result.signals.fts).toEqual({ status: "success", count: 0 });
+    expect(result.signals.vector).toEqual({ status: "success", count: 0 });
+    expect(lastRetrievalLog(info).method).toBe("none");
+    info.mockRestore();
+  });
+
+  it("labels config-derived log fields as configured, not as served-table facts", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    await retrieveCandidates(candidateParams());
+
+    const entry = lastRetrievalLog(info);
+    expect(entry.configuredEmbeddingModel).toBe(RAG_EMBEDDING_MODEL);
+    expect(entry.configuredTextEmbeddingInputVersion).toBe(
+      RAG_TEXT_EMBEDDING_INPUT_VERSION,
+    );
+    // The old names read as facts about the served table; they must be gone.
+    expect(entry).not.toHaveProperty("embeddingModel");
+    expect(entry).not.toHaveProperty("textEmbeddingInputVersion");
+    info.mockRestore();
+  });
+
+  it("warns with the literal serving filter when the vector leg goes dark", async () => {
+    vi.stubEnv("RAG_RETRIEVAL_MODE", "versioned");
+    vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "build-live");
+    queryArticlesByEmbeddingMock.mockResolvedValue([]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await retrieveCandidates(candidateParams());
+
+    expect(darkVectorWarning(warn)).toMatchObject({
+      level: "warn",
+      route: "/api/ask",
+      stage: "retrieve",
+      signal: "vector",
+      msg: "vector signal returned 0 rows while full-text returned rows; run npm run rag:health",
+      servedTable: "article_chunks",
+      vectorFilter: {
+        indexBuildId: "build-live",
+        embeddingModel: RAG_EMBEDDING_MODEL,
+        embeddingInputVersion: RAG_TEXT_EMBEDDING_INPUT_VERSION,
+      },
+    });
+    warn.mockRestore();
+  });
+
+  it("names the legacy served table when legacy retrieval's vector leg goes dark", async () => {
+    queryArticlesByEmbeddingMock.mockResolvedValue([]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await retrieveCandidates(candidateParams());
+
+    expect(darkVectorWarning(warn)).toMatchObject({
+      servedTable: "articles",
+      vectorFilter: { indexBuildId: null },
+    });
+    warn.mockRestore();
+  });
+
+  it("stays quiet when the vector leg returns rows, or when neither leg does", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await retrieveCandidates(candidateParams());
+    expect(darkVectorWarning(warn)).toBeUndefined();
+
+    searchArticlesForRagMock.mockResolvedValue([]);
+    queryArticlesByEmbeddingMock.mockResolvedValue([]);
+    fuseArticleResultsMock.mockReturnValue([]);
+    await retrieveCandidates(candidateParams());
+    // Both legs empty is an ordinary empty-result question, not a dark leg.
+    expect(darkVectorWarning(warn)).toBeUndefined();
+    warn.mockRestore();
   });
 
   it("throws a typed error only when neither signal succeeds", async () => {
