@@ -94,10 +94,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         turns: turns.map((t) => ({
             question: t.question,
             answer: t.answer,
-            // Kept for the transitional ConversationHistory component that
-            // still reads `answerSnippet`; removed once that component is
-            // deleted in step 9 of the redesign rollout.
-            answerSnippet: t.answer,
             citedArticleIds: t.citedArticleIds,
             sourceArticles: t.citedArticleIds.flatMap((id) => {
                 const snapshot = (t.citationSnapshots ?? []).find(
