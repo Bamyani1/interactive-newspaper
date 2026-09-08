@@ -34,7 +34,7 @@ export interface CandidateRetrievalResult {
     servedTarget: "legacy" | "versioned";
     shadow?: {
         articles: RetrievedArticle[];
-        method: RetrievalMethod | "none";
+        method: RetrievalMethod;
         signals: CandidateRetrievalResult["signals"];
     };
 }
@@ -61,7 +61,7 @@ function combineSignalOutcomes(
     params: { limit: number; vectorWeight: number },
 ): {
     articles: RetrievedArticle[];
-    method: RetrievalMethod | "none";
+    method: RetrievalMethod;
     rawFts: RetrievedArticle[];
     rawVector: RetrievedArticle[];
     signals: CandidateRetrievalResult["signals"];
@@ -77,14 +77,17 @@ function combineSignalOutcomes(
               0,
               params.limit,
           );
-    const method: RetrievalMethod | "none" = bothSucceeded
+    // Both signals succeeding with zero rows is "none", not "hybrid": nothing
+    // was fused because nothing was found, and the client renders a distinct
+    // no-matching-articles state off this value.
+    const method: RetrievalMethod = bothSucceeded
         ? rawVector.length > 0 && rawFts.length > 0
             ? "hybrid"
             : rawVector.length > 0
               ? "vector"
               : rawFts.length > 0
                 ? "fts"
-                : "hybrid"
+                : "none"
         : ftsOutcome.status === "fulfilled"
           ? "fts"
           : vectorOutcome.status === "fulfilled"
@@ -234,6 +237,35 @@ export async function retrieveCandidates(params: {
         );
     }
 
+    // A vector query that SUCCEEDS with zero rows while full-text returned
+    // rows is the signature of a serving filter that matches nothing — the
+    // corpus is plainly searchable, only the vector leg is dark. Nothing
+    // downstream can tell this apart from a genuinely unanswerable question,
+    // so it has to be said out loud here, with the literal filter that ran.
+    if (
+        vectorOutcome.status === "fulfilled" &&
+        combined.rawVector.length === 0 &&
+        combined.rawFts.length > 0
+    ) {
+        console.warn(
+            JSON.stringify({
+                level: "warn",
+                route: "/api/ask",
+                requestId: params.requestId,
+                stage: "retrieve",
+                signal: "vector",
+                msg: "vector signal returned 0 rows while full-text returned rows; run npm run rag:health",
+                servedTable:
+                    servedTarget === "versioned" ? "article_chunks" : "articles",
+                vectorFilter: {
+                    indexBuildId: identity.activeIndexBuildId,
+                    embeddingModel: identity.embeddingModel,
+                    embeddingInputVersion: identity.textEmbeddingInputVersion,
+                },
+            }),
+        );
+    }
+
     const shadowOutcomes = await shadowOutcomesPromise;
     const shadow = shadowOutcomes
         ? combineSignalOutcomes(shadowOutcomes[0], shadowOutcomes[1], {
@@ -253,8 +285,12 @@ export async function retrieveCandidates(params: {
             corpusVersion: identity.corpusVersion,
             indexBuildId: identity.activeIndexBuildId,
             pipelineVersion: identity.pipelineVersion,
-            embeddingModel: identity.embeddingModel,
-            textEmbeddingInputVersion: identity.textEmbeddingInputVersion,
+            // Read from rag-model-config, i.e. what this deployment is
+            // CONFIGURED to serve. Neither field is evidence about what the
+            // served table actually holds — npm run rag:health checks that.
+            configuredEmbeddingModel: identity.embeddingModel,
+            configuredTextEmbeddingInputVersion:
+                identity.textEmbeddingInputVersion,
             servedTarget,
             method: combined.method,
             ftsCandidates: combined.rawFts.length,
@@ -280,7 +316,7 @@ export async function retrieveCandidates(params: {
 
     return {
         articles: combined.articles,
-        method: combined.method === "none" ? "hybrid" : combined.method,
+        method: combined.method,
         retrievalTimeMs: Date.now() - started,
         rawFts: combined.rawFts,
         rawVector: combined.rawVector,

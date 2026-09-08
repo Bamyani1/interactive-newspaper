@@ -583,7 +583,13 @@ export interface RetrievedArticle {
   matchedPassages?: string[];
 }
 
-export type RetrievalMethod = "hybrid" | "fts" | "vector";
+/**
+ * How a candidate set was actually produced. "none" is a first-class member,
+ * not an absence: both signals can succeed and return zero rows, and calling
+ * that "hybrid" hides the exact signature of a serving filter that matches no
+ * rows. Callers must not widen this union locally.
+ */
+export type RetrievalMethod = "hybrid" | "fts" | "vector" | "none";
 
 type RetrievalTarget = "legacy" | "versioned";
 
