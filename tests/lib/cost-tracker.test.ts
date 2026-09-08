@@ -187,9 +187,16 @@ describe("checkDailyBudget", () => {
         { op: "outage.large" }
       );
       sqlMock.mockImplementationOnce(() => new Promise(() => {}));
-      const pending = checkDailyBudget();
+      // Attach the handler before advancing the clock: the rejection lands
+      // inside advanceTimersByTimeAsync, and an unattached one is reported as
+      // unhandled before the assertion below could claim it.
+      let rejection: unknown;
+      const settled = checkDailyBudget().catch((err: unknown) => {
+        rejection = err;
+      });
       await vi.advanceTimersByTimeAsync(2_000);
-      await expect(pending).rejects.toBeInstanceOf(DailyBudgetExceededError);
+      await settled;
+      expect(rejection).toBeInstanceOf(DailyBudgetExceededError);
     } finally {
       vi.useRealTimers();
     }
