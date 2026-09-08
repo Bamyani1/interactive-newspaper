@@ -164,14 +164,14 @@ Columns grouped by access pattern:
 
 **Hot — read on every query**
 
-| Column          | Type                                      | Notes                                                                  |
-| --------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
-| `id`            | `TEXT PRIMARY KEY`                        | `'{date}-{index}'`                                                     |
-| `edition_date`  | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target                                                   |
-| `headline`      | `TEXT NOT NULL DEFAULT ''`                | result display + FTS weight A                                          |
-| `body_plain`    | `TEXT NOT NULL DEFAULT ''`                | canonical plain text and legacy fallback evidence                      |
-| `search_vector` | `TSVECTOR`                                | auto-populated by trigger; GIN indexed                                 |
-| `embedding`     | `VECTOR(768)`                             | legacy rollback/cutover vector; active v2 vectors live in child tables |
+| Column          | Type                                      | Notes                                                                                                                           |
+| --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `id`            | `TEXT PRIMARY KEY`                        | `'{date}-{index}'`                                                                                                              |
+| `edition_date`  | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target                                                                                                            |
+| `headline`      | `TEXT NOT NULL DEFAULT ''`                | result display + FTS weight A                                                                                                   |
+| `body_plain`    | `TEXT NOT NULL DEFAULT ''`                | canonical plain text and legacy fallback evidence                                                                               |
+| `search_vector` | `TSVECTOR`                                | auto-populated by trigger; GIN indexed                                                                                          |
+| `embedding`     | `VECTOR(768)`                             | rollback only since the 2026-08-03 cutover, and every row is preview-stamped or `NULL`; served vectors live in the child tables |
 
 **Warm — read on result hydration**
 

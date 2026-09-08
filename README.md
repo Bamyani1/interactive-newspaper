@@ -21,7 +21,7 @@
 
 ---
 
-> Status: the RAG pipeline, OCR pipeline, chat UI, and data ingestion are all functional and deployed on Vercel. Production serves the `legacy` retrieval path; the versioned index is built and validated but not yet activated. Explore the [live demo](https://interactive-newspaper-sable.vercel.app), run it locally, or read [`docs/architecture/`](./docs/architecture/) for production-level deep-dives on each subsystem.
+> Status: the RAG pipeline, OCR pipeline, chat UI, and data ingestion are all functional and deployed on Vercel. The versioned index was activated on 2026-08-03 and production serves `versioned` retrieval over the `article_chunks` / `article_images` tables; `legacy` survives only as an emergency switch, and one that now degrades to keyword-only search ([why](./docs/architecture/rag-pipeline.md#legacy-cutover-behavior)). Explore the [live demo](https://interactive-newspaper-sable.vercel.app), run it locally, or read [`docs/architecture/`](./docs/architecture/) for production-level deep-dives on each subsystem.
 
 ---
 
@@ -461,8 +461,8 @@ Create `.env.local` from `.env.example`:
 | `GOOGLE_CLOUD_LOCATION`             | Yes                 | Vertex AI location; use `global` for current RAG models                                                             |
 | `GOOGLE_ADC_EXPECTED_PRINCIPAL`     | Recommended locally | Optional identity assertion used by the read-only ADC preflight                                                     |
 | `RAG_CORPUS_VERSION`                | Recommended         | Cache namespace; bump after a corpus/index deployment                                                               |
-| `RAG_RETRIEVAL_MODE`                | Yes                 | Retrieval selector; defaults to and should remain `legacy` until a validated index is approved                      |
-| `RAG_ACTIVE_INDEX_BUILD_ID`         | Candidate only      | Required immutable build identity for `shadow` or `versioned` retrieval                                             |
+| `RAG_RETRIEVAL_MODE`                | Yes                 | Retrieval selector; code defaults to `legacy`, production sets `versioned` (activated 2026-08-03)                   |
+| `RAG_ACTIVE_INDEX_BUILD_ID`         | Yes in production   | Required immutable build identity for `shadow` or `versioned` retrieval                                             |
 | `DOCUMENT_AI_PROCESSOR_ID`          | Yes (OCR)           | Document AI layout parser processor                                                                                 |
 | `DOCUMENT_AI_LOCATION`              | Yes (OCR)           | Typically `us`                                                                                                      |
 | `R2_ACCOUNT_ID`                     | Optional            | Cloudflare R2 account (production image CDN)                                                                        |
