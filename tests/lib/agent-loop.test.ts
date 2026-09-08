@@ -4,6 +4,7 @@ import {
     parseCitations,
     scoreConfidence,
     accumulateArticleMeta,
+    buildAgentSourceArticleIds,
 } from "@/src/lib/agent-loop";
 import type { AgentProgressEvent, ArticleMeta } from "@/src/lib/agent-loop";
 
@@ -574,5 +575,89 @@ describe("agent-loop", () => {
             expect(lookup.get("a3")!.byline).toBeNull();
             expect(lookup.get("a3")!.imageUrls).toEqual([]);
         });
+    });
+});
+
+describe("buildAgentSourceArticleIds", () => {
+    const meta = (imageUrls: string[]): ArticleMeta => ({
+        headline: "H",
+        editionDate: "1965-03-15",
+        category: "News",
+        summary: "",
+        byline: null,
+        bodySnippet: "",
+        imageUrls,
+        imageCaptions: imageUrls.map(() => null),
+    });
+
+    const cite = (articleId: string) => ({
+        articleId,
+        headline: "H",
+        editionDate: "1965-03-15",
+    });
+
+    it("returns the cited articles in citation order", () => {
+        const ids = buildAgentSourceArticleIds(
+            "Prose [b] then [a].",
+            [cite("b"), cite("a")],
+            new Map([["a", meta([])], ["b", meta([])]]),
+        );
+        expect(ids).toEqual(["b", "a"]);
+    });
+
+    it("appends the owner of an inline image that was never cited", () => {
+        const ids = buildAgentSourceArticleIds(
+            "Cited [a]. ![a photo](https://cdn/photo.jpg)",
+            [cite("a")],
+            new Map([
+                ["a", meta([])],
+                ["b", meta(["https://cdn/photo.jpg"])],
+            ]),
+        );
+        // Citations keep their leading positions so source numbering and the
+        // ask-source-N anchors do not shift.
+        expect(ids).toEqual(["a", "b"]);
+    });
+
+    it("does not duplicate an owner that is already cited", () => {
+        const ids = buildAgentSourceArticleIds(
+            "Cited [a]. ![a photo](https://cdn/photo.jpg)",
+            [cite("a")],
+            new Map([["a", meta(["https://cdn/photo.jpg"])]]),
+        );
+        expect(ids).toEqual(["a"]);
+    });
+
+    it("matches an owner across space and %20 encodings", () => {
+        const encoded = buildAgentSourceArticleIds(
+            "![p](https://cdn/a%20photo.jpg)",
+            [],
+            new Map([["b", meta(["https://cdn/a photo.jpg"])]]),
+        );
+        const raw = buildAgentSourceArticleIds(
+            "![p](https://cdn/a photo.jpg)".replace(" photo", "%20photo"),
+            [],
+            new Map([["b", meta(["https://cdn/a%20photo.jpg"])]]),
+        );
+        expect(encoded).toEqual(["b"]);
+        expect(raw).toEqual(["b"]);
+    });
+
+    it("ignores images that belong to no known article", () => {
+        const ids = buildAgentSourceArticleIds(
+            "Cited [a]. ![stray](https://cdn/unknown.jpg)",
+            [cite("a")],
+            new Map([["a", meta([])]]),
+        );
+        expect(ids).toEqual(["a"]);
+    });
+
+    it("returns citations untouched when the answer embeds nothing", () => {
+        const ids = buildAgentSourceArticleIds(
+            "Just prose [a].",
+            [cite("a")],
+            new Map([["a", meta([])], ["b", meta(["https://cdn/x.jpg"])]]),
+        );
+        expect(ids).toEqual(["a"]);
     });
 });
