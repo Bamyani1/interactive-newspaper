@@ -65,6 +65,15 @@ describe("GET /api/search", () => {
     expect(body.requestId).toBeDefined();
   });
 
+  it("stamps a UUID request id, not 8 characters of Math.random()", async () => {
+    const a = await (await GET(makeRequest(""))).json();
+    const b = await (await GET(makeRequest(""))).json();
+    expect(a.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    expect(a.requestId).not.toBe(b.requestId);
+  });
+
   it("returns 400 when q is empty after trim", async () => {
     const response = await GET(makeRequest("q=%20%20%20"));
     const body = await response.json();
