@@ -9,6 +9,13 @@ import {
 } from "@/src/lib/rag-model-config";
 import { getRagRetrievalConfig, shouldServeVersionedRetrieval } from "@/src/lib/rag-index-config";
 import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
+import { DbTimeoutError, runWithDbTimeout } from "@/src/lib/db-timeout";
+
+// The timeout race lives in db-timeout.ts so callers that must not import
+// this module (it builds a Neon client below, at module load) can still
+// bound a query. Re-exported here so every existing `instanceof` check and
+// test mock keeps resolving through `@/src/lib/db`.
+export { DbTimeoutError, runWithDbTimeout };
 
 // Neon's serverless driver uses HTTP — no persistent connection, no pool.
 // Each query is a single HTTP request, ideal for Vercel serverless functions.
@@ -86,52 +93,6 @@ function setCachedHybridSearch(key: string, results: RetrievedArticle[]): void {
 // don't leak into new ones.
 export function _clearHybridSearchCacheForTests(): void {
   hybridCache.clear();
-}
-
-/**
- * Thrown by db.ts when a database operation exceeds its timeout budget.
- * Neon HTTP requests receive the same AbortSignal, so a timeout cancels the
- * underlying fetch instead of leaving an orphaned database request running.
- */
-export class DbTimeoutError extends Error {
-  constructor(
-    public readonly op: string,
-    public readonly timeoutMs: number
-  ) {
-    super(`Database operation timed out: ${op} after ${timeoutMs}ms`);
-    this.name = "DbTimeoutError";
-  }
-}
-
-async function runWithDbTimeout<T>(
-  op: string,
-  operation: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number,
-  outerSignal?: AbortSignal
-): Promise<T> {
-  const controller = new AbortController();
-  const signal = outerSignal
-    ? AbortSignal.any([outerSignal, controller.signal])
-    : controller.signal;
-  let rejectOnAbort: (() => void) | undefined;
-  const aborted = new Promise<never>((_, reject) => {
-    rejectOnAbort = () => reject(new DbTimeoutError(op, timeoutMs));
-    signal.addEventListener("abort", rejectOnAbort, { once: true });
-  });
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    if (signal.aborted) throw new DbTimeoutError(op, timeoutMs);
-    // Neon receives the signal and normally rejects its fetch itself. The
-    // race is still required so a driver regression or test double that
-    // ignores AbortSignal can never pin a request past its deadline.
-    return await Promise.race([operation(signal), aborted]);
-  } catch (error) {
-    if (signal.aborted) throw new DbTimeoutError(op, timeoutMs);
-    throw error;
-  } finally {
-    clearTimeout(timer);
-    if (rejectOnAbort) signal.removeEventListener("abort", rejectOnAbort);
-  }
 }
 
 const RAG_SCHEMA_PROBE_TTL_MS = 30_000;
