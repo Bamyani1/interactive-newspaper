@@ -40,6 +40,7 @@
     "rag:export-public-corpus": "node --import tsx scripts/rag/export-public-corpus.ts",
     "rag:setup-eval-db": "node --import tsx scripts/rag/setup-eval-db.mjs",
     "rag:index:build": "node --import tsx scripts/db/build-rag-index.mjs",
+    "rag:health": "node --import tsx scripts/db/check-rag-health.mjs",
     "test:invariants": "vitest run tests/ocr/pipeline-invariants.test.ts",
     "images:upload": "node scripts/db/upload-images.mjs",
     "images:gc": "node scripts/db/gc-r2-assets.mjs",
