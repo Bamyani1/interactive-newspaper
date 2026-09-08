@@ -35,7 +35,6 @@ vi.mock("@/src/lib/embeddings", () => ({
 
 vi.mock("@/src/lib/db", () => ({
   DbTimeoutError: MockDbTimeoutError,
-  hybridSearch: vi.fn(),
   queryArticlesByEmbedding: vi.fn(),
   searchArticlesForRag: vi.fn(),
   queryArchiveCoverage: vi.fn(),
@@ -101,7 +100,6 @@ import {
 import type { NextResponse } from "next/server";
 import { embedQuery } from "@/src/lib/embeddings";
 import {
-  hybridSearch,
   queryArticlesByEmbedding,
   searchArticlesForRag,
   queryArchiveCoverage,
@@ -184,9 +182,6 @@ beforeEach(() => {
   (embedQuery as ReturnType<typeof vi.fn>)
     .mockReset()
     .mockResolvedValue(new Array(768).fill(0));
-  (hybridSearch as ReturnType<typeof vi.fn>)
-    .mockReset()
-    .mockResolvedValue([mockArticle]);
   (queryArticlesByEmbedding as ReturnType<typeof vi.fn>)
     .mockReset()
     .mockResolvedValue([mockArticle]);
@@ -274,7 +269,6 @@ describe("POST /api/ask", () => {
       retrievalTarget: "legacy",
     });
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockResolvedValue([
       mockArticle,
     ]);
@@ -474,7 +468,6 @@ describe("POST /api/ask", () => {
   it("includes bodySnippet in sourceArticles (truncated with ellipsis if > 300 chars)", async () => {
     const longBody = "x".repeat(400);
     const articleWithLongBody = { ...mockArticle, bodyPlain: longBody, relevanceScore: 8 };
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([articleWithLongBody]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([articleWithLongBody]);
 
     const response = await POST(makeRequest({ question: "What happened?" }));
@@ -490,7 +483,6 @@ describe("POST /api/ask", () => {
     clearAnswerCache();
 
     const shortArticle = { ...mockArticle, bodyPlain: "Short body", relevanceScore: 8 };
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
 
     const response2 = await POST(makeRequest({ question: "What happened?" }));
@@ -1166,10 +1158,6 @@ describe("POST /api/ask", () => {
     // RERANK_TANGENTIAL it refuses without calling the model) — instead of
     // handing the generator an empty array. An LLM judge discarding every
     // real candidate is a judging artifact, not proof of no evidence.
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
-      mockArticle,
-      { ...mockArticle, id: "1960-01-07-1" },
-    ]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer:
@@ -1277,7 +1265,6 @@ describe("Complexity routing", () => {
     _clearAskDedupForTests();
     clearAnswerCache();
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
     ]);
@@ -1467,7 +1454,6 @@ describe("CRAG retry", () => {
       complexity: "simple",
     });
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
   });
 
   it("retries with broader query when reranker filters all articles", async () => {
@@ -1524,7 +1510,6 @@ describe("CRAG retry (streaming)", () => {
       complexity: "simple",
     });
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
       (async function* () {
         yield { type: "delta", text: "Found via retry." };
@@ -1595,7 +1580,6 @@ describe("Streaming + agent", () => {
     _clearAskDedupForTests();
     clearAnswerCache();
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
     ]);
@@ -1776,7 +1760,6 @@ describe("Answer cache (streaming)", () => {
       complexity: "simple",
     });
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
     ]);
@@ -1957,7 +1940,6 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(
       new Array(768).fill(0),
     );
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
     ]);
@@ -2122,7 +2104,6 @@ describe("typed AskError response body", () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(
       new Array(768).fill(0),
     );
-    (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
     ]);
