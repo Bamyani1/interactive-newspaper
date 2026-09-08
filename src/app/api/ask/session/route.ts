@@ -30,6 +30,7 @@ import {
 } from "@/src/lib/conversation-store";
 import { fetchArticlesByIds, type SessionArticleMeta } from "@/src/lib/db";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
+import { isValidSessionId } from "@/src/lib/session-id";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +39,6 @@ const sessionRateLimiter = createRateLimiter({
   limit: 60,
   windowMs: 60_000,
 });
-
-const MAX_SESSION_ID_LEN = 128;
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const ip = getClientIp(request);
@@ -56,9 +55,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // An id outside the shared contract can never have been minted by this
+  // app, so there is nothing to look up: answer the same way a brand-new
+  // session does, without touching the store. /api/ask rejects the same set
+  // outright — the two endpoints used to disagree.
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("sessionId") ?? "";
-  if (!sessionId || sessionId.length > MAX_SESSION_ID_LEN) {
+  if (!isValidSessionId(sessionId)) {
     return NextResponse.json({ turns: [], expired: false });
   }
 
@@ -180,9 +183,10 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // Nothing to delete for an id this app could not have minted (see GET).
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("sessionId") ?? "";
-  if (!sessionId || sessionId.length > MAX_SESSION_ID_LEN) {
+  if (!isValidSessionId(sessionId)) {
     return new NextResponse(null, { status: 204 });
   }
 
