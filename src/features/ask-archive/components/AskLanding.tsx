@@ -10,12 +10,19 @@ interface AskLandingProps {
   disabled?: boolean;
   /** UTC date seed rendered by the route server component. */
   suggestionDate?: string;
+  /**
+   * Real corpus size, counted server-side. The stats line used to hardcode
+   * "351 editions · 11,705 articles", so every edition added to the archive
+   * made this page quietly wrong with nobody to notice.
+   */
+  corpus?: { editionCount: number; articleCount: number };
 }
 
 export const AskLanding: React.FC<AskLandingProps> = ({
   onPickQuestion,
   disabled = false,
   suggestionDate = "2000-01-01",
+  corpus,
 }) => {
   // Exclude whatever the homepage teaser is pinning today so a reader
   // arriving from it isn't offered the same question twice.
@@ -40,7 +47,14 @@ export const AskLanding: React.FC<AskLandingProps> = ({
         </p>
 
         <p className="ask-landing-stats">
-          Answers cite primary sources. Always verify. · 351 editions · 11,705 articles
+          Answers cite primary sources. Always verify.
+          {corpus ? (
+            <>
+              {" · "}
+              {corpus.editionCount.toLocaleString("en-US")} editions{" · "}
+              {corpus.articleCount.toLocaleString("en-US")} articles
+            </>
+          ) : null}
         </p>
       </div>
 

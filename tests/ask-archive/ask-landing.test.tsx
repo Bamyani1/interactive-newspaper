@@ -27,11 +27,20 @@ describe("AskLanding", () => {
 
     // Provenance strip: the standing verification disclaimer survives
     // the redesign — answers are generated over OCR'd historical text.
-    expect(
-      screen.getByText(
-        /Answers cite primary sources\. Always verify\. · 351 editions · 11,705 articles/
-      )
-    ).toBeInTheDocument();
+    // The counts are no longer part of it: they were hardcoded, so every
+    // edition added to the archive made this line quietly wrong. The route
+    // counts the corpus and passes it in.
+    expect(screen.getByText(/Answers cite primary sources\. Always verify\./)).toBeInTheDocument();
+    expect(screen.queryByText(/editions/)).not.toBeInTheDocument();
+  });
+
+  it("states the corpus size the route measured", () => {
+    render(
+      <AskLanding onPickQuestion={() => {}} corpus={{ editionCount: 352, articleCount: 11_812 }} />
+    );
+    const strip = document.querySelector(".ask-landing-stats");
+    expect(strip?.textContent).toContain("352 editions");
+    expect(strip?.textContent).toContain("11,812 articles");
   });
 
   it("does NOT render the demo card, dateline, or expired notice", () => {

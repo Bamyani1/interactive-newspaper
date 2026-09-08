@@ -11,6 +11,8 @@ interface TranscriptProps {
   isHydrating: boolean;
   expiredBanner: boolean;
   suggestionDate?: string;
+  /** Real corpus size for the landing's stats line, counted server-side. */
+  corpus?: { editionCount: number; articleCount: number };
   /**
    * Why the transcript is empty, when it is. It only ever adds a pill
    * above the landing — the landing itself renders for every empty state,
@@ -28,6 +30,7 @@ export const Transcript: React.FC<TranscriptProps> = ({
   isHydrating,
   expiredBanner,
   suggestionDate,
+  corpus,
   emptyReason,
   onFollowUp,
   onRetry,
@@ -192,6 +195,7 @@ export const Transcript: React.FC<TranscriptProps> = ({
             onPickQuestion={onFollowUp}
             disabled={isHydrating}
             suggestionDate={suggestionDate}
+            corpus={corpus}
           />
         </>
       ) : null}
