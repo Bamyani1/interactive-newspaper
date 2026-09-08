@@ -755,6 +755,11 @@ async function handleStreamingAsk(params: {
               ? formatHistoryForPrompt(conversationHistory)
               : undefined;
 
+          // The agent streams its answer text like the pipeline does, so the
+          // stage pill has to move off "Researching" the same way — once,
+          // just before the first token.
+          let announcedGenerate = false;
+
           try {
             const agentResult = await runAgentLoop(question, {
               signal: globalController.signal,
@@ -762,7 +767,13 @@ async function handleStreamingAsk(params: {
               conversationContext,
               filters,
               coverage,
-              onProgress: (event) => send(event),
+              onProgress: (event) => {
+                if (event.type === "delta" && !announcedGenerate) {
+                  announcedGenerate = true;
+                  send({ type: "stage", name: "generate", elapsedMs: stageElapsed() });
+                }
+                send(event);
+              },
             });
 
             // A research failure is not a turn. Report it and store nothing,

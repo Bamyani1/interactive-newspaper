@@ -9,11 +9,13 @@ import {
 import type { AgentProgressEvent, ArticleMeta } from "@/src/lib/agent-loop";
 
 const mockGenerateContentFn = vi.fn();
+const mockGenerateContentStreamFn = vi.fn();
 
 vi.mock("@/src/lib/gemini-client", () => ({
   getGeminiClient: vi.fn(() => ({
     models: {
       generateContent: mockGenerateContentFn,
+      generateContentStream: mockGenerateContentStreamFn,
     },
   })),
 }));
@@ -25,33 +27,97 @@ vi.mock("@/src/lib/agent-tools", () => ({
 
 vi.mock("@/src/lib/cost-tracker", () => ({
   executeTrackedGenerationCall: (options: { call: () => Promise<unknown> }) => options.call(),
+  computeCostUsd: vi.fn(() => 0),
+  recordUsage: vi.fn(),
+  reserveEvaluationGoogleCall: vi.fn(() => null),
+  releaseEvaluationGoogleCall: vi.fn(),
+  settleEvaluationGoogleCall: vi.fn(),
 }));
 
 import { executeTool } from "@/src/lib/agent-tools";
 
-function mockGenerateContent(
-  ...responses: Array<{
-    text?: string;
-    functionCalls?: Array<{ name: string; id?: string; args?: Record<string, unknown> }>;
-    parts?: Array<Record<string, unknown>>;
-  }>
-) {
-  for (const resp of responses) {
-    mockGenerateContentFn.mockResolvedValueOnce({
-      text: resp.text,
-      functionCalls: resp.functionCalls,
-      candidates: resp.parts
-        ? [{ content: { parts: resp.parts } }]
-        : resp.functionCalls
-          ? [{ content: { parts: resp.functionCalls.map((c) => ({ functionCall: c })) } }]
-          : [{ content: { parts: [{ text: resp.text }] } }],
-    });
+interface QueuedResponse {
+  text?: string;
+  functionCalls?: Array<{ name: string; id?: string; args?: Record<string, unknown> }>;
+  parts?: Array<Record<string, unknown>>;
+  /** Streamed turns only: split the text across this many chunks. */
+  chunks?: string[];
+  throws?: unknown;
+}
+
+// The loop streams the first round and the forced synthesis and uses the
+// single-shot call for the rounds in between, so responses are queued once
+// and served to whichever transport asks next. modelCalls records the
+// requests in order across both, which is what the assertions care about.
+const queuedResponses: QueuedResponse[] = [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const modelCalls: any[] = [];
+
+function takeQueuedResponse(): QueuedResponse {
+  const next = queuedResponses.shift();
+  if (!next) throw new Error("agent-loop test: no queued model response left");
+  if (next.throws) throw next.throws;
+  return next;
+}
+
+function candidatesFor(resp: QueuedResponse) {
+  if (resp.parts) return [{ content: { parts: resp.parts } }];
+  if (resp.functionCalls) {
+    return [{ content: { parts: resp.functionCalls.map((c) => ({ functionCall: c })) } }];
   }
+  return [{ content: { parts: [{ text: resp.text }] } }];
+}
+
+function mockGenerateContent(...responses: QueuedResponse[]) {
+  queuedResponses.push(...responses);
+}
+
+/** Make the next model call — whichever transport it uses — reject. */
+function mockGenerateContentRejection(error: unknown) {
+  queuedResponses.push({ throws: error });
+}
+
+function installModelMocks() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mockGenerateContentFn.mockImplementation(async (request: any) => {
+    modelCalls.push(request);
+    const resp = takeQueuedResponse();
+    return { text: resp.text, functionCalls: resp.functionCalls, candidates: candidatesFor(resp) };
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mockGenerateContentStreamFn.mockImplementation(async (request: any) => {
+    modelCalls.push(request);
+    const resp = takeQueuedResponse();
+    const candidates = candidatesFor(resp);
+    const textChunks = resp.chunks ?? (resp.text ? [resp.text] : []);
+    return (async function* () {
+      if (resp.functionCalls) {
+        // A tool-calling turn: the calls arrive with the first chunk, so no
+        // answer text is ever streamed for it.
+        yield { functionCalls: resp.functionCalls, candidates, usageMetadata: {} };
+        return;
+      }
+      if (textChunks.length === 0) {
+        yield { candidates, usageMetadata: {} };
+        return;
+      }
+      for (const [index, chunk] of textChunks.entries()) {
+        yield {
+          text: chunk,
+          candidates: [{ content: { parts: [{ text: chunk }] } }],
+          ...(index === textChunks.length - 1 ? { usageMetadata: {} } : {}),
+        };
+      }
+    })();
+  });
 }
 
 describe("agent-loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    queuedResponses.length = 0;
+    modelCalls.length = 0;
+    installModelMocks();
   });
 
   describe("runAgentLoop", () => {
@@ -64,7 +130,7 @@ describe("agent-loop", () => {
       expect(result.answer).toBe("The answer is 42.");
       expect(result.rounds).toBe(0);
       expect(result.toolCallCount).toBe(0);
-      const call = mockGenerateContentFn.mock.calls[0][0];
+      const call = modelCalls[0];
       expect(call.model).toBe("gemini-3.6-flash");
       expect(call.config.thinkingConfig.thinkingLevel).toBe("MEDIUM");
       expect(call.config).not.toHaveProperty("temperature");
@@ -89,7 +155,7 @@ describe("agent-loop", () => {
       expect(result.answer).toContain("No matching evidence was found");
       expect(result.answer).toContain("25 indexed editions");
       expect(result.answer).not.toContain("never happened");
-      const prompt = mockGenerateContentFn.mock.calls[0][0].contents[0].parts[0].text as string;
+      const prompt = modelCalls[0].contents[0].parts[0].text as string;
       expect(prompt).toContain("DETERMINISTIC ARCHIVE COVERAGE METADATA");
     });
 
@@ -195,8 +261,8 @@ describe("agent-loop", () => {
       expect(result.rounds).toBe(3);
       expect(result.answer).toContain("don't have enough information");
       expect(result.confidence).toBe("low");
-      expect(mockGenerateContentFn).toHaveBeenCalledTimes(4);
-      const finalCall = mockGenerateContentFn.mock.calls[3][0];
+      expect(modelCalls).toHaveLength(4);
+      const finalCall = modelCalls[3];
       expect(finalCall.config.tools).toBeUndefined();
       expect(finalCall.config.toolConfig.functionCallingConfig.mode).toBe("NONE");
       expect(finalCall.config.systemInstruction).toContain("The research phase is complete");
@@ -257,8 +323,7 @@ describe("agent-loop", () => {
       });
 
       const result = await runAgentLoop("Compare the protests");
-      const finalPrompt = mockGenerateContentFn.mock.calls[3][0].contents[0].parts[0]
-        .text as string;
+      const finalPrompt = modelCalls[3].contents[0].parts[0].text as string;
       expect(finalPrompt).toContain("Students staged a campus demonstration.");
       expect(finalPrompt.match(/--- Article 1968-01-31-28 ---/g)).toHaveLength(1);
       expect(result.citations.map((citation) => citation.articleId)).toEqual(["1968-01-31-28"]);
@@ -280,7 +345,7 @@ describe("agent-loop", () => {
     it("catches AbortError during API call", async () => {
       const abortErr = new Error("Aborted");
       abortErr.name = "AbortError";
-      mockGenerateContentFn.mockRejectedValueOnce(abortErr);
+      mockGenerateContentRejection(abortErr);
 
       const result = await runAgentLoop("test");
       expect(result.answer).toContain("timed out");
@@ -290,7 +355,7 @@ describe("agent-loop", () => {
     });
 
     it("catches unexpected errors gracefully", async () => {
-      mockGenerateContentFn.mockRejectedValueOnce(new Error("Network failure"));
+      mockGenerateContentRejection(new Error("Network failure"));
 
       const result = await runAgentLoop("test");
       expect(result.answer).toContain("encountered an error");
@@ -337,7 +402,7 @@ describe("agent-loop", () => {
       expect(result.retryAfterSec).toBe(24);
       // Stopped after the failing round rather than running the remaining
       // two rounds plus a synthesis call on the same spent quota.
-      expect(mockGenerateContentFn).toHaveBeenCalledTimes(1);
+      expect(modelCalls).toHaveLength(1);
     });
 
     it("caps confidence at low when an archive lookup timed out", async () => {
@@ -404,17 +469,13 @@ describe("agent-loop", () => {
     });
 
     it("prepends conversation context to user message", async () => {
-      mockGenerateContentFn.mockResolvedValueOnce({
-        text: "Follow-up answer.",
-        functionCalls: undefined,
-        candidates: [{ content: { parts: [{ text: "Follow-up answer." }] } }],
-      });
+      mockGenerateContent({ text: "Follow-up answer." });
 
       await runAgentLoop("Tell me more", {
         conversationContext: "[Turn 1] Q: What about sports?\nA: Football was popular.",
       });
 
-      const call = mockGenerateContentFn.mock.calls[0][0];
+      const call = modelCalls[0];
       const userText = call.contents[0].parts[0].text;
       expect(userText).toContain("[Turn 1] Q: What about sports?");
       expect(userText).toContain("Tell me more");
@@ -463,6 +524,81 @@ describe("agent-loop", () => {
       expect(events[0].tool).toBe("search_archive");
       expect(events[1].type).toBe("tool_result");
       expect(events[1].summary).toContain("Found 1 articles");
+    });
+
+    it("streams a first-round answer that needs no tools", async () => {
+      const deltas: string[] = [];
+      mockGenerateContent({
+        chunks: ["The 1968 protest ", "drew hundreds."],
+        text: "The 1968 protest drew hundreds.",
+      });
+
+      const result = await runAgentLoop("simple enough", {
+        onProgress: (event) => {
+          if (event.type === "delta") deltas.push(event.text);
+        },
+      });
+
+      expect(deltas).toEqual(["The 1968 protest ", "drew hundreds."]);
+      expect(result.answer).toBe("The 1968 protest drew hundreds.");
+      expect(mockGenerateContentStreamFn).toHaveBeenCalledTimes(1);
+    });
+
+    it("streams the forced synthesis so a complex answer is not one late frame", async () => {
+      (executeTool as ReturnType<typeof vi.fn>).mockResolvedValue({
+        results: [
+          {
+            id: "1968-01-31-28",
+            headline: "Demonstrations",
+            editionDate: "1968-01-31",
+            excerpt: "Students marched.",
+            relevanceScore: 8,
+          },
+        ],
+      });
+      for (let i = 0; i < 3; i++) {
+        mockGenerateContent({
+          functionCalls: [{ name: "search_archive", args: { query: `q${i}` } }],
+          parts: [{ functionCall: { name: "search_archive", args: { query: `q${i}` } } }],
+        });
+      }
+      mockGenerateContent({
+        chunks: ["Students marched ", "in 1968 [1968-01-31-28]."],
+        text: "Students marched in 1968 [1968-01-31-28].",
+      });
+
+      const deltas: string[] = [];
+      const result = await runAgentLoop("compare the protests", {
+        onProgress: (event) => {
+          if (event.type === "delta") deltas.push(event.text);
+        },
+      });
+
+      expect(deltas.join("")).toBe("Students marched in 1968 [1968-01-31-28].");
+      // Citations and grounding still run on the complete text, so the
+      // authoritative answer arrives in the result, not in the deltas.
+      expect(result.citations.map((c) => c.articleId)).toEqual(["1968-01-31-28"]);
+      // Round 0 and the synthesis stream; the two middle tool rounds do not.
+      expect(mockGenerateContentStreamFn).toHaveBeenCalledTimes(2);
+      expect(mockGenerateContentFn).toHaveBeenCalledTimes(2);
+    });
+
+    it("streams no answer text for a round that calls tools", async () => {
+      (executeTool as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ results: [] });
+      mockGenerateContent(
+        {
+          functionCalls: [{ name: "search_archive", args: { query: "test" } }],
+          parts: [{ functionCall: { name: "search_archive", args: { query: "test" } } }],
+        },
+        { text: "Nothing found." }
+      );
+
+      const events: AgentProgressEvent[] = [];
+      await runAgentLoop("test", { onProgress: (e) => events.push(e) });
+
+      // Only tool_call / tool_result: a round choosing lookups is not
+      // writing the answer, so its planning text is never sent as prose.
+      expect(events.map((e) => e.type)).toEqual(["tool_call", "tool_result"]);
     });
 
     it("returns articleMeta accumulated from tool calls", async () => {

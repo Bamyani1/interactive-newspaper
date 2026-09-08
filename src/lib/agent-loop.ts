@@ -8,16 +8,30 @@
  */
 
 import { FunctionCallingConfigMode } from "@google/genai";
-import type { Content, FunctionDeclaration, Part } from "@google/genai";
+import type {
+  Content,
+  FunctionCall,
+  FunctionDeclaration,
+  GenerateContentParameters,
+  GenerateContentResponseUsageMetadata,
+  Part,
+} from "@google/genai";
 import { getGeminiClient } from "@/src/lib/gemini-client";
 import type { AskAgentProgressEvent } from "@/src/lib/ask-stream-events";
-import { executeTrackedGenerationCall } from "@/src/lib/cost-tracker";
+import {
+  computeCostUsd,
+  executeTrackedGenerationCall,
+  recordUsage,
+  releaseEvaluationGoogleCall,
+  reserveEvaluationGoogleCall,
+  settleEvaluationGoogleCall,
+} from "@/src/lib/cost-tracker";
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import { AGENT_TOOL_DECLARATIONS, executeTool } from "@/src/lib/agent-tools";
 import type { RetrievalFilters } from "@/src/lib/retrieval";
 import type { RetrievalMethod } from "@/src/lib/db";
 import type { AnswerOutcome, AskErrorKind, Citation } from "@/src/types";
-import { kindForQuota } from "@/src/lib/gemini-quota";
+import { kindForQuota, retryOnQuota } from "@/src/lib/gemini-quota";
 import { groundAgentAnswer } from "@/src/lib/answer-grounding";
 import {
   applyCoverageAnswerPolicy,
@@ -463,6 +477,116 @@ function combinedRetrievalMethod(methods: Set<RetrievalMethod>): RetrievalMethod
   return [...methods][0];
 }
 
+// ─── Model Turns ────────────────────────────────────────────────
+
+/** One model turn, in the shape the loop consumes regardless of transport. */
+interface ModelTurn {
+  parts: Part[];
+  functionCalls: FunctionCall[];
+  text: string;
+  finishReason?: string;
+}
+
+/**
+ * A model turn whose text arrives in one piece. Used for the rounds after
+ * the first, which the model spends deciding which archive lookups to run.
+ */
+async function generateTurn(params: {
+  request: GenerateContentParameters;
+  op: string;
+  requestId?: string;
+  signal?: AbortSignal;
+}): Promise<ModelTurn> {
+  const client = getGeminiClient();
+  const response = await retryOnQuota(
+    params.op,
+    () =>
+      executeTrackedGenerationCall({
+        model: AGENT_MODEL,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        requestId: params.requestId,
+        op: params.op,
+        call: () => client.models.generateContent(params.request),
+      }),
+    { signal: params.signal, requestId: params.requestId }
+  );
+  return {
+    parts: response.candidates?.[0]?.content?.parts ?? [],
+    functionCalls: response.functionCalls ?? [],
+    text: textFromParts(response.candidates?.[0]?.content?.parts),
+    finishReason: response.candidates?.[0]?.finishReason,
+  };
+}
+
+/**
+ * A model turn whose text is forwarded as it arrives, so a complex question
+ * shows prose instead of "Researching…" for the whole synthesis wait.
+ *
+ * Deltas are held back for as long as the turn has produced a function
+ * call: a round that is choosing archive lookups is not writing the answer,
+ * and streaming its planning text as prose would be a lie. Only the initial
+ * await is retried on quota — a 429 rejects before the first chunk, so no
+ * text can be emitted twice.
+ */
+async function generateStreamedTurn(params: {
+  request: GenerateContentParameters;
+  op: string;
+  requestId?: string;
+  signal?: AbortSignal;
+  onDelta?: (text: string) => void;
+}): Promise<ModelTurn> {
+  const client = getGeminiClient();
+  const parts: Part[] = [];
+  const functionCalls: FunctionCall[] = [];
+  let text = "";
+  let finishReason: string | undefined;
+  let usage: GenerateContentResponseUsageMetadata | undefined;
+  const reservation = reserveEvaluationGoogleCall({
+    model: AGENT_MODEL,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+    requestId: params.requestId,
+    op: params.op,
+  });
+  let settled = false;
+
+  try {
+    const stream = await retryOnQuota(
+      params.op,
+      () => client.models.generateContentStream(params.request),
+      { signal: params.signal, requestId: params.requestId }
+    );
+
+    for await (const chunk of stream) {
+      if (chunk.usageMetadata) usage = chunk.usageMetadata;
+      const chunkFinish = chunk.candidates?.[0]?.finishReason;
+      if (chunkFinish) finishReason = chunkFinish;
+      if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+        functionCalls.push(...chunk.functionCalls);
+      }
+      for (const part of chunk.candidates?.[0]?.content?.parts ?? []) parts.push(part);
+      const chunkText = typeof chunk.text === "string" ? chunk.text : "";
+      if (!chunkText) continue;
+      text += chunkText;
+      if (functionCalls.length === 0) params.onDelta?.(chunkText);
+    }
+
+    if (reservation) {
+      settleEvaluationGoogleCall(reservation, computeCostUsd(AGENT_MODEL, usage));
+      settled = true;
+    }
+    void recordUsage(AGENT_MODEL, usage, {
+      requestId: params.requestId,
+      op: params.op,
+      evaluationCostAlreadyRecorded: Boolean(reservation),
+    });
+  } catch (err) {
+    if (!settled) releaseEvaluationGoogleCall(reservation);
+    throw err;
+  }
+
+  return { parts, functionCalls, text: text.trim(), finishReason };
+}
+
 // ─── Main Loop ──────────────────────────────────────────────────
 
 export async function runAgentLoop(
@@ -478,7 +602,6 @@ export async function runAgentLoop(
 ): Promise<AgentResult> {
   const { signal, requestId, conversationContext, filters, coverage, onProgress } = opts;
 
-  const client = getGeminiClient();
   const articleLookup = new Map<string, ArticleMeta>();
 
   const historyBlock = conversationContext
@@ -540,26 +663,32 @@ export async function runAgentLoop(
       }
 
       const modelStart = Date.now();
-      const response = await executeTrackedGenerationCall({
+      const roundRequest: GenerateContentParameters = {
         model: AGENT_MODEL,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        requestId,
-        op: `agent.round${round}`,
-        call: () =>
-          client.models.generateContent({
-            model: AGENT_MODEL,
-            contents,
-            config: {
-              systemInstruction: AGENT_SYSTEM_PROMPT,
-              tools: [{ functionDeclarations: AGENT_TOOL_DECLARATIONS as FunctionDeclaration[] }],
-              maxOutputTokens: MAX_OUTPUT_TOKENS,
-              thinkingConfig: {
-                thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
-              },
-              abortSignal: signal,
-            },
-          }),
-      });
+        contents,
+        config: {
+          systemInstruction: AGENT_SYSTEM_PROMPT,
+          tools: [{ functionDeclarations: AGENT_TOOL_DECLARATIONS as FunctionDeclaration[] }],
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          thinkingConfig: {
+            thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
+          },
+          abortSignal: signal,
+        },
+      };
+      const turnOpts = { op: `agent.round${round}`, requestId, signal };
+      // The first round is streamed because it is the round that can answer
+      // without any tools at all, and that answer is the reader's whole
+      // wait. Later rounds only ever follow a tool result, so they keep the
+      // simpler single-shot call.
+      const response =
+        round === 0
+          ? await generateStreamedTurn({
+              ...turnOpts,
+              request: roundRequest,
+              onDelta: (text) => onProgress?.({ type: "delta", text }),
+            })
+          : await generateTurn({ ...turnOpts, request: roundRequest });
       generationTimeMs += Date.now() - modelStart;
 
       const functionCalls = response.functionCalls;
@@ -650,14 +779,12 @@ export async function runAgentLoop(
         }
 
         // Capture any text the model produced alongside function calls
-        const responseText = textFromParts(response.candidates?.[0]?.content?.parts);
-        if (responseText) {
-          answerText = responseText;
+        if (response.text) {
+          answerText = response.text;
         }
 
-        const modelParts = response.candidates?.[0]?.content?.parts;
-        if (modelParts) {
-          contents.push({ role: "model", parts: modelParts });
+        if (response.parts.length > 0) {
+          contents.push({ role: "model", parts: response.parts });
         }
 
         contents.push({
@@ -673,7 +800,7 @@ export async function runAgentLoop(
 
         round++;
       } else {
-        answerText = textFromParts(response.candidates?.[0]?.content?.parts);
+        answerText = response.text;
         finalAnswerProduced = true;
         break;
       }
@@ -684,57 +811,59 @@ export async function runAgentLoop(
       // answer. Make one final no-tools call so the model must synthesize
       // from evidence already present in the conversation.
       const finalStart = Date.now();
-      const finalResponse = await executeTrackedGenerationCall({
-        model: AGENT_MODEL,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        requestId,
+      // Streamed: this is the call the reader is waiting on, and it can take
+      // most of the request budget. Citations and grounding still run on the
+      // complete text afterwards, and the route's done event carries the
+      // grounded answer, which the client swaps in for the streamed text.
+      const finalResponse = await generateStreamedTurn({
         op: "agent.finalize",
-        call: () =>
-          client.models.generateContent({
-            model: AGENT_MODEL,
-            // Start a fresh synthesis turn. Replaying prior model
-            // function-call parts conditions Flash-Lite to emit another
-            // call even when function calling is explicitly NONE.
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text: buildFinalSynthesisInput({
-                      question,
-                      filters,
-                      conversationContext,
-                      coverage,
-                      articles: articleLookup,
-                    }),
-                  },
-                ],
-              },
-            ],
-            config: {
-              systemInstruction: AGENT_FINAL_SYSTEM_PROMPT,
-              toolConfig: {
-                functionCallingConfig: {
-                  mode: FunctionCallingConfigMode.NONE,
+        requestId,
+        signal,
+        onDelta: (text) => onProgress?.({ type: "delta", text }),
+        request: {
+          model: AGENT_MODEL,
+          // Start a fresh synthesis turn. Replaying prior model
+          // function-call parts conditions Flash-Lite to emit another
+          // call even when function calling is explicitly NONE.
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: buildFinalSynthesisInput({
+                    question,
+                    filters,
+                    conversationContext,
+                    coverage,
+                    articles: articleLookup,
+                  }),
                 },
-              },
-              maxOutputTokens: MAX_OUTPUT_TOKENS,
-              thinkingConfig: {
-                thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
-              },
-              abortSignal: signal,
+              ],
             },
-          }),
+          ],
+          config: {
+            systemInstruction: AGENT_FINAL_SYSTEM_PROMPT,
+            toolConfig: {
+              functionCallingConfig: {
+                mode: FunctionCallingConfigMode.NONE,
+              },
+            },
+            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            thinkingConfig: {
+              thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
+            },
+            abortSignal: signal,
+          },
+        },
       });
       generationTimeMs += Date.now() - finalStart;
-      answerText = textFromParts(finalResponse.candidates?.[0]?.content?.parts);
+      answerText = finalResponse.text;
       finalAnswerProduced = Boolean(answerText);
       if (!finalAnswerProduced) {
-        const parts = finalResponse.candidates?.[0]?.content?.parts ?? [];
         logWarn(requestId, "forced synthesis returned no text", {
-          finishReason: finalResponse.candidates?.[0]?.finishReason,
-          functionCalls: finalResponse.functionCalls?.map((call) => call.name),
-          partKinds: parts.map((part) =>
+          finishReason: finalResponse.finishReason,
+          functionCalls: finalResponse.functionCalls.map((call) => call.name),
+          partKinds: finalResponse.parts.map((part) =>
             part.functionCall ? "functionCall" : typeof part.text === "string" ? "text" : "other"
           ),
         });
