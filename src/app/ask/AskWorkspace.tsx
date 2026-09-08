@@ -75,9 +75,13 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01" }: AskWorks
   // "not streaming" rather than listing statuses means a stopped turn
   // hands the caret back too — the reader pressed Escape to type
   // something else.
-  const focusSignal = `${sessionGen}:${
-    lastTurn && lastTurn.status !== "streaming" ? `${lastTurn.id}:${lastTurn.status}` : "idle"
-  }`;
+  //
+  // Deliberately not keyed on sessionGen: that bumps on every thread
+  // switch, new conversation and clear, so merely opening a thread to read
+  // it grabbed the caret — and on a phone raised the keyboard over the
+  // conversation the reader had just opened.
+  const focusSignal =
+    lastTurn && lastTurn.status !== "streaming" ? `${lastTurn.id}:${lastTurn.status}` : "idle";
 
   const canStartConversation =
     !isHydrating && (turns.length > 0 || sessionGen > 0 || threads.length > 0);

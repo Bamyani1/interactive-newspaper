@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Square } from "lucide-react";
+import { MAX_QUESTION_LENGTH, QUESTION_COUNTER_THRESHOLD } from "@/src/lib/ask-limits";
 
 interface ComposerProps {
   disabled?: boolean;
@@ -16,8 +17,10 @@ interface ComposerProps {
   /** Interrupt the answer in progress, keeping the text so far. */
   onStop?: () => void;
   /**
-   * Bump to request a focus+clear of the composer (used after a turn
-   * completes so the user can type the next question immediately).
+   * Bump to move focus back to the composer. Nothing is cleared — the
+   * textarea empties on submit, and a draft typed during generation has
+   * to survive. Focus is skipped on coarse pointers, where stealing it
+   * opens the on-screen keyboard over the answer the reader is reading.
    */
   focusSignal?: string | number;
 }
@@ -59,6 +62,9 @@ export const Composer: React.FC<ComposerProps> = ({
 
   useEffect(() => {
     if (focusSignal === undefined) return;
+    // A touch device answers this true. Focusing there raises the
+    // on-screen keyboard, which covers the answer that just arrived.
+    if (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) return;
     textareaRef.current?.focus();
   }, [focusSignal]);
 
@@ -102,6 +108,7 @@ export const Composer: React.FC<ComposerProps> = ({
           onKeyDown={handleKeyDown}
           placeholder="Ask your own question…"
           rows={1}
+          maxLength={MAX_QUESTION_LENGTH}
           disabled={disabled}
           aria-label="Ask a question"
         />
@@ -127,6 +134,11 @@ export const Composer: React.FC<ComposerProps> = ({
           </button>
         )}
       </form>
+      {value.length >= QUESTION_COUNTER_THRESHOLD ? (
+        <p className="ask-composer-counter" aria-live="polite">
+          {MAX_QUESTION_LENGTH - value.length} characters left
+        </p>
+      ) : null}
     </div>
   );
 };

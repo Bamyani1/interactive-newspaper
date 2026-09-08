@@ -82,6 +82,48 @@ describe("Composer", () => {
     expect(textarea).toHaveValue("");
   });
 
+  // Without maxLength a long paste was accepted, sent, rejected with a 400
+  // and rendered as an error turn — the reader learned the limit by
+  // tripping it, with their question already gone from the box.
+  it("caps the question at the length the route accepts", () => {
+    render(<Composer onSubmit={vi.fn()} onStop={vi.fn()} />);
+    expect(screen.getByLabelText("Ask a question")).toHaveAttribute("maxLength", "1000");
+  });
+
+  it("counts down only as the reader approaches the limit", () => {
+    render(<Composer onSubmit={vi.fn()} onStop={vi.fn()} />);
+    const textarea = screen.getByLabelText("Ask a question");
+    fireEvent.change(textarea, { target: { value: "a".repeat(899) } });
+    expect(screen.queryByText(/characters left/i)).not.toBeInTheDocument();
+    fireEvent.change(textarea, { target: { value: "a".repeat(960) } });
+    expect(screen.getByText("40 characters left")).toBeInTheDocument();
+  });
+
+  it("does not steal focus on a touch device, where it would raise the keyboard", () => {
+    const matchMedia = vi.fn((query: string) => ({
+      matches: query.includes("coarse"),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      onchange: null,
+      dispatchEvent: vi.fn(),
+    })) as unknown as typeof window.matchMedia;
+    vi.stubGlobal("matchMedia", matchMedia);
+    try {
+      render(<Composer onSubmit={vi.fn()} onStop={vi.fn()} focusSignal="t-1:done" />);
+      expect(document.activeElement).not.toBe(screen.getByLabelText("Ask a question"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("takes focus on a fine pointer once an answer lands", () => {
+    render(<Composer onSubmit={vi.fn()} onStop={vi.fn()} focusSignal="t-1:done" />);
+    expect(document.activeElement).toBe(screen.getByLabelText("Ask a question"));
+  });
+
   it("Shift+Enter never sends", () => {
     const onSubmit = vi.fn();
     render(<Composer onSubmit={onSubmit} onStop={vi.fn()} />);
