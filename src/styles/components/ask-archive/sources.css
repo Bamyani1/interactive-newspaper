@@ -17,7 +17,9 @@
   border-top: 1px dashed var(--stroke-accent-soft);
   position: relative;
   cursor: pointer;
-  transition: padding-left var(--duration-fast) ease, background var(--duration-fast) ease;
+  transition:
+    padding-left var(--duration-fast) ease,
+    background var(--duration-fast) ease;
 }
 
 .ask-source-card:first-child {
@@ -36,8 +38,12 @@
 }
 
 @keyframes ask-source-flash {
-  0% { background: color-mix(in oklab, var(--color-accent) 16%, transparent); }
-  100% { background: color-mix(in oklab, var(--color-accent) 8%, transparent); }
+  0% {
+    background: color-mix(in oklab, var(--color-accent) 16%, transparent);
+  }
+  100% {
+    background: color-mix(in oklab, var(--color-accent) 8%, transparent);
+  }
 }
 
 .ask-source-card-inner {

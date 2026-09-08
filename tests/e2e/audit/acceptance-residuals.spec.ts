@@ -1,9 +1,6 @@
 import type { Locator } from "@playwright/test";
 import { expect, test, type Page } from "../fixtures";
-import {
-  DEFAULT_STORAGE_SEED,
-  RETURNING_ASK_STORAGE_SEED,
-} from "../support/deterministic";
+import { DEFAULT_STORAGE_SEED, RETURNING_ASK_STORAGE_SEED } from "../support/deterministic";
 import {
   FRAMER_MOTION_REDUCED_MOTION_DEV_WARNING,
   expectNoSeriousOrCriticalAxeViolations,
@@ -31,9 +28,8 @@ async function installFirstPaintStabilityRecorder(page: Page) {
         state.samples.push({
           mode: document.documentElement.getAttribute("data-mode"),
           dateText: normalize(
-            document.querySelector<HTMLButtonElement>(
-              'button[aria-label="Select edition date"]',
-            )?.textContent,
+            document.querySelector<HTMLButtonElement>('button[aria-label="Select edition date"]')
+              ?.textContent
           ),
         });
       };
@@ -62,10 +58,11 @@ async function readStabilitySamples(page: Page): Promise<StabilitySample[]> {
     };
     const samples = auditWindow.__auditFirstPaintStability?.samples ?? [];
     const dateText = (
-      document.querySelector<HTMLButtonElement>(
-        'button[aria-label="Select edition date"]',
-      )?.textContent ?? ""
-    ).replace(/\s+/g, " ").trim();
+      document.querySelector<HTMLButtonElement>('button[aria-label="Select edition date"]')
+        ?.textContent ?? ""
+    )
+      .replace(/\s+/g, " ")
+      .trim();
     return [
       ...samples,
       {
@@ -77,7 +74,10 @@ async function readStabilitySamples(page: Page): Promise<StabilitySample[]> {
 }
 
 function parseRgb(value: string): [number, number, number] {
-  const channels = value.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+  const channels = value
+    .match(/[\d.]+/g)
+    ?.slice(0, 3)
+    .map(Number);
   if (!channels || channels.length !== 3) {
     throw new Error(`Expected an RGB color, received ${value}`);
   }
@@ -87,9 +87,7 @@ function parseRgb(value: string): [number, number, number] {
 function relativeLuminance([red, green, blue]: [number, number, number]) {
   const linear = [red, green, blue].map((channel) => {
     const value = channel / 255;
-    return value <= 0.04045
-      ? value / 12.92
-      : ((value + 0.055) / 1.055) ** 2.4;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
   });
   return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
 }
@@ -102,11 +100,8 @@ async function expectPrimaryBodyContrast(page: Page, minimum = 7) {
   const foreground = relativeLuminance(parseRgb(colors.foreground));
   const background = relativeLuminance(parseRgb(colors.background));
   const ratio =
-    (Math.max(foreground, background) + 0.05) /
-    (Math.min(foreground, background) + 0.05);
-  expect(ratio, `${colors.foreground} on ${colors.background}`).toBeGreaterThanOrEqual(
-    minimum,
-  );
+    (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+  expect(ratio, `${colors.foreground} on ${colors.background}`).toBeGreaterThanOrEqual(minimum);
 }
 
 async function expectMinimumTarget(locator: Locator, label: string) {
@@ -145,9 +140,8 @@ async function expectInstantMotionSurface(locator: Locator, label: string) {
   });
   expect(state.opacity, `${label} opacity`).toBe("1");
   expect(
-    state.transform === "none" ||
-      state.transform === "matrix(1, 0, 0, 1, 0, 0)",
-    `${label} transform: ${state.transform}`,
+    state.transform === "none" || state.transform === "matrix(1, 0, 0, 1, 0, 0)",
+    `${label} transform: ${state.transform}`
   ).toBe(true);
 }
 
@@ -155,22 +149,18 @@ async function expectStableFirstPaint(
   page: Page,
   route: string,
   expectedMode: "light" | "dark",
-  expectedDate: string,
+  expectedDate: string
 ) {
   await installFirstPaintStabilityRecorder(page);
   const response = await page.goto(route, { waitUntil: "domcontentloaded" });
   expect(response?.status()).toBe(200);
-  await expect(
-    page.getByRole("button", { name: "Select edition date" }),
-  ).toBeAttached();
+  await expect(page.getByRole("button", { name: "Select edition date" })).toBeAttached();
   await waitForSettledUi(page);
 
   const samples = await readStabilitySamples(page);
   const datedSamples = samples.filter((sample) => sample.dateText.length > 0);
   expect(datedSamples.length).toBeGreaterThan(0);
-  expect(new Set(samples.map((sample) => sample.mode))).toEqual(
-    new Set([expectedMode]),
-  );
+  expect(new Set(samples.map((sample) => sample.mode))).toEqual(new Set([expectedMode]));
   for (const sample of datedSamples) {
     expect(sample.dateText).toContain(expectedDate);
   }
@@ -202,12 +192,7 @@ test.describe("saved dark first paint", () => {
     diagnostics,
     isMobile,
   }) => {
-    await expectStableFirstPaint(
-      page,
-      "/edition/1960-01-13",
-      "dark",
-      "Jan 13, 1960",
-    );
+    await expectStableFirstPaint(page, "/edition/1960-01-13", "dark", "Jan 13, 1960");
 
     const accentText = await resolveColorToken(page, "--color-accent-text");
     const accentRule = await resolveColorToken(page, "--color-rule-accent");
@@ -220,9 +205,7 @@ test.describe("saved dark first paint", () => {
     const pickerSurface = listbox.locator("..");
     await expectInstantMotionSurface(pickerSurface, "date picker");
     await expect(trigger).toHaveCSS("color", accentText);
-    await expect(
-      listbox.getByRole("option", { selected: true }),
-    ).toHaveCSS("color", accentText);
+    await expect(listbox.getByRole("option", { selected: true })).toHaveCSS("color", accentText);
     await expectNoSeriousOrCriticalAxeViolations(page);
     await page.keyboard.press("Escape");
 
@@ -259,8 +242,8 @@ test.describe("saved dark first paint", () => {
       const trackList = page.locator("#sidebar-track-list");
       await expect(trackList).toHaveCSS("transition-duration", "0s");
       await expect(trackToggle).toHaveAttribute("aria-expanded", "true");
-      const trackListHeight = await trackList.evaluate((element) =>
-        element.getBoundingClientRect().height,
+      const trackListHeight = await trackList.evaluate(
+        (element) => element.getBoundingClientRect().height
       );
       expect(trackListHeight).toBeGreaterThan(0);
 
@@ -276,11 +259,11 @@ test.describe("saved dark first paint", () => {
     await expect(ribbon).toBeVisible();
     await expect(ribbon).toHaveCSS(
       "color",
-      await resolveColorToken(page, "--color-text-on-accent"),
+      await resolveColorToken(page, "--color-text-on-accent")
     );
     await expect(ribbon).toHaveCSS(
       "background-color",
-      await resolveColorToken(page, "--color-accent"),
+      await resolveColorToken(page, "--color-accent")
     );
     await expectNoHorizontalOverflow(page);
     await expectNoSeriousOrCriticalAxeViolations(page);
@@ -310,21 +293,18 @@ test("application warnings cannot impersonate the upstream motion warning", asyn
     `${FRAMER_MOTION_REDUCED_MOTION_DEV_WARNING.replace(/^warning: /, "")} application suffix`,
   ]) {
     await page.evaluate((warning) => console.warn(warning), message);
-    await expect
-      .poll(() => findInjectedWarning(message) ?? "")
-      .not.toBe("");
+    await expect.poll(() => findInjectedWarning(message) ?? "").not.toBe("");
     expect(() => expectNoUnexpectedDiagnostics(diagnostics)).toThrow();
     consumeInjectedWarning(findInjectedWarning(message)!);
     expectNoUnexpectedDiagnostics(diagnostics);
   }
 
-  const applicationWarning =
-    FRAMER_MOTION_REDUCED_MOTION_DEV_WARNING.replace(/^warning: /, "");
+  const applicationWarning = FRAMER_MOTION_REDUCED_MOTION_DEV_WARNING.replace(/^warning: /, "");
   await page.route("**/audit-application-warning.js", (route) =>
     route.fulfill({
       contentType: "application/javascript",
       body: `console.warn(${JSON.stringify(applicationWarning)});`,
-    }),
+    })
   );
   await page.evaluate(
     () =>
@@ -332,16 +312,12 @@ test("application warnings cannot impersonate the upstream motion warning", asyn
         const frame = document.createElement("iframe");
         frame.hidden = true;
         frame.onload = () => resolve();
-        frame.onerror = () =>
-          reject(new Error("Application warning frame failed"));
-        frame.srcdoc =
-          '<!doctype html><script src="/audit-application-warning.js"><\/script>';
+        frame.onerror = () => reject(new Error("Application warning frame failed"));
+        frame.srcdoc = '<!doctype html><script src="/audit-application-warning.js"><\/script>';
         document.body.append(frame);
-      }),
+      })
   );
-  await expect
-    .poll(() => findInjectedWarning("/audit-application-warning.js") ?? "")
-    .not.toBe("");
+  await expect.poll(() => findInjectedWarning("/audit-application-warning.js") ?? "").not.toBe("");
   expect(() => expectNoUnexpectedDiagnostics(diagnostics)).toThrow();
   consumeInjectedWarning(findInjectedWarning("/audit-application-warning.js")!);
 
@@ -377,15 +353,15 @@ test("gold edition keeps mobile targets, metadata, and approved nav radii", asyn
 
   await expectMinimumTarget(
     page.getByRole("link", { name: "Return to landing page" }),
-    "return-to-landing link",
+    "return-to-landing link"
   );
   await expectMinimumTarget(
     page.getByRole("button", { name: "Toggle color theme" }),
-    "theme-mode toggle",
+    "theme-mode toggle"
   );
   await expectMinimumTarget(
     page.getByRole("button", { name: "See Next Edition" }),
-    "next-edition button",
+    "next-edition button"
   );
 
   const volume = page.getByText("Vol. 93 · No. 13");
@@ -404,9 +380,10 @@ test("gold edition keeps mobile targets, metadata, and approved nav radii", asyn
     const more = mobileNav.getByRole("button", { name: "More sections" });
     await expect(more).toHaveCSS("border-radius", "2px");
     await more.click();
-    await expect(
-      mobileNav.getByRole("menu", { name: "More sections" }),
-    ).toHaveCSS("border-radius", "2px");
+    await expect(mobileNav.getByRole("menu", { name: "More sections" })).toHaveCSS(
+      "border-radius",
+      "2px"
+    );
   }
 
   await expectNoHorizontalOverflow(page);
@@ -415,7 +392,7 @@ test("gold edition keeps mobile targets, metadata, and approved nav radii", asyn
 });
 
 const markdownThreads = JSON.parse(
-  RETURNING_ASK_STORAGE_SEED.localStorage!["owu-ask-threads"],
+  RETURNING_ASK_STORAGE_SEED.localStorage!["owu-ask-threads"]
 ) as Array<{ turns: Array<{ answer: string }> }>;
 markdownThreads[0].turns[0].answer = [
   "A restored answer with a real fenced code block:",
@@ -452,9 +429,7 @@ test.describe("keyboard-reachable code regions", () => {
     await page.goto("/ask");
     await waitForSettledUi(page);
     const markdownCodeRegion = page.locator(".ask-turn-answer pre").first();
-    await expect(markdownCodeRegion).toContainText(
-      'const edition = "1960-01-13";',
-    );
+    await expect(markdownCodeRegion).toContainText('const edition = "1960-01-13";');
     await expect(markdownCodeRegion).toHaveAttribute("tabindex", "0");
     await markdownCodeRegion.focus();
     await expect(markdownCodeRegion).toBeFocused();

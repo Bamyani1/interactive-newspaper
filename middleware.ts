@@ -74,7 +74,7 @@ export async function middleware(request: NextRequest) {
             "X-RateLimit-Reset": String(result.resetAt),
             "Content-Security-Policy": csp,
           },
-        },
+        }
       );
     }
 

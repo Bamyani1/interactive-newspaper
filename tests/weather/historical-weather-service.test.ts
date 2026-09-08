@@ -1,17 +1,17 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   calculateDailyDeviation,
   computeDailyWeatherHash,
   fetchWeatherRange,
   isDeviationAboveThreshold,
   lookupHistoricalWeather,
-} from '../../src/lib/weather';
-import type { DailyWeatherRecord } from '../../src/types';
+} from "../../src/lib/weather";
+import type { DailyWeatherRecord } from "../../src/types";
 
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { "content-type": "application/json" },
   });
 }
 
@@ -19,7 +19,7 @@ function asUrl(input: string): URL {
   return new URL(input);
 }
 
-describe('historical weather provider pipeline', () => {
+describe("historical weather provider pipeline", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -28,36 +28,36 @@ describe('historical weather provider pipeline', () => {
     vi.restoreAllMocks();
   });
 
-  it('Ohio historical pull test: NOAA returns non-null daily metrics for 1955-01-01', async () => {
+  it("Ohio historical pull test: NOAA returns non-null daily metrics for 1955-01-01", async () => {
     const fetchMock = vi.fn(async (input: string) => {
-      if (input.startsWith('https://data.rcc-acis.org/StnMeta')) {
+      if (input.startsWith("https://data.rcc-acis.org/StnMeta")) {
         return jsonResponse({
           meta: [
             {
-              name: 'JOHN GLENN INTERNATIONAL AIRPORT',
-              sids: ['USW00014821 6'],
+              name: "JOHN GLENN INTERNATIONAL AIRPORT",
+              sids: ["USW00014821 6"],
               ll: [-82.9988, 39.9612],
             },
           ],
         });
       }
 
-      if (input.startsWith('https://www.ncei.noaa.gov/access/services/data/v1')) {
+      if (input.startsWith("https://www.ncei.noaa.gov/access/services/data/v1")) {
         return jsonResponse([
           {
-            DATE: '1955-01-01',
-            STATION: 'USW00014821',
-            TMAX: '13.9',
-            TMIN: '-0.6',
-            PRCP: '2.5',
+            DATE: "1955-01-01",
+            STATION: "USW00014821",
+            TMAX: "13.9",
+            TMIN: "-0.6",
+            PRCP: "2.5",
           },
         ]);
       }
 
-      if (input.startsWith('https://archive-api.open-meteo.com/v1/archive')) {
+      if (input.startsWith("https://archive-api.open-meteo.com/v1/archive")) {
         return jsonResponse({
           daily: {
-            time: ['1955-01-01'],
+            time: ["1955-01-01"],
             temperature_2m_max: [11.1],
             temperature_2m_min: [-2.1],
             precipitation_sum: [2.9],
@@ -70,47 +70,47 @@ describe('historical weather provider pipeline', () => {
 
     const result = await lookupHistoricalWeather(
       {
-        date: '1955-01-01',
+        date: "1955-01-01",
         lat: 39.9612,
         lon: -82.9988,
-        state: 'OH',
-        country: 'US',
+        state: "OH",
+        country: "US",
       },
-      { fetcher: fetchMock },
+      { fetcher: fetchMock }
     );
 
     expect(result.reason).toBeNull();
     expect(result.record).not.toBeNull();
-    expect(result.record?.source).toBe('NOAA_DAILY_SUMMARIES');
+    expect(result.record?.source).toBe("NOAA_DAILY_SUMMARIES");
     expect(result.record?.tmax_c).toBe(13.9);
     expect(result.record?.tmin_c).toBe(-0.6);
     expect(result.record?.precip_mm).toBe(2.5);
     expect(result.record?.is_estimated).toBe(false);
   });
 
-  it('Date continuity test: range query reports missing-day percentage', async () => {
+  it("Date continuity test: range query reports missing-day percentage", async () => {
     const fetchMock = vi.fn(async (input: string) => {
       const url = asUrl(input);
-      if (url.origin === 'https://www.ncei.noaa.gov') {
-        const date = url.searchParams.get('startDate');
-        if (date === '1955-01-02') {
+      if (url.origin === "https://www.ncei.noaa.gov") {
+        const date = url.searchParams.get("startDate");
+        if (date === "1955-01-02") {
           return jsonResponse([]);
         }
 
         return jsonResponse([
           {
             DATE: date,
-            STATION: 'USW00014821',
-            TMAX: '10.0',
-            TMIN: '0.0',
-            PRCP: '0.0',
+            STATION: "USW00014821",
+            TMAX: "10.0",
+            TMIN: "0.0",
+            PRCP: "0.0",
           },
         ]);
       }
 
-      if (url.origin === 'https://archive-api.open-meteo.com') {
-        const date = url.searchParams.get('start_date');
-        if (date === '1955-01-02') {
+      if (url.origin === "https://archive-api.open-meteo.com") {
+        const date = url.searchParams.get("start_date");
+        if (date === "1955-01-02") {
           return jsonResponse({
             daily: {
               time: [date],
@@ -136,13 +136,13 @@ describe('historical weather provider pipeline', () => {
 
     const range = await fetchWeatherRange(
       {
-        start_date: '1955-01-01',
-        end_date: '1955-01-03',
-        station_id: 'USW00014821',
-        state: 'OH',
-        country: 'US',
+        start_date: "1955-01-01",
+        end_date: "1955-01-03",
+        station_id: "USW00014821",
+        state: "OH",
+        country: "US",
       },
-      { fetcher: fetchMock },
+      { fetcher: fetchMock }
     );
 
     expect(range.total_days).toBe(3);
@@ -151,12 +151,12 @@ describe('historical weather provider pipeline', () => {
     expect(range.missing_day_percentage).toBe(33.33);
   });
 
-  it('Station fallback test: unavailable station path uses reanalysis and marks estimated', async () => {
+  it("Station fallback test: unavailable station path uses reanalysis and marks estimated", async () => {
     const fetchMock = vi.fn(async (input: string) => {
-      if (input.startsWith('https://archive-api.open-meteo.com/v1/archive')) {
+      if (input.startsWith("https://archive-api.open-meteo.com/v1/archive")) {
         return jsonResponse({
           daily: {
-            time: ['1955-01-01'],
+            time: ["1955-01-01"],
             temperature_2m_max: [11.1],
             temperature_2m_min: [-2.1],
             precipitation_sum: [2.9],
@@ -169,42 +169,42 @@ describe('historical weather provider pipeline', () => {
 
     const result = await lookupHistoricalWeather(
       {
-        date: '1955-01-01',
+        date: "1955-01-01",
         lat: 39.9612,
         lon: -82.9988,
         force_fallback: true,
       },
-      { fetcher: fetchMock },
+      { fetcher: fetchMock }
     );
 
     expect(result.reason).toBeNull();
     expect(result.record).not.toBeNull();
-    expect(result.record?.source).toBe('OPEN_METEO_ARCHIVE');
+    expect(result.record?.source).toBe("OPEN_METEO_ARCHIVE");
     expect(result.record?.is_estimated).toBe(true);
   });
 
-  it('ACIS-assisted station fallback converts Fahrenheit/inches to Celsius/mm', async () => {
+  it("ACIS-assisted station fallback converts Fahrenheit/inches to Celsius/mm", async () => {
     const fetchMock = vi.fn(async (input: string) => {
-      if (input.startsWith('https://data.rcc-acis.org/StnMeta')) {
+      if (input.startsWith("https://data.rcc-acis.org/StnMeta")) {
         return jsonResponse({
           meta: [
             {
-              name: 'JOHN GLENN INTERNATIONAL AIRPORT',
-              sids: ['USW00014821 6'],
+              name: "JOHN GLENN INTERNATIONAL AIRPORT",
+              sids: ["USW00014821 6"],
               ll: [-82.9988, 39.9612],
             },
           ],
         });
       }
 
-      if (input.startsWith('https://www.ncei.noaa.gov/access/services/data/v1')) {
+      if (input.startsWith("https://www.ncei.noaa.gov/access/services/data/v1")) {
         return jsonResponse([]);
       }
 
-      if (input.startsWith('https://data.rcc-acis.org/StnData')) {
+      if (input.startsWith("https://data.rcc-acis.org/StnData")) {
         return jsonResponse({
-          meta: { sids: ['USW00014821 6'] },
-          data: [['1955-01-01', '57', '31', '0.10']],
+          meta: { sids: ["USW00014821 6"] },
+          data: [["1955-01-01", "57", "31", "0.10"]],
         });
       }
 
@@ -213,39 +213,39 @@ describe('historical weather provider pipeline', () => {
 
     const result = await lookupHistoricalWeather(
       {
-        date: '1955-01-01',
+        date: "1955-01-01",
         lat: 39.9612,
         lon: -82.9988,
       },
-      { fetcher: fetchMock },
+      { fetcher: fetchMock }
     );
 
     expect(result.record).not.toBeNull();
-    expect(result.record?.source).toBe('ACIS_STNDATA');
+    expect(result.record?.source).toBe("ACIS_STNDATA");
     expect(result.record?.tmax_c).toBe(13.89);
     expect(result.record?.tmin_c).toBe(-0.56);
     expect(result.record?.precip_mm).toBe(2.54);
   });
 
-  it('Cross-source sanity test flags large NOAA vs reanalysis deviation', () => {
+  it("Cross-source sanity test flags large NOAA vs reanalysis deviation", () => {
     const noaaRecord: DailyWeatherRecord = {
-      date: '1955-01-01',
+      date: "1955-01-01",
       tmax_c: 15,
       tmin_c: 5,
       precip_mm: 10,
-      source: 'NOAA_DAILY_SUMMARIES',
-      source_station_id: 'USW00014821',
+      source: "NOAA_DAILY_SUMMARIES",
+      source_station_id: "USW00014821",
       quality_flag: null,
       is_estimated: false,
       raw: {},
     };
 
     const reanalysisRecord: DailyWeatherRecord = {
-      date: '1955-01-01',
+      date: "1955-01-01",
       tmax_c: 2,
       tmin_c: -6,
       precip_mm: 1,
-      source: 'OPEN_METEO_ARCHIVE',
+      source: "OPEN_METEO_ARCHIVE",
       source_station_id: null,
       quality_flag: null,
       is_estimated: true,
@@ -264,32 +264,32 @@ describe('historical weather provider pipeline', () => {
         tmax_c_abs_diff: 8,
         tmin_c_abs_diff: 8,
         precip_mm_abs_diff: 20,
-      }),
+      })
     ).toBe(true);
   });
 
-  it('Reproducibility test: same query yields identical normalized record hash', async () => {
+  it("Reproducibility test: same query yields identical normalized record hash", async () => {
     const fetchMock = vi.fn(async (input: string) => {
-      if (input.startsWith('https://data.rcc-acis.org/StnMeta')) {
+      if (input.startsWith("https://data.rcc-acis.org/StnMeta")) {
         return jsonResponse({
           meta: [
             {
-              name: 'JOHN GLENN INTERNATIONAL AIRPORT',
-              sids: ['USW00014821 6'],
+              name: "JOHN GLENN INTERNATIONAL AIRPORT",
+              sids: ["USW00014821 6"],
               ll: [-82.9988, 39.9612],
             },
           ],
         });
       }
 
-      if (input.startsWith('https://www.ncei.noaa.gov/access/services/data/v1')) {
+      if (input.startsWith("https://www.ncei.noaa.gov/access/services/data/v1")) {
         return jsonResponse([
           {
-            DATE: '1955-01-01',
-            STATION: 'USW00014821',
-            TMAX: '13.9',
-            TMIN: '-0.6',
-            PRCP: '2.5',
+            DATE: "1955-01-01",
+            STATION: "USW00014821",
+            TMAX: "13.9",
+            TMIN: "-0.6",
+            PRCP: "2.5",
           },
         ]);
       }
@@ -298,11 +298,11 @@ describe('historical weather provider pipeline', () => {
     });
 
     const query = {
-      date: '1955-01-01',
+      date: "1955-01-01",
       lat: 39.9612,
       lon: -82.9988,
-      state: 'OH',
-      country: 'US',
+      state: "OH",
+      country: "US",
     };
 
     const first = await lookupHistoricalWeather(query, { fetcher: fetchMock });

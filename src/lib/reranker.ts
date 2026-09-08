@@ -22,15 +22,15 @@ const DEFAULT_MIN_SCORE = 5;
 const DEFAULT_MAX_ARTICLES = 5;
 
 export interface RankedArticle extends RetrievedArticle {
-    relevanceScore: number;
+  relevanceScore: number;
 }
 
 interface RerankOptions {
-    minScore?: number;
-    maxArticles?: number;
-    mode?: "text" | "visual";
-    signal?: AbortSignal;
-    requestId?: string;
+  minScore?: number;
+  maxArticles?: number;
+  mode?: "text" | "visual";
+  signal?: AbortSignal;
+  requestId?: string;
 }
 
 const RERANKER_PROMPT = `You are a relevance judge for a university newspaper archive search system (Ohio Wesleyan University, 1950-2006).
@@ -53,30 +53,30 @@ Judge whether a source helps answer the question, not whether it confirms the qu
 Return a JSON object with a "scores" array in the same order as the articles. Example: {"scores":[8,2,6,0,9]}`;
 
 const RERANKER_SCHEMA = {
-    type: "object",
-    properties: {
-        scores: {
-            type: "array",
-            items: { type: "number", minimum: 0, maximum: 10 },
-        },
+  type: "object",
+  properties: {
+    scores: {
+      type: "array",
+      items: { type: "number", minimum: 0, maximum: 10 },
     },
-    required: ["scores"],
-    additionalProperties: false,
+  },
+  required: ["scores"],
+  additionalProperties: false,
 } as const;
 
 function articleDocument(a: RetrievedArticle, index: number | null): string {
-    const relevantText =
-        a.matchedPassages && a.matchedPassages.length > 0
-            ? a.matchedPassages.join("\n\n")
-            : a.bodyPlain || "";
-    const bodyExcerpt = relevantText.slice(0, RERANKER_BODY_CHARS);
-    const imageCaptions = (a.imageCaptions ?? [])
-        .filter((caption): caption is string => Boolean(caption?.trim()))
-        .map((caption) => caption.trim())
-        .join(" | ")
-        .slice(0, RERANKER_IMAGE_CAPTION_CHARS);
-    const label = index === null ? "" : `[${index + 1}] `;
-    return `${label}"${a.headline}" (${a.editionDate}, ${a.category})\nSummary: ${a.summary || "(none)"}\nExcerpt: ${bodyExcerpt}\nImage captions: ${imageCaptions || "(none)"}`;
+  const relevantText =
+    a.matchedPassages && a.matchedPassages.length > 0
+      ? a.matchedPassages.join("\n\n")
+      : a.bodyPlain || "";
+  const bodyExcerpt = relevantText.slice(0, RERANKER_BODY_CHARS);
+  const imageCaptions = (a.imageCaptions ?? [])
+    .filter((caption): caption is string => Boolean(caption?.trim()))
+    .map((caption) => caption.trim())
+    .join(" | ")
+    .slice(0, RERANKER_IMAGE_CAPTION_CHARS);
+  const label = index === null ? "" : `[${index + 1}] `;
+  return `${label}"${a.headline}" (${a.editionDate}, ${a.category})\nSummary: ${a.summary || "(none)"}\nExcerpt: ${bodyExcerpt}\nImage captions: ${imageCaptions || "(none)"}`;
 }
 
 const VOYAGE_RERANK_MODEL = "rerank-2.5";
@@ -90,208 +90,190 @@ const VOYAGE_TIMEOUT_MS = 5_000;
  * relevance scores (0..1) are mapped onto the pipeline's 0-10 scale.
  */
 async function voyageRerank(
-    question: string,
-    articles: RetrievedArticle[],
-    minScore: number,
-    maxArticles: number,
-    options: RerankOptions,
+  question: string,
+  articles: RetrievedArticle[],
+  minScore: number,
+  maxArticles: number,
+  options: RerankOptions
 ): Promise<RankedArticle[] | null> {
-    const apiKey = process.env.VOYAGE_API_KEY;
-    if (!apiKey) return null;
-    const started = Date.now();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), VOYAGE_TIMEOUT_MS);
-    const combinedSignal = options.signal
-        ? AbortSignal.any([options.signal, controller.signal])
-        : controller.signal;
-    try {
-        const res = await fetch(VOYAGE_RERANK_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-                model: VOYAGE_RERANK_MODEL,
-                query: question,
-                documents: articles.map((a) => articleDocument(a, null)),
-            }),
-            signal: combinedSignal,
-        });
-        if (!res.ok) throw new Error(`Voyage rerank HTTP ${res.status}`);
-        const payload = (await res.json()) as {
-            data?: Array<{ index: number; relevance_score: number }>;
-        };
-        const data = payload.data;
-        if (!Array.isArray(data) || data.length === 0) {
-            throw new Error("Voyage rerank returned no results");
-        }
-        const ranked = data
-            .filter((r) => Number.isInteger(r.index) && articles[r.index] !== undefined)
-            .map((r) => ({
-                ...articles[r.index],
-                relevanceScore: Math.max(0, Math.min(10, r.relevance_score * 10)),
-            }))
-            .filter((a) => a.relevanceScore >= minScore)
-            .sort((a, b) => b.relevanceScore - a.relevanceScore)
-            .slice(0, maxArticles);
-        console.warn(
-            JSON.stringify({
-                level: "info",
-                route: "/api/ask",
-                requestId: options.requestId,
-                stage: "rerank",
-                provider: "voyage",
-                model: VOYAGE_RERANK_MODEL,
-                docCount: articles.length,
-                keptCount: ranked.length,
-                latencyMs: Date.now() - started,
-            }),
-        );
-        return ranked;
-    } catch (err) {
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                route: "/api/ask",
-                requestId: options.requestId,
-                stage: "rerank",
-                provider: "voyage",
-                msg: "voyage rerank failed; falling back to LLM judge",
-                err: err instanceof Error ? err.message : String(err),
-            }),
-        );
-        return null;
-    } finally {
-        clearTimeout(timeout);
+  const apiKey = process.env.VOYAGE_API_KEY;
+  if (!apiKey) return null;
+  const started = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), VOYAGE_TIMEOUT_MS);
+  const combinedSignal = options.signal
+    ? AbortSignal.any([options.signal, controller.signal])
+    : controller.signal;
+  try {
+    const res = await fetch(VOYAGE_RERANK_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: VOYAGE_RERANK_MODEL,
+        query: question,
+        documents: articles.map((a) => articleDocument(a, null)),
+      }),
+      signal: combinedSignal,
+    });
+    if (!res.ok) throw new Error(`Voyage rerank HTTP ${res.status}`);
+    const payload = (await res.json()) as {
+      data?: Array<{ index: number; relevance_score: number }>;
+    };
+    const data = payload.data;
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error("Voyage rerank returned no results");
     }
+    const ranked = data
+      .filter((r) => Number.isInteger(r.index) && articles[r.index] !== undefined)
+      .map((r) => ({
+        ...articles[r.index],
+        relevanceScore: Math.max(0, Math.min(10, r.relevance_score * 10)),
+      }))
+      .filter((a) => a.relevanceScore >= minScore)
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, maxArticles);
+    console.warn(
+      JSON.stringify({
+        level: "info",
+        route: "/api/ask",
+        requestId: options.requestId,
+        stage: "rerank",
+        provider: "voyage",
+        model: VOYAGE_RERANK_MODEL,
+        docCount: articles.length,
+        keptCount: ranked.length,
+        latencyMs: Date.now() - started,
+      })
+    );
+    return ranked;
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        route: "/api/ask",
+        requestId: options.requestId,
+        stage: "rerank",
+        provider: "voyage",
+        msg: "voyage rerank failed; falling back to LLM judge",
+        err: err instanceof Error ? err.message : String(err),
+      })
+    );
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function rerankArticles(
-    question: string,
-    articles: RetrievedArticle[],
-    options: RerankOptions = {},
+  question: string,
+  articles: RetrievedArticle[],
+  options: RerankOptions = {}
 ): Promise<RankedArticle[]> {
-    const minScore = options.minScore ?? DEFAULT_MIN_SCORE;
-    const maxArticles = options.maxArticles ?? DEFAULT_MAX_ARTICLES;
+  const minScore = options.minScore ?? DEFAULT_MIN_SCORE;
+  const maxArticles = options.maxArticles ?? DEFAULT_MAX_ARTICLES;
 
-    // Nothing to rerank
-    if (articles.length === 0) return [];
+  // Nothing to rerank
+  if (articles.length === 0) return [];
 
-    const voyageRanked = await voyageRerank(
-        question,
-        articles,
-        minScore,
-        maxArticles,
-        options,
-    );
-    if (voyageRanked !== null) return voyageRanked;
+  const voyageRanked = await voyageRerank(question, articles, minScore, maxArticles, options);
+  if (voyageRanked !== null) return voyageRanked;
 
-    try {
-        const client = getGeminiClient();
+  try {
+    const client = getGeminiClient();
 
-        const articleSummaries = articles
-            .map((a, i) => articleDocument(a, i))
-            .join("\n\n");
+    const articleSummaries = articles.map((a, i) => articleDocument(a, i)).join("\n\n");
 
-        const userPrompt = `SEARCH MODE: ${options.mode ?? "text"}\nUSER QUESTION (JSON string): ${JSON.stringify(question)}\n\nArticles:\n${articleSummaries}`;
+    const userPrompt = `SEARCH MODE: ${options.mode ?? "text"}\nUSER QUESTION (JSON string): ${JSON.stringify(question)}\n\nArticles:\n${articleSummaries}`;
 
-        const controller = new AbortController();
-        const timeout = setTimeout(
-            () => controller.abort(),
-            RERANKER_TIMEOUT_MS,
-        );
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), RERANKER_TIMEOUT_MS);
 
-        const combinedSignal = options.signal
-            ? AbortSignal.any([options.signal, controller.signal])
-            : controller.signal;
+    const combinedSignal = options.signal
+      ? AbortSignal.any([options.signal, controller.signal])
+      : controller.signal;
 
-        const response = await executeTrackedGenerationCall({
-            model: RERANKER_MODEL,
+    const response = await executeTrackedGenerationCall({
+      model: RERANKER_MODEL,
+      maxOutputTokens: RERANKER_MAX_TOKENS,
+      requestId: options.requestId,
+      op: "rerank",
+      call: () =>
+        client.models.generateContent({
+          model: RERANKER_MODEL,
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          config: {
+            systemInstruction: RERANKER_PROMPT,
             maxOutputTokens: RERANKER_MAX_TOKENS,
-            requestId: options.requestId,
-            op: "rerank",
-            call: () =>
-                client.models.generateContent({
-                    model: RERANKER_MODEL,
-                    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-                    config: {
-                        systemInstruction: RERANKER_PROMPT,
-                        maxOutputTokens: RERANKER_MAX_TOKENS,
-                        thinkingConfig: {
-                            thinkingLevel: RAG_MODEL_CONFIG.rerank.thinkingLevel,
-                        },
-                        responseMimeType: "application/json",
-                        responseJsonSchema: RERANKER_SCHEMA,
-                        abortSignal: combinedSignal,
-                    },
-                }),
-        });
+            thinkingConfig: {
+              thinkingLevel: RAG_MODEL_CONFIG.rerank.thinkingLevel,
+            },
+            responseMimeType: "application/json",
+            responseJsonSchema: RERANKER_SCHEMA,
+            abortSignal: combinedSignal,
+          },
+        }),
+    });
 
-        clearTimeout(timeout);
+    clearTimeout(timeout);
 
-        const text = response.text?.trim() ?? "";
-        const scores = parseScores(text, articles.length);
+    const text = response.text?.trim() ?? "";
+    const scores = parseScores(text, articles.length);
 
-        if (!scores) {
-            console.warn(
-                JSON.stringify({
-                    level: "warn",
-                    route: "/api/ask",
-                    requestId: options.requestId,
-                    stage: "rerank",
-                    msg: "failed to parse reranker scores, returning original articles",
-                }),
-            );
-            return articles
-                .slice(0, maxArticles)
-                .map((a) => ({ ...a, relevanceScore: 5 }));
-        }
-
-        // Attach scores, filter, sort, and cap
-        return articles
-            .map((a, i) => ({ ...a, relevanceScore: scores[i] }))
-            .filter((a) => a.relevanceScore >= minScore)
-            .sort((a, b) => b.relevanceScore - a.relevanceScore)
-            .slice(0, maxArticles);
-    } catch (err) {
-        const isTimeout = err instanceof Error && err.name === "AbortError";
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                route: "/api/ask",
-                requestId: options.requestId,
-                stage: "rerank",
-                msg: isTimeout
-                    ? "reranker timed out, returning original articles"
-                    : "reranker failed, returning original articles",
-                err: err instanceof Error ? err.message : String(err),
-            }),
-        );
-        return articles
-            .slice(0, maxArticles)
-            .map((a) => ({ ...a, relevanceScore: 5 }));
+    if (!scores) {
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          route: "/api/ask",
+          requestId: options.requestId,
+          stage: "rerank",
+          msg: "failed to parse reranker scores, returning original articles",
+        })
+      );
+      return articles.slice(0, maxArticles).map((a) => ({ ...a, relevanceScore: 5 }));
     }
+
+    // Attach scores, filter, sort, and cap
+    return articles
+      .map((a, i) => ({ ...a, relevanceScore: scores[i] }))
+      .filter((a) => a.relevanceScore >= minScore)
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, maxArticles);
+  } catch (err) {
+    const isTimeout = err instanceof Error && err.name === "AbortError";
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        route: "/api/ask",
+        requestId: options.requestId,
+        stage: "rerank",
+        msg: isTimeout
+          ? "reranker timed out, returning original articles"
+          : "reranker failed, returning original articles",
+        err: err instanceof Error ? err.message : String(err),
+      })
+    );
+    return articles.slice(0, maxArticles).map((a) => ({ ...a, relevanceScore: 5 }));
+  }
 }
 
-export function parseScores(
-    text: string,
-    expectedCount: number,
-): number[] | null {
-    try {
-        const decoded = JSON.parse(text) as unknown;
-        const parsed = Array.isArray(decoded)
-            ? decoded
-            : typeof decoded === "object" && decoded !== null
-              ? (decoded as { scores?: unknown }).scores
-              : null;
-        if (!Array.isArray(parsed) || parsed.length !== expectedCount) return null;
+export function parseScores(text: string, expectedCount: number): number[] | null {
+  try {
+    const decoded = JSON.parse(text) as unknown;
+    const parsed = Array.isArray(decoded)
+      ? decoded
+      : typeof decoded === "object" && decoded !== null
+        ? (decoded as { scores?: unknown }).scores
+        : null;
+    if (!Array.isArray(parsed) || parsed.length !== expectedCount) return null;
 
-        const scores = parsed.map(Number);
-        if (scores.some((s) => isNaN(s) || s < 0 || s > 10)) return null;
+    const scores = parsed.map(Number);
+    if (scores.some((s) => isNaN(s) || s < 0 || s > 10)) return null;
 
-        return scores;
-    } catch {
-        return null;
-    }
+    return scores;
+  } catch {
+    return null;
+  }
 }

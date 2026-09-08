@@ -9,15 +9,13 @@ describe("isAdImageDescription", () => {
   it("returns true for 'advertisement titled' pattern", () => {
     expect(
       isAdImageDescription(
-        "advertisement titled 'Super Featured Edibles' listing dining specials and hours for various campus locations",
-      ),
+        "advertisement titled 'Super Featured Edibles' listing dining specials and hours for various campus locations"
+      )
     ).toBe(true);
   });
 
   it("returns true for 'advertisement for' pattern", () => {
-    expect(
-      isAdImageDescription("advertisement for Domino's Pizza delivery specials"),
-    ).toBe(true);
+    expect(isAdImageDescription("advertisement for Domino's Pizza delivery specials")).toBe(true);
   });
 
   it("returns false for a normal article headline", () => {
@@ -29,47 +27,41 @@ describe("isAdImageDescription", () => {
   });
 
   it("is case-insensitive", () => {
-    expect(
-      isAdImageDescription("Advertisement Titled 'Campus Bookstore Sale'"),
-    ).toBe(true);
+    expect(isAdImageDescription("Advertisement Titled 'Campus Bookstore Sale'")).toBe(true);
   });
 
   it("ignores leading/trailing whitespace", () => {
-    expect(
-      isAdImageDescription("  advertisement for Joe's Diner  "),
-    ).toBe(true);
+    expect(isAdImageDescription("  advertisement for Joe's Diner  ")).toBe(true);
   });
 
   it("returns true for section header description", () => {
-    expect(
-      isAdImageDescription("Sports section header for the Ohio Wesleyan Transcript."),
-    ).toBe(true);
+    expect(isAdImageDescription("Sports section header for the Ohio Wesleyan Transcript.")).toBe(
+      true
+    );
   });
 
   it("returns true for AI-generated cartoon illustration description", () => {
     expect(
       isAdImageDescription(
-        "A cartoon illustration of a character holding a fraternity pennant with the text 'says : HI MOMS!'",
-      ),
+        "A cartoon illustration of a character holding a fraternity pennant with the text 'says : HI MOMS!'"
+      )
     ).toBe(true);
   });
 
   it("returns true for masthead logo description", () => {
     expect(
-      isAdImageDescription("the Ohio College Newspaper Association logo within the newspaper's masthead"),
+      isAdImageDescription(
+        "the Ohio College Newspaper Association logo within the newspaper's masthead"
+      )
     ).toBe(true);
   });
 
   it("returns true for nameplate logo description", () => {
-    expect(
-      isAdImageDescription("The Transcript nameplate logo"),
-    ).toBe(true);
+    expect(isAdImageDescription("The Transcript nameplate logo")).toBe(true);
   });
 
   it("returns false for article about a logo", () => {
-    expect(
-      isAdImageDescription("University unveils new logo design"),
-    ).toBe(false);
+    expect(isAdImageDescription("University unveils new logo design")).toBe(false);
   });
 });
 
@@ -93,8 +85,7 @@ describe("isBodyMostlyCaption", () => {
   it("returns true when body is a substring of caption with >80% ratio", () => {
     const caption =
       "Delaware Mayor John Smith accepts the Citizen of the Year award at city hall on Saturday";
-    const body =
-      "Delaware Mayor John Smith accepts the Citizen of the Year award at city hall";
+    const body = "Delaware Mayor John Smith accepts the Citizen of the Year award at city hall";
     expect(isBodyMostlyCaption(body, caption)).toBe(true);
   });
 
@@ -113,8 +104,7 @@ describe("isBodyMostlyCaption", () => {
 
   it("returns false when ratio is below 0.8", () => {
     const body = "Short";
-    const caption =
-      "A much longer caption that has no relation to the short body text at all";
+    const caption = "A much longer caption that has no relation to the short body text at all";
     expect(isBodyMostlyCaption(body, caption)).toBe(false);
   });
 
@@ -137,24 +127,18 @@ describe("doesLastParagraphMatchAnyCaption", () => {
   it("returns true when last paragraph matches a caption", () => {
     const body =
       "First paragraph of article text.\n\nMayor Smith accepts the award at city hall on Saturday evening";
-    const captions = [
-      "Mayor Smith accepts the award at city hall on Saturday evening",
-    ];
+    const captions = ["Mayor Smith accepts the award at city hall on Saturday evening"];
     expect(doesLastParagraphMatchAnyCaption(body, captions)).toBe(true);
   });
 
   it("returns false for single-paragraph body", () => {
-    const body =
-      "Mayor Smith accepts the award at city hall on Saturday evening";
-    const captions = [
-      "Mayor Smith accepts the award at city hall on Saturday evening",
-    ];
+    const body = "Mayor Smith accepts the award at city hall on Saturday evening";
+    const captions = ["Mayor Smith accepts the award at city hall on Saturday evening"];
     expect(doesLastParagraphMatchAnyCaption(body, captions)).toBe(false);
   });
 
   it("returns false when no captions match", () => {
-    const body =
-      "First paragraph.\n\nCompletely different second paragraph text here";
+    const body = "First paragraph.\n\nCompletely different second paragraph text here";
     const captions = ["Unrelated caption about a different topic entirely"];
     expect(doesLastParagraphMatchAnyCaption(body, captions)).toBe(false);
   });

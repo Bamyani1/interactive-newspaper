@@ -7,10 +7,7 @@ import {
   RAG_PIPELINE_VERSION,
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/rag-model-config";
-import {
-  getRagRetrievalConfig,
-  shouldServeVersionedRetrieval,
-} from "@/src/lib/rag-index-config";
+import { getRagRetrievalConfig, shouldServeVersionedRetrieval } from "@/src/lib/rag-index-config";
 import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 
 // Neon's serverless driver uses HTTP — no persistent connection, no pool.
@@ -27,68 +24,68 @@ const HYBRID_CACHE_TTL_MS = 5 * 60 * 1000;
 const HYBRID_CACHE_MAX_SIZE = 50;
 
 interface HybridCacheEntry {
-    results: RetrievedArticle[];
-    ts: number;
+  results: RetrievedArticle[];
+  ts: number;
 }
 
 const hybridCache = new Map<string, HybridCacheEntry>();
 
 function hybridCacheKey(
-    question: string,
-    embeddingVec: number[],
-    options: {
-        limit?: number;
-        vectorWeight?: number;
-        category?: string | null;
-        startDate?: string | null;
-        endDate?: string | null;
-        onlyWithImages?: boolean;
-    },
+  question: string,
+  embeddingVec: number[],
+  options: {
+    limit?: number;
+    vectorWeight?: number;
+    category?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    onlyWithImages?: boolean;
+  }
 ): string {
-    return JSON.stringify({
-        fts: question,
-        semantic: createHash("sha256")
-          .update(Buffer.from(new Float32Array(embeddingVec).buffer))
-          .digest("base64url"),
-        pipeline: RAG_PIPELINE_VERSION,
-        corpus: process.env.RAG_CORPUS_VERSION ?? "default",
-        index: getRagRetrievalConfig().cacheIdentity,
-        l: options.limit ?? 8,
-        v: options.vectorWeight ?? 0.7,
-        c: options.category ?? null,
-        s: options.startDate ?? null,
-        e: options.endDate ?? null,
-        oi: options.onlyWithImages ?? false,
-    });
+  return JSON.stringify({
+    fts: question,
+    semantic: createHash("sha256")
+      .update(Buffer.from(new Float32Array(embeddingVec).buffer))
+      .digest("base64url"),
+    pipeline: RAG_PIPELINE_VERSION,
+    corpus: process.env.RAG_CORPUS_VERSION ?? "default",
+    index: getRagRetrievalConfig().cacheIdentity,
+    l: options.limit ?? 8,
+    v: options.vectorWeight ?? 0.7,
+    c: options.category ?? null,
+    s: options.startDate ?? null,
+    e: options.endDate ?? null,
+    oi: options.onlyWithImages ?? false,
+  });
 }
 
 function getCachedHybridSearch(key: string): RetrievedArticle[] | null {
-    if (isRagEvaluationMode()) return null;
-    const entry = hybridCache.get(key);
-    if (!entry) return null;
-    if (Date.now() - entry.ts > HYBRID_CACHE_TTL_MS) {
-        hybridCache.delete(key);
-        return null;
-    }
-    // Promote to most-recently-used
+  if (isRagEvaluationMode()) return null;
+  const entry = hybridCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > HYBRID_CACHE_TTL_MS) {
     hybridCache.delete(key);
-    hybridCache.set(key, entry);
-    return entry.results;
+    return null;
+  }
+  // Promote to most-recently-used
+  hybridCache.delete(key);
+  hybridCache.set(key, entry);
+  return entry.results;
 }
 
 function setCachedHybridSearch(key: string, results: RetrievedArticle[]): void {
-    if (isRagEvaluationMode()) return;
-    if (hybridCache.size >= HYBRID_CACHE_MAX_SIZE) {
-        const oldest = hybridCache.keys().next().value;
-        if (oldest !== undefined) hybridCache.delete(oldest);
-    }
-    hybridCache.set(key, { results, ts: Date.now() });
+  if (isRagEvaluationMode()) return;
+  if (hybridCache.size >= HYBRID_CACHE_MAX_SIZE) {
+    const oldest = hybridCache.keys().next().value;
+    if (oldest !== undefined) hybridCache.delete(oldest);
+  }
+  hybridCache.set(key, { results, ts: Date.now() });
 }
 
 // Test hook: clears the module-level cache between tests so prior runs
 // don't leak into new ones.
 export function _clearHybridSearchCacheForTests(): void {
-    hybridCache.clear();
+  hybridCache.clear();
 }
 
 /**
@@ -97,53 +94,50 @@ export function _clearHybridSearchCacheForTests(): void {
  * underlying fetch instead of leaving an orphaned database request running.
  */
 export class DbTimeoutError extends Error {
-    constructor(
-        public readonly op: string,
-        public readonly timeoutMs: number,
-    ) {
-        super(`Database operation timed out: ${op} after ${timeoutMs}ms`);
-        this.name = "DbTimeoutError";
-    }
+  constructor(
+    public readonly op: string,
+    public readonly timeoutMs: number
+  ) {
+    super(`Database operation timed out: ${op} after ${timeoutMs}ms`);
+    this.name = "DbTimeoutError";
+  }
 }
 
 async function runWithDbTimeout<T>(
-    op: string,
-    operation: (signal: AbortSignal) => Promise<T>,
-    timeoutMs: number,
-    outerSignal?: AbortSignal,
+  op: string,
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  outerSignal?: AbortSignal
 ): Promise<T> {
-    const controller = new AbortController();
-    const signal = outerSignal
-      ? AbortSignal.any([outerSignal, controller.signal])
-      : controller.signal;
-    let rejectOnAbort: (() => void) | undefined;
-    const aborted = new Promise<never>((_, reject) => {
-      rejectOnAbort = () => reject(new DbTimeoutError(op, timeoutMs));
-      signal.addEventListener("abort", rejectOnAbort, { once: true });
-    });
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      if (signal.aborted) throw new DbTimeoutError(op, timeoutMs);
-      // Neon receives the signal and normally rejects its fetch itself. The
-      // race is still required so a driver regression or test double that
-      // ignores AbortSignal can never pin a request past its deadline.
-      return await Promise.race([operation(signal), aborted]);
-    } catch (error) {
-      if (signal.aborted) throw new DbTimeoutError(op, timeoutMs);
-      throw error;
-    } finally {
-      clearTimeout(timer);
-      if (rejectOnAbort) signal.removeEventListener("abort", rejectOnAbort);
-    }
+  const controller = new AbortController();
+  const signal = outerSignal
+    ? AbortSignal.any([outerSignal, controller.signal])
+    : controller.signal;
+  let rejectOnAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_, reject) => {
+    rejectOnAbort = () => reject(new DbTimeoutError(op, timeoutMs));
+    signal.addEventListener("abort", rejectOnAbort, { once: true });
+  });
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    if (signal.aborted) throw new DbTimeoutError(op, timeoutMs);
+    // Neon receives the signal and normally rejects its fetch itself. The
+    // race is still required so a driver regression or test double that
+    // ignores AbortSignal can never pin a request past its deadline.
+    return await Promise.race([operation(signal), aborted]);
+  } catch (error) {
+    if (signal.aborted) throw new DbTimeoutError(op, timeoutMs);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    if (rejectOnAbort) signal.removeEventListener("abort", rejectOnAbort);
+  }
 }
 
 const RAG_SCHEMA_PROBE_TTL_MS = 30_000;
 let ragV2TablesAvailable: { value: boolean; checkedAt: number } | null = null;
 let ragIndexBuildReadyOverride: boolean | null = null;
-const ragIndexBuildReadiness = new Map<
-  string,
-  { checkedAt: number; indexBuildId: string }
->();
+const ragIndexBuildReadiness = new Map<string, { checkedAt: number; indexBuildId: string }>();
 
 async function hasRagV2Tables(signal: AbortSignal): Promise<boolean> {
   if (
@@ -155,7 +149,7 @@ async function hasRagV2Tables(signal: AbortSignal): Promise<boolean> {
   const rows = await sql.query(
     "SELECT to_regclass('public.article_chunks') IS NOT NULL AS chunks, to_regclass('public.article_images') IS NOT NULL AS images",
     [],
-    { fetchOptions: { signal } },
+    { fetchOptions: { signal } }
   );
   const value = Boolean(rows[0]?.chunks && rows[0]?.images);
   ragV2TablesAvailable = { value, checkedAt: Date.now() };
@@ -163,9 +157,7 @@ async function hasRagV2Tables(signal: AbortSignal): Promise<boolean> {
 }
 
 export function _setRagV2TablesAvailableForTests(value: boolean | null): void {
-  ragV2TablesAvailable = value === null
-    ? null
-    : { value, checkedAt: Date.now() };
+  ragV2TablesAvailable = value === null ? null : { value, checkedAt: Date.now() };
 }
 
 export function _setRagIndexBuildReadyForTests(value: boolean | null): void {
@@ -173,9 +165,7 @@ export function _setRagIndexBuildReadyForTests(value: boolean | null): void {
   ragIndexBuildReadiness.clear();
 }
 
-async function assertConfiguredIndexBuildReady(
-  signal: AbortSignal,
-): Promise<string> {
+async function assertConfiguredIndexBuildReady(signal: AbortSignal): Promise<string> {
   const config = getRagRetrievalConfig();
   const indexBuildId = config.activeIndexBuildId;
   if (!indexBuildId || config.mode === "legacy") {
@@ -202,14 +192,13 @@ async function assertConfiguredIndexBuildReady(
        FROM rag_index_builds build
       WHERE id = $1`,
     [indexBuildId],
-    { fetchOptions: { signal } },
+    { fetchOptions: { signal } }
   );
   const build = rows[0];
   if (!build) {
     throw new Error(`Configured RAG index build ${indexBuildId} does not exist.`);
   }
-  const allowedStatuses =
-    config.mode === "versioned" ? ["active"] : ["validated", "active"];
+  const allowedStatuses = config.mode === "versioned" ? ["active"] : ["validated", "active"];
   const mismatches = [
     build.corpus_version !== config.corpusVersion && "corpus_version",
     build.pipeline_version !== config.pipelineVersion && "pipeline_version",
@@ -219,12 +208,11 @@ async function assertConfiguredIndexBuildReady(
     build.image_embedding_input_version !== config.imageEmbeddingInputVersion &&
       "image_embedding_input_version",
     !allowedStatuses.includes(String(build.status)) && "status",
-    config.mode === "versioned" && Number(build.active_count) !== 1 &&
-      "active_count",
+    config.mode === "versioned" && Number(build.active_count) !== 1 && "active_count",
   ].filter(Boolean);
   if (mismatches.length > 0) {
     throw new Error(
-      `Configured RAG index build ${indexBuildId} failed readiness validation: ${mismatches.join(", ")}.`,
+      `Configured RAG index build ${indexBuildId} failed readiness validation: ${mismatches.join(", ")}.`
     );
   }
 
@@ -246,9 +234,7 @@ interface QueryEditionsOptions {
   timeoutMs?: number;
 }
 
-export async function queryEditions(
-  options: QueryEditionsOptions = {},
-): Promise<{
+export async function queryEditions(options: QueryEditionsOptions = {}): Promise<{
   editions: EditionInfo[];
   pagination: { total: number; limit: number; offset: number; hasMore: boolean };
 }> {
@@ -263,13 +249,15 @@ export async function queryEditions(
   // here gives those consumers a correct `total` and `hasMore`.
   const [countResult, rows] = await runWithDbTimeout(
     "queryEditions",
-    (signal) => sql.transaction([
-      sql`
+    (signal) =>
+      sql.transaction(
+        [
+          sql`
         SELECT COUNT(*)::int as total FROM editions
         WHERE (${startDate}::text IS NULL OR date >= ${startDate})
           AND (${endDate}::text IS NULL OR date <= ${endDate})
       `,
-      sql`
+          sql`
         SELECT date, publication_info, page_count, article_count
         FROM editions
         WHERE (${startDate}::text IS NULL OR date >= ${startDate})
@@ -277,9 +265,11 @@ export async function queryEditions(
         ORDER BY date DESC
         LIMIT ${limit} OFFSET ${offset}
       `,
-    ], { readOnly: true, fetchOptions: { signal } }),
+        ],
+        { readOnly: true, fetchOptions: { signal } }
+      ),
     options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS,
-    options.signal,
+    options.signal
   );
   const total = countResult[0].total;
 
@@ -308,15 +298,10 @@ export interface ArchiveCoverageStats {
  * Pre-computed chronological digest for a single archive year, or null when
  * absent (year not digested, or table not yet migrated — callers degrade).
  */
-export async function fetchYearDigest(
-  year: number,
-  signal?: AbortSignal,
-): Promise<string | null> {
-  const rows = (await sql.query(
-    `SELECT digest FROM year_digests WHERE year = $1`,
-    [year],
-    { fetchOptions: { signal } },
-  )) as Array<{ digest: string }>;
+export async function fetchYearDigest(year: number, signal?: AbortSignal): Promise<string | null> {
+  const rows = (await sql.query(`SELECT digest FROM year_digests WHERE year = $1`, [year], {
+    fetchOptions: { signal },
+  })) as Array<{ digest: string }>;
   return rows[0]?.digest ?? null;
 }
 
@@ -327,7 +312,7 @@ export async function queryArchiveCoverage(
     category?: string;
     signal?: AbortSignal;
     timeoutMs?: number;
-  } = {},
+  } = {}
 ): Promise<ArchiveCoverageStats> {
   const startDate = options.startDate ?? null;
   const endDate = options.endDate ?? null;
@@ -345,11 +330,11 @@ export async function queryArchiveCoverage(
       if (target === "versioned") {
         if (!(await hasRagV2Tables(signal))) {
           throw new Error(
-            "Versioned RAG coverage was selected, but its required tables are unavailable.",
+            "Versioned RAG coverage was selected, but its required tables are unavailable."
           );
         }
         const indexBuildId = await assertConfiguredIndexBuildReady(signal);
-        rows = await sql.query(
+        rows = (await sql.query(
           `WITH indexed_articles AS (
              SELECT DISTINCT a.id, a.edition_date
                FROM articles a
@@ -375,10 +360,10 @@ export async function queryArchiveCoverage(
                   MAX(edition_date)::text AS latest_edition_date
              FROM indexed_articles`,
           [startDate, endDate, category, indexBuildId],
-          { fetchOptions: { signal } },
-        ) as Record<string, unknown>[];
+          { fetchOptions: { signal } }
+        )) as Record<string, unknown>[];
       } else {
-        rows = await sql.query(
+        rows = (await sql.query(
           `WITH scoped_editions AS (
              SELECT date
                FROM editions
@@ -396,8 +381,8 @@ export async function queryArchiveCoverage(
                   (SELECT MIN(date)::text FROM scoped_editions) AS earliest_edition_date,
                   (SELECT MAX(date)::text FROM scoped_editions) AS latest_edition_date`,
           [startDate, endDate, category],
-          { fetchOptions: { signal } },
-        ) as Record<string, unknown>[];
+          { fetchOptions: { signal } }
+        )) as Record<string, unknown>[];
       }
 
       const row = rows[0] ?? {};
@@ -405,18 +390,14 @@ export async function queryArchiveCoverage(
         editionCount: Number(row.edition_count ?? 0),
         articleCount: Number(row.article_count ?? 0),
         earliestEditionDate:
-          typeof row.earliest_edition_date === "string"
-            ? row.earliest_edition_date
-            : null,
+          typeof row.earliest_edition_date === "string" ? row.earliest_edition_date : null,
         latestEditionDate:
-          typeof row.latest_edition_date === "string"
-            ? row.latest_edition_date
-            : null,
+          typeof row.latest_edition_date === "string" ? row.latest_edition_date : null,
         retrievalTarget: target,
       };
     },
     timeoutMs,
-    options.signal,
+    options.signal
   );
 }
 
@@ -510,7 +491,7 @@ interface SearchResultRow {
 }
 
 export async function searchArticles(
-  options: SearchOptions,
+  options: SearchOptions
 ): Promise<{ results: SearchResultRow[]; total: number }> {
   const { query, limit = 20, offset = 0 } = options;
   const category = options.category ?? null;
@@ -635,7 +616,7 @@ export function legacyContentRevisionId(
     | "bodyPlain"
     | "imageUrls"
     | "imageCaptions"
-  >,
+  >
 ): string {
   const digest = createHash("sha256")
     .update(
@@ -649,16 +630,13 @@ export function legacyContentRevisionId(
         bodyPlain: article.bodyPlain,
         imageUrls: article.imageUrls,
         imageCaptions: article.imageCaptions,
-      }),
+      })
     )
     .digest("hex");
   return `legacy-sha256:${digest}`;
 }
 
-function retrievedFromRow(
-  row: RagResultRow,
-  source: "vector" | "fts",
-): RetrievedArticle {
+function retrievedFromRow(row: RagResultRow, source: "vector" | "fts"): RetrievedArticle {
   const distanceValue = Number.parseFloat(String(row.distance ?? ""));
   let imageUrls: string[] = Array.isArray(row.image_urls) ? row.image_urls : [];
   let imageCaptions: (string | null)[] = Array.isArray(row.image_captions)
@@ -687,27 +665,25 @@ function retrievedFromRow(
     imageCaptions,
     matchedPassages: passage ? [passage] : [],
   };
-  article.contentRevisionId =
-    row.content_revision_id?.trim() || legacyContentRevisionId(article);
+  article.contentRevisionId = row.content_revision_id?.trim() || legacyContentRevisionId(article);
   return article;
 }
 
 function cleanEvidencePassage(value: string | null | undefined): string {
   if (typeof value !== "string") return "";
-  return value.replace(/<\/?b>/gi, "").replace(/\s+/g, " ").trim();
+  return value
+    .replace(/<\/?b>/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function promoteMatchedImage(
-  article: RetrievedArticle,
-  row: RagResultRow,
-): void {
+function promoteMatchedImage(article: RetrievedArticle, row: RagResultRow): void {
   if (!row.matched_image_url) return;
   const matchedIndex = article.imageUrls.indexOf(row.matched_image_url);
   if (matchedIndex < 0) return;
 
   const matchedUrl = article.imageUrls[matchedIndex];
-  const matchedCaption =
-    article.imageCaptions[matchedIndex] ?? row.matched_caption ?? null;
+  const matchedCaption = article.imageCaptions[matchedIndex] ?? row.matched_caption ?? null;
   article.imageUrls = [
     matchedUrl,
     ...article.imageUrls.filter((_, index) => index !== matchedIndex),
@@ -721,7 +697,7 @@ function promoteMatchedImage(
 function aggregateEvidenceRows(
   rows: RagResultRow[],
   source: "vector" | "fts",
-  limit: number,
+  limit: number
 ): RetrievedArticle[] {
   const results = new Map<string, RetrievedArticle>();
   for (const row of rows) {
@@ -730,10 +706,7 @@ function aggregateEvidenceRows(
     const passage = cleanEvidencePassage(row.chunk_text ?? row.matched_caption);
     if (existing) {
       promoteMatchedImage(existing, row);
-      if (
-        passage &&
-        !existing.matchedPassages?.includes(passage)
-      ) {
+      if (passage && !existing.matchedPassages?.includes(passage)) {
         existing.matchedPassages = [...(existing.matchedPassages ?? []), passage];
       }
       continue;
@@ -748,7 +721,7 @@ async function queryRagV2ByEmbedding(
   embeddingVec: number[],
   options: VectorSearchOptions,
   indexBuildId: string,
-  signal: AbortSignal,
+  signal: AbortSignal
 ): Promise<RetrievedArticle[]> {
   const limit = options.limit ?? 10;
   const category = options.category ?? null;
@@ -761,10 +734,11 @@ async function queryRagV2ByEmbedding(
   // Runs under the caller's single runWithDbTimeout budget (shared with the
   // schema probe and build-readiness validation) — no nested timeout here.
   if (onlyWithImages) {
-    const [, , rows] = await sql.transaction([
-      sql`SET LOCAL hnsw.ef_search = 100`,
-      sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
-      sql`
+    const [, , rows] = await sql.transaction(
+      [
+        sql`SET LOCAL hnsw.ef_search = 100`,
+        sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
+        sql`
         WITH image_evidence AS (
           SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
                  a.byline, a.body_plain, a.image_urls, a.image_captions,
@@ -802,7 +776,9 @@ async function queryRagV2ByEmbedding(
         WHERE e.evidence_rank <= ${evidencePerArticle}
         ORDER BY r.article_distance, e.evidence_rank
       `,
-    ], { readOnly: true, fetchOptions: { signal } });
+      ],
+      { readOnly: true, fetchOptions: { signal } }
+    );
     return aggregateEvidenceRows(rows, "vector", limit);
   }
 
@@ -892,17 +868,20 @@ async function queryRagV2ByEmbedding(
       ORDER BY r.article_distance, e.evidence_rank
     `;
 
-  const [, , rows] = await sql.transaction([
-    sql`SET LOCAL hnsw.ef_search = 100`,
-    sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
-    rankedArticlesSql,
-  ], { readOnly: true, fetchOptions: { signal } });
+  const [, , rows] = await sql.transaction(
+    [
+      sql`SET LOCAL hnsw.ef_search = 100`,
+      sql`SET LOCAL hnsw.iterative_scan = 'relaxed_order'`,
+      rankedArticlesSql,
+    ],
+    { readOnly: true, fetchOptions: { signal } }
+  );
   return aggregateEvidenceRows(rows, "vector", limit);
 }
 
 async function queryLegacyArticlesByEmbedding(
   embeddingVec: number[],
-  options: VectorSearchOptions,
+  options: VectorSearchOptions
 ): Promise<RetrievedArticle[]> {
   const limit = options.limit ?? 10;
   const category = options.category ?? null;
@@ -914,9 +893,10 @@ async function queryLegacyArticlesByEmbedding(
   return runWithDbTimeout(
     "queryArticlesByEmbedding.legacy",
     async (signal) => {
-      const [, rows] = await sql.transaction([
-        sql`SET LOCAL hnsw.ef_search = 100`,
-        sql`
+      const [, rows] = await sql.transaction(
+        [
+          sql`SET LOCAL hnsw.ef_search = 100`,
+          sql`
           SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
                  a.byline, a.body_plain, a.image_urls, a.image_captions,
                  (a.embedding <=> ${vecStr}::vector) AS distance
@@ -930,18 +910,20 @@ async function queryLegacyArticlesByEmbedding(
           ORDER BY a.embedding <=> ${vecStr}::vector
           LIMIT ${limit}
         `,
-      ], { readOnly: true, fetchOptions: { signal } });
+        ],
+        { readOnly: true, fetchOptions: { signal } }
+      );
       return rows.map((row) => retrievedFromRow(row, "vector"));
     },
     timeoutMs,
-    options.signal,
+    options.signal
   );
 }
 
 /** Retrieve articles using chunk vectors, or the legacy article index pre-migration. */
 export async function queryArticlesByEmbedding(
   embeddingVec: number[],
-  options: VectorSearchOptions = {},
+  options: VectorSearchOptions = {}
 ): Promise<RetrievedArticle[]> {
   const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
   if (options.signal?.aborted) {
@@ -962,14 +944,14 @@ export async function queryArticlesByEmbedding(
     async (signal) => {
       if (!(await hasRagV2Tables(signal))) {
         throw new Error(
-          "Versioned RAG retrieval was selected, but its required tables are unavailable.",
+          "Versioned RAG retrieval was selected, but its required tables are unavailable."
         );
       }
       const indexBuildId = await assertConfiguredIndexBuildReady(signal);
       return queryRagV2ByEmbedding(embeddingVec, options, indexBuildId, signal);
     },
     timeoutMs,
-    options.signal,
+    options.signal
   );
 }
 
@@ -990,7 +972,7 @@ export async function hybridSearch(
     onlyWithImages?: boolean;
     timeoutMs?: number;
     signal?: AbortSignal;
-  } = {},
+  } = {}
 ): Promise<RetrievedArticle[]> {
   const limit = options.limit ?? 8;
   const vectorWeight = options.vectorWeight ?? 0.7;
@@ -1013,39 +995,38 @@ export async function hybridSearch(
   // timeout, so a timed-out branch is actually cancelled.
   const [vectorOutcome, ftsOutcome] = await Promise.allSettled([
     queryArticlesByEmbedding(embeddingVec, {
-        limit: fetchK,
-        category: options.category,
-        startDate: options.startDate,
-        endDate: options.endDate,
-        onlyWithImages: options.onlyWithImages,
-        timeoutMs,
-        signal: options.signal,
+      limit: fetchK,
+      category: options.category,
+      startDate: options.startDate,
+      endDate: options.endDate,
+      onlyWithImages: options.onlyWithImages,
+      timeoutMs,
+      signal: options.signal,
     }),
     searchArticlesForRag(question, {
-        limit: fetchK,
-        category: options.category ?? undefined,
-        startDate: options.startDate ?? undefined,
-        endDate: options.endDate ?? undefined,
-        onlyWithImages: options.onlyWithImages,
-        timeoutMs,
-        signal: options.signal,
+      limit: fetchK,
+      category: options.category ?? undefined,
+      startDate: options.startDate ?? undefined,
+      endDate: options.endDate ?? undefined,
+      onlyWithImages: options.onlyWithImages,
+      timeoutMs,
+      signal: options.signal,
     }),
   ]);
 
   if (vectorOutcome.status === "rejected" && ftsOutcome.status === "rejected") {
     const timeoutError = [vectorOutcome.reason, ftsOutcome.reason].find(
-      (reason): reason is DbTimeoutError => reason instanceof DbTimeoutError,
+      (reason): reason is DbTimeoutError => reason instanceof DbTimeoutError
     );
     if (timeoutError) {
       throw timeoutError;
     }
     throw new AggregateError(
       [vectorOutcome.reason, ftsOutcome.reason],
-      "Both vector and full-text retrieval failed.",
+      "Both vector and full-text retrieval failed."
     );
   }
-  const vectorResults =
-    vectorOutcome.status === "fulfilled" ? vectorOutcome.value : [];
+  const vectorResults = vectorOutcome.status === "fulfilled" ? vectorOutcome.value : [];
   const ftsResults = ftsOutcome.status === "fulfilled" ? ftsOutcome.value : [];
 
   const fused = fuseArticleResults(vectorResults, ftsResults, {
@@ -1065,7 +1046,7 @@ export async function hybridSearch(
 export function fuseArticleResults(
   vectorResults: RetrievedArticle[],
   ftsResults: RetrievedArticle[],
-  options: { limit: number; vectorWeight: number },
+  options: { limit: number; vectorWeight: number }
 ): RetrievedArticle[] {
   const vectorWeight = options.vectorWeight;
   const ftsWeight = 1 - vectorWeight;
@@ -1127,7 +1108,7 @@ export interface SearchArticlesForRagOptions {
 
 export async function searchArticlesForRag(
   query: string,
-  options: SearchArticlesForRagOptions = {},
+  options: SearchArticlesForRagOptions = {}
 ): Promise<RetrievedArticle[]> {
   const limit = options.limit ?? 20;
   const category = options.category ?? null;
@@ -1145,13 +1126,14 @@ export async function searchArticlesForRag(
       if (serveVersioned) {
         if (!(await hasRagV2Tables(signal))) {
           throw new Error(
-            "Versioned RAG retrieval was selected, but its required tables are unavailable.",
+            "Versioned RAG retrieval was selected, but its required tables are unavailable."
           );
         }
         const indexBuildId = await assertConfiguredIndexBuildReady(signal);
         const evidencePerArticle = 3;
-        const [rows] = await sql.transaction([
-          sql`
+        const [rows] = await sql.transaction(
+          [
+            sql`
             WITH query AS (
               SELECT websearch_to_tsquery('english', ${query}) AS value
             ), article_matches AS (
@@ -1249,12 +1231,15 @@ export async function searchArticlesForRag(
             WHERE e.evidence_rank <= ${evidencePerArticle}
             ORDER BY r.article_rank DESC, r.id, e.evidence_rank
           `,
-        ], { readOnly: true, fetchOptions: { signal } });
+          ],
+          { readOnly: true, fetchOptions: { signal } }
+        );
         return aggregateEvidenceRows(rows, "fts", limit);
       }
 
-      const [rows] = await sql.transaction([
-        sql`
+      const [rows] = await sql.transaction(
+        [
+          sql`
           SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
                  a.byline, a.body_plain, a.image_urls, a.image_captions,
                  ts_headline(
@@ -1271,11 +1256,13 @@ export async function searchArticlesForRag(
           ORDER BY rank DESC
           LIMIT ${limit}
         `,
-      ], { readOnly: true, fetchOptions: { signal } });
+        ],
+        { readOnly: true, fetchOptions: { signal } }
+      );
       return rows.map((row) => retrievedFromRow(row, "fts"));
     },
     timeoutMs,
-    options.signal,
+    options.signal
   );
 }
 
@@ -1293,24 +1280,27 @@ export interface SessionArticleMeta {
 
 export async function fetchArticleForRag(
   articleId: string,
-  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number } = {}
 ): Promise<RetrievedArticle | null> {
   const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
   return runWithDbTimeout(
     "fetchArticleForRag",
     async (signal) => {
-      const [rows] = await sql.transaction([
-        sql`
+      const [rows] = await sql.transaction(
+        [
+          sql`
           SELECT id, edition_date, category, headline, summary, byline,
                  body_plain, image_urls, image_captions
           FROM articles WHERE id = ${articleId}
         `,
-      ], { readOnly: true, fetchOptions: { signal } });
+        ],
+        { readOnly: true, fetchOptions: { signal } }
+      );
       if (rows.length === 0) return null;
       return retrievedFromRow(rows[0], "fts");
     },
     timeoutMs,
-    options.signal,
+    options.signal
   );
 }
 
@@ -1321,9 +1311,7 @@ export async function fetchArticleForRag(
  * silently dropped (the article may have been deleted since the turn
  * was recorded).
  */
-export async function fetchArticlesByIds(
-  ids: string[],
-): Promise<Map<string, SessionArticleMeta>> {
+export async function fetchArticlesByIds(ids: string[]): Promise<Map<string, SessionArticleMeta>> {
   if (ids.length === 0) return new Map();
   const rows = (await sql`
     SELECT id, edition_date, category, headline, summary, byline, body_plain, image_urls, image_captions
@@ -1350,8 +1338,7 @@ export async function fetchArticlesByIds(
       category: r.category,
       summary: r.summary,
       byline: r.byline ?? null,
-      bodySnippet:
-        body.slice(0, 300) + (body.length > 300 ? "\u2026" : ""),
+      bodySnippet: body.slice(0, 300) + (body.length > 300 ? "\u2026" : ""),
       imageUrls: r.image_urls ?? [],
       imageCaptions: r.image_captions ?? [],
     });

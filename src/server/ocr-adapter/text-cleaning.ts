@@ -3,10 +3,7 @@
  */
 
 function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /** Rejoin words split by hyphens across line/paragraph breaks (OCR artifact). */
@@ -17,7 +14,7 @@ export function dehyphenate(text: string): string {
 /** Detect and strip OCR preamble: letter salutations and role-title lines. */
 export function cleanBodyPreamble(
   body: string,
-  hasAuthor: boolean,
+  hasAuthor: boolean
 ): { body: string; roleTitle: string | null } {
   // 1. Strip letter-to-editor salutation (runs regardless of author)
   const breakIdx1 = body.indexOf("\n\n");
@@ -37,11 +34,7 @@ export function cleanBodyPreamble(
   const firstLine = body.slice(0, breakIdx2).trim();
   const words = firstLine.split(/\s+/);
 
-  if (
-    words.length <= 3 &&
-    !/[.,!?;:]/.test(firstLine) &&
-    words.every((w) => /^[A-Z]/.test(w))
-  ) {
+  if (words.length <= 3 && !/[.,!?;:]/.test(firstLine) && words.every((w) => /^[A-Z]/.test(w))) {
     return { body: body.slice(breakIdx2 + 2), roleTitle: firstLine };
   }
 

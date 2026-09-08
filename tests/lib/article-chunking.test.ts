@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildArticleChunkRecords,
-  chunkArticleBody,
-} from "@/src/lib/article-chunking";
+import { buildArticleChunkRecords, chunkArticleBody } from "@/src/lib/article-chunking";
 
 describe("article chunking", () => {
   it("is deterministic and retains complete sentence overlap", () => {
     const sentences = Array.from(
       { length: 12 },
-      (_, index) => `Sentence ${index + 1} contains archival context and ends cleanly.`,
+      (_, index) => `Sentence ${index + 1} contains archival context and ends cleanly.`
     );
     const body = sentences.join(" ");
     const first = chunkArticleBody(body, 190, 80);
@@ -47,7 +44,7 @@ describe("article chunking", () => {
     expect(buildArticleChunkRecords(article)).toEqual(records);
     expect(
       buildArticleChunkRecords({ ...article, body_plain: `${article.body_plain} New.` })[0]
-        .embeddingInputHash,
+        .embeddingInputHash
     ).not.toBe(records[0].embeddingInputHash);
   });
 });

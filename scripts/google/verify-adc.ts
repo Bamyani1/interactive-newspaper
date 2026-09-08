@@ -4,10 +4,7 @@ import { GoogleAuth } from "google-auth-library";
 import { loadLocalEnv } from "../lib/local-env";
 
 const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
-const REQUIRED_SERVICES = [
-  "aiplatform.googleapis.com",
-  "documentai.googleapis.com",
-] as const;
+const REQUIRED_SERVICES = ["aiplatform.googleapis.com", "documentai.googleapis.com"] as const;
 
 export interface GoogleRuntimeConfig {
   project: string;
@@ -18,14 +15,14 @@ export interface GoogleRuntimeConfig {
 }
 
 export function validateGoogleRuntimeEnv(
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = process.env
 ): GoogleRuntimeConfig {
-  const legacyKeys = ["GEMINI_API_KEY", "GOOGLE_API_KEY"].filter(
-    (key) => Boolean(env[key]?.trim()),
+  const legacyKeys = ["GEMINI_API_KEY", "GOOGLE_API_KEY"].filter((key) =>
+    Boolean(env[key]?.trim())
   );
   if (legacyKeys.length > 0) {
     throw new Error(
-      `ADC-only policy violation: remove ${legacyKeys.join(", ")} from the runtime environment.`,
+      `ADC-only policy violation: remove ${legacyKeys.join(", ")} from the runtime environment.`
     );
   }
 
@@ -36,7 +33,7 @@ export function validateGoogleRuntimeEnv(
   if (!project) throw new Error("GOOGLE_CLOUD_PROJECT is required.");
   if (vertexLocation !== "global") {
     throw new Error(
-      `GOOGLE_CLOUD_LOCATION must be global for this project; received ${vertexLocation}.`,
+      `GOOGLE_CLOUD_LOCATION must be global for this project; received ${vertexLocation}.`
     );
   }
   if (!documentAiProcessorId) {
@@ -60,7 +57,7 @@ function finalSegment(value: string | undefined): string | null {
 
 async function identifyPrincipal(
   auth: GoogleAuth,
-  client: Awaited<ReturnType<GoogleAuth["getClient"]>>,
+  client: Awaited<ReturnType<GoogleAuth["getClient"]>>
 ): Promise<string | null> {
   const credentials = await auth.getCredentials();
   if (credentials.client_email) return credentials.client_email;
@@ -70,10 +67,9 @@ async function identifyPrincipal(
   // quota-project header to this non-billable identity endpoint.
   const accessToken = await client.getAccessToken();
   if (!accessToken.token) return null;
-  const response = await fetch(
-    "https://openidconnect.googleapis.com/v1/userinfo",
-    { headers: { Authorization: `Bearer ${accessToken.token}` } },
-  );
+  const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken.token}` },
+  });
   if (!response.ok) {
     throw new Error(`ADC identity lookup failed with HTTP ${response.status}.`);
   }
@@ -89,14 +85,14 @@ async function main(): Promise<void> {
   const detectedProject = await auth.getProjectId();
   if (detectedProject !== config.project) {
     throw new Error(
-      `ADC project mismatch: credentials resolve ${detectedProject}, application expects ${config.project}.`,
+      `ADC project mismatch: credentials resolve ${detectedProject}, application expects ${config.project}.`
     );
   }
 
   const quotaProject = client.quotaProjectId || config.project;
   if (quotaProject !== config.project) {
     throw new Error(
-      `ADC quota-project mismatch: credentials use ${quotaProject}, application expects ${config.project}.`,
+      `ADC quota-project mismatch: credentials use ${quotaProject}, application expects ${config.project}.`
     );
   }
 
@@ -107,7 +103,7 @@ async function main(): Promise<void> {
     principal.toLowerCase() !== config.expectedPrincipal.toLowerCase()
   ) {
     throw new Error(
-      `ADC principal mismatch: authenticated as ${principal}, expected ${config.expectedPrincipal}.`,
+      `ADC principal mismatch: authenticated as ${principal}, expected ${config.expectedPrincipal}.`
     );
   }
 
@@ -116,23 +112,18 @@ async function main(): Promise<void> {
       const response = await client.request<{ name?: string; state?: string }>({
         url: `https://serviceusage.googleapis.com/v1/projects/${encodeURIComponent(config.project)}/services/${service}`,
       });
-      return [
-        service,
-        response.data.state ?? "UNKNOWN",
-        response.data.name ?? "",
-      ] as const;
-    }),
+      return [service, response.data.state ?? "UNKNOWN", response.data.name ?? ""] as const;
+    })
   );
   const disabledServices = serviceStates.filter(([, state]) => state !== "ENABLED");
   if (disabledServices.length > 0) {
     throw new Error(
       `Required Google services are not enabled: ${disabledServices
         .map(([service, state]) => `${service} (${state})`)
-        .join(", ")}.`,
+        .join(", ")}.`
     );
   }
-  const projectNumber = serviceStates[0]?.[2]
-    .match(/^projects\/([^/]+)\/services\//)?.[1];
+  const projectNumber = serviceStates[0]?.[2].match(/^projects\/([^/]+)\/services\//)?.[1];
   if (!projectNumber) {
     throw new Error("The Google Cloud project number could not be resolved from Service Usage.");
   }
@@ -148,17 +139,17 @@ async function main(): Promise<void> {
       `projects/${encodeURIComponent(config.project)}/locations/${encodeURIComponent(config.documentAiLocation)}/` +
       `processors/${encodeURIComponent(config.documentAiProcessorId)}`,
   });
-  const processorProject = processorResponse.data.name
-    ?.match(/^projects\/([^/]+)\//)?.[1];
-  const processorLocation = processorResponse.data.name
-    ?.match(/\/locations\/([^/]+)\//)?.[1];
+  const processorProject = processorResponse.data.name?.match(/^projects\/([^/]+)\//)?.[1];
+  const processorLocation = processorResponse.data.name?.match(/\/locations\/([^/]+)\//)?.[1];
   if (
     processorProject !== projectNumber ||
     processorLocation !== config.documentAiLocation ||
     processorResponse.data.type !== "OCR_PROCESSOR" ||
     processorResponse.data.state !== "ENABLED"
   ) {
-    throw new Error("The configured Document AI processor is not an enabled OCR processor in this project.");
+    throw new Error(
+      "The configured Document AI processor is not an enabled OCR processor in this project."
+    );
   }
 
   console.log(
@@ -180,14 +171,14 @@ async function main(): Promise<void> {
           processorType: processorResponse.data.type,
           processorState: processorResponse.data.state,
           defaultVersionConfigured: Boolean(
-            finalSegment(processorResponse.data.defaultProcessorVersion),
+            finalSegment(processorResponse.data.defaultProcessorVersion)
           ),
         },
         apiKeysPresent: false,
       },
       null,
-      2,
-    ),
+      2
+    )
   );
 }
 
@@ -201,8 +192,8 @@ if (invokedPath === path.resolve(fileURLToPath(import.meta.url))) {
           error: error instanceof Error ? error.message : String(error),
         },
         null,
-        2,
-      ),
+        2
+      )
     );
     process.exitCode = 1;
   });

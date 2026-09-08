@@ -60,12 +60,16 @@
   height: 100%;
 }
 
-.ask-sidebar::-webkit-scrollbar { width: 6px; }
+.ask-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
 .ask-sidebar::-webkit-scrollbar-thumb {
   background: color-mix(in oklab, var(--color-text-secondary) 20%, transparent);
   border-radius: var(--radius-default);
 }
-.ask-sidebar::-webkit-scrollbar-track { background: transparent; }
+.ask-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
 
 .ask-sidebar-title {
   display: flex;
@@ -178,7 +182,9 @@
   cursor: pointer;
   font: inherit;
   color: inherit;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .ask-sidebar-thread:hover:not([data-active="true"]) {
@@ -260,7 +266,10 @@
   letter-spacing: var(--tracking-label-sm);
   text-transform: uppercase;
   cursor: pointer;
-  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease, background var(--duration-fast) ease;
+  transition:
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    background var(--duration-fast) ease;
 }
 
 .ask-mobile-action:hover:not(:disabled) {

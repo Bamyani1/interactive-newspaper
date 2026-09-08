@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
         headers: {
           "Retry-After": String(Math.ceil((rate.resetAt - Date.now()) / 1000)),
         },
-      },
+      }
     );
   }
 
@@ -47,9 +47,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ editions, pagination });
   } catch (error) {
     console.error("Failed to list editions:", error);
-    return NextResponse.json(
-      { error: "Failed to load editions" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to load editions" }, { status: 500 });
   }
 }

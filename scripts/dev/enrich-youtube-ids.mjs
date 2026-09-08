@@ -85,10 +85,7 @@ async function main() {
       limit(async () => {
         const query = buildQuery(track.title, track.artist);
         try {
-          const result = await withTimeout(
-            yt.search(query, { type: "video" }),
-            REQUEST_TIMEOUT_MS,
-          );
+          const result = await withTimeout(yt.search(query, { type: "video" }), REQUEST_TIMEOUT_MS);
           const first = result?.results?.[0];
           const id = first && typeof first.id === "string" ? first.id : "";
           if (id) {
@@ -112,11 +109,11 @@ async function main() {
           const rate = completed / elapsed;
           const eta = (tasks.length - completed) / rate;
           console.log(
-            `  progress: ${completed}/${tasks.length} (${succeeded} ok, ${failed} fail) — ${rate.toFixed(1)}/s, eta ${Math.round(eta)}s`,
+            `  progress: ${completed}/${tasks.length} (${succeeded} ok, ${failed} fail) — ${rate.toFixed(1)}/s, eta ${Math.round(eta)}s`
           );
         }
-      }),
-    ),
+      })
+    )
   );
 
   await flush();

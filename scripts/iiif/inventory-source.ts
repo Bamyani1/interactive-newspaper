@@ -1,11 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,7 +8,8 @@ const DEFAULT_COLLECTION = "p15963coll9";
 const SEARCH = "source^wesleyan^all^and";
 const FIELDS = "title!date!dmrecord!source!find";
 const ISSUE_TITLE = /(?:ohio\s+wesleyan\s+)?transcript/i;
-const SUPPLEMENT_TITLE = /\b(?:supplement|special edition|extra edition|commencement|homecoming)\b/i;
+const SUPPLEMENT_TITLE =
+  /\b(?:supplement|special edition|extra edition|commencement|homecoming)\b/i;
 
 interface ContentDmRecord {
   collection?: string;
@@ -69,7 +64,9 @@ interface DmQueryResponse {
 }
 
 function normalizedText(value: unknown): string {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizedSource(value: unknown): string {
@@ -99,7 +96,7 @@ function stableStringify(value: unknown): string {
 export function classifyContentDmRecord(
   record: ContentDmRecord,
   activeDates: Set<string> = new Set(),
-  collection = DEFAULT_COLLECTION,
+  collection = DEFAULT_COLLECTION
 ): ClassifiedRecord {
   const pointer = Number(record.pointer ?? record.dmrecord);
   if (!Number.isInteger(pointer) || pointer < 0) {
@@ -153,7 +150,7 @@ export function markDateCollisions(records: ClassifiedRecord[]): void {
   for (const group of byDate.values()) {
     if (group.length < 2) continue;
     const normalizedTitles = new Set(
-      group.map((record) => normalizedText(record.title).toLowerCase()),
+      group.map((record) => normalizedText(record.title).toLowerCase())
     );
     for (const record of group) {
       record.reviewFlags.push("same_date_collision");
@@ -164,10 +161,7 @@ export function markDateCollisions(records: ClassifiedRecord[]): void {
   }
 }
 
-export function parseIiifManifest(
-  url: string,
-  raw: string,
-): ManifestInventory {
+export function parseIiifManifest(url: string, raw: string): ManifestInventory {
   const manifest = JSON.parse(raw) as {
     sequences?: Array<{
       canvases?: Array<{
@@ -177,7 +171,9 @@ export function parseIiifManifest(
         width?: number;
         height?: number;
         images?: Array<{
-          resource?: { service?: { "@id"?: string; id?: string } | Array<{ "@id"?: string; id?: string }> };
+          resource?: {
+            service?: { "@id"?: string; id?: string } | Array<{ "@id"?: string; id?: string }>;
+          };
         }>;
       }>;
     }>;
@@ -191,9 +187,8 @@ export function parseIiifManifest(
     canvases: canvases.map((canvas) => {
       const service = canvas.images?.[0]?.resource?.service;
       const serviceObject = Array.isArray(service) ? service[0] : service;
-      const label = typeof canvas.label === "string"
-        ? canvas.label
-        : canvas.label?.en?.join(" ") ?? "";
+      const label =
+        typeof canvas.label === "string" ? canvas.label : (canvas.label?.en?.join(" ") ?? "");
       return {
         id: normalizedText(canvas["@id"] ?? canvas.id),
         label: normalizedText(label),
@@ -258,13 +253,15 @@ async function fetchParentRecords(baseUrl: string, collection: string) {
   let start = 1;
   let total = 0;
   do {
-    const response = await fetchQuery(dmQueryUrl({
-      baseUrl,
-      collection,
-      start,
-      maxRecords: 1024,
-      suppressCompoundPages: true,
-    }));
+    const response = await fetchQuery(
+      dmQueryUrl({
+        baseUrl,
+        collection,
+        start,
+        maxRecords: 1024,
+        suppressCompoundPages: true,
+      })
+    );
     const batch = response.records ?? [];
     total = Number(response.pager?.total ?? 0);
     records.push(...batch);
@@ -275,20 +272,22 @@ async function fetchParentRecords(baseUrl: string, collection: string) {
 }
 
 async function fetchAllRecordTotal(baseUrl: string, collection: string): Promise<number> {
-  const response = await fetchQuery(dmQueryUrl({
-    baseUrl,
-    collection,
-    start: 1,
-    maxRecords: 1,
-    suppressCompoundPages: false,
-  }));
+  const response = await fetchQuery(
+    dmQueryUrl({
+      baseUrl,
+      collection,
+      start: 1,
+      maxRecords: 1,
+      suppressCompoundPages: false,
+    })
+  );
   return Number(response.pager?.total ?? 0);
 }
 
 async function mapWithConcurrency<T, R>(
   values: T[],
   concurrency: number,
-  mapper: (value: T, index: number) => Promise<R>,
+  mapper: (value: T, index: number) => Promise<R>
 ): Promise<R[]> {
   const output = new Array<R>(values.length);
   let cursor = 0;
@@ -300,7 +299,7 @@ async function mapWithConcurrency<T, R>(
         if (index >= values.length) return;
         output[index] = await mapper(values[index], index);
       }
-    },
+    }
   );
   await Promise.all(workers);
   return output;
@@ -318,7 +317,7 @@ function parseArgs(argv: string[]) {
   for (let index = 0; index < argv.length; index++) {
     const value = argv[index];
     const next = argv[index + 1];
-    if (value === "--corpus" && next) options.corpus = path.resolve(next), index++;
+    if (value === "--corpus" && next) ((options.corpus = path.resolve(next)), index++);
     else if (value === "--manifest-scope" && next) {
       if (!(["active", "none", "all"] as const).includes(next as never)) {
         throw new Error("--manifest-scope must be active, none, or all");
@@ -328,9 +327,10 @@ function parseArgs(argv: string[]) {
     } else if (value === "--concurrency" && next) {
       options.concurrency = Math.max(1, Math.min(8, Number(next)));
       index++;
-    } else if (value === "--output-dir" && next) options.outputDir = path.resolve(next), index++;
-    else if (value === "--base-url" && next) options.baseUrl = next, index++;
-    else if (value === "--collection" && next) options.collection = next, index++;
+    } else if (value === "--output-dir" && next)
+      ((options.outputDir = path.resolve(next)), index++);
+    else if (value === "--base-url" && next) ((options.baseUrl = next), index++);
+    else if (value === "--collection" && next) ((options.collection = next), index++);
     else throw new Error(`Unknown or incomplete argument: ${value}`);
   }
   if (options.manifestScope === "active" && !options.corpus) {
@@ -342,7 +342,7 @@ function parseArgs(argv: string[]) {
 function writeImmutableArtifact(
   filePath: string,
   contents: string,
-  identityHash: string,
+  identityHash: string
 ): "created" | "reused" {
   mkdirSync(path.dirname(filePath), { recursive: true });
   if (existsSync(filePath)) {
@@ -390,36 +390,31 @@ async function main(): Promise<void> {
     fetchAllRecordTotal(options.baseUrl, options.collection),
   ]);
   const records = rawRecords.map((record) =>
-    classifyContentDmRecord(record, activeDates, options.collection),
+    classifyContentDmRecord(record, activeDates, options.collection)
   );
   markDateCollisions(records);
 
-  const manifestTargets = options.manifestScope === "none"
-    ? []
-    : records.filter((record) =>
-        options.manifestScope === "all" || record.activeCorpusDate,
-      );
+  const manifestTargets =
+    options.manifestScope === "none"
+      ? []
+      : records.filter((record) => options.manifestScope === "all" || record.activeCorpusDate);
   console.error(`Fetching ${manifestTargets.length} IIIF manifests (metadata only)...`);
-  await mapWithConcurrency(
-    manifestTargets,
-    options.concurrency,
-    async (record, index) => {
-      const url = `${options.baseUrl}/iiif/info/${options.collection}/${record.pointer}/manifest.json`;
-      try {
-        record.manifest = parseIiifManifest(url, await fetchText(url));
-      } catch (error) {
-        record.manifest = {
-          url,
-          status: "failed",
-          failureReason: error instanceof Error ? error.message : String(error),
-        };
-      }
-      if ((index + 1) % 25 === 0 || index + 1 === manifestTargets.length) {
-        console.error(`  manifests ${index + 1}/${manifestTargets.length}`);
-      }
-      return record;
-    },
-  );
+  await mapWithConcurrency(manifestTargets, options.concurrency, async (record, index) => {
+    const url = `${options.baseUrl}/iiif/info/${options.collection}/${record.pointer}/manifest.json`;
+    try {
+      record.manifest = parseIiifManifest(url, await fetchText(url));
+    } catch (error) {
+      record.manifest = {
+        url,
+        status: "failed",
+        failureReason: error instanceof Error ? error.message : String(error),
+      };
+    }
+    if ((index + 1) % 25 === 0 || index + 1 === manifestTargets.length) {
+      console.error(`  manifests ${index + 1}/${manifestTargets.length}`);
+    }
+    return record;
+  });
   for (const record of records) {
     if (!record.manifest) {
       record.manifest = {
@@ -429,8 +424,9 @@ async function main(): Promise<void> {
     }
   }
 
-  records.sort((left, right) =>
-    (left.date ?? "").localeCompare(right.date ?? "") || left.pointer - right.pointer,
+  records.sort(
+    (left, right) =>
+      (left.date ?? "").localeCompare(right.date ?? "") || left.pointer - right.pointer
   );
   const dateGroups = new Map<string, ClassifiedRecord[]>();
   for (const record of records) {
@@ -454,7 +450,7 @@ async function main(): Promise<void> {
     .filter((collision) => collision.activeCorpusDate)
     .map((collision) => collision.date);
   const manifestSuccesses = manifestTargets.filter(
-    (record) => record.manifest?.status === "ok",
+    (record) => record.manifest?.status === "ok"
   ).length;
   const immutableContent = {
     source: {
@@ -472,7 +468,7 @@ async function main(): Promise<void> {
     },
     counts: {
       exactOhioWesleyanRecords: records.filter(
-        (record) => record.classification !== "excluded_source",
+        (record) => record.classification !== "excluded_source"
       ).length,
       classifications: summarizeClassifications(records),
       uniqueDatedGroups: dateGroups.size,
@@ -502,7 +498,7 @@ async function main(): Promise<void> {
   const jsonDisposition = writeImmutableArtifact(
     jsonPath,
     `${JSON.stringify(payload, null, 2)}\n`,
-    inventorySha256,
+    inventorySha256
   );
   const markdownDisposition = writeImmutableArtifact(
     markdownPath,
@@ -524,13 +520,13 @@ async function main(): Promise<void> {
       "## Classifications",
       "",
       ...Object.entries(payload.counts.classifications).map(
-        ([classification, count]) => `- ${classification}: ${count}`,
+        ([classification, count]) => `- ${classification}: ${count}`
       ),
       "",
       "Records with date collisions remain review candidates; this inventory does not silently choose one pointer.",
       "",
     ].join("\n"),
-    inventorySha256,
+    inventorySha256
   );
   console.log(
     JSON.stringify(
@@ -546,8 +542,8 @@ async function main(): Promise<void> {
         counts: payload.counts,
       },
       null,
-      2,
-    ),
+      2
+    )
   );
 }
 

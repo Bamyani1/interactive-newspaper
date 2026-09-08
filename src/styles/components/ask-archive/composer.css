@@ -28,11 +28,7 @@
   right: 0;
   top: -2.5rem;
   height: 2.5rem;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    var(--color-bg-primary) 95%
-  );
+  background: linear-gradient(to bottom, transparent, var(--color-bg-primary) 95%);
   pointer-events: none;
 }
 
@@ -45,7 +41,9 @@
   border-radius: var(--radius-default);
   overflow: hidden;
   box-shadow: none;
-  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
 }
 
 .ask-composer-row:focus-within {
@@ -96,7 +94,9 @@
   letter-spacing: var(--tracking-label-md);
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
   flex-shrink: 0;
   min-width: 92px;
 }

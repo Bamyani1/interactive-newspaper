@@ -36,7 +36,9 @@ const { values } = parseArgs({
 });
 
 if (!values.date || !/^\d{4}-\d{2}-\d{2}$/.test(values.date)) {
-  console.error("Usage: node scripts/db/upload-images.mjs --date YYYY-MM-DD [--editions-dir DIR] [--dry-run]");
+  console.error(
+    "Usage: node scripts/db/upload-images.mjs --date YYYY-MM-DD [--editions-dir DIR] [--dry-run]"
+  );
   process.exit(1);
 }
 
@@ -219,7 +221,7 @@ async function optimizeAsset(sharp, sourcePath) {
     targetLong = Math.max(floor, Math.floor(targetLong * 0.9));
   }
   throw new Error(
-    `cannot satisfy ${MAX_ASSET_BYTES}-byte limit at quality ${last?.quality || 75} and ${last?.targetLong || targetLong}px`,
+    `cannot satisfy ${MAX_ASSET_BYTES}-byte limit at quality ${last?.quality || 75} and ${last?.targetLong || targetLong}px`
   );
 }
 
@@ -297,37 +299,44 @@ for (const reference of uniqueReferences) {
         renameSync(partial, outputPath);
         try {
           if (!values.force) {
-            await s3.send(new commands.HeadObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key }));
+            await s3.send(
+              new commands.HeadObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key })
+            );
             uploadStatus = "existing";
           } else {
             throw Object.assign(new Error("forced upload"), { name: "NotFound" });
           }
         } catch (error) {
           if (error.name !== "NotFound" && error.$metadata?.httpStatusCode !== 404) throw error;
-          await s3.send(new commands.PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
-            Key: key,
-            Body: optimized.buffer,
-            ContentType: "image/webp",
-            CacheControl: "public, max-age=31536000, immutable",
-          }));
+          await s3.send(
+            new commands.PutObjectCommand({
+              Bucket: process.env.R2_BUCKET_NAME,
+              Key: key,
+              Body: optimized.buffer,
+              ContentType: "image/webp",
+              CacheControl: "public, max-age=31536000, immutable",
+            })
+          );
         }
       }
-      assetsByHash.set(hash, buildAssetManifestEntry({
+      assetsByHash.set(
         hash,
-        publicPath,
-        r2Key: key,
-        sizeBytes: optimized.buffer.length,
-        width: optimized.width,
-        height: optimized.height,
-        quality: optimized.quality,
-        sourceSha256: optimized.sourceSha256,
-        status: uploadStatus,
-      }));
+        buildAssetManifestEntry({
+          hash,
+          publicPath,
+          r2Key: key,
+          sizeBytes: optimized.buffer.length,
+          width: optimized.width,
+          height: optimized.height,
+          quality: optimized.quality,
+          sourceSha256: optimized.sourceSha256,
+          status: uploadStatus,
+        })
+      );
     }
     console.log(
       `${dryRun ? "PLAN" : "OK"} ${basename(sourcePath)} -> ${publicPath} ` +
-      `(${optimized.buffer.length} bytes, ${optimized.width}x${optimized.height})`,
+        `(${optimized.buffer.length} bytes, ${optimized.width}x${optimized.height})`
     );
   } catch (error) {
     console.error(`PRUNE ${reference}: ${error.message}`);
@@ -342,13 +351,15 @@ replaceReferences(edition, replacements);
 const referencedHashes = new Set(
   collectReferences(edition)
     .map((item) => /^images\/([a-f0-9]{64})\.webp$/.exec(item.value)?.[1])
-    .filter(Boolean),
+    .filter(Boolean)
 );
 const assets = [...assetsByHash.values()].filter((asset) => referencedHashes.has(asset.hash));
 const totalBytes = assets.reduce((sum, asset) => sum + asset.size_bytes, 0);
 
 if (totalBytes > MAX_EDITION_BYTES) {
-  console.error(`ERROR: optimized public assets total ${(totalBytes / 1048576).toFixed(1)} MiB; limit is 25 MiB`);
+  console.error(
+    `ERROR: optimized public assets total ${(totalBytes / 1048576).toFixed(1)} MiB; limit is 25 MiB`
+  );
   process.exit(3);
 }
 if (totalBytes > WARN_EDITION_BYTES) {
@@ -369,4 +380,6 @@ if (!dryRun) {
   });
 }
 
-console.log(`${dryRun ? "Would retain" : "Retained"} ${assets.length} content-addressed asset(s); pruned ${failedValues.size} failed reference(s).`);
+console.log(
+  `${dryRun ? "Would retain" : "Retained"} ${assets.length} content-addressed asset(s); pruned ${failedValues.size} failed reference(s).`
+);

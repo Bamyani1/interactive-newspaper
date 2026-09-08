@@ -148,7 +148,7 @@ export function validateEvaluationFreeze(
   inventory: SourceInventory,
   development: DevelopmentCatalog,
   developmentFileSha256: string,
-  holdout: HoldoutCatalog,
+  holdout: HoldoutCatalog
 ) {
   assert(development.split === "development", "Prior questions are not labeled development data.");
   assert(holdout.split === "holdout", "Evaluation catalog is not labeled holdout.");
@@ -156,25 +156,25 @@ export function validateEvaluationFreeze(
   assert(
     holdout.provenance.comparisonRunsBeforeFreeze === 0 &&
       holdout.provenance.candidateRetrieverObservedBeforeFreeze === false,
-    "Holdout provenance indicates candidate-retriever leakage.",
+    "Holdout provenance indicates candidate-retriever leakage."
   );
   assert(holdout.corpusVersion === corpus.corpusVersion, "Holdout corpus version mismatch.");
   assert(holdout.corpusSha256 === corpus.corpusSha256, "Holdout corpus hash mismatch.");
   assert(
     holdout.databaseSnapshotSha256 === corpus.databaseSnapshotSha256,
-    "Holdout database snapshot hash mismatch.",
+    "Holdout database snapshot hash mismatch."
   );
   assert(
     holdout.sourceInventorySha256 === inventory.inventorySha256,
-    "Holdout source-inventory hash mismatch.",
+    "Holdout source-inventory hash mismatch."
   );
   assert(
     holdout.developmentDataset.fileSha256 === developmentFileSha256,
-    "Development-catalog file hash mismatch.",
+    "Development-catalog file hash mismatch."
   );
   assert(
     computeHoldoutSha256(holdout) === holdout.integrity.holdoutSha256,
-    "Holdout integrity hash mismatch.",
+    "Holdout integrity hash mismatch."
   );
 
   const corpusArticles = new Map<string, { editionDate: string; article: CorpusArticle }>();
@@ -189,7 +189,7 @@ export function validateEvaluationFreeze(
   assert(overlap.length === 0, `Holdout overlaps development sources: ${overlap.join(", ")}`);
   assert(
     holdout.developmentDataset.sourceIdOverlapCount === overlap.length,
-    "Recorded development overlap count is incorrect.",
+    "Recorded development overlap count is incorrect."
   );
 
   for (const [articleId, source] of Object.entries(holdout.sources)) {
@@ -199,7 +199,7 @@ export function validateEvaluationFreeze(
     assert(corpusEntry.article.page === source.page, `${articleId} page mismatch.`);
     assert(
       corpusEntry.article.contentSha256 === source.contentSha256,
-      `${articleId} content hash mismatch.`,
+      `${articleId} content hash mismatch.`
     );
     assert(Object.keys(source.spans).length > 0, `${articleId} has no frozen evidence spans.`);
     for (const [spanId, span] of Object.entries(source.spans)) {
@@ -211,12 +211,12 @@ export function validateEvaluationFreeze(
     assert(sourceRecord.date === source.editionDate, `${articleId} source-record date mismatch.`);
     assert(
       sourceRecord.manifest?.sha256 === source.manifestSha256,
-      `${articleId} manifest hash mismatch.`,
+      `${articleId} manifest hash mismatch.`
     );
     assert(
       sourceRecord.manifest?.canvases?.[source.page - 1]?.imageServiceId ===
         source.pageImageServiceId,
-      `${articleId} IIIF page provenance mismatch.`,
+      `${articleId} IIIF page provenance mismatch.`
     );
 
     for (const [visualId, visual] of Object.entries(source.visuals ?? {})) {
@@ -224,13 +224,13 @@ export function validateEvaluationFreeze(
       if (typeof visual.registeredUrl === "string") {
         assert(
           corpusEntry.article.imageUrls?.includes(visual.registeredUrl),
-          `${articleId}.${visualId} is not a registered article image.`,
+          `${articleId}.${visualId} is not a registered article image.`
         );
       }
       if (typeof visual.registeredCount === "number") {
         assert(
           (corpusEntry.article.imageUrls?.length ?? 0) >= visual.registeredCount,
-          `${articleId}.${visualId} registered-image count exceeds the corpus record.`,
+          `${articleId}.${visualId} registered-image count exceeds the corpus record.`
         );
       }
     }
@@ -248,12 +248,15 @@ export function validateEvaluationFreeze(
         const source = holdout.sources[ref.articleId];
         assert(source, `${question.id} references unknown article ${ref.articleId}.`);
         for (const spanId of ref.spanIds) {
-          assert(source.spans[spanId], `${question.id} references unknown span ${ref.articleId}.${spanId}.`);
+          assert(
+            source.spans[spanId],
+            `${question.id} references unknown span ${ref.articleId}.${spanId}.`
+          );
         }
         for (const visualId of ref.visualIds ?? []) {
           assert(
             source.visuals?.[visualId],
-            `${question.id} references unknown visual ${ref.articleId}.${visualId}.`,
+            `${question.id} references unknown visual ${ref.articleId}.${visualId}.`
           );
         }
       }
@@ -261,12 +264,15 @@ export function validateEvaluationFreeze(
     if (question.noAnswerCheckId) {
       assert(
         holdout.noAnswerChecks[question.noAnswerCheckId],
-        `${question.id} references an unknown no-answer check.`,
+        `${question.id} references an unknown no-answer check.`
       );
     }
     if (question.dependsOn) {
       assert(questionIds.has(question.dependsOn), `${question.id} dependency must appear first.`);
-      assert(question.conversationId && question.turn && question.turn > 1, `${question.id} has invalid turn metadata.`);
+      assert(
+        question.conversationId && question.turn && question.turn > 1,
+        `${question.id} has invalid turn metadata.`
+      );
     }
   }
   assert(holdout.questions.length >= 12, "Holdout is too small for the approved coverage matrix.");
@@ -317,25 +323,25 @@ export function assertHoldoutScoringAllowed(input: HoldoutScoringGateInput): {
   const bandsPath = path.resolve(input.bandsPath);
   assert(
     existsSync(bandsPath),
-    `Holdout scoring blocked: acceptance-bands file ${bandsPath} does not exist.`,
+    `Holdout scoring blocked: acceptance-bands file ${bandsPath} does not exist.`
   );
   const bands = readJson<AcceptanceBandsFile>(bandsPath);
   const bandsCheck = verifyAcceptanceBands(bands);
   assert(
     bandsCheck.ok,
-    `Holdout scoring blocked: acceptance bands failed self-hash verification (expected ${bandsCheck.expected}, actual ${bandsCheck.actual}).`,
+    `Holdout scoring blocked: acceptance bands failed self-hash verification (expected ${bandsCheck.expected}, actual ${bandsCheck.actual}).`
   );
   assert(
     bands.datasetId === DEV_DATASET_ID &&
       typeof bands.basedOnRunId === "string" &&
       bands.basedOnRunId.length > 0,
-    `Holdout scoring blocked: acceptance bands must be locked on the ${DEV_DATASET_ID} development dataset.`,
+    `Holdout scoring blocked: acceptance bands must be locked on the ${DEV_DATASET_ID} development dataset.`
   );
 
   const receiptPath = path.resolve(input.candidateReceiptPath);
   assert(
     existsSync(receiptPath),
-    `Holdout scoring blocked: frozen candidate receipt ${receiptPath} does not exist.`,
+    `Holdout scoring blocked: frozen candidate receipt ${receiptPath} does not exist.`
   );
   const receipt = readJson<FreezeCandidateReceipt>(receiptPath);
   assert(
@@ -343,12 +349,12 @@ export function assertHoldoutScoringAllowed(input: HoldoutScoringGateInput): {
       /^[0-9a-f]{64}$/.test(receipt.answersSha256) &&
       typeof receipt.runId === "string" &&
       receipt.runId.length > 0,
-    "Holdout scoring blocked: candidate receipt is malformed.",
+    "Holdout scoring blocked: candidate receipt is malformed."
   );
   if (input.runFileSha !== null) {
     assert(
       receipt.answersSha256 === input.runFileSha,
-      `Holdout scoring blocked: candidate receipt answersSha256 ${receipt.answersSha256} does not match the run file's answer set ${input.runFileSha}.`,
+      `Holdout scoring blocked: candidate receipt answersSha256 ${receipt.answersSha256} does not match the run file's answer set ${input.runFileSha}.`
     );
   }
   return {
@@ -371,7 +377,7 @@ async function main(): Promise<void> {
     const candidateReceiptPath = argValue(argv, "--receipt");
     assert(
       bandsPath && candidateReceiptPath,
-      "--check-holdout-gate requires --bands <path> and --receipt <path>.",
+      "--check-holdout-gate requires --bands <path> and --receipt <path>."
     );
     const result = assertHoldoutScoringAllowed({
       bandsPath,
@@ -383,7 +389,7 @@ async function main(): Promise<void> {
   }
   const corpusPath = path.resolve("evaluation/rag/corpus/legacy-8b8207373510d69e.json");
   const inventoryPath = path.resolve(
-    "evaluation/rag/source-inventory/contentdm-p15963coll9-6a9d9286b30620f7.json",
+    "evaluation/rag/source-inventory/contentdm-p15963coll9-6a9d9286b30620f7.json"
   );
   const developmentPath = path.resolve("tests/api/rag-golden-questions.json");
   const holdoutPath = path.resolve("evaluation/rag/holdout/rag-holdout-v1.json");
@@ -393,7 +399,7 @@ async function main(): Promise<void> {
     readJson<SourceInventory>(inventoryPath),
     JSON.parse(developmentContents.toString("utf8")) as DevelopmentCatalog,
     fileSha256(developmentContents),
-    readJson<HoldoutCatalog>(holdoutPath),
+    readJson<HoldoutCatalog>(holdoutPath)
   );
   console.log(JSON.stringify(result, null, 2));
 }

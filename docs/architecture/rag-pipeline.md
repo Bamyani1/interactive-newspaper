@@ -4,13 +4,13 @@ This document describes the `/api/ask` pipeline and the isolated RAG-v2 candidat
 
 ## Core decisions
 
-| Work | Model | Thinking | Output |
-|---|---|---|---|
-| Query reformulation and intent classification | `gemini-3.5-flash-lite` | `MINIMAL` | Structured JSON |
-| Candidate reranking | `gemini-3.6-flash` | `MINIMAL` | Structured JSON |
-| Grounded answer generation | `gemini-3.6-flash` | `LOW` | Structured JSON |
-| Complex-question agent loop | `gemini-3.6-flash` | `MEDIUM` | Text plus function calls |
-| Text and image embeddings | `gemini-embedding-2` | N/A | 768-dimensional vectors |
+| Work                                          | Model                   | Thinking  | Output                   |
+| --------------------------------------------- | ----------------------- | --------- | ------------------------ |
+| Query reformulation and intent classification | `gemini-3.5-flash-lite` | `MINIMAL` | Structured JSON          |
+| Candidate reranking                           | `gemini-3.6-flash`      | `MINIMAL` | Structured JSON          |
+| Grounded answer generation                    | `gemini-3.6-flash`      | `LOW`     | Structured JSON          |
+| Complex-question agent loop                   | `gemini-3.6-flash`      | `MEDIUM`  | Text plus function calls |
+| Text and image embeddings                     | `gemini-embedding-2`    | N/A       | 768-dimensional vectors  |
 
 Gemini auth has two modes, chosen by whether `GOOGLE_CLOUD_PROJECT` is set (`src/lib/gemini-client.ts`). With it, clients use Vertex AI with Application Default Credentials and `GOOGLE_CLOUD_LOCATION` (default `global`) — local dev and the entire data pipeline, where ADC is the locked provenance decision. Without it, clients use `GEMINI_API_KEY` / `GOOGLE_API_KEY`; **this is the serving path on Vercel**, where no ADC exists, and it is the same mechanism production used before the Vertex migration. Both use the stable `v1` endpoint, and model names and the embedding space are identical across them. Gemini 3 requests omit `temperature`, `topP`, and `topK`. Reranking and answering deliberately run on the full Flash tier: the lite model consistently judged every candidate for broad survey questions as tangential (a total-veto that surfaced as false no-evidence refusals) and wrote weaker prose than the previously served `gemini-3-flash-preview`.
 
@@ -198,11 +198,11 @@ The SSE generator buffers the model's structured JSON and emits only the cleaned
 
 The agent has three validated tools:
 
-| Tool | Purpose |
-|---|---|
+| Tool             | Purpose                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------ |
 | `search_archive` | Canonical reformulation, chunk/image hybrid retrieval, reranking, and one CRAG retry |
-| `read_article` | Full article text and image metadata for a returned article ID |
-| `list_editions` | Paginated dates and article counts |
+| `read_article`   | Full article text and image metadata for a returned article ID                       |
+| `list_editions`  | Paginated dates and article counts                                                   |
 
 Tool arguments are type-checked, date ranges are validated, categories are allow-listed, and limits are clamped. Route-level date/category filters are enforced inside every tool so a model call cannot widen the requested scope. The loop preserves function-call IDs, names, order, model parts, and response counts during research. Independent calls in one model round run in parallel. It allows three tool rounds and, if the model has not answered, performs one final call with a dedicated synthesis-only system instruction and `FunctionCallingConfigMode.NONE`. That call starts a fresh turn from up to 12 deduplicated returned articles (ranked by relevance, with exact IDs, passages/body evidence, metadata, and captions) rather than replaying prior model function-call parts.
 
@@ -212,14 +212,14 @@ Agent citations use `[YYYY-MM-DD-index]`. A citation is accepted only if that ex
 
 ## Deadlines and cancellation
 
-| Stage | Local budget |
-|---|---:|
-| Reformulation | 5 s |
-| Query embedding | 10 s |
+| Stage               |                   Local budget |
+| ------------------- | -----------------------------: |
+| Reformulation       |                            5 s |
+| Query embedding     |                           10 s |
 | Hybrid/DB retrieval | 8 s default, 10 s route budget |
-| Reranking | 8 s |
-| Answer generation | 30 s |
-| Entire request | 55 s |
+| Reranking           |                            8 s |
+| Answer generation   |                           30 s |
+| Entire request      |                           55 s |
 
 Neon HTTP queries receive `fetchOptions.signal`. The database wrapper also races the operation against the abort event. This dual mechanism cancels the real fetch and still guarantees the caller returns if a driver or test double ignores `AbortSignal`.
 
@@ -249,11 +249,11 @@ history write cannot indefinitely delay a response.
 
 Standard global rates represented by `src/lib/cost-tracker.ts`:
 
-| Model | Input | Output/reasoning | Image input |
-|---|---:|---:|---:|
-| `gemini-3.5-flash-lite` | $0.30/M tokens | $2.50/M tokens | N/A |
-| `gemini-3.6-flash` | $1.50/M tokens | $7.50/M tokens | N/A |
-| `gemini-embedding-2` | $0.20/M text tokens | N/A | $0.00012/image |
+| Model                   |               Input | Output/reasoning |    Image input |
+| ----------------------- | ------------------: | ---------------: | -------------: |
+| `gemini-3.5-flash-lite` |      $0.30/M tokens |   $2.50/M tokens |            N/A |
+| `gemini-3.6-flash`      |      $1.50/M tokens |   $7.50/M tokens |            N/A |
+| `gemini-embedding-2`    | $0.20/M text tokens |              N/A | $0.00012/image |
 
 `toolUsePromptTokenCount` is counted as input and `thoughtsTokenCount` as output. Embedding telemetry uses per-embedding token statistics when available and billable-character estimation otherwise.
 

@@ -69,7 +69,11 @@ export function useSearch(options: UseSearchOptions = {}): UseSearchResult {
       setError(null);
 
       try {
-        const params = new URLSearchParams({ q: q.trim(), limit: "20", offset: String(currentOffset) });
+        const params = new URLSearchParams({
+          q: q.trim(),
+          limit: "20",
+          offset: String(currentOffset),
+        });
         if (cat) params.set("category", cat);
         if (start) params.set("start_date", start);
         if (end) params.set("end_date", end);
@@ -88,7 +92,7 @@ export function useSearch(options: UseSearchOptions = {}): UseSearchResult {
         if (!controller.signal.aborted) setIsLoading(false);
       }
     },
-    [],
+    []
   );
 
   // Debounced search on query/filter changes

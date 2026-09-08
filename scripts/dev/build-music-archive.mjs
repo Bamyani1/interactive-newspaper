@@ -49,14 +49,16 @@ async function main() {
   const old = JSON.parse(await readFile(OLD_ARCHIVE, "utf8"));
   if (!Array.isArray(old.months) || old.months.length !== 41 * 12) {
     throw new Error(
-      `Old archive has unexpected month count: ${old.months?.length}, expected ${41 * 12}`,
+      `Old archive has unexpected month count: ${old.months?.length}, expected ${41 * 12}`
     );
   }
   console.log(`Loaded old archive: ${old.months.length} months (${old.start} → ${old.end})`);
 
   // 2) Raw fetched data with YouTube IDs
   if (!existsSync(RAW_FILE)) {
-    throw new Error(`Missing raw fetched data: ${RAW_FILE} (run fetch-billboard-monthly.mjs first)`);
+    throw new Error(
+      `Missing raw fetched data: ${RAW_FILE} (run fetch-billboard-monthly.mjs first)`
+    );
   }
   const raw = JSON.parse(await readFile(RAW_FILE, "utf8"));
   console.log(`Loaded raw fetched data: ${raw.months.length} months`);

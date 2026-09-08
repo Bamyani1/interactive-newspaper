@@ -1,10 +1,4 @@
-import type {
-  AdCategory,
-  AdType,
-  OcrEdition,
-  OcrEnrichedAd,
-  VintageAd,
-} from "@/src/types";
+import type { AdCategory, AdType, OcrEdition, OcrEnrichedAd, VintageAd } from "@/src/types";
 import { resolveImageUrl } from "@/src/lib/image-url";
 import { isValidImageFile } from "./image-rules";
 

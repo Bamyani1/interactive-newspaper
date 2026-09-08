@@ -17,637 +17,586 @@ import { useAskArchive } from "@/features/ask-archive/hooks/useAskArchive";
 import type { AskResponse } from "@/src/types";
 
 const mockResponse: AskResponse = {
-    question: "What happened?",
-    answer: "Things happened [Source 1].",
-    citations: [
-        {
-            articleId: "1960-01-07-0",
-            headline: "Test",
-            editionDate: "1960-01-07",
-        },
-    ],
-    confidence: "high",
-    mode: "text",
-    requestId: "req-1",
-    sourceArticles: [
-        {
-            id: "1960-01-07-0",
-            headline: "Test",
-            editionDate: "1960-01-07",
-            category: "News",
-            summary: "Summary",
-            byline: null,
-            bodySnippet: "Body...",
-            distance: 0.25,
-            imageUrls: [],
-        } as unknown as AskResponse["sourceArticles"][number],
-    ],
-    meta: {
-        retrievalTimeMs: 100,
-        generationTimeMs: 500,
-        totalTimeMs: 600,
-        articlesSearched: 8,
-        method: "hybrid",
+  question: "What happened?",
+  answer: "Things happened [Source 1].",
+  citations: [
+    {
+      articleId: "1960-01-07-0",
+      headline: "Test",
+      editionDate: "1960-01-07",
     },
+  ],
+  confidence: "high",
+  mode: "text",
+  requestId: "req-1",
+  sourceArticles: [
+    {
+      id: "1960-01-07-0",
+      headline: "Test",
+      editionDate: "1960-01-07",
+      category: "News",
+      summary: "Summary",
+      byline: null,
+      bodySnippet: "Body...",
+      distance: 0.25,
+      imageUrls: [],
+    } as unknown as AskResponse["sourceArticles"][number],
+  ],
+  meta: {
+    retrievalTimeMs: 100,
+    generationTimeMs: 500,
+    totalTimeMs: 600,
+    articlesSearched: 8,
+    method: "hybrid",
+  },
 };
 
-function makeJsonResponse(
-    body: unknown,
-    overrides: Partial<{ ok: boolean; status: number }> = {},
-) {
-    return {
-        ok: overrides.ok ?? true,
-        status: overrides.status ?? 200,
-        headers: {
-            get: (key: string) =>
-                key.toLowerCase() === "content-type"
-                    ? "application/json"
-                    : null,
-        },
-        body: null,
-        json: () => Promise.resolve(body),
-    };
+function makeJsonResponse(body: unknown, overrides: Partial<{ ok: boolean; status: number }> = {}) {
+  return {
+    ok: overrides.ok ?? true,
+    status: overrides.status ?? 200,
+    headers: {
+      get: (key: string) => (key.toLowerCase() === "content-type" ? "application/json" : null),
+    },
+    body: null,
+    json: () => Promise.resolve(body),
+  };
 }
 
 // Route /api/ask/session during mount-hydrate to a benign empty reply so
 // the initial HYDRATE doesn't throw on missing mocks.
 function fetchRouter(askResponse: unknown) {
-    return vi.fn((input: RequestInfo | URL) => {
-        const url = typeof input === "string" ? input : input.toString();
-        if (url.includes("/api/ask/session")) {
-            return Promise.resolve(
-                makeJsonResponse({ turns: [], expired: false }),
-            );
-        }
-        return Promise.resolve(askResponse);
-    });
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/api/ask/session")) {
+      return Promise.resolve(makeJsonResponse({ turns: [], expired: false }));
+    }
+    return Promise.resolve(askResponse);
+  });
 }
 
 describe("useAskArchive", () => {
-    beforeEach(() => {
-        window.localStorage.clear();
-        vi.stubGlobal(
-            "fetch",
-            fetchRouter(makeJsonResponse(mockResponse)),
-        );
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.stubGlobal("fetch", fetchRouter(makeJsonResponse(mockResponse)));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("hydrates with empty turns on mount", async () => {
+    const { result } = renderHook(() => useAskArchive());
+    expect(result.current.isHydrating).toBe(true);
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+    expect(result.current.turns).toEqual([]);
+    expect(result.current.expiredBanner).toBe(false);
+  });
+
+  it("does not let a late session restore overwrite newer local interaction", async () => {
+    let resolveSession!: (response: ReturnType<typeof makeJsonResponse>) => void;
+    const sessionResponse = new Promise<ReturnType<typeof makeJsonResponse>>((resolve) => {
+      resolveSession = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/ask/session")) return sessionResponse;
+        return Promise.resolve(makeJsonResponse(mockResponse));
+      })
+    );
+
+    const { result } = renderHook(() => useAskArchive());
+    expect(result.current.isHydrating).toBe(true);
+
+    act(() => {
+      result.current.submit("Keep this new question");
+    });
+    await waitFor(() => {
+      expect(result.current.turns[0]?.status).toBe("done");
     });
 
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    it("hydrates with empty turns on mount", async () => {
-        const { result } = renderHook(() => useAskArchive());
-        expect(result.current.isHydrating).toBe(true);
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
-        expect(result.current.turns).toEqual([]);
-        expect(result.current.expiredBanner).toBe(false);
-    });
-
-    it("does not let a late session restore overwrite newer local interaction", async () => {
-        let resolveSession!: (
-            response: ReturnType<typeof makeJsonResponse>,
-        ) => void;
-        const sessionResponse = new Promise<ReturnType<typeof makeJsonResponse>>(
-            (resolve) => {
-                resolveSession = resolve;
+    await act(async () => {
+      resolveSession(
+        makeJsonResponse({
+          turns: [
+            {
+              question: "Stale restored question",
+              answer: "Stale answer",
+              citedArticleIds: [],
+              timestamp: 1,
             },
-        );
-        vi.stubGlobal(
-            "fetch",
-            vi.fn((input: RequestInfo | URL) => {
-                const url =
-                    typeof input === "string" ? input : input.toString();
-                if (url.includes("/api/ask/session")) return sessionResponse;
-                return Promise.resolve(makeJsonResponse(mockResponse));
-            }),
-        );
+          ],
+          expired: false,
+        })
+      );
+      await sessionResponse;
+    });
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
 
-        const { result } = renderHook(() => useAskArchive());
-        expect(result.current.isHydrating).toBe(true);
+    expect(result.current.turns).toHaveLength(1);
+    expect(result.current.turns[0].question).toBe("Keep this new question");
+  });
 
-        act(() => {
-            result.current.submit("Keep this new question");
-        });
-        await waitFor(() => {
-            expect(result.current.turns[0]?.status).toBe("done");
-        });
+  it("on expiry: empties the transcript, removes the expired thread, and mints a fresh session", async () => {
+    const expiredSession = "expired-session-1";
+    window.localStorage.setItem("owu-ask-session-id", expiredSession);
+    window.localStorage.setItem(
+      "owu-ask-threads",
+      JSON.stringify([
+        {
+          sessionId: expiredSession,
+          firstQuestion: "What coverage did the 1969 moon landing get?",
+          turns: [
+            {
+              id: "t1",
+              question: "What coverage did the 1969 moon landing get?",
+              answer: "It got wall-to-wall coverage.",
+              status: "done",
+              sourceArticles: [],
+              citations: [],
+              meta: null,
+              confidence: "medium",
+              requestId: "",
+              mode: "text",
+              createdAt: 1,
+            },
+          ],
+          createdAt: 1,
+          lastUpdatedAt: 1,
+        },
+      ])
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/ask/session")) {
+          return Promise.resolve(makeJsonResponse({ turns: [], expired: true }));
+        }
+        return Promise.resolve(makeJsonResponse(mockResponse));
+      })
+    );
 
-        await act(async () => {
-            resolveSession(
-                makeJsonResponse({
-                    turns: [
-                        {
-                            question: "Stale restored question",
-                            answer: "Stale answer",
-                            citedArticleIds: [],
-                            timestamp: 1,
-                        },
-                    ],
-                    expired: false,
-                }),
-            );
-            await sessionResponse;
-        });
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
 
-        expect(result.current.turns).toHaveLength(1);
-        expect(result.current.turns[0].question).toBe(
-            "Keep this new question",
-        );
+    // Banner shows, but nothing from the dead conversation lingers.
+    expect(result.current.expiredBanner).toBe(true);
+    expect(result.current.turns).toEqual([]);
+    // The expired thread is gone from the sidebar…
+    expect(result.current.threads).toEqual([]);
+    // …and from localStorage.
+    expect(JSON.parse(window.localStorage.getItem("owu-ask-threads") ?? "[]")).toEqual([]);
+    // A fresh session is active, not the dead one.
+    expect(result.current.activeThreadId).toBeTruthy();
+    expect(result.current.activeThreadId).not.toBe(expiredSession);
+    expect(window.localStorage.getItem("owu-ask-session-id")).not.toBe(expiredSession);
+  });
+
+  it("on expiry: keeps other archived threads while dropping only the expired one", async () => {
+    const expiredSession = "expired-session-2";
+    const keepSession = "keep-session-2";
+    window.localStorage.setItem("owu-ask-session-id", expiredSession);
+    window.localStorage.setItem(
+      "owu-ask-threads",
+      JSON.stringify([
+        {
+          sessionId: keepSession,
+          firstQuestion: "An older thread",
+          turns: [
+            {
+              id: "k1",
+              question: "An older thread",
+              answer: "kept",
+              status: "done",
+              sourceArticles: [],
+              citations: [],
+              meta: null,
+              confidence: "medium",
+              requestId: "",
+              mode: "text",
+              createdAt: 1,
+            },
+          ],
+          createdAt: Date.now() - 60_000,
+          lastUpdatedAt: Date.now() - 60_000,
+        },
+        {
+          sessionId: expiredSession,
+          firstQuestion: "The expired thread",
+          turns: [
+            {
+              id: "e1",
+              question: "The expired thread",
+              answer: "gone",
+              status: "done",
+              sourceArticles: [],
+              citations: [],
+              meta: null,
+              confidence: "medium",
+              requestId: "",
+              mode: "text",
+              createdAt: 2,
+            },
+          ],
+          createdAt: 2,
+          lastUpdatedAt: 2,
+        },
+      ])
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/api/ask/session")) {
+          return Promise.resolve(makeJsonResponse({ turns: [], expired: true }));
+        }
+        return Promise.resolve(makeJsonResponse(mockResponse));
+      })
+    );
+
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    expect(result.current.threads.map((t) => t.id)).toEqual([keepSession]);
+    expect(result.current.activeThreadId).not.toBe(expiredSession);
+    expect(result.current.activeThreadId).not.toBe(keepSession);
+  });
+
+  it("prunes archived threads older than the 7-day retention window on load", async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    window.localStorage.setItem("owu-ask-session-id", "current-session");
+    window.localStorage.setItem(
+      "owu-ask-threads",
+      JSON.stringify([
+        {
+          sessionId: "stale-85d",
+          firstQuestion: "Tell me about campus protests in 1968.",
+          turns: [
+            {
+              id: "s1",
+              question: "Tell me about campus protests in 1968.",
+              answer: "old",
+              status: "done",
+              sourceArticles: [],
+              citations: [],
+              meta: null,
+              confidence: "medium",
+              requestId: "",
+              mode: "text",
+              createdAt: Date.now() - 85 * DAY,
+            },
+          ],
+          createdAt: Date.now() - 85 * DAY,
+          lastUpdatedAt: Date.now() - 85 * DAY,
+        },
+        {
+          sessionId: "fresh-2h",
+          firstQuestion: "Tell me about the 1969 moon landing.",
+          turns: [
+            {
+              id: "f1",
+              question: "Tell me about the 1969 moon landing.",
+              answer: "recent",
+              status: "done",
+              sourceArticles: [],
+              citations: [],
+              meta: null,
+              confidence: "medium",
+              requestId: "",
+              mode: "text",
+              createdAt: Date.now() - 2 * 60 * 60 * 1000,
+            },
+          ],
+          createdAt: Date.now() - 2 * 60 * 60 * 1000,
+          lastUpdatedAt: Date.now() - 2 * 60 * 60 * 1000,
+        },
+      ])
+    );
+
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    // Only the recent thread survives in the sidebar…
+    expect(result.current.threads.map((t) => t.id)).toEqual(["fresh-2h"]);
+    // …and the stale one is physically gone from localStorage.
+    const stored = JSON.parse(window.localStorage.getItem("owu-ask-threads") ?? "[]") as Array<{
+      sessionId: string;
+    }>;
+    expect(stored.map((t) => t.sessionId)).toEqual(["fresh-2h"]);
+  });
+
+  it("keeps threads just under the retention window and drops those just over", async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const HOUR = 60 * 60 * 1000;
+    window.localStorage.setItem("owu-ask-session-id", "current-session-2");
+    window.localStorage.setItem(
+      "owu-ask-threads",
+      JSON.stringify([
+        {
+          sessionId: "under-7d",
+          firstQuestion: "Just inside the window",
+          turns: [
+            {
+              id: "u1",
+              question: "Just inside the window",
+              answer: "kept",
+              status: "done",
+              sourceArticles: [],
+              citations: [],
+              meta: null,
+              confidence: "medium",
+              requestId: "",
+              mode: "text",
+              createdAt: Date.now() - (7 * DAY - HOUR),
+            },
+          ],
+          createdAt: Date.now() - (7 * DAY - HOUR),
+          lastUpdatedAt: Date.now() - (7 * DAY - HOUR),
+        },
+        {
+          sessionId: "over-7d",
+          firstQuestion: "Just outside the window",
+          turns: [
+            {
+              id: "o1",
+              question: "Just outside the window",
+              answer: "dropped",
+              status: "done",
+              sourceArticles: [],
+              citations: [],
+              meta: null,
+              confidence: "medium",
+              requestId: "",
+              mode: "text",
+              createdAt: Date.now() - (7 * DAY + HOUR),
+            },
+          ],
+          createdAt: Date.now() - (7 * DAY + HOUR),
+          lastUpdatedAt: Date.now() - (7 * DAY + HOUR),
+        },
+      ])
+    );
+
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    expect(result.current.threads.map((t) => t.id)).toEqual(["under-7d"]);
+  });
+
+  it("submit appends a user turn immediately and completes it via the non-streaming fallback", async () => {
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    act(() => {
+      result.current.submit("What happened?");
     });
 
-    it("on expiry: empties the transcript, removes the expired thread, and mints a fresh session", async () => {
-        const expiredSession = "expired-session-1";
-        window.localStorage.setItem("owu-ask-session-id", expiredSession);
-        window.localStorage.setItem(
-            "owu-ask-threads",
-            JSON.stringify([
-                {
-                    sessionId: expiredSession,
-                    firstQuestion:
-                        "What coverage did the 1969 moon landing get?",
-                    turns: [
-                        {
-                            id: "t1",
-                            question:
-                                "What coverage did the 1969 moon landing get?",
-                            answer: "It got wall-to-wall coverage.",
-                            status: "done",
-                            sourceArticles: [],
-                            citations: [],
-                            meta: null,
-                            confidence: "medium",
-                            requestId: "",
-                            mode: "text",
-                            createdAt: 1,
-                        },
-                    ],
-                    createdAt: 1,
-                    lastUpdatedAt: 1,
-                },
-            ]),
-        );
-        vi.stubGlobal(
-            "fetch",
-            vi.fn((input: RequestInfo | URL) => {
-                const url =
-                    typeof input === "string" ? input : input.toString();
-                if (url.includes("/api/ask/session")) {
-                    return Promise.resolve(
-                        makeJsonResponse({ turns: [], expired: true }),
-                    );
-                }
-                return Promise.resolve(makeJsonResponse(mockResponse));
-            }),
-        );
+    // Optimistic user turn appears synchronously.
+    expect(result.current.turns).toHaveLength(1);
+    expect(result.current.turns[0].question).toBe("What happened?");
+    expect(result.current.turns[0].status).toBe("streaming");
 
-        const { result } = renderHook(() => useAskArchive());
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+    await waitFor(() => {
+      expect(result.current.turns[0].status).toBe("done");
+    });
+    expect(result.current.turns[0].answer).toBe("Things happened [Source 1].");
+    expect(result.current.turns[0].sourceArticles).toHaveLength(1);
+  });
 
-        // Banner shows, but nothing from the dead conversation lingers.
-        expect(result.current.expiredBanner).toBe(true);
-        expect(result.current.turns).toEqual([]);
-        // The expired thread is gone from the sidebar…
-        expect(result.current.threads).toEqual([]);
-        // …and from localStorage.
-        expect(
-            JSON.parse(
-                window.localStorage.getItem("owu-ask-threads") ?? "[]",
-            ),
-        ).toEqual([]);
-        // A fresh session is active, not the dead one.
-        expect(result.current.activeThreadId).toBeTruthy();
-        expect(result.current.activeThreadId).not.toBe(expiredSession);
-        expect(window.localStorage.getItem("owu-ask-session-id")).not.toBe(
-            expiredSession,
-        );
+  it("archives each thread under its own session when a new conversation starts mid-flow", async () => {
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    act(() => {
+      result.current.submit("First question");
+    });
+    await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
+
+    // A deep link arriving on an open conversation does exactly this:
+    // start a new thread, then submit, in the same tick. The persistence
+    // effect used to read the session id from a ref that newConversation
+    // had already repointed, filing the first thread's turns under the
+    // second thread's session.
+    act(() => {
+      result.current.newConversation();
+      result.current.submit("Second question");
+    });
+    await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
+
+    const archived = JSON.parse(window.localStorage.getItem("owu-ask-threads") ?? "[]") as Array<{
+      sessionId: string;
+      turns: Array<{ question: string }>;
+    }>;
+
+    expect(archived).toHaveLength(2);
+    const questions = archived.map((t) => t.turns[0]?.question).sort();
+    expect(questions).toEqual(["First question", "Second question"]);
+    expect(new Set(archived.map((t) => t.sessionId)).size).toBe(2);
+  });
+
+  it("submit produces a TURN_ERROR with typed kind when the server returns a typed error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      fetchRouter(
+        makeJsonResponse(
+          {
+            kind: "rate_limit",
+            message: "Too many questions",
+            error: "Too many questions",
+            retryAfterSec: 42,
+          },
+          { ok: false, status: 429 }
+        )
+      )
+    );
+
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    act(() => {
+      result.current.submit("q");
     });
 
-    it("on expiry: keeps other archived threads while dropping only the expired one", async () => {
-        const expiredSession = "expired-session-2";
-        const keepSession = "keep-session-2";
-        window.localStorage.setItem("owu-ask-session-id", expiredSession);
-        window.localStorage.setItem(
-            "owu-ask-threads",
-            JSON.stringify([
-                {
-                    sessionId: keepSession,
-                    firstQuestion: "An older thread",
-                    turns: [
-                        {
-                            id: "k1",
-                            question: "An older thread",
-                            answer: "kept",
-                            status: "done",
-                            sourceArticles: [],
-                            citations: [],
-                            meta: null,
-                            confidence: "medium",
-                            requestId: "",
-                            mode: "text",
-                            createdAt: 1,
-                        },
-                    ],
-                    createdAt: Date.now() - 60_000,
-                    lastUpdatedAt: Date.now() - 60_000,
-                },
-                {
-                    sessionId: expiredSession,
-                    firstQuestion: "The expired thread",
-                    turns: [
-                        {
-                            id: "e1",
-                            question: "The expired thread",
-                            answer: "gone",
-                            status: "done",
-                            sourceArticles: [],
-                            citations: [],
-                            meta: null,
-                            confidence: "medium",
-                            requestId: "",
-                            mode: "text",
-                            createdAt: 2,
-                        },
-                    ],
-                    createdAt: 2,
-                    lastUpdatedAt: 2,
-                },
-            ]),
-        );
-        vi.stubGlobal(
-            "fetch",
-            vi.fn((input: RequestInfo | URL) => {
-                const url =
-                    typeof input === "string" ? input : input.toString();
-                if (url.includes("/api/ask/session")) {
-                    return Promise.resolve(
-                        makeJsonResponse({ turns: [], expired: true }),
-                    );
-                }
-                return Promise.resolve(makeJsonResponse(mockResponse));
-            }),
-        );
+    await waitFor(() => {
+      expect(result.current.turns[0].status).toBe("error");
+    });
+    expect(result.current.turns[0].errorKind).toBe("rate_limit");
+    expect(result.current.turns[0].errorMessage).toBe("Too many questions");
+    expect(result.current.turns[0].retryAfterSec).toBe(42);
+  });
 
-        const { result } = renderHook(() => useAskArchive());
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+  it("clearAllThreads clears turns, bumps sessionGen, and DELETEs the server session", async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/ask/session")) {
+        if (init?.method === "DELETE") {
+          return Promise.resolve(makeJsonResponse(null, { ok: true, status: 204 }));
+        }
+        return Promise.resolve(makeJsonResponse({ turns: [], expired: false }));
+      }
+      return Promise.resolve(makeJsonResponse(mockResponse));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
 
-        expect(result.current.threads.map((t) => t.id)).toEqual([keepSession]);
-        expect(result.current.activeThreadId).not.toBe(expiredSession);
-        expect(result.current.activeThreadId).not.toBe(keepSession);
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    act(() => {
+      result.current.submit("q1");
+    });
+    await waitFor(() => {
+      expect(result.current.turns[0].status).toBe("done");
     });
 
-    it("prunes archived threads older than the 7-day retention window on load", async () => {
-        const DAY = 24 * 60 * 60 * 1000;
-        window.localStorage.setItem("owu-ask-session-id", "current-session");
-        window.localStorage.setItem(
-            "owu-ask-threads",
-            JSON.stringify([
-                {
-                    sessionId: "stale-85d",
-                    firstQuestion: "Tell me about campus protests in 1968.",
-                    turns: [
-                        {
-                            id: "s1",
-                            question: "Tell me about campus protests in 1968.",
-                            answer: "old",
-                            status: "done",
-                            sourceArticles: [],
-                            citations: [],
-                            meta: null,
-                            confidence: "medium",
-                            requestId: "",
-                            mode: "text",
-                            createdAt: Date.now() - 85 * DAY,
-                        },
-                    ],
-                    createdAt: Date.now() - 85 * DAY,
-                    lastUpdatedAt: Date.now() - 85 * DAY,
-                },
-                {
-                    sessionId: "fresh-2h",
-                    firstQuestion: "Tell me about the 1969 moon landing.",
-                    turns: [
-                        {
-                            id: "f1",
-                            question: "Tell me about the 1969 moon landing.",
-                            answer: "recent",
-                            status: "done",
-                            sourceArticles: [],
-                            citations: [],
-                            meta: null,
-                            confidence: "medium",
-                            requestId: "",
-                            mode: "text",
-                            createdAt: Date.now() - 2 * 60 * 60 * 1000,
-                        },
-                    ],
-                    createdAt: Date.now() - 2 * 60 * 60 * 1000,
-                    lastUpdatedAt: Date.now() - 2 * 60 * 60 * 1000,
-                },
-            ]),
-        );
+    const genBefore = result.current.sessionGen;
+    fetchSpy.mockClear();
+    act(() => {
+      result.current.clearAllThreads();
+    });
+    expect(result.current.turns).toEqual([]);
+    expect(result.current.sessionGen).toBe(genBefore + 1);
+    // Best-effort DELETE fires against the session route.
+    const deleteCall = fetchSpy.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === "DELETE"
+    );
+    expect(deleteCall).toBeDefined();
+    expect(String(deleteCall?.[0])).toContain("/api/ask/session?sessionId=");
+  });
 
-        const { result } = renderHook(() => useAskArchive());
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+  it("clearAllThreads empties the sidebar archive and DELETEs every session it held", async () => {
+    const archivedSession = "archived-session-9";
+    window.localStorage.setItem("owu-ask-session-id", "current-session-9");
+    window.localStorage.setItem(
+      "owu-ask-threads",
+      JSON.stringify([
+        {
+          sessionId: archivedSession,
+          firstQuestion: "An older thread",
+          turns: [
+            {
+              id: "a1",
+              question: "An older thread",
+              answer: "kept until cleared",
+              status: "done",
+              sourceArticles: [],
+              citations: [],
+              meta: null,
+              confidence: "medium",
+              requestId: "",
+              mode: "text",
+              createdAt: 1,
+            },
+          ],
+          createdAt: Date.now() - 60_000,
+          lastUpdatedAt: Date.now() - 60_000,
+        },
+      ])
+    );
 
-        // Only the recent thread survives in the sidebar…
-        expect(result.current.threads.map((t) => t.id)).toEqual(["fresh-2h"]);
-        // …and the stale one is physically gone from localStorage.
-        const stored = JSON.parse(
-            window.localStorage.getItem("owu-ask-threads") ?? "[]",
-        ) as Array<{ sessionId: string }>;
-        expect(stored.map((t) => t.sessionId)).toEqual(["fresh-2h"]);
+    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/ask/session")) {
+        if (init?.method === "DELETE") {
+          return Promise.resolve(makeJsonResponse(null, { ok: true, status: 204 }));
+        }
+        return Promise.resolve(makeJsonResponse({ turns: [], expired: false }));
+      }
+      return Promise.resolve(makeJsonResponse(mockResponse));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+    await waitFor(() => expect(result.current.threads).toHaveLength(1));
+
+    fetchSpy.mockClear();
+    act(() => {
+      result.current.clearAllThreads();
     });
 
-    it("keeps threads just under the retention window and drops those just over", async () => {
-        const DAY = 24 * 60 * 60 * 1000;
-        const HOUR = 60 * 60 * 1000;
-        window.localStorage.setItem("owu-ask-session-id", "current-session-2");
-        window.localStorage.setItem(
-            "owu-ask-threads",
-            JSON.stringify([
-                {
-                    sessionId: "under-7d",
-                    firstQuestion: "Just inside the window",
-                    turns: [
-                        {
-                            id: "u1",
-                            question: "Just inside the window",
-                            answer: "kept",
-                            status: "done",
-                            sourceArticles: [],
-                            citations: [],
-                            meta: null,
-                            confidence: "medium",
-                            requestId: "",
-                            mode: "text",
-                            createdAt: Date.now() - (7 * DAY - HOUR),
-                        },
-                    ],
-                    createdAt: Date.now() - (7 * DAY - HOUR),
-                    lastUpdatedAt: Date.now() - (7 * DAY - HOUR),
-                },
-                {
-                    sessionId: "over-7d",
-                    firstQuestion: "Just outside the window",
-                    turns: [
-                        {
-                            id: "o1",
-                            question: "Just outside the window",
-                            answer: "dropped",
-                            status: "done",
-                            sourceArticles: [],
-                            citations: [],
-                            meta: null,
-                            confidence: "medium",
-                            requestId: "",
-                            mode: "text",
-                            createdAt: Date.now() - (7 * DAY + HOUR),
-                        },
-                    ],
-                    createdAt: Date.now() - (7 * DAY + HOUR),
-                    lastUpdatedAt: Date.now() - (7 * DAY + HOUR),
-                },
-            ]),
-        );
+    expect(result.current.threads).toEqual([]);
+    expect(window.localStorage.getItem("owu-ask-threads")).toBe("[]");
 
-        const { result } = renderHook(() => useAskArchive());
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+    const deletedSessions = fetchSpy.mock.calls
+      .filter(([, init]) => (init as RequestInit | undefined)?.method === "DELETE")
+      .map(([url]) => String(url));
+    // The archived thread's session is deleted too, not just the
+    // one currently on screen.
+    expect(deletedSessions.some((url) => url.includes(archivedSession))).toBe(true);
+  });
 
-        expect(result.current.threads.map((t) => t.id)).toEqual(["under-7d"]);
+  it("retry re-submits an errored turn's question as a new turn", async () => {
+    // First submit errors out.
+    vi.stubGlobal(
+      "fetch",
+      fetchRouter(makeJsonResponse({ kind: "server", message: "Boom" }, { ok: false, status: 500 }))
+    );
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    act(() => {
+      result.current.submit("ask once");
+    });
+    await waitFor(() => {
+      expect(result.current.turns[0].status).toBe("error");
     });
 
-    it("submit appends a user turn immediately and completes it via the non-streaming fallback", async () => {
-        const { result } = renderHook(() => useAskArchive());
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
+    // Swap fetch to succeed the retry.
+    vi.stubGlobal("fetch", fetchRouter(makeJsonResponse(mockResponse)));
 
-        act(() => {
-            result.current.submit("What happened?");
-        });
-
-        // Optimistic user turn appears synchronously.
-        expect(result.current.turns).toHaveLength(1);
-        expect(result.current.turns[0].question).toBe("What happened?");
-        expect(result.current.turns[0].status).toBe("streaming");
-
-        await waitFor(() => {
-            expect(result.current.turns[0].status).toBe("done");
-        });
-        expect(result.current.turns[0].answer).toBe(
-            "Things happened [Source 1].",
-        );
-        expect(result.current.turns[0].sourceArticles).toHaveLength(1);
+    act(() => {
+      result.current.retry(result.current.turns[0].id);
     });
 
-    it("archives each thread under its own session when a new conversation starts mid-flow", async () => {
-        const { result } = renderHook(() => useAskArchive());
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
-
-        act(() => {
-            result.current.submit("First question");
-        });
-        await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
-
-        // A deep link arriving on an open conversation does exactly this:
-        // start a new thread, then submit, in the same tick. The persistence
-        // effect used to read the session id from a ref that newConversation
-        // had already repointed, filing the first thread's turns under the
-        // second thread's session.
-        act(() => {
-            result.current.newConversation();
-            result.current.submit("Second question");
-        });
-        await waitFor(() => expect(result.current.turns[0].status).toBe("done"));
-
-        const archived = JSON.parse(
-            window.localStorage.getItem("owu-ask-threads") ?? "[]",
-        ) as Array<{ sessionId: string; turns: Array<{ question: string }> }>;
-
-        expect(archived).toHaveLength(2);
-        const questions = archived.map((t) => t.turns[0]?.question).sort();
-        expect(questions).toEqual(["First question", "Second question"]);
-        expect(new Set(archived.map((t) => t.sessionId)).size).toBe(2);
+    await waitFor(() => {
+      expect(result.current.turns).toHaveLength(2);
     });
-
-    it("submit produces a TURN_ERROR with typed kind when the server returns a typed error", async () => {
-        vi.stubGlobal(
-            "fetch",
-            fetchRouter(
-                makeJsonResponse(
-                    {
-                        kind: "rate_limit",
-                        message: "Too many questions",
-                        error: "Too many questions",
-                        retryAfterSec: 42,
-                    },
-                    { ok: false, status: 429 },
-                ),
-            ),
-        );
-
-        const { result } = renderHook(() => useAskArchive());
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
-
-        act(() => {
-            result.current.submit("q");
-        });
-
-        await waitFor(() => {
-            expect(result.current.turns[0].status).toBe("error");
-        });
-        expect(result.current.turns[0].errorKind).toBe("rate_limit");
-        expect(result.current.turns[0].errorMessage).toBe("Too many questions");
-        expect(result.current.turns[0].retryAfterSec).toBe(42);
+    await waitFor(() => {
+      expect(result.current.turns[1].status).toBe("done");
     });
-
-    it("clearAllThreads clears turns, bumps sessionGen, and DELETEs the server session", async () => {
-        const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-            const url = typeof input === "string" ? input : input.toString();
-            if (url.includes("/api/ask/session")) {
-                if (init?.method === "DELETE") {
-                    return Promise.resolve(
-                        makeJsonResponse(null, { ok: true, status: 204 }),
-                    );
-                }
-                return Promise.resolve(
-                    makeJsonResponse({ turns: [], expired: false }),
-                );
-            }
-            return Promise.resolve(makeJsonResponse(mockResponse));
-        });
-        vi.stubGlobal("fetch", fetchSpy);
-
-        const { result } = renderHook(() => useAskArchive());
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
-
-        act(() => {
-            result.current.submit("q1");
-        });
-        await waitFor(() => {
-            expect(result.current.turns[0].status).toBe("done");
-        });
-
-        const genBefore = result.current.sessionGen;
-        fetchSpy.mockClear();
-        act(() => {
-            result.current.clearAllThreads();
-        });
-        expect(result.current.turns).toEqual([]);
-        expect(result.current.sessionGen).toBe(genBefore + 1);
-        // Best-effort DELETE fires against the session route.
-        const deleteCall = fetchSpy.mock.calls.find(
-            ([, init]) => (init as RequestInit | undefined)?.method === "DELETE",
-        );
-        expect(deleteCall).toBeDefined();
-        expect(String(deleteCall?.[0])).toContain("/api/ask/session?sessionId=");
-    });
-
-    it("clearAllThreads empties the sidebar archive and DELETEs every session it held", async () => {
-        const archivedSession = "archived-session-9";
-        window.localStorage.setItem("owu-ask-session-id", "current-session-9");
-        window.localStorage.setItem(
-            "owu-ask-threads",
-            JSON.stringify([
-                {
-                    sessionId: archivedSession,
-                    firstQuestion: "An older thread",
-                    turns: [
-                        {
-                            id: "a1",
-                            question: "An older thread",
-                            answer: "kept until cleared",
-                            status: "done",
-                            sourceArticles: [],
-                            citations: [],
-                            meta: null,
-                            confidence: "medium",
-                            requestId: "",
-                            mode: "text",
-                            createdAt: 1,
-                        },
-                    ],
-                    createdAt: Date.now() - 60_000,
-                    lastUpdatedAt: Date.now() - 60_000,
-                },
-            ]),
-        );
-
-        const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-            const url = typeof input === "string" ? input : input.toString();
-            if (url.includes("/api/ask/session")) {
-                if (init?.method === "DELETE") {
-                    return Promise.resolve(
-                        makeJsonResponse(null, { ok: true, status: 204 }),
-                    );
-                }
-                return Promise.resolve(
-                    makeJsonResponse({ turns: [], expired: false }),
-                );
-            }
-            return Promise.resolve(makeJsonResponse(mockResponse));
-        });
-        vi.stubGlobal("fetch", fetchSpy);
-
-        const { result } = renderHook(() => useAskArchive());
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
-        await waitFor(() => expect(result.current.threads).toHaveLength(1));
-
-        fetchSpy.mockClear();
-        act(() => {
-            result.current.clearAllThreads();
-        });
-
-        expect(result.current.threads).toEqual([]);
-        expect(window.localStorage.getItem("owu-ask-threads")).toBe("[]");
-
-        const deletedSessions = fetchSpy.mock.calls
-            .filter(
-                ([, init]) =>
-                    (init as RequestInit | undefined)?.method === "DELETE",
-            )
-            .map(([url]) => String(url));
-        // The archived thread's session is deleted too, not just the
-        // one currently on screen.
-        expect(
-            deletedSessions.some((url) => url.includes(archivedSession)),
-        ).toBe(true);
-    });
-
-    it("retry re-submits an errored turn's question as a new turn", async () => {
-        // First submit errors out.
-        vi.stubGlobal(
-            "fetch",
-            fetchRouter(
-                makeJsonResponse(
-                    { kind: "server", message: "Boom" },
-                    { ok: false, status: 500 },
-                ),
-            ),
-        );
-        const { result } = renderHook(() => useAskArchive());
-        await waitFor(() => expect(result.current.isHydrating).toBe(false));
-
-        act(() => {
-            result.current.submit("ask once");
-        });
-        await waitFor(() => {
-            expect(result.current.turns[0].status).toBe("error");
-        });
-
-        // Swap fetch to succeed the retry.
-        vi.stubGlobal("fetch", fetchRouter(makeJsonResponse(mockResponse)));
-
-        act(() => {
-            result.current.retry(result.current.turns[0].id);
-        });
-
-        await waitFor(() => {
-            expect(result.current.turns).toHaveLength(2);
-        });
-        await waitFor(() => {
-            expect(result.current.turns[1].status).toBe("done");
-        });
-        expect(result.current.turns[1].question).toBe("ask once");
-    });
+    expect(result.current.turns[1].question).toBe("ask once");
+  });
 });

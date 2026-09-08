@@ -6,174 +6,170 @@ import { NewsFeed } from "../../src/features/news-feed/components/NewsFeed";
 import type { Article, SectionId } from "@/src/types";
 
 vi.mock("next/link", () => ({
-    default: ({
-        children,
-        href,
-        ...props
-    }: React.PropsWithChildren<{ href: string }>) => (
-        <a href={href} {...props}>
-            {children}
-        </a>
-    ),
+  default: ({ children, href, ...props }: React.PropsWithChildren<{ href: string }>) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  ),
 }));
 
 vi.mock("next/image", () => ({
-    default: ({
-        alt,
-        src,
-        ...props
-    }: React.ImgHTMLAttributes<HTMLImageElement> & { src?: string }) => (
-        <img alt={alt ?? ""} src={src ?? ""} {...props} />
-    ),
+  default: ({
+    alt,
+    src,
+    ...props
+  }: React.ImgHTMLAttributes<HTMLImageElement> & { src?: string }) => (
+    <img alt={alt ?? ""} src={src ?? ""} {...props} />
+  ),
 }));
 
 vi.mock("@/features/theme", () => ({
-    ThemeModeToggle: () => <button type="button">Theme</button>,
+  ThemeModeToggle: () => <button type="button">Theme</button>,
 }));
 
 function makeArticle(overrides: Partial<Article> = {}): Article {
-    return {
-        id: "hero-news",
-        date: "1987-10-14",
-        category: "Campus News",
-        headline: "Cracked pipe cools campus",
-        summary: "Heat was restored to residential halls after repairs began.",
-        fullText: "<p>Full article body from hero story.</p>",
-        imageUrls: [],
-        imageCaptions: [],
-        page: 1,
-        isHero: true,
-        isFeatured: true,
-        ...overrides,
-    };
+  return {
+    id: "hero-news",
+    date: "1987-10-14",
+    category: "Campus News",
+    headline: "Cracked pipe cools campus",
+    summary: "Heat was restored to residential halls after repairs began.",
+    fullText: "<p>Full article body from hero story.</p>",
+    imageUrls: [],
+    imageCaptions: [],
+    page: 1,
+    isHero: true,
+    isFeatured: true,
+    ...overrides,
+  };
 }
 
 function renderNewsFeed({
-    articles = [makeArticle()],
-    editionDate = "1987-10-14",
-    activeSection = "Top",
+  articles = [makeArticle()],
+  editionDate = "1987-10-14",
+  activeSection = "Top",
 }: {
-    articles?: Article[];
-    editionDate?: string | null;
-    activeSection?: SectionId;
+  articles?: Article[];
+  editionDate?: string | null;
+  activeSection?: SectionId;
 }) {
-    return render(
-        <NewsFeed
-            articles={articles}
-            displayAds={[]}
-            classifiedAds={[]}
-            editionDate={editionDate}
-            editions={["1987-10-14"]}
-            onDateChange={vi.fn()}
-            activeSection={activeSection}
-            onSectionChange={vi.fn()}
-        />
-    );
+  return render(
+    <NewsFeed
+      articles={articles}
+      displayAds={[]}
+      classifiedAds={[]}
+      editionDate={editionDate}
+      editions={["1987-10-14"]}
+      onDateChange={vi.fn()}
+      activeSection={activeSection}
+      onSectionChange={vi.fn()}
+    />
+  );
 }
 
 describe("NewsFeed data source and full-story rendering", () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        Element.prototype.scrollIntoView = vi.fn();
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("renders hero headline and full text in print edition layout", () => {
+    renderNewsFeed({
+      editionDate: null,
+      articles: [makeArticle()],
     });
 
-    it("renders hero headline and full text in print edition layout", () => {
-        renderNewsFeed({
-            editionDate: null,
-            articles: [makeArticle()],
-        });
+    expect(screen.getByText("Cracked pipe cools campus")).toBeDefined();
+    // TopStoriesPrintEdition renders fullText directly (no summary card)
+    expect(screen.getByText("Full article body from hero story.")).toBeDefined();
+  });
 
-        expect(screen.getByText("Cracked pipe cools campus")).toBeDefined();
-        // TopStoriesPrintEdition renders fullText directly (no summary card)
-        expect(screen.getByText("Full article body from hero story.")).toBeDefined();
+  it("renders hero fullText inline without needing expansion", () => {
+    renderNewsFeed({
+      articles: [makeArticle()],
     });
 
-    it("renders hero fullText inline without needing expansion", () => {
-        renderNewsFeed({
-            articles: [makeArticle()],
-        });
+    // In print edition layout, the full text is displayed directly
+    expect(screen.getByText("Cracked pipe cools campus")).toBeDefined();
+    expect(screen.getByText("Full article body from hero story.")).toBeDefined();
+  });
 
-        // In print edition layout, the full text is displayed directly
-        expect(screen.getByText("Cracked pipe cools campus")).toBeDefined();
-        expect(screen.getByText("Full article body from hero story.")).toBeDefined();
+  it("renders hero fullText even when article id is empty", () => {
+    renderNewsFeed({
+      articles: [makeArticle({ id: "" })],
     });
 
-    it("renders hero fullText even when article id is empty", () => {
-        renderNewsFeed({
-            articles: [makeArticle({ id: "" })],
-        });
+    expect(screen.getByText("Cracked pipe cools campus")).toBeDefined();
+    expect(screen.getByText("Full article body from hero story.")).toBeDefined();
+  });
 
-        expect(screen.getByText("Cracked pipe cools campus")).toBeDefined();
-        expect(screen.getByText("Full article body from hero story.")).toBeDefined();
+  it("remains interactive when switching from Top Stories to section view", () => {
+    const hero = makeArticle();
+    const secondaryNews = makeArticle({
+      id: "news-2",
+      headline: "Second news story",
+      summary: "Secondary summary",
+      fullText: "<p>Secondary full text.</p>",
+      isHero: false,
+      isFeatured: false,
+      page: 2,
     });
 
-    it("remains interactive when switching from Top Stories to section view", () => {
-        const hero = makeArticle();
-        const secondaryNews = makeArticle({
-            id: "news-2",
-            headline: "Second news story",
-            summary: "Secondary summary",
-            fullText: "<p>Secondary full text.</p>",
-            isHero: false,
-            isFeatured: false,
-            page: 2,
-        });
+    const { rerender } = render(
+      <NewsFeed
+        articles={[hero, secondaryNews]}
+        displayAds={[]}
+        classifiedAds={[]}
+        editionDate={null}
+        editions={["1987-10-14"]}
+        onDateChange={vi.fn()}
+        activeSection="Top"
+        onSectionChange={vi.fn()}
+      />
+    );
 
-        const { rerender } = render(
-            <NewsFeed
-                articles={[hero, secondaryNews]}
-                displayAds={[]}
-                classifiedAds={[]}
-                editionDate={null}
-                editions={["1987-10-14"]}
-                onDateChange={vi.fn()}
-                activeSection="Top"
-                onSectionChange={vi.fn()}
-            />
-        );
+    // Full text is shown directly in print edition layout
+    expect(screen.getByText("Full article body from hero story.")).toBeDefined();
 
-        // Full text is shown directly in print edition layout
-        expect(screen.getByText("Full article body from hero story.")).toBeDefined();
+    rerender(
+      <NewsFeed
+        articles={[hero, secondaryNews]}
+        displayAds={[]}
+        classifiedAds={[]}
+        editionDate={null}
+        editions={["1987-10-14"]}
+        onDateChange={vi.fn()}
+        activeSection="Campus News"
+        onSectionChange={vi.fn()}
+      />
+    );
 
-        rerender(
-            <NewsFeed
-                articles={[hero, secondaryNews]}
-                displayAds={[]}
-                classifiedAds={[]}
-                editionDate={null}
-                editions={["1987-10-14"]}
-                onDateChange={vi.fn()}
-                activeSection="Campus News"
-                onSectionChange={vi.fn()}
-            />
-        );
+    expect(screen.queryByText("No stories found for this section.")).toBeNull();
+    expect(screen.getByText("Second news story")).toBeDefined();
+  });
 
-        expect(screen.queryByText("No stories found for this section.")).toBeNull();
-        expect(screen.getByText("Second news story")).toBeDefined();
-    });
+  it("leaves Enter activation on edition controls to the native button", () => {
+    const onDateChange = vi.fn();
+    render(
+      <NewsFeed
+        articles={[makeArticle()]}
+        displayAds={[]}
+        classifiedAds={[]}
+        editionDate="1987-10-14"
+        editions={["1987-10-14", "1987-10-21"]}
+        onDateChange={onDateChange}
+        activeSection="Top"
+        onSectionChange={vi.fn()}
+      />
+    );
 
-    it("leaves Enter activation on edition controls to the native button", () => {
-        const onDateChange = vi.fn();
-        render(
-            <NewsFeed
-                articles={[makeArticle()]}
-                displayAds={[]}
-                classifiedAds={[]}
-                editionDate="1987-10-14"
-                editions={["1987-10-14", "1987-10-21"]}
-                onDateChange={onDateChange}
-                activeSection="Top"
-                onSectionChange={vi.fn()}
-            />
-        );
+    const nextEdition = screen.getByRole("button", { name: /see next edition/i });
+    nextEdition.focus();
 
-        const nextEdition = screen.getByRole("button", { name: /see next edition/i });
-        nextEdition.focus();
+    expect(fireEvent.keyDown(nextEdition, { key: "Enter" })).toBe(true);
+    fireEvent.click(nextEdition);
 
-        expect(fireEvent.keyDown(nextEdition, { key: "Enter" })).toBe(true);
-        fireEvent.click(nextEdition);
-
-        expect(onDateChange).toHaveBeenCalledOnce();
-        expect(onDateChange).toHaveBeenCalledWith("1987-10-21");
-    });
+    expect(onDateChange).toHaveBeenCalledOnce();
+    expect(onDateChange).toHaveBeenCalledWith("1987-10-21");
+  });
 });

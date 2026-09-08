@@ -28,11 +28,11 @@ const ANSWER_TRUNCATE_CHARS = 8000;
 const TRUNCATION_MARKER = "\n[…truncated]";
 
 export interface ConversationTurn {
-    question: string;
-    answer: string;
-    citedArticleIds: string[];
-    citationSnapshots: CitationSnapshot[];
-    timestamp: number;
+  question: string;
+  answer: string;
+  citedArticleIds: string[];
+  citationSnapshots: CitationSnapshot[];
+  timestamp: number;
 }
 
 // Live evaluations need multi-turn behavior without persisting user-like test
@@ -40,37 +40,35 @@ export interface ConversationTurn {
 const evaluationSessions = new Map<string, ConversationTurn[]>();
 
 function liveEvaluationTurns(sessionId: string): ConversationTurn[] {
-    const cutoff = Date.now() - TTL_MS;
-    const turns = (evaluationSessions.get(sessionId) ?? []).filter(
-        (turn) => turn.timestamp >= cutoff,
-    );
-    if (turns.length === 0) evaluationSessions.delete(sessionId);
-    else evaluationSessions.set(sessionId, turns);
-    return turns;
+  const cutoff = Date.now() - TTL_MS;
+  const turns = (evaluationSessions.get(sessionId) ?? []).filter(
+    (turn) => turn.timestamp >= cutoff
+  );
+  if (turns.length === 0) evaluationSessions.delete(sessionId);
+  else evaluationSessions.set(sessionId, turns);
+  return turns;
 }
 
 let _sql: ReturnType<typeof neon> | null = null;
 let citationSnapshotColumn: { value: boolean; checkedAt: number } | null = null;
 const SCHEMA_PROBE_TTL_MS = 30_000;
 function getSql(): ReturnType<typeof neon> | null {
-    if (_sql !== null) return _sql;
-    const url = process.env.DATABASE_URL;
-    if (!url) return null;
-    _sql = neon(url);
-    return _sql;
+  if (_sql !== null) return _sql;
+  const url = process.env.DATABASE_URL;
+  if (!url) return null;
+  _sql = neon(url);
+  return _sql;
 }
 
-async function hasCitationSnapshotColumn(
-    sql: ReturnType<typeof neon>,
-): Promise<boolean> {
-    if (
-        citationSnapshotColumn &&
-        Date.now() - citationSnapshotColumn.checkedAt < SCHEMA_PROBE_TTL_MS
-    ) {
-        return citationSnapshotColumn.value;
-    }
-    try {
-        const rows = (await sql`
+async function hasCitationSnapshotColumn(sql: ReturnType<typeof neon>): Promise<boolean> {
+  if (
+    citationSnapshotColumn &&
+    Date.now() - citationSnapshotColumn.checkedAt < SCHEMA_PROBE_TTL_MS
+  ) {
+    return citationSnapshotColumn.value;
+  }
+  try {
+    const rows = (await sql`
             SELECT EXISTS (
                 SELECT 1
                 FROM information_schema.columns
@@ -79,22 +77,22 @@ async function hasCitationSnapshotColumn(
                   AND column_name = 'citation_snapshots'
             ) AS exists
         `) as Array<{ exists: boolean }>;
-        const value = Boolean(rows[0]?.exists);
-        citationSnapshotColumn = { value, checkedAt: Date.now() };
-        return value;
-    } catch {
-        // A probe failure must not drop an otherwise valid conversation turn.
-        // Fall back to the legacy insert and retry the probe after the TTL.
-        citationSnapshotColumn = { value: false, checkedAt: Date.now() };
-        return false;
-    }
+    const value = Boolean(rows[0]?.exists);
+    citationSnapshotColumn = { value, checkedAt: Date.now() };
+    return value;
+  } catch {
+    // A probe failure must not drop an otherwise valid conversation turn.
+    // Fall back to the legacy insert and retry the probe after the TTL.
+    citationSnapshotColumn = { value: false, checkedAt: Date.now() };
+    return false;
+  }
 }
 
 export function newSessionId(): string {
-    // 32 bytes of CSPRNG entropy, base64url-encoded (43 chars). Fits the
-    // client contract (^[A-Za-z0-9_-]{1,128}$) and is unguessable, unlike
-    // the previous Math.random()-derived short id.
-    return randomBytes(32).toString("base64url");
+  // 32 bytes of CSPRNG entropy, base64url-encoded (43 chars). Fits the
+  // client contract (^[A-Za-z0-9_-]{1,128}$) and is unguessable, unlike
+  // the previous Math.random()-derived short id.
+  return randomBytes(32).toString("base64url");
 }
 
 /**
@@ -106,21 +104,19 @@ export function newSessionId(): string {
  * 30-minute TTL window and the piggybacked retention sweep.
  */
 function hashSessionToken(token: string): string {
-    return createHash("sha256").update(token).digest("hex");
+  return createHash("sha256").update(token).digest("hex");
 }
 
-export async function getConversationHistory(
-    sessionId: string,
-): Promise<ConversationTurn[]> {
-    if (isRagEvaluationMode()) {
-        return liveEvaluationTurns(sessionId).slice(-MAX_TURNS);
-    }
-    const sql = getSql();
-    if (!sql) return [];
-    const sessionKey = hashSessionToken(sessionId);
-    const sinceIso = new Date(Date.now() - TTL_MS).toISOString();
-    try {
-        const rows = (await sql`
+export async function getConversationHistory(sessionId: string): Promise<ConversationTurn[]> {
+  if (isRagEvaluationMode()) {
+    return liveEvaluationTurns(sessionId).slice(-MAX_TURNS);
+  }
+  const sql = getSql();
+  if (!sql) return [];
+  const sessionKey = hashSessionToken(sessionId);
+  const sinceIso = new Date(Date.now() - TTL_MS).toISOString();
+  try {
+    const rows = (await sql`
             SELECT question, answer, cited_article_ids,
                    COALESCE(
                      to_jsonb(ask_session_turns)->'citation_snapshots',
@@ -133,89 +129,86 @@ export async function getConversationHistory(
             ORDER BY created_at DESC
             LIMIT ${MAX_TURNS}
         `) as Array<{
-            question: string;
-            answer: string;
-            cited_article_ids: string[] | null;
-            citation_snapshots: unknown;
-            created_at: string | Date;
-        }>;
-        // DB returns most-recent-first; reverse so callers see
-        // chronological order like the old in-memory Map did.
-        return rows.reverse().map((r) => ({
-            question: r.question,
-            answer: r.answer,
-            citedArticleIds: r.cited_article_ids ?? [],
-            citationSnapshots: Array.isArray(r.citation_snapshots)
-                ? r.citation_snapshots.filter(isCitationSnapshot)
-                : [],
-            timestamp:
-                r.created_at instanceof Date
-                    ? r.created_at.getTime()
-                    : new Date(String(r.created_at)).getTime(),
-        }));
-    } catch (err) {
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                module: "conversation-store",
-                op: "getConversationHistory",
-                msg: "db read failed; returning empty history",
-                err: err instanceof Error ? err.message : String(err),
-            }),
-        );
-        return [];
-    }
+      question: string;
+      answer: string;
+      cited_article_ids: string[] | null;
+      citation_snapshots: unknown;
+      created_at: string | Date;
+    }>;
+    // DB returns most-recent-first; reverse so callers see
+    // chronological order like the old in-memory Map did.
+    return rows.reverse().map((r) => ({
+      question: r.question,
+      answer: r.answer,
+      citedArticleIds: r.cited_article_ids ?? [],
+      citationSnapshots: Array.isArray(r.citation_snapshots)
+        ? r.citation_snapshots.filter(isCitationSnapshot)
+        : [],
+      timestamp:
+        r.created_at instanceof Date
+          ? r.created_at.getTime()
+          : new Date(String(r.created_at)).getTime(),
+    }));
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        module: "conversation-store",
+        op: "getConversationHistory",
+        msg: "db read failed; returning empty history",
+        err: err instanceof Error ? err.message : String(err),
+      })
+    );
+    return [];
+  }
 }
 
 export async function addConversationTurn(
-    sessionId: string,
-    question: string,
-    answer: string,
-    citedArticleIds: string[],
-    citationSnapshots: CitationSnapshot[] = [],
+  sessionId: string,
+  question: string,
+  answer: string,
+  citedArticleIds: string[],
+  citationSnapshots: CitationSnapshot[] = []
 ): Promise<void> {
-    const stored =
-        answer.length > ANSWER_TRUNCATE_CHARS
-            ? answer.slice(
-                  0,
-                  ANSWER_TRUNCATE_CHARS - TRUNCATION_MARKER.length,
-              ) + TRUNCATION_MARKER
-            : answer;
-    if (isRagEvaluationMode()) {
-        const turns = liveEvaluationTurns(sessionId);
-        turns.push({
-            question,
-            answer: stored,
-            citedArticleIds: [...citedArticleIds],
-            citationSnapshots: citationSnapshots.map((snapshot) => ({ ...snapshot })),
-            timestamp: Date.now(),
-        });
-        evaluationSessions.set(sessionId, turns.slice(-MAX_TURNS));
-        return;
-    }
-    const sql = getSql();
-    if (!sql) return;
-    const sessionKey = hashSessionToken(sessionId);
-    const cutoffIso = new Date(Date.now() - TTL_MS).toISOString();
-    try {
-        const snapshotColumnAvailable = await hasCitationSnapshotColumn(sql);
-        const insert = snapshotColumnAvailable
-            ? sql`
+  const stored =
+    answer.length > ANSWER_TRUNCATE_CHARS
+      ? answer.slice(0, ANSWER_TRUNCATE_CHARS - TRUNCATION_MARKER.length) + TRUNCATION_MARKER
+      : answer;
+  if (isRagEvaluationMode()) {
+    const turns = liveEvaluationTurns(sessionId);
+    turns.push({
+      question,
+      answer: stored,
+      citedArticleIds: [...citedArticleIds],
+      citationSnapshots: citationSnapshots.map((snapshot) => ({ ...snapshot })),
+      timestamp: Date.now(),
+    });
+    evaluationSessions.set(sessionId, turns.slice(-MAX_TURNS));
+    return;
+  }
+  const sql = getSql();
+  if (!sql) return;
+  const sessionKey = hashSessionToken(sessionId);
+  const cutoffIso = new Date(Date.now() - TTL_MS).toISOString();
+  try {
+    const snapshotColumnAvailable = await hasCitationSnapshotColumn(sql);
+    const insert = snapshotColumnAvailable
+      ? sql`
                 INSERT INTO ask_session_turns
                   (session_id, question, answer, cited_article_ids, citation_snapshots)
                 VALUES
                   (${sessionKey}, ${question}, ${stored}, ${citedArticleIds}, ${JSON.stringify(citationSnapshots)}::jsonb)
             `
-            : sql`
+      : sql`
                 INSERT INTO ask_session_turns
                   (session_id, question, answer, cited_article_ids)
                 VALUES
                   (${sessionKey}, ${question}, ${stored}, ${citedArticleIds})
             `;
-        await sql.transaction([
-            insert,
-            sql`DELETE FROM ask_session_turns WHERE created_at < ${cutoffIso}`,
-            sql`
+    await sql.transaction([
+      insert,
+      sql`DELETE FROM ask_session_turns WHERE created_at < ${cutoffIso}`,
+      sql`
                 DELETE FROM ask_session_turns
                 WHERE session_id = ${sessionKey}
                   AND id NOT IN (
@@ -225,23 +218,21 @@ export async function addConversationTurn(
                     LIMIT ${MAX_TURNS}
                   )
             `,
-        ]);
-    } catch (err) {
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                module: "conversation-store",
-                op: "addConversationTurn",
-                msg: "db write failed; turn dropped",
-                err: err instanceof Error ? err.message : String(err),
-            }),
-        );
-    }
+    ]);
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        module: "conversation-store",
+        op: "addConversationTurn",
+        msg: "db write failed; turn dropped",
+        err: err instanceof Error ? err.message : String(err),
+      })
+    );
+  }
 }
 
-export type DeleteConversationTurnsResult =
-    | { ok: true }
-    | { ok: false; error: string };
+export type DeleteConversationTurnsResult = { ok: true } | { ok: false; error: string };
 
 /**
  * Wipes every stored turn for a session. Used by the "Clear
@@ -251,33 +242,33 @@ export type DeleteConversationTurnsResult =
  * zero rows is a success — the session was already gone.
  */
 export async function deleteConversationTurns(
-    sessionId: string,
+  sessionId: string
 ): Promise<DeleteConversationTurnsResult> {
-    if (isRagEvaluationMode()) {
-        evaluationSessions.delete(sessionId);
-        return { ok: true };
-    }
-    const sql = getSql();
-    if (!sql) return { ok: true };
-    try {
-        await sql`
+  if (isRagEvaluationMode()) {
+    evaluationSessions.delete(sessionId);
+    return { ok: true };
+  }
+  const sql = getSql();
+  if (!sql) return { ok: true };
+  try {
+    await sql`
             DELETE FROM ask_session_turns
             WHERE session_id = ${hashSessionToken(sessionId)}
         `;
-        return { ok: true };
-    } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                module: "conversation-store",
-                op: "deleteConversationTurns",
-                msg: "db delete failed; session will age out via TTL",
-                err: error,
-            }),
-        );
-        return { ok: false, error };
-    }
+    return { ok: true };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        module: "conversation-store",
+        op: "deleteConversationTurns",
+        msg: "db delete failed; session will age out via TTL",
+        err: error,
+      })
+    );
+    return { ok: false, error };
+  }
 }
 
 /**
@@ -287,41 +278,39 @@ export async function deleteConversationTurns(
  * expired' banner instead of a silent empty state.
  */
 export async function sessionHasAnyTurns(sessionId: string): Promise<boolean> {
-    if (isRagEvaluationMode()) {
-        return liveEvaluationTurns(sessionId).length > 0;
-    }
-    const sql = getSql();
-    if (!sql) return false;
-    try {
-        const rows = (await sql`
+  if (isRagEvaluationMode()) {
+    return liveEvaluationTurns(sessionId).length > 0;
+  }
+  const sql = getSql();
+  if (!sql) return false;
+  try {
+    const rows = (await sql`
             SELECT 1
             FROM ask_session_turns
             WHERE session_id = ${hashSessionToken(sessionId)}
             LIMIT 1
         `) as Array<Record<string, unknown>>;
-        return rows.length > 0;
-    } catch (err) {
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                module: "conversation-store",
-                op: "sessionHasAnyTurns",
-                msg: "db probe failed; assuming no turns",
-                err: err instanceof Error ? err.message : String(err),
-            }),
-        );
-        return false;
-    }
+    return rows.length > 0;
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        module: "conversation-store",
+        op: "sessionHasAnyTurns",
+        msg: "db probe failed; assuming no turns",
+        err: err instanceof Error ? err.message : String(err),
+      })
+    );
+    return false;
+  }
 }
 
 export function formatHistoryForPrompt(turns: ConversationTurn[]): string {
-    if (turns.length === 0) return "";
-    return turns
-        .map((t, i) => `[Turn ${i + 1}] Q: ${t.question}\nA: ${t.answer}`)
-        .join("\n\n");
+  if (turns.length === 0) return "";
+  return turns.map((t, i) => `[Turn ${i + 1}] Q: ${t.question}\nA: ${t.answer}`).join("\n\n");
 }
 
 export function _clearSessionsForTests(): void {
-    evaluationSessions.clear();
-    citationSnapshotColumn = null;
+  evaluationSessions.clear();
+  citationSnapshotColumn = null;
 }

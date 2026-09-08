@@ -20,8 +20,7 @@ const CATEGORY_LOOKUP: Record<string, Article["category"]> = {
   photography: "Arts & Entertainment",
 };
 
-const normalizeText = (value: unknown): string =>
-  typeof value === "string" ? value : "";
+const normalizeText = (value: unknown): string => (typeof value === "string" ? value : "");
 
 const normalizeCategory = (value: unknown): Article["category"] => {
   if (typeof value !== "string") return "Campus News";
@@ -32,7 +31,7 @@ const normalizeId = (
   value: unknown,
   editionDate: string,
   page: number | undefined,
-  index: number,
+  index: number
 ): string => {
   if (typeof value === "string" && value.trim().length > 0) {
     return value;
@@ -40,10 +39,7 @@ const normalizeId = (
   return `${editionDate}-article-${page ?? 0}-${index}`;
 };
 
-export function normalizeArticles(
-  rawArticles: RawArticle[],
-  editionDate: string,
-): Article[] {
+export function normalizeArticles(rawArticles: RawArticle[], editionDate: string): Article[] {
   return rawArticles.map((a, index) => {
     const normalizedFullText = normalizeText(a.fullText);
     const page = typeof a.page === "number" ? a.page : 1;

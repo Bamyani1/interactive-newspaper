@@ -25,9 +25,11 @@ function monthIndex(year: number, month: number): number {
 
 function packedArchiveWithMonth(year: number, month: number, tracks: RawTrack[]): unknown {
   const months: Array<TrackTuple[] | null> = new Array(TOTAL_MONTHS).fill(null);
-  months[monthIndex(year, month)] = tracks.map(
-    (t): TrackTuple => [t.title, t.artist, t.youtube_id],
-  );
+  months[monthIndex(year, month)] = tracks.map((t): TrackTuple => [
+    t.title,
+    t.artist,
+    t.youtube_id,
+  ]);
   return { start: `${START_YEAR}-01`, end: `${END_YEAR}-12`, months };
 }
 
@@ -116,7 +118,7 @@ describe("SidebarPlayer monthly mode", () => {
         start: `${START_YEAR}-01`,
         end: `${END_YEAR}-12`,
         months: new Array(TOTAL_MONTHS).fill(null),
-      }),
+      })
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -133,9 +135,7 @@ describe("SidebarPlayer monthly mode", () => {
     render(<SidebarPlayer currentDate="1990-10-18" />);
 
     await screen.findByText("Unable to load monthly chart data right now.");
-    expect(
-      screen.queryByText("No chart data was found for this month."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("No chart data was found for this month.")).not.toBeInTheDocument();
   });
 
   it("returns null when no currentDate is provided", () => {

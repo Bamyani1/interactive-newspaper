@@ -18,9 +18,9 @@ import type { RetrievalMethod } from "@/src/lib/db";
 import type { Citation } from "@/src/types";
 import { groundAgentAnswer } from "@/src/lib/answer-grounding";
 import {
-    applyCoverageAnswerPolicy,
-    buildCoveragePromptBlock,
-    type ArchiveCoverage,
+  applyCoverageAnswerPolicy,
+  buildCoveragePromptBlock,
+  type ArchiveCoverage,
 } from "@/src/lib/rag-coverage";
 
 // ─── Constants ──────────────────────────────────────────────────
@@ -75,45 +75,45 @@ Output only the final user-facing answer text.`;
 // ─── Types ──────────────────────────────────────────────────────
 
 export interface ArticleMeta {
-    headline: string;
-    editionDate: string;
-    contentRevisionId?: string;
-    category: string;
-    summary: string;
-    byline: string | null;
-    bodySnippet: string;
-    imageUrls: string[];
-    imageCaptions: (string | null)[];
-    relevanceScore?: number;
-    /** Full retrieval-local passage or read_article body for final synthesis. */
-    evidenceText?: string;
+  headline: string;
+  editionDate: string;
+  contentRevisionId?: string;
+  category: string;
+  summary: string;
+  byline: string | null;
+  bodySnippet: string;
+  imageUrls: string[];
+  imageCaptions: (string | null)[];
+  relevanceScore?: number;
+  /** Full retrieval-local passage or read_article body for final synthesis. */
+  evidenceText?: string;
 }
 
 export interface AgentResult {
-    answer: string;
-    citations: Citation[];
-    /**
-     * Ordered union of the articles this turn should surface as sources:
-     * every article cited in prose, then any article that owns an image the
-     * model embedded inline without citing it. The route both renders and
-     * persists this list, so it is what a restored turn is rebuilt from.
-     */
-    sourceArticleIds: string[];
-    confidence: "low" | "medium" | "high";
-    toolCallCount: number;
-    rounds: number;
-    articleMeta: Map<string, ArticleMeta>;
-    retrievalTimeMs: number;
-    generationTimeMs: number;
-    retrievalMethod: RetrievalMethod | "none";
+  answer: string;
+  citations: Citation[];
+  /**
+   * Ordered union of the articles this turn should surface as sources:
+   * every article cited in prose, then any article that owns an image the
+   * model embedded inline without citing it. The route both renders and
+   * persists this list, so it is what a restored turn is rebuilt from.
+   */
+  sourceArticleIds: string[];
+  confidence: "low" | "medium" | "high";
+  toolCallCount: number;
+  rounds: number;
+  articleMeta: Map<string, ArticleMeta>;
+  retrievalTimeMs: number;
+  generationTimeMs: number;
+  retrievalMethod: RetrievalMethod | "none";
 }
 
 export interface AgentProgressEvent {
-    type: "tool_call" | "tool_result";
-    tool: string;
-    round: number;
-    args?: Record<string, unknown>;
-    summary?: string;
+  type: "tool_call" | "tool_result";
+  tool: string;
+  round: number;
+  args?: Record<string, unknown>;
+  summary?: string;
 }
 
 // ─── Source Article Ids ─────────────────────────────────────────
@@ -127,13 +127,13 @@ const IMAGE_EMBED_RE = /!\[[^\]]*\]\(([^)\s]+)\)/g;
  * from a feature module.
  */
 function urlVariants(url: string): string[] {
-    const out = new Set<string>([url, url.replace(/ /g, "%20")]);
-    try {
-        out.add(decodeURI(url));
-    } catch {
-        // Malformed percent escape — the raw form above still matches.
-    }
-    return [...out];
+  const out = new Set<string>([url, url.replace(/ /g, "%20")]);
+  try {
+    out.add(decodeURI(url));
+  } catch {
+    // Malformed percent escape — the raw form above still matches.
+  }
+  return [...out];
 }
 
 /**
@@ -148,237 +148,223 @@ function urlVariants(url: string): string[] {
  * from exactly this list.
  */
 export function buildAgentSourceArticleIds(
-    answer: string,
-    citations: Citation[],
-    articleMeta: Map<string, ArticleMeta>,
+  answer: string,
+  citations: Citation[],
+  articleMeta: Map<string, ArticleMeta>
 ): string[] {
-    const ids: string[] = [];
-    const seen = new Set<string>();
-    const add = (id: string) => {
-        if (seen.has(id)) return;
-        seen.add(id);
-        ids.push(id);
-    };
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const add = (id: string) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  };
 
-    citations.forEach((citation) => add(citation.articleId));
+  citations.forEach((citation) => add(citation.articleId));
 
-    const embedded = new Set<string>();
-    for (const match of answer.matchAll(IMAGE_EMBED_RE)) {
-        urlVariants(match[1]).forEach((variant) => embedded.add(variant));
-    }
-    if (embedded.size === 0) return ids;
+  const embedded = new Set<string>();
+  for (const match of answer.matchAll(IMAGE_EMBED_RE)) {
+    urlVariants(match[1]).forEach((variant) => embedded.add(variant));
+  }
+  if (embedded.size === 0) return ids;
 
-    for (const [id, meta] of articleMeta) {
-        if (seen.has(id)) continue;
-        const owns = meta.imageUrls.some((url) =>
-            urlVariants(url).some((variant) => embedded.has(variant)),
-        );
-        if (owns) add(id);
-    }
+  for (const [id, meta] of articleMeta) {
+    if (seen.has(id)) continue;
+    const owns = meta.imageUrls.some((url) =>
+      urlVariants(url).some((variant) => embedded.has(variant))
+    );
+    if (owns) add(id);
+  }
 
-    return ids;
+  return ids;
 }
 
 // ─── Citation Parsing ───────────────────────────────────────────
 
 const CITATION_RE = /\[(\d{4}-\d{2}-\d{2}-\d+)\]/g;
 
-export function parseCitations(
-    text: string,
-    articleLookup: Map<string, ArticleMeta>,
-): Citation[] {
-    CITATION_RE.lastIndex = 0;
-    const seen = new Set<string>();
-    const citations: Citation[] = [];
+export function parseCitations(text: string, articleLookup: Map<string, ArticleMeta>): Citation[] {
+  CITATION_RE.lastIndex = 0;
+  const seen = new Set<string>();
+  const citations: Citation[] = [];
 
-    let match;
-    while ((match = CITATION_RE.exec(text)) !== null) {
-        const articleId = match[1];
-        if (seen.has(articleId)) continue;
-        seen.add(articleId);
+  let match;
+  while ((match = CITATION_RE.exec(text)) !== null) {
+    const articleId = match[1];
+    if (seen.has(articleId)) continue;
+    seen.add(articleId);
 
-        const meta = articleLookup.get(articleId);
-        if (!meta) continue;
-        citations.push({
-            articleId,
-            ...(meta.contentRevisionId
-                ? { contentRevisionId: meta.contentRevisionId }
-                : {}),
-            headline: meta.headline,
-            editionDate: meta.editionDate,
-        });
-    }
+    const meta = articleLookup.get(articleId);
+    if (!meta) continue;
+    citations.push({
+      articleId,
+      ...(meta.contentRevisionId ? { contentRevisionId: meta.contentRevisionId } : {}),
+      headline: meta.headline,
+      editionDate: meta.editionDate,
+    });
+  }
 
-    return citations;
+  return citations;
 }
 
 // ─── Confidence Scoring ─────────────────────────────────────────
 
 export function scoreConfidence(
-    answer: string,
-    citations: Citation[],
-    toolCallCount: number,
-    evidence: {
-        articleLookup?: Map<string, ArticleMeta>;
-        toolErrorCount?: number;
-        successfulSearchCount?: number;
-    } = {},
+  answer: string,
+  citations: Citation[],
+  toolCallCount: number,
+  evidence: {
+    articleLookup?: Map<string, ArticleMeta>;
+    toolErrorCount?: number;
+    successfulSearchCount?: number;
+  } = {}
 ): "low" | "medium" | "high" {
-    if (toolCallCount === 0) return "low";
-    if (/don[''\u2019]t have enough information/i.test(answer)) return "low";
-    if (citations.length === 0) return "low";
-    if ((evidence.successfulSearchCount ?? 1) === 0) return "low";
+  if (toolCallCount === 0) return "low";
+  if (/don[''\u2019]t have enough information/i.test(answer)) return "low";
+  if (citations.length === 0) return "low";
+  if ((evidence.successfulSearchCount ?? 1) === 0) return "low";
 
-    const scores = citations
-        .map((citation) => evidence.articleLookup?.get(citation.articleId)?.relevanceScore)
-        .filter((score): score is number => typeof score === "number");
-    const averageScore =
-        scores.length > 0
-            ? scores.reduce((sum, score) => sum + score, 0) / scores.length
-            : null;
-    const hadToolErrors = (evidence.toolErrorCount ?? 0) > 0;
+  const scores = citations
+    .map((citation) => evidence.articleLookup?.get(citation.articleId)?.relevanceScore)
+    .filter((score): score is number => typeof score === "number");
+  const averageScore =
+    scores.length > 0 ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null;
+  const hadToolErrors = (evidence.toolErrorCount ?? 0) > 0;
 
-    if (
-        citations.length >= 2 &&
-        averageScore !== null &&
-        averageScore >= 7 &&
-        !hadToolErrors
-    ) {
-        return "high";
-    }
-    if (averageScore === null || averageScore >= 5) return "medium";
-    return "low";
+  if (citations.length >= 2 && averageScore !== null && averageScore >= 7 && !hadToolErrors) {
+    return "high";
+  }
+  if (averageScore === null || averageScore >= 5) return "medium";
+  return "low";
 }
 
 // ─── Article Lookup Accumulator ─────────────────────────────────
 
 export function accumulateArticleMeta(
-    toolName: string,
-    result: Record<string, unknown>,
-    lookup: Map<string, ArticleMeta>,
+  toolName: string,
+  result: Record<string, unknown>,
+  lookup: Map<string, ArticleMeta>
 ): void {
-    if (toolName === "search_archive" && Array.isArray(result.results)) {
-        for (const r of result.results) {
-            const rec = r as Record<string, unknown>;
-            if (typeof rec.id === "string" && typeof rec.headline === "string") {
-                const existing = lookup.get(rec.id);
-                const passageText = Array.isArray(rec.relevantPassages)
-                    ? rec.relevantPassages
-                          .filter((passage): passage is string => typeof passage === "string")
-                          .join("\n\n")
-                    : "";
-                const evidenceText =
-                    passageText ||
-                    (typeof rec.excerpt === "string" ? rec.excerpt : "") ||
-                    (typeof rec.summary === "string" ? rec.summary : "");
-                lookup.set(rec.id, {
-                    headline: rec.headline as string,
-                    editionDate: (rec.editionDate as string) ?? (rec.id as string).slice(0, 10),
-                    contentRevisionId:
-                        typeof rec.contentRevisionId === "string"
-                            ? rec.contentRevisionId
-                            : existing?.contentRevisionId,
-                    category: (rec.category as string) ?? "",
-                    summary: (rec.summary as string) ?? existing?.summary ?? "",
-                    byline: (rec.byline as string) ?? existing?.byline ?? null,
-                    bodySnippet:
-                        typeof rec.excerpt === "string"
-                            ? rec.excerpt.slice(0, 300)
-                            : existing?.bodySnippet ?? "",
-                    imageUrls:
-                        Array.isArray(rec.imageUrls) && rec.imageUrls.length > 0
-                            ? (rec.imageUrls as string[])
-                            : existing?.imageUrls ?? [],
-                    imageCaptions:
-                        Array.isArray(rec.imageCaptions) && rec.imageCaptions.length > 0
-                            ? (rec.imageCaptions as (string | null)[])
-                            : existing?.imageCaptions ?? [],
-                    relevanceScore:
-                        typeof rec.relevanceScore === "number"
-                            ? Math.max(rec.relevanceScore, existing?.relevanceScore ?? 0)
-                            : existing?.relevanceScore,
-                    evidenceText:
-                        (existing?.evidenceText?.length ?? 0) > evidenceText.length
-                            ? existing?.evidenceText
-                            : evidenceText,
-                });
-            }
-        }
-    }
-
-    if (toolName === "read_article" && typeof result.id === "string") {
-        const existing = lookup.get(result.id as string);
-        const bodyPlain =
-            typeof result.bodyPlain === "string" ? result.bodyPlain : "";
-        lookup.set(result.id as string, {
-            headline: (result.headline as string) ?? (result.id as string),
-            editionDate: (result.editionDate as string) ?? (result.id as string).slice(0, 10),
-            contentRevisionId:
-                typeof result.contentRevisionId === "string"
-                    ? result.contentRevisionId
-                    : existing?.contentRevisionId,
-            category: (result.category as string) ?? "",
-            summary: (result.summary as string) ?? "",
-            byline: (result.byline as string) ?? null,
-            bodySnippet: bodyPlain.slice(0, 300),
-            imageUrls: Array.isArray(result.imageUrls)
-                ? (result.imageUrls as string[])
-                : existing?.imageUrls ?? [],
-            imageCaptions: Array.isArray(result.imageCaptions)
-                ? (result.imageCaptions as (string | null)[])
-                : existing?.imageCaptions ?? [],
-            relevanceScore: existing?.relevanceScore,
-            evidenceText:
-                bodyPlain.length >= (existing?.evidenceText?.length ?? 0)
-                    ? bodyPlain
-                    : existing?.evidenceText,
+  if (toolName === "search_archive" && Array.isArray(result.results)) {
+    for (const r of result.results) {
+      const rec = r as Record<string, unknown>;
+      if (typeof rec.id === "string" && typeof rec.headline === "string") {
+        const existing = lookup.get(rec.id);
+        const passageText = Array.isArray(rec.relevantPassages)
+          ? rec.relevantPassages
+              .filter((passage): passage is string => typeof passage === "string")
+              .join("\n\n")
+          : "";
+        const evidenceText =
+          passageText ||
+          (typeof rec.excerpt === "string" ? rec.excerpt : "") ||
+          (typeof rec.summary === "string" ? rec.summary : "");
+        lookup.set(rec.id, {
+          headline: rec.headline as string,
+          editionDate: (rec.editionDate as string) ?? (rec.id as string).slice(0, 10),
+          contentRevisionId:
+            typeof rec.contentRevisionId === "string"
+              ? rec.contentRevisionId
+              : existing?.contentRevisionId,
+          category: (rec.category as string) ?? "",
+          summary: (rec.summary as string) ?? existing?.summary ?? "",
+          byline: (rec.byline as string) ?? existing?.byline ?? null,
+          bodySnippet:
+            typeof rec.excerpt === "string"
+              ? rec.excerpt.slice(0, 300)
+              : (existing?.bodySnippet ?? ""),
+          imageUrls:
+            Array.isArray(rec.imageUrls) && rec.imageUrls.length > 0
+              ? (rec.imageUrls as string[])
+              : (existing?.imageUrls ?? []),
+          imageCaptions:
+            Array.isArray(rec.imageCaptions) && rec.imageCaptions.length > 0
+              ? (rec.imageCaptions as (string | null)[])
+              : (existing?.imageCaptions ?? []),
+          relevanceScore:
+            typeof rec.relevanceScore === "number"
+              ? Math.max(rec.relevanceScore, existing?.relevanceScore ?? 0)
+              : existing?.relevanceScore,
+          evidenceText:
+            (existing?.evidenceText?.length ?? 0) > evidenceText.length
+              ? existing?.evidenceText
+              : evidenceText,
         });
+      }
     }
+  }
+
+  if (toolName === "read_article" && typeof result.id === "string") {
+    const existing = lookup.get(result.id as string);
+    const bodyPlain = typeof result.bodyPlain === "string" ? result.bodyPlain : "";
+    lookup.set(result.id as string, {
+      headline: (result.headline as string) ?? (result.id as string),
+      editionDate: (result.editionDate as string) ?? (result.id as string).slice(0, 10),
+      contentRevisionId:
+        typeof result.contentRevisionId === "string"
+          ? result.contentRevisionId
+          : existing?.contentRevisionId,
+      category: (result.category as string) ?? "",
+      summary: (result.summary as string) ?? "",
+      byline: (result.byline as string) ?? null,
+      bodySnippet: bodyPlain.slice(0, 300),
+      imageUrls: Array.isArray(result.imageUrls)
+        ? (result.imageUrls as string[])
+        : (existing?.imageUrls ?? []),
+      imageCaptions: Array.isArray(result.imageCaptions)
+        ? (result.imageCaptions as (string | null)[])
+        : (existing?.imageCaptions ?? []),
+      relevanceScore: existing?.relevanceScore,
+      evidenceText:
+        bodyPlain.length >= (existing?.evidenceText?.length ?? 0)
+          ? bodyPlain
+          : existing?.evidenceText,
+    });
+  }
 }
 
 function clippedEvidence(text: string): string {
-    if (text.length <= MAX_FINAL_EVIDENCE_CHARS) return text;
-    const half = Math.floor((MAX_FINAL_EVIDENCE_CHARS - 60) / 2);
-    return `${text.slice(0, half)}\n\n[…middle omitted…]\n\n${text.slice(-half)}`;
+  if (text.length <= MAX_FINAL_EVIDENCE_CHARS) return text;
+  const half = Math.floor((MAX_FINAL_EVIDENCE_CHARS - 60) / 2);
+  return `${text.slice(0, half)}\n\n[…middle omitted…]\n\n${text.slice(-half)}`;
 }
 
 function buildFinalSynthesisInput(params: {
-    question: string;
-    filters?: RetrievalFilters;
-    conversationContext?: string;
-    coverage?: ArchiveCoverage;
-    articles: Map<string, ArticleMeta>;
+  question: string;
+  filters?: RetrievalFilters;
+  conversationContext?: string;
+  coverage?: ArchiveCoverage;
+  articles: Map<string, ArticleMeta>;
 }): string {
-    const rankedArticles = [...params.articles.entries()]
-        .sort(
-            ([, a], [, b]) =>
-                (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0),
-        )
-        .slice(0, MAX_FINAL_ARTICLES);
-    const evidence = rankedArticles.length > 0
-        ? rankedArticles
-              .map(([id, article]) => {
-                  const imageLines = article.imageUrls.map((url, index) => {
-                      const caption = article.imageCaptions[index] ?? "Untitled image";
-                      return `${index + 1}. ${caption} — ${url}`;
-                  });
-                  return `--- Article ${id} ---
+  const rankedArticles = [...params.articles.entries()]
+    .sort(([, a], [, b]) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0))
+    .slice(0, MAX_FINAL_ARTICLES);
+  const evidence =
+    rankedArticles.length > 0
+      ? rankedArticles
+          .map(([id, article]) => {
+            const imageLines = article.imageUrls.map((url, index) => {
+              const caption = article.imageCaptions[index] ?? "Untitled image";
+              return `${index + 1}. ${caption} — ${url}`;
+            });
+            return `--- Article ${id} ---
 Headline: ${article.headline}
 Date: ${article.editionDate}
 Category: ${article.category}
 ${article.byline ? `Author: ${article.byline}\n` : ""}Evidence:
 ${clippedEvidence(article.evidenceText || article.summary || article.bodySnippet)}${imageLines.length > 0 ? `\nImages:\n${imageLines.join("\n")}` : ""}`;
-              })
-              .join("\n\n")
-        : "(No relevant article evidence was returned.)";
-    const history = params.conversationContext
-        ? `CONVERSATION HISTORY:\n${params.conversationContext}\n\n`
-        : "";
-    const filters = params.filters && Object.values(params.filters).some(Boolean)
-        ? `ENFORCED ARCHIVE FILTERS: ${JSON.stringify(params.filters)}\n\n`
-        : "";
-    const coverage = buildCoveragePromptBlock(params.coverage);
-    return `${history}${filters}${coverage ? `${coverage}\n\n` : ""}USER QUESTION (JSON string): ${JSON.stringify(params.question)}
+          })
+          .join("\n\n")
+      : "(No relevant article evidence was returned.)";
+  const history = params.conversationContext
+    ? `CONVERSATION HISTORY:\n${params.conversationContext}\n\n`
+    : "";
+  const filters =
+    params.filters && Object.values(params.filters).some(Boolean)
+      ? `ENFORCED ARCHIVE FILTERS: ${JSON.stringify(params.filters)}\n\n`
+      : "";
+  const coverage = buildCoveragePromptBlock(params.coverage);
+  return `${history}${filters}${coverage ? `${coverage}\n\n` : ""}USER QUESTION (JSON string): ${JSON.stringify(params.question)}
 
 ARCHIVE EVIDENCE:
 ${evidence}`;
@@ -386,405 +372,376 @@ ${evidence}`;
 
 // ─── Tool Result Summary (for SSE progress events) ─────────────
 
-function summarizeToolResult(
-    toolName: string,
-    result: Record<string, unknown>,
-): string {
-    if (result.error) {
-        // This string is streamed to unauthenticated SSE clients. Raw tool
-        // errors carry internals — DB timeout text, RAG index-build and
-        // corpus identifiers — so only the model's own argument mistakes,
-        // which describe the call and nothing about the server, are echoed.
-        return result.kind === "invalid_arguments"
-            ? `Error: ${result.error}`
-            : "Error: archive lookup failed";
-    }
-    if (toolName === "search_archive" && Array.isArray(result.results)) {
-        return `Found ${result.results.length} articles`;
-    }
-    if (toolName === "read_article" && typeof result.headline === "string") {
-        return `Read: ${result.headline}`;
-    }
-    if (toolName === "list_editions" && Array.isArray(result.editions)) {
-        return `${result.editions.length} editions`;
-    }
-    return "Done";
+function summarizeToolResult(toolName: string, result: Record<string, unknown>): string {
+  if (result.error) {
+    // This string is streamed to unauthenticated SSE clients. Raw tool
+    // errors carry internals — DB timeout text, RAG index-build and
+    // corpus identifiers — so only the model's own argument mistakes,
+    // which describe the call and nothing about the server, are echoed.
+    return result.kind === "invalid_arguments"
+      ? `Error: ${result.error}`
+      : "Error: archive lookup failed";
+  }
+  if (toolName === "search_archive" && Array.isArray(result.results)) {
+    return `Found ${result.results.length} articles`;
+  }
+  if (toolName === "read_article" && typeof result.headline === "string") {
+    return `Read: ${result.headline}`;
+  }
+  if (toolName === "list_editions" && Array.isArray(result.editions)) {
+    return `${result.editions.length} editions`;
+  }
+  return "Done";
 }
 
 // ─── Structured Logging Helper ──────────────────────────────────
 
-function logWarn(requestId: string | undefined, msg: string, extra?: Record<string, unknown>): void {
-    console.warn(JSON.stringify({
-        level: "warn",
-        route: "/api/ask",
-        requestId,
-        stage: "agent",
-        msg,
-        ...extra,
-    }));
+function logWarn(
+  requestId: string | undefined,
+  msg: string,
+  extra?: Record<string, unknown>
+): void {
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      route: "/api/ask",
+      requestId,
+      stage: "agent",
+      msg,
+      ...extra,
+    })
+  );
 }
 
 function logError(requestId: string | undefined, msg: string, err: unknown): void {
-    console.error(JSON.stringify({
-        level: "error",
-        route: "/api/ask",
-        requestId,
-        stage: "agent",
-        msg,
-        err: err instanceof Error ? err.message : String(err),
-    }));
+  console.error(
+    JSON.stringify({
+      level: "error",
+      route: "/api/ask",
+      requestId,
+      stage: "agent",
+      msg,
+      err: err instanceof Error ? err.message : String(err),
+    })
+  );
 }
 
 function textFromParts(parts: Part[] | undefined): string {
-    return (parts ?? [])
-        .filter((part): part is Part & { text: string } => typeof part.text === "string")
-        .map((part) => part.text)
-        .join("")
-        .trim();
+  return (parts ?? [])
+    .filter((part): part is Part & { text: string } => typeof part.text === "string")
+    .map((part) => part.text)
+    .join("")
+    .trim();
 }
 
-function combinedRetrievalMethod(
-    methods: Set<RetrievalMethod>,
-): RetrievalMethod | "none" {
-    if (methods.size === 0) return "none";
-    if (methods.has("hybrid") || methods.size > 1) return "hybrid";
-    return [...methods][0];
+function combinedRetrievalMethod(methods: Set<RetrievalMethod>): RetrievalMethod | "none" {
+  if (methods.size === 0) return "none";
+  if (methods.has("hybrid") || methods.size > 1) return "hybrid";
+  return [...methods][0];
 }
 
 // ─── Main Loop ──────────────────────────────────────────────────
 
 export async function runAgentLoop(
-    question: string,
-    opts: {
-        signal?: AbortSignal;
-        requestId?: string;
-        conversationContext?: string;
-        filters?: RetrievalFilters;
-        coverage?: ArchiveCoverage;
-        onProgress?: (event: AgentProgressEvent) => void;
-    } = {},
+  question: string,
+  opts: {
+    signal?: AbortSignal;
+    requestId?: string;
+    conversationContext?: string;
+    filters?: RetrievalFilters;
+    coverage?: ArchiveCoverage;
+    onProgress?: (event: AgentProgressEvent) => void;
+  } = {}
 ): Promise<AgentResult> {
-    const {
-        signal,
+  const { signal, requestId, conversationContext, filters, coverage, onProgress } = opts;
+
+  const client = getGeminiClient();
+  const articleLookup = new Map<string, ArticleMeta>();
+
+  const historyBlock = conversationContext
+    ? `CONVERSATION HISTORY:\n${conversationContext}\n\n`
+    : "";
+  const filterBlock =
+    filters && Object.values(filters).some(Boolean)
+      ? `ENFORCED ARCHIVE FILTERS: ${JSON.stringify(filters)}\n`
+      : "";
+  const coverageBlock = buildCoveragePromptBlock(coverage);
+  const userText = `${historyBlock}${filterBlock}${coverageBlock ? `${coverageBlock}\n\n` : ""}USER QUESTION (JSON string): ${JSON.stringify(question)}`;
+
+  const contents: Content[] = [{ role: "user", parts: [{ text: userText }] }];
+
+  let round = 0;
+  let toolCallCount = 0;
+  let answerText = "";
+  let retrievalTimeMs = 0;
+  let generationTimeMs = 0;
+  let toolErrorCount = 0;
+  let successfulSearchCount = 0;
+  let finalAnswerProduced = false;
+  const retrievalMethods = new Set<RetrievalMethod>();
+
+  try {
+    while (round < MAX_TOOL_ROUNDS) {
+      if (signal?.aborted) {
+        return {
+          answer:
+            "The request timed out before a complete answer could be generated. Please try a simpler question.",
+          citations: [],
+          sourceArticleIds: [],
+          confidence: "low",
+          toolCallCount,
+          rounds: round,
+          articleMeta: articleLookup,
+          retrievalTimeMs,
+          generationTimeMs,
+          retrievalMethod: combinedRetrievalMethod(retrievalMethods),
+        };
+      }
+
+      const modelStart = Date.now();
+      const response = await executeTrackedGenerationCall({
+        model: AGENT_MODEL,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
         requestId,
-        conversationContext,
-        filters,
-        coverage,
-        onProgress,
-    } = opts;
+        op: `agent.round${round}`,
+        call: () =>
+          client.models.generateContent({
+            model: AGENT_MODEL,
+            contents,
+            config: {
+              systemInstruction: AGENT_SYSTEM_PROMPT,
+              tools: [{ functionDeclarations: AGENT_TOOL_DECLARATIONS as FunctionDeclaration[] }],
+              maxOutputTokens: MAX_OUTPUT_TOKENS,
+              thinkingConfig: {
+                thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
+              },
+              abortSignal: signal,
+            },
+          }),
+      });
+      generationTimeMs += Date.now() - modelStart;
 
-    const client = getGeminiClient();
-    const articleLookup = new Map<string, ArticleMeta>();
+      const functionCalls = response.functionCalls;
 
-    const historyBlock = conversationContext
-        ? `CONVERSATION HISTORY:\n${conversationContext}\n\n`
-        : "";
-    const filterBlock = filters && Object.values(filters).some(Boolean)
-        ? `ENFORCED ARCHIVE FILTERS: ${JSON.stringify(filters)}\n`
-        : "";
-    const coverageBlock = buildCoveragePromptBlock(coverage);
-    const userText = `${historyBlock}${filterBlock}${coverageBlock ? `${coverageBlock}\n\n` : ""}USER QUESTION (JSON string): ${JSON.stringify(question)}`;
-
-    const contents: Content[] = [
-        { role: "user", parts: [{ text: userText }] },
-    ];
-
-    let round = 0;
-    let toolCallCount = 0;
-    let answerText = "";
-    let retrievalTimeMs = 0;
-    let generationTimeMs = 0;
-    let toolErrorCount = 0;
-    let successfulSearchCount = 0;
-    let finalAnswerProduced = false;
-    const retrievalMethods = new Set<RetrievalMethod>();
-
-    try {
-        while (round < MAX_TOOL_ROUNDS) {
-            if (signal?.aborted) {
-                return {
-                    answer: "The request timed out before a complete answer could be generated. Please try a simpler question.",
-                    citations: [],
-                    sourceArticleIds: [],
-                    confidence: "low",
-                    toolCallCount,
-                    rounds: round,
-                    articleMeta: articleLookup,
-                    retrievalTimeMs,
-                    generationTimeMs,
-                    retrievalMethod: combinedRetrievalMethod(retrievalMethods),
-                };
-            }
-
-            const modelStart = Date.now();
-            const response = await executeTrackedGenerationCall({
-                model: AGENT_MODEL,
-                maxOutputTokens: MAX_OUTPUT_TOKENS,
-                requestId,
-                op: `agent.round${round}`,
-                call: () =>
-                    client.models.generateContent({
-                        model: AGENT_MODEL,
-                        contents,
-                        config: {
-                            systemInstruction: AGENT_SYSTEM_PROMPT,
-                            tools: [{ functionDeclarations: AGENT_TOOL_DECLARATIONS as FunctionDeclaration[] }],
-                            maxOutputTokens: MAX_OUTPUT_TOKENS,
-                            thinkingConfig: {
-                                thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
-                            },
-                            abortSignal: signal,
-                        },
-                    }),
+      if (functionCalls && functionCalls.length > 0) {
+        const toolStart = Date.now();
+        const results = await Promise.all(
+          functionCalls.map(async (call, idx) => {
+            onProgress?.({
+              type: "tool_call",
+              tool: call.name!,
+              round,
+              args: call.args as Record<string, unknown> | undefined,
             });
-            generationTimeMs += Date.now() - modelStart;
 
-            const functionCalls = response.functionCalls;
-
-            if (functionCalls && functionCalls.length > 0) {
-                const toolStart = Date.now();
-                const results = await Promise.all(
-                    functionCalls.map(async (call, idx) => {
-                        onProgress?.({
-                            type: "tool_call",
-                            tool: call.name!,
-                            round,
-                            args: call.args as Record<string, unknown> | undefined,
-                        });
-
-                        const toolResult = await executeTool(
-                            call.name!,
-                            call.args ?? {},
-                            { signal, requestId, filters },
-                        );
-
-                        accumulateArticleMeta(call.name!, toolResult, articleLookup);
-
-                        if (toolResult.error) {
-                            toolErrorCount += 1;
-                            logWarn(requestId, `tool ${call.name} returned error`, {
-                                tool: call.name,
-                                round,
-                                error: toolResult.error,
-                            });
-                        }
-                        if (
-                            call.name === "search_archive" &&
-                            Array.isArray(toolResult.results)
-                        ) {
-                            successfulSearchCount += 1;
-                            const method = (
-                                toolResult.retrieval as
-                                    | Record<string, unknown>
-                                    | undefined
-                            )?.method;
-                            if (
-                                method === "hybrid" ||
-                                method === "fts" ||
-                                method === "vector"
-                            ) {
-                                retrievalMethods.add(method);
-                            }
-                        }
-
-                        const summary = summarizeToolResult(call.name!, toolResult);
-                        onProgress?.({
-                            type: "tool_result",
-                            tool: call.name!,
-                            round,
-                            summary,
-                        });
-
-                        return {
-                            id: call.id ?? `${call.name}-${round}-${idx}`,
-                            name: call.name!,
-                            response: toolResult,
-                        };
-                    }),
-                );
-                retrievalTimeMs += Date.now() - toolStart;
-
-                const allErrors = results.every((r) =>
-                    typeof (r.response as Record<string, unknown>).error === "string",
-                );
-                if (allErrors) {
-                    logError(requestId, "all tools in round returned errors", { round });
-                }
-
-                toolCallCount += functionCalls.length;
-
-                // Capture any text the model produced alongside function calls
-                const responseText = textFromParts(
-                    response.candidates?.[0]?.content?.parts,
-                );
-                if (responseText) {
-                    answerText = responseText;
-                }
-
-                const modelParts = response.candidates?.[0]?.content?.parts;
-                if (modelParts) {
-                    contents.push({ role: "model", parts: modelParts });
-                }
-
-                contents.push({
-                    role: "user",
-                    parts: results.map((r) => ({
-                        functionResponse: {
-                            id: r.id,
-                            name: r.name,
-                            response: r.response,
-                        },
-                    })),
-                });
-
-                round++;
-            } else {
-                answerText = textFromParts(
-                    response.candidates?.[0]?.content?.parts,
-                );
-                finalAnswerProduced = true;
-                break;
-            }
-        }
-
-        if (!finalAnswerProduced && !signal?.aborted) {
-            // The tool budget is an orchestration boundary, not an incomplete
-            // answer. Make one final no-tools call so the model must synthesize
-            // from evidence already present in the conversation.
-            const finalStart = Date.now();
-            const finalResponse = await executeTrackedGenerationCall({
-                model: AGENT_MODEL,
-                maxOutputTokens: MAX_OUTPUT_TOKENS,
-                requestId,
-                op: "agent.finalize",
-                call: () =>
-                    client.models.generateContent({
-                        model: AGENT_MODEL,
-                        // Start a fresh synthesis turn. Replaying prior model
-                        // function-call parts conditions Flash-Lite to emit another
-                        // call even when function calling is explicitly NONE.
-                        contents: [
-                            {
-                                role: "user",
-                                parts: [
-                                    {
-                                        text: buildFinalSynthesisInput({
-                                            question,
-                                            filters,
-                                            conversationContext,
-                                            coverage,
-                                            articles: articleLookup,
-                                        }),
-                                    },
-                                ],
-                            },
-                        ],
-                        config: {
-                            systemInstruction: AGENT_FINAL_SYSTEM_PROMPT,
-                            toolConfig: {
-                                functionCallingConfig: {
-                                    mode: FunctionCallingConfigMode.NONE,
-                                },
-                            },
-                            maxOutputTokens: MAX_OUTPUT_TOKENS,
-                            thinkingConfig: {
-                                thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
-                            },
-                            abortSignal: signal,
-                        },
-                    }),
+            const toolResult = await executeTool(call.name!, call.args ?? {}, {
+              signal,
+              requestId,
+              filters,
             });
-            generationTimeMs += Date.now() - finalStart;
-            answerText = textFromParts(
-                finalResponse.candidates?.[0]?.content?.parts,
-            );
-            finalAnswerProduced = Boolean(answerText);
-            if (!finalAnswerProduced) {
-                const parts = finalResponse.candidates?.[0]?.content?.parts ?? [];
-                logWarn(requestId, "forced synthesis returned no text", {
-                    finishReason: finalResponse.candidates?.[0]?.finishReason,
-                    functionCalls: finalResponse.functionCalls?.map((call) => call.name),
-                    partKinds: parts.map((part) =>
-                        part.functionCall
-                            ? "functionCall"
-                            : typeof part.text === "string"
-                              ? "text"
-                              : "other",
-                    ),
-                });
+
+            accumulateArticleMeta(call.name!, toolResult, articleLookup);
+
+            if (toolResult.error) {
+              toolErrorCount += 1;
+              logWarn(requestId, `tool ${call.name} returned error`, {
+                tool: call.name,
+                round,
+                error: toolResult.error,
+              });
             }
-        }
+            if (call.name === "search_archive" && Array.isArray(toolResult.results)) {
+              successfulSearchCount += 1;
+              const method = (toolResult.retrieval as Record<string, unknown> | undefined)?.method;
+              if (method === "hybrid" || method === "fts" || method === "vector") {
+                retrievalMethods.add(method);
+              }
+            }
 
-        if (!answerText) {
-            logWarn(requestId, "agent exhausted tool rounds without producing text", { rounds: round, toolCallCount });
+            const summary = summarizeToolResult(call.name!, toolResult);
+            onProgress?.({
+              type: "tool_result",
+              tool: call.name!,
+              round,
+              summary,
+            });
 
-            const lastModelContent = [...contents].reverse().find((c) => c.role === "model");
-            const partialText = textFromParts(lastModelContent?.parts);
-
-            answerText = partialText
-                ? `${partialText.trim()}\n\n(Note: This answer may be incomplete as the research process was cut short.)`
-                : "I was unable to complete my research within the allowed number of steps. Please try rephrasing your question or asking something more specific.";
-        }
-
-        const grounded = groundAgentAnswer(answerText, articleLookup);
-        answerText = grounded.answer;
-        const citations = grounded.citations;
-        answerText = applyCoverageAnswerPolicy(
-            answerText,
-            citations.length,
-            coverage,
+            return {
+              id: call.id ?? `${call.name}-${round}-${idx}`,
+              name: call.name!,
+              response: toolResult,
+            };
+          })
         );
-        const confidence = scoreConfidence(answerText, citations, toolCallCount, {
-            articleLookup,
-            toolErrorCount,
-            successfulSearchCount,
+        retrievalTimeMs += Date.now() - toolStart;
+
+        const allErrors = results.every(
+          (r) => typeof (r.response as Record<string, unknown>).error === "string"
+        );
+        if (allErrors) {
+          logError(requestId, "all tools in round returned errors", { round });
+        }
+
+        toolCallCount += functionCalls.length;
+
+        // Capture any text the model produced alongside function calls
+        const responseText = textFromParts(response.candidates?.[0]?.content?.parts);
+        if (responseText) {
+          answerText = responseText;
+        }
+
+        const modelParts = response.candidates?.[0]?.content?.parts;
+        if (modelParts) {
+          contents.push({ role: "model", parts: modelParts });
+        }
+
+        contents.push({
+          role: "user",
+          parts: results.map((r) => ({
+            functionResponse: {
+              id: r.id,
+              name: r.name,
+              response: r.response,
+            },
+          })),
         });
 
-        return {
-            answer: answerText,
-            citations,
-            sourceArticleIds: buildAgentSourceArticleIds(
-                answerText,
-                citations,
-                articleLookup,
-            ),
-            confidence,
-            toolCallCount,
-            rounds: round,
-            articleMeta: articleLookup,
-            retrievalTimeMs,
-            generationTimeMs,
-            retrievalMethod: combinedRetrievalMethod(retrievalMethods),
-        };
-    } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-            logWarn(requestId, "agent loop aborted by signal", { rounds: round, toolCallCount });
-            return {
-                answer: "The request timed out before a complete answer could be generated. Please try a simpler question.",
-                citations: [],
-                sourceArticleIds: [],
-                confidence: "low",
-                toolCallCount,
-                rounds: round,
-                articleMeta: articleLookup,
-                retrievalTimeMs,
-                generationTimeMs,
-                retrievalMethod: combinedRetrievalMethod(retrievalMethods),
-            };
-        }
-
-        logError(requestId, "agent loop failed", err);
-        return {
-            answer: "I encountered an error while researching your question. Please try again.",
-            citations: [],
-            sourceArticleIds: [],
-            confidence: "low",
-            toolCallCount,
-            rounds: round,
-            articleMeta: articleLookup,
-            retrievalTimeMs,
-            generationTimeMs,
-            retrievalMethod: combinedRetrievalMethod(retrievalMethods),
-        };
+        round++;
+      } else {
+        answerText = textFromParts(response.candidates?.[0]?.content?.parts);
+        finalAnswerProduced = true;
+        break;
+      }
     }
+
+    if (!finalAnswerProduced && !signal?.aborted) {
+      // The tool budget is an orchestration boundary, not an incomplete
+      // answer. Make one final no-tools call so the model must synthesize
+      // from evidence already present in the conversation.
+      const finalStart = Date.now();
+      const finalResponse = await executeTrackedGenerationCall({
+        model: AGENT_MODEL,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        requestId,
+        op: "agent.finalize",
+        call: () =>
+          client.models.generateContent({
+            model: AGENT_MODEL,
+            // Start a fresh synthesis turn. Replaying prior model
+            // function-call parts conditions Flash-Lite to emit another
+            // call even when function calling is explicitly NONE.
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: buildFinalSynthesisInput({
+                      question,
+                      filters,
+                      conversationContext,
+                      coverage,
+                      articles: articleLookup,
+                    }),
+                  },
+                ],
+              },
+            ],
+            config: {
+              systemInstruction: AGENT_FINAL_SYSTEM_PROMPT,
+              toolConfig: {
+                functionCallingConfig: {
+                  mode: FunctionCallingConfigMode.NONE,
+                },
+              },
+              maxOutputTokens: MAX_OUTPUT_TOKENS,
+              thinkingConfig: {
+                thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
+              },
+              abortSignal: signal,
+            },
+          }),
+      });
+      generationTimeMs += Date.now() - finalStart;
+      answerText = textFromParts(finalResponse.candidates?.[0]?.content?.parts);
+      finalAnswerProduced = Boolean(answerText);
+      if (!finalAnswerProduced) {
+        const parts = finalResponse.candidates?.[0]?.content?.parts ?? [];
+        logWarn(requestId, "forced synthesis returned no text", {
+          finishReason: finalResponse.candidates?.[0]?.finishReason,
+          functionCalls: finalResponse.functionCalls?.map((call) => call.name),
+          partKinds: parts.map((part) =>
+            part.functionCall ? "functionCall" : typeof part.text === "string" ? "text" : "other"
+          ),
+        });
+      }
+    }
+
+    if (!answerText) {
+      logWarn(requestId, "agent exhausted tool rounds without producing text", {
+        rounds: round,
+        toolCallCount,
+      });
+
+      const lastModelContent = [...contents].reverse().find((c) => c.role === "model");
+      const partialText = textFromParts(lastModelContent?.parts);
+
+      answerText = partialText
+        ? `${partialText.trim()}\n\n(Note: This answer may be incomplete as the research process was cut short.)`
+        : "I was unable to complete my research within the allowed number of steps. Please try rephrasing your question or asking something more specific.";
+    }
+
+    const grounded = groundAgentAnswer(answerText, articleLookup);
+    answerText = grounded.answer;
+    const citations = grounded.citations;
+    answerText = applyCoverageAnswerPolicy(answerText, citations.length, coverage);
+    const confidence = scoreConfidence(answerText, citations, toolCallCount, {
+      articleLookup,
+      toolErrorCount,
+      successfulSearchCount,
+    });
+
+    return {
+      answer: answerText,
+      citations,
+      sourceArticleIds: buildAgentSourceArticleIds(answerText, citations, articleLookup),
+      confidence,
+      toolCallCount,
+      rounds: round,
+      articleMeta: articleLookup,
+      retrievalTimeMs,
+      generationTimeMs,
+      retrievalMethod: combinedRetrievalMethod(retrievalMethods),
+    };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      logWarn(requestId, "agent loop aborted by signal", { rounds: round, toolCallCount });
+      return {
+        answer:
+          "The request timed out before a complete answer could be generated. Please try a simpler question.",
+        citations: [],
+        sourceArticleIds: [],
+        confidence: "low",
+        toolCallCount,
+        rounds: round,
+        articleMeta: articleLookup,
+        retrievalTimeMs,
+        generationTimeMs,
+        retrievalMethod: combinedRetrievalMethod(retrievalMethods),
+      };
+    }
+
+    logError(requestId, "agent loop failed", err);
+    return {
+      answer: "I encountered an error while researching your question. Please try again.",
+      citations: [],
+      sourceArticleIds: [],
+      confidence: "low",
+      toolCallCount,
+      rounds: round,
+      articleMeta: articleLookup,
+      retrievalTimeMs,
+      generationTimeMs,
+      retrievalMethod: combinedRetrievalMethod(retrievalMethods),
+    };
+  }
 }

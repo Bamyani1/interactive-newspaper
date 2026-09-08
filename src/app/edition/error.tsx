@@ -16,7 +16,11 @@ export default function EditionError({
   }, []);
 
   return (
-    <main id="main-content" tabIndex={-1} className="min-h-screen flex items-center justify-center bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="min-h-screen flex items-center justify-center bg-[var(--color-bg-primary)] text-[var(--color-text-primary)]"
+    >
       <div className="max-w-md text-center space-y-6 px-6">
         <h1
           ref={headingRef}

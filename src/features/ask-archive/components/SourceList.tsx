@@ -32,9 +32,7 @@ export const SourceList: React.FC<SourceListProps> = ({
       <button
         type="button"
         className="ask-source-toggle"
-        onClick={
-          interactive ? () => setIsExpanded((prev) => !prev) : undefined
-        }
+        onClick={interactive ? () => setIsExpanded((prev) => !prev) : undefined}
         aria-expanded={isExpanded}
         tabIndex={interactive ? undefined : -1}
         disabled={!interactive}
@@ -56,9 +54,7 @@ export const SourceList: React.FC<SourceListProps> = ({
         </div>
       )}
 
-      {interactive ? (
-        <SourceReader source={selected} onClose={() => setSelected(null)} />
-      ) : null}
+      {interactive ? <SourceReader source={selected} onClose={() => setSelected(null)} /> : null}
     </section>
   );
 };

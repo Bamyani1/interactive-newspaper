@@ -47,7 +47,7 @@ function assertEditionDiagnostics(diagnostics: BrowserDiagnostics): void {
 async function productionPrerenderInventory() {
   expect(
     process.env.PLAYWRIGHT_SERVER_MODE,
-    "edition reconciliation must run against a fresh production build",
+    "edition reconciliation must run against a fresh production build"
   ).toBe("production");
 
   const buildIdPath = path.resolve(".next/BUILD_ID");
@@ -61,7 +61,7 @@ async function productionPrerenderInventory() {
   expect(buildId.trim(), "production BUILD_ID must be nonempty").not.toBe("");
   expect(
     manifestStats.mtimeMs,
-    "prerender manifest must be written by the active production build",
+    "prerender manifest must be written by the active production build"
   ).toBeGreaterThanOrEqual(buildIdStats.mtimeMs);
 
   const manifest = JSON.parse(manifestText) as PrerenderManifest;
@@ -83,9 +83,7 @@ function editionDatesFromApi(value: unknown): string[] {
   if (!Array.isArray(editions)) return [];
   return editions
     .map((edition) => edition.date)
-    .filter((date): date is string =>
-      typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date),
-    );
+    .filter((date): date is string => typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date));
 }
 
 test("reconciles and sweeps the complete production/local edition union", async ({
@@ -106,12 +104,8 @@ test("reconciles and sweeps the complete production/local edition union", async 
   // from; the manifest is still read to prove the build was fresh and that
   // nothing silently returned to prerendering.
   const publishedDates = liveDates;
-  const localOnlyDates = localDates.filter(
-    (date) => !publishedDates.includes(date),
-  );
-  const publishedOnlyDates = publishedDates.filter(
-    (date) => !localDates.includes(date),
-  );
+  const localOnlyDates = localDates.filter((date) => !publishedDates.includes(date));
+  const publishedOnlyDates = publishedDates.filter((date) => !localDates.includes(date));
   const unionDates = [...new Set([...publishedDates, ...localDates])].sort();
   const generatedFailures: Array<{ date: string; reason: string }> = [];
   const localOnlyFailures: Array<{ date: string; reason: string }> = [];
@@ -147,15 +141,14 @@ test("reconciles and sweeps the complete production/local edition union", async 
       localCount: localDates.length,
       apiCount: liveDates.length,
       publishedCount: publishedDates.length,
-      generatedPathCountIncludingIndex:
-        generated.datePaths.length + Number(generated.hasIndex),
+      generatedPathCountIncludingIndex: generated.datePaths.length + Number(generated.hasIndex),
       localOnlyCount: localOnlyDates.length,
       localOnly404s: localOnlyDates,
       publishedOnly: publishedOnlyDates,
       unionCount: unionDates.length,
       productionBuild: generated,
       deepTestEditions: DEEP_TEST_EDITIONS,
-    },
+    }
   );
 
   for (const date of unionDates) {
@@ -176,7 +169,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
         await expectVisibleNonEmptyFirstPaint(
           page,
           FIRST_PAINT.notFound,
-          `local-only edition ${date} 404 first paint`,
+          `local-only edition ${date} 404 first paint`
         );
         await waitForSettledUi(page, 100);
         await captureAuditScreenshot(
@@ -186,7 +179,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
             route: `edition-${date}`,
             state: "local-only-404",
             viewport,
-          }),
+          })
         );
       }
       assertEditionDiagnostics(diagnostics);
@@ -204,11 +197,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
       continue;
     }
 
-    await expectVisibleNonEmptyFirstPaint(
-      page,
-      FIRST_PAINT.edition,
-      `edition ${date} first paint`,
-    );
+    await expectVisibleNonEmptyFirstPaint(page, FIRST_PAINT.edition, `edition ${date} first paint`);
     await waitForSettledUi(page, 100);
     await captureAuditScreenshot(
       page,
@@ -217,7 +206,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
         route: `edition-${date}`,
         state: "settled",
         viewport,
-      }),
+      })
     );
     if (date === ASSET_001_EDITION) {
       // ASSET-001: the jpg→webp rewrite targets an R2 object that was never
@@ -244,10 +233,9 @@ test("reconciles and sweeps the complete production/local edition union", async 
           editionId: "1989-10-25",
           missingObject: object,
           missingObjectUrl,
-          reason:
-            "External R2 object absent; restoring it is outside front-end scope.",
+          reason: "External R2 object absent; restoring it is outside front-end scope.",
           deferralId: "ASSET-001",
-        },
+        }
       );
     }
     assertEditionDiagnostics(diagnostics);
@@ -261,7 +249,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
       state: "reconciliation",
       viewport,
     }),
-    { generatedFailures, localOnlyFailures, deferredAssets },
+    { generatedFailures, localOnlyFailures, deferredAssets }
   );
   expect(generatedFailures).toEqual([]);
   expect(localOnlyFailures).toEqual([]);

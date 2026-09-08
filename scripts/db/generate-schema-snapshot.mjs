@@ -22,18 +22,18 @@ const migrationRunnerModule = await import("./lib/migration-runner.ts");
 const { runMigrations } = migrationRunnerModule.default ?? migrationRunnerModule;
 
 async function main() {
-    const { pg, executor, close } = await createTestDb();
-    try {
-        await runMigrations(executor);
-        const snapshot = await introspectSchema(pg);
-        writeFileSync(OUTPUT_PATH, JSON.stringify(snapshot, null, 2) + "\n", "utf8");
-        console.log(`Schema snapshot written to ${OUTPUT_PATH}`);
-    } finally {
-        await close();
-    }
+  const { pg, executor, close } = await createTestDb();
+  try {
+    await runMigrations(executor);
+    const snapshot = await introspectSchema(pg);
+    writeFileSync(OUTPUT_PATH, JSON.stringify(snapshot, null, 2) + "\n", "utf8");
+    console.log(`Schema snapshot written to ${OUTPUT_PATH}`);
+  } finally {
+    await close();
+  }
 }
 
 main().catch((error) => {
-    console.error("Schema snapshot generation failed:", error);
-    process.exit(1);
+  console.error("Schema snapshot generation failed:", error);
+  process.exit(1);
 });

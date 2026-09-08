@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
         level: "error",
         route: "/api/admin/revalidate",
         msg: "ADMIN_REVALIDATE_TOKEN is not configured",
-      }),
+      })
     );
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -52,12 +52,9 @@ export async function POST(request: NextRequest) {
       {
         status: 429,
         headers: {
-          "Retry-After": Math.max(
-            1,
-            Math.ceil((limit.resetAt - Date.now()) / 1000),
-          ).toString(),
+          "Retry-After": Math.max(1, Math.ceil((limit.resetAt - Date.now()) / 1000)).toString(),
         },
-      },
+      }
     );
   }
 

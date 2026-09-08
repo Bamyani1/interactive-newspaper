@@ -4,12 +4,12 @@ import React from "react";
 import { Plus, Eraser, Download } from "lucide-react";
 
 interface AskMobileActionsProps {
-    onNewConversation: () => void;
-    onClearAllThreads: () => void;
-    onExportConversation: () => void;
-    canNewConversation: boolean;
-    canClearAllThreads: boolean;
-    canExportConversation: boolean;
+  onNewConversation: () => void;
+  onClearAllThreads: () => void;
+  onExportConversation: () => void;
+  canNewConversation: boolean;
+  canClearAllThreads: boolean;
+  canExportConversation: boolean;
 }
 
 /**
@@ -25,49 +25,45 @@ interface AskMobileActionsProps {
  * rendered in the tree without a JS-side viewport check.
  */
 export const AskMobileActions: React.FC<AskMobileActionsProps> = ({
-    onNewConversation,
-    onClearAllThreads,
-    onExportConversation,
-    canNewConversation,
-    canClearAllThreads,
-    canExportConversation,
+  onNewConversation,
+  onClearAllThreads,
+  onExportConversation,
+  canNewConversation,
+  canClearAllThreads,
+  canExportConversation,
 }) => {
-    return (
-        <div
-            className="ask-mobile-actions"
-            role="group"
-            aria-label="Conversation actions"
-        >
-            <button
-                type="button"
-                className="ask-mobile-action"
-                onClick={onNewConversation}
-                disabled={!canNewConversation}
-                aria-label="Start a new conversation"
-            >
-                <Plus size={14} aria-hidden="true" />
-                <span>New</span>
-            </button>
-            <button
-                type="button"
-                className="ask-mobile-action"
-                onClick={onClearAllThreads}
-                disabled={!canClearAllThreads}
-                aria-label="Clear all threads"
-            >
-                <Eraser size={14} aria-hidden="true" />
-                <span>Clear all</span>
-            </button>
-            <button
-                type="button"
-                className="ask-mobile-action"
-                onClick={onExportConversation}
-                disabled={!canExportConversation}
-                aria-label="Export the conversation as a PDF"
-            >
-                <Download size={14} aria-hidden="true" />
-                <span>Export</span>
-            </button>
-        </div>
-    );
+  return (
+    <div className="ask-mobile-actions" role="group" aria-label="Conversation actions">
+      <button
+        type="button"
+        className="ask-mobile-action"
+        onClick={onNewConversation}
+        disabled={!canNewConversation}
+        aria-label="Start a new conversation"
+      >
+        <Plus size={14} aria-hidden="true" />
+        <span>New</span>
+      </button>
+      <button
+        type="button"
+        className="ask-mobile-action"
+        onClick={onClearAllThreads}
+        disabled={!canClearAllThreads}
+        aria-label="Clear all threads"
+      >
+        <Eraser size={14} aria-hidden="true" />
+        <span>Clear all</span>
+      </button>
+      <button
+        type="button"
+        className="ask-mobile-action"
+        onClick={onExportConversation}
+        disabled={!canExportConversation}
+        aria-label="Export the conversation as a PDF"
+      >
+        <Download size={14} aria-hidden="true" />
+        <span>Export</span>
+      </button>
+    </div>
+  );
 };

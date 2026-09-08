@@ -43,11 +43,7 @@
   text-transform: uppercase;
   color: var(--color-text-secondary);
   text-decoration: underline;
-  text-decoration-color: color-mix(
-    in oklab,
-    var(--color-accent) 40%,
-    transparent
-  );
+  text-decoration-color: color-mix(in oklab, var(--color-accent) 40%, transparent);
   text-underline-offset: 4px;
   cursor: pointer;
   transition: color var(--duration-fast) ease;
@@ -92,7 +88,9 @@
   aspect-ratio: 4 / 3;
   overflow: hidden;
   border: 2px solid var(--color-text-primary);
-  transition: transform var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+  transition:
+    transform var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
 }
 
 .ask-photos-tile-btn:hover .ask-photos-tile-frame,

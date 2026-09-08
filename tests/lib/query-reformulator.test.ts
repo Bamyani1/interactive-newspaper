@@ -10,8 +10,7 @@ vi.mock("@/src/lib/gemini-client", () => ({
   }),
 }));
 vi.mock("@/src/lib/cost-tracker", () => ({
-  executeTrackedGenerationCall: (options: { call: () => Promise<unknown> }) =>
-    options.call(),
+  executeTrackedGenerationCall: (options: { call: () => Promise<unknown> }) => options.call(),
 }));
 
 import {
@@ -41,8 +40,8 @@ describe("parseReformulationResponse", () => {
           startYear: 1960,
           endYear: 1969,
         }),
-        fallback,
-      ),
+        fallback
+      )
     ).toEqual({
       embeddingQuery: "Ohio Wesleyan basketball cagers",
       ftsQuery: "basketball OR cagers OR hoopsters",
@@ -57,7 +56,7 @@ describe("parseReformulationResponse", () => {
   it("keeps backward compatibility with recorded line fixtures", () => {
     const result = parseReformulationResponse(
       "SEMANTIC: Ohio Wesleyan basketball cagers\nKEYWORDS: basketball OR cagers\nMODE: visual\nCOMPLEXITY: complex",
-      fallback,
+      fallback
     );
     expect(result).toEqual({
       embeddingQuery: "Ohio Wesleyan basketball cagers",
@@ -88,13 +87,17 @@ describe("parseReformulationResponse", () => {
           complexity: "unexpected",
           coverageIntent: "unexpected",
         }),
-        fallback,
-      ),
+        fallback
+      )
     ).toMatchObject({ mode: "text", complexity: "simple" });
   });
 
   it("ignores absent, zero, reversed, and out-of-corpus inferred years", () => {
-    for (const [startYear, endYear] of [[0, 0], [1970, 1960], [1940, 1960]]) {
+    for (const [startYear, endYear] of [
+      [0, 0],
+      [1970, 1960],
+      [1940, 1960],
+    ]) {
       const result = parseReformulationResponse(
         JSON.stringify({
           embeddingQuery: "housing",
@@ -105,7 +108,7 @@ describe("parseReformulationResponse", () => {
           startYear,
           endYear,
         }),
-        fallback,
+        fallback
       );
       expect(result.startDate).toBeUndefined();
       expect(result.endDate).toBeUndefined();
@@ -113,9 +116,7 @@ describe("parseReformulationResponse", () => {
   });
 
   it("removes malformed OR boundaries before FTS", () => {
-    expect(normalizeFtsQuery(" OR  women OR OR sorority OR ")).toBe(
-      "women OR sorority",
-    );
+    expect(normalizeFtsQuery(" OR  women OR OR sorority OR ")).toBe("women OR sorority");
   });
 });
 

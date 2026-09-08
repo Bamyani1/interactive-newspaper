@@ -22,21 +22,17 @@ const NON_ALPHANUMERIC = new RegExp("[^\\p{L}\\p{N}\\s]+", "gu");
  * keys tolerant of OCR noise like stray punctuation and casing drift.
  */
 export function normalizeIdentityText(s: string): string {
-    return s
-        .toLowerCase()
-        .replace(NON_ALPHANUMERIC, " ")
-        .replace(/\s+/g, " ")
-        .trim();
+  return s.toLowerCase().replace(NON_ALPHANUMERIC, " ").replace(/\s+/g, " ").trim();
 }
 
 export type ContentType = "article" | "ad" | "other";
 
 export interface IdentityInput {
-    contentType: ContentType;
-    /** Physical page numbers the content appears on. */
-    sourcePages: readonly number[];
-    headline: string;
-    byline?: string | null;
+  contentType: ContentType;
+  /** Physical page numbers the content appears on. */
+  sourcePages: readonly number[];
+  headline: string;
+  byline?: string | null;
 }
 
 /**
@@ -50,15 +46,15 @@ export interface IdentityInput {
  * body differences become additional content_revisions rows.
  */
 export function deriveIdentityKey(input: IdentityInput): string {
-    const pages = [...new Set(input.sourcePages)].sort((a, b) => a - b).join(",");
-    const digest = createHash("sha256")
-        .update(
-            `${normalizeIdentityText(input.headline)}\n${normalizeIdentityText(input.byline ?? "")}`,
-            "utf8",
-        )
-        .digest("hex")
-        .slice(0, 16);
-    return `${input.contentType}:p${pages}:${digest}`;
+  const pages = [...new Set(input.sourcePages)].sort((a, b) => a - b).join(",");
+  const digest = createHash("sha256")
+    .update(
+      `${normalizeIdentityText(input.headline)}\n${normalizeIdentityText(input.byline ?? "")}`,
+      "utf8"
+    )
+    .digest("hex")
+    .slice(0, 16);
+  return `${input.contentType}:p${pages}:${digest}`;
 }
 
 /**
@@ -71,13 +67,13 @@ export function deriveIdentityKey(input: IdentityInput): string {
  * (full_text is markup over the same words).
  */
 export interface RevisionPayload {
-    category: string;
-    headline: string;
-    summary: string;
-    byline: string | null;
-    bodyPlain: string;
-    imageUrls: string[];
-    imageCaptions: (string | null)[];
+  category: string;
+  headline: string;
+  summary: string;
+  byline: string | null;
+  bodyPlain: string;
+  imageUrls: string[];
+  imageCaptions: (string | null)[];
 }
 
 /**
@@ -85,32 +81,30 @@ export interface RevisionPayload {
  * unchanged text => same hash. Returns 'crev-sha256:<64 hex>'.
  */
 export function contentRevisionHash(fields: RevisionPayload): string {
-    const digest = createHash("sha256")
-        .update(
-            JSON.stringify({
-                category: fields.category,
-                headline: fields.headline,
-                summary: fields.summary,
-                byline: fields.byline ?? null,
-                bodyPlain: fields.bodyPlain,
-                imageUrls: fields.imageUrls,
-                imageCaptions: fields.imageCaptions,
-            }),
-            "utf8",
-        )
-        .digest("hex");
-    return `crev-sha256:${digest}`;
+  const digest = createHash("sha256")
+    .update(
+      JSON.stringify({
+        category: fields.category,
+        headline: fields.headline,
+        summary: fields.summary,
+        byline: fields.byline ?? null,
+        bodyPlain: fields.bodyPlain,
+        imageUrls: fields.imageUrls,
+        imageCaptions: fields.imageCaptions,
+      }),
+      "utf8"
+    )
+    .digest("hex");
+  return `crev-sha256:${digest}`;
 }
 
 export interface ExistingContentItem {
-    id: string;
-    identityKey: string;
+  id: string;
+  identityKey: string;
 }
 
 export type RevisionMatch =
-    | { kind: "matched"; itemId: string }
-    | { kind: "new" }
-    | { kind: "ambiguous"; itemIds: string[] };
+  { kind: "matched"; itemId: string } | { kind: "new" } | { kind: "ambiguous"; itemIds: string[] };
 
 /**
  * Matches an incoming revision candidate against the issue's existing content
@@ -120,55 +114,55 @@ export type RevisionMatch =
  * and stops.
  */
 export function matchRevisionToItems(
-    candidate: { identityKey: string },
-    existingItems: readonly ExistingContentItem[],
+  candidate: { identityKey: string },
+  existingItems: readonly ExistingContentItem[]
 ): RevisionMatch {
-    const matches = existingItems.filter((item) => item.identityKey === candidate.identityKey);
-    if (matches.length === 0) return { kind: "new" };
-    if (matches.length === 1) return { kind: "matched", itemId: matches[0].id };
-    return { kind: "ambiguous", itemIds: matches.map((item) => item.id) };
+  const matches = existingItems.filter((item) => item.identityKey === candidate.identityKey);
+  if (matches.length === 0) return { kind: "new" };
+  if (matches.length === 1) return { kind: "matched", itemId: matches[0].id };
+  return { kind: "ambiguous", itemIds: matches.map((item) => item.id) };
 }
 
 export class AmbiguousIdentityMatchError extends Error {
-    readonly itemIds: string[];
+  readonly itemIds: string[];
 
-    constructor(itemIds: string[]) {
-        super(
-            `Ambiguous identity match: ${itemIds.length} content items share the identity key (${itemIds.join(", ")})`,
-        );
-        this.name = "AmbiguousIdentityMatchError";
-        this.itemIds = [...itemIds];
-    }
+  constructor(itemIds: string[]) {
+    super(
+      `Ambiguous identity match: ${itemIds.length} content items share the identity key (${itemIds.join(", ")})`
+    );
+    this.name = "AmbiguousIdentityMatchError";
+    this.itemIds = [...itemIds];
+  }
 }
 
 /** content_revisions row fields needed to rebuild a legacy article row. */
 export interface ContentRevisionRow {
-    category: string;
-    headline: string;
-    summary: string;
-    full_text: string;
-    body_plain: string;
-    byline: string | null;
-    writer_position: string | null;
-    page: number;
+  category: string;
+  headline: string;
+  summary: string;
+  full_text: string;
+  body_plain: string;
+  byline: string | null;
+  writer_position: string | null;
+  page: number;
 }
 
 /** legacy_content_aliases row fields needed to rebuild a legacy article row. */
 export interface LegacyContentAliasRow {
-    legacy_id: string;
+  legacy_id: string;
 }
 
 /** The legacy `articles` row projection served by existing APIs. */
 export interface LegacyArticleProjection {
-    id: string;
-    category: string;
-    headline: string;
-    summary: string;
-    full_text: string;
-    body_plain: string;
-    byline: string | null;
-    writer_position: string | null;
-    page: number;
+  id: string;
+  category: string;
+  headline: string;
+  summary: string;
+  full_text: string;
+  body_plain: string;
+  byline: string | null;
+  writer_position: string | null;
+  page: number;
 }
 
 /**
@@ -178,18 +172,18 @@ export interface LegacyArticleProjection {
  * else from the immutable revision.
  */
 export function hydrateArticleFromRevision(
-    revision: ContentRevisionRow,
-    alias: LegacyContentAliasRow,
+  revision: ContentRevisionRow,
+  alias: LegacyContentAliasRow
 ): LegacyArticleProjection {
-    return {
-        id: alias.legacy_id,
-        category: revision.category,
-        headline: revision.headline,
-        summary: revision.summary,
-        full_text: revision.full_text,
-        body_plain: revision.body_plain,
-        byline: revision.byline,
-        writer_position: revision.writer_position,
-        page: revision.page,
-    };
+  return {
+    id: alias.legacy_id,
+    category: revision.category,
+    headline: revision.headline,
+    summary: revision.summary,
+    full_text: revision.full_text,
+    body_plain: revision.body_plain,
+    byline: revision.byline,
+    writer_position: revision.writer_position,
+    page: revision.page,
+  };
 }

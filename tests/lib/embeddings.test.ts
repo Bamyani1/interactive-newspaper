@@ -118,16 +118,10 @@ describe("embedDocuments", () => {
 
   it("batches text-only inputs and returns vectors in input order", async () => {
     mockEmbedContent.mockResolvedValueOnce({
-      embeddings: [
-        { values: makeFakeVector(1) },
-        { values: makeFakeVector(2) },
-      ],
+      embeddings: [{ values: makeFakeVector(1) }, { values: makeFakeVector(2) }],
     });
 
-    const result = await embedDocuments([
-      { text: "first" },
-      { text: "second" },
-    ]);
+    const result = await embedDocuments([{ text: "first" }, { text: "second" }]);
 
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual(makeFakeVector(1));
@@ -148,9 +142,7 @@ describe("embedDocuments", () => {
   it("throws EmbedTimeoutError when embedContent hangs past the budget", async () => {
     // Mock hangs forever. embedWithTimeout's Promise.race should still fire
     // at timeoutMs even though the mock never honors the signal.
-    mockEmbedContent.mockImplementation(
-      () => new Promise<never>(() => {}),
-    );
+    mockEmbedContent.mockImplementation(() => new Promise<never>(() => {}));
 
     vi.useFakeTimers();
     try {
@@ -170,9 +162,7 @@ describe("embedDocuments", () => {
   });
 
   it("EmbedTimeoutError carries op name and timeout budget", async () => {
-    mockEmbedContent.mockImplementation(
-      () => new Promise<never>(() => {}),
-    );
+    mockEmbedContent.mockImplementation(() => new Promise<never>(() => {}));
 
     vi.useFakeTimers();
     try {
@@ -198,9 +188,9 @@ describe("embedDocuments", () => {
       embeddings: [{ values: makeFakeVector(1) }], // only 1 returned
     });
 
-    await expect(
-      embedDocuments([{ text: "first" }, { text: "second" }]),
-    ).rejects.toThrow(/Embedding response mismatch/);
+    await expect(embedDocuments([{ text: "first" }, { text: "second" }])).rejects.toThrow(
+      /Embedding response mismatch/
+    );
   });
 
   it("throws on invalid embedding dimensions", async () => {
@@ -209,7 +199,7 @@ describe("embedDocuments", () => {
     });
 
     await expect(embedDocuments([{ text: "first" }])).rejects.toThrow(
-      /Invalid embedding dimensions/,
+      /Invalid embedding dimensions/
     );
   });
 
@@ -228,23 +218,25 @@ describe("embedDocuments", () => {
     // First call: text-batch (the function processes text-only inputs as one batch)
     // Then 5 sequential image calls; we want the 3rd to throw.
     let imageCallCount = 0;
-    mockEmbedContent.mockImplementation(async (params: { contents: Array<{ parts: unknown[] }> }) => {
-      // Detect image input by checking for inlineData in parts
-      const parts = params.contents[0].parts as Array<{ text?: string; inlineData?: unknown }>;
-      const isImage = parts.some((p) => p.inlineData !== undefined);
-      if (!isImage) {
-        // text batch, return one vector per input
-        return {
-          embeddings: params.contents.map((_, i) => ({ values: makeFakeVector(i + 100) })),
-        };
+    mockEmbedContent.mockImplementation(
+      async (params: { contents: Array<{ parts: unknown[] }> }) => {
+        // Detect image input by checking for inlineData in parts
+        const parts = params.contents[0].parts as Array<{ text?: string; inlineData?: unknown }>;
+        const isImage = parts.some((p) => p.inlineData !== undefined);
+        if (!isImage) {
+          // text batch, return one vector per input
+          return {
+            embeddings: params.contents.map((_, i) => ({ values: makeFakeVector(i + 100) })),
+          };
+        }
+        // image input
+        imageCallCount++;
+        if (imageCallCount === 3) {
+          throw new Error("simulated image #3 failure");
+        }
+        return { embeddings: [{ values: makeFakeVector(imageCallCount) }] };
       }
-      // image input
-      imageCallCount++;
-      if (imageCallCount === 3) {
-        throw new Error("simulated image #3 failure");
-      }
-      return { embeddings: [{ values: makeFakeVector(imageCallCount) }] };
-    });
+    );
 
     const inputs = [
       { text: "img1", imageBase64: "AAA", imageMimeType: "image/jpeg" },
@@ -255,7 +247,7 @@ describe("embedDocuments", () => {
     ];
 
     await expect(embedDocuments(inputs)).rejects.toThrow(
-      /Multimodal embedding failed on image 3 of 5/,
+      /Multimodal embedding failed on image 3 of 5/
     );
 
     // Critical: subsequent images should NOT have been called (atomic abort)
@@ -267,9 +259,9 @@ describe("embedDocuments", () => {
       embeddings: [], // empty — malformed for an image call
     });
 
-    await expect(
-      embedDocuments([{ text: "x", imageBase64: "AAA" }]),
-    ).rejects.toThrow(/Failed to generate multimodal embedding/);
+    await expect(embedDocuments([{ text: "x", imageBase64: "AAA" }])).rejects.toThrow(
+      /Failed to generate multimodal embedding/
+    );
   });
 
   // QuotaExhaustedError detection (Step 6 / issue 0028)
@@ -280,9 +272,7 @@ describe("embedDocuments", () => {
     const quotaErr = Object.assign(new Error("rate limit"), { code: 429 });
     mockEmbedContent.mockRejectedValueOnce(quotaErr);
 
-    await expect(embedDocuments([{ text: "x" }])).rejects.toBeInstanceOf(
-      QuotaExhaustedError,
-    );
+    await expect(embedDocuments([{ text: "x" }])).rejects.toBeInstanceOf(QuotaExhaustedError);
   });
 
   it("throws QuotaExhaustedError when SDK error has nested error.code: 429", async () => {
@@ -291,20 +281,16 @@ describe("embedDocuments", () => {
     });
     mockEmbedContent.mockRejectedValueOnce(quotaErr);
 
-    await expect(embedDocuments([{ text: "x" }])).rejects.toBeInstanceOf(
-      QuotaExhaustedError,
-    );
+    await expect(embedDocuments([{ text: "x" }])).rejects.toBeInstanceOf(QuotaExhaustedError);
   });
 
   it("throws QuotaExhaustedError when error message contains RESOURCE_EXHAUSTED", async () => {
     const quotaErr = new Error(
-      'Embedding batch error: {"error":{"code":429,"message":"You exceeded your current quota","status":"RESOURCE_EXHAUSTED"}}',
+      'Embedding batch error: {"error":{"code":429,"message":"You exceeded your current quota","status":"RESOURCE_EXHAUSTED"}}'
     );
     mockEmbedContent.mockRejectedValueOnce(quotaErr);
 
-    await expect(embedDocuments([{ text: "x" }])).rejects.toBeInstanceOf(
-      QuotaExhaustedError,
-    );
+    await expect(embedDocuments([{ text: "x" }])).rejects.toBeInstanceOf(QuotaExhaustedError);
   });
 
   it("does NOT classify a generic 500 error as QuotaExhaustedError", async () => {
@@ -387,25 +373,25 @@ describe("embedDocuments", () => {
     const serverErr = Object.assign(new Error("server exploded"), { code: 500 });
     mockEmbedContent.mockRejectedValue(serverErr);
 
-    await expect(embedDocuments([{ text: "hard-fail" }])).rejects.toThrow(
-      /server exploded/,
-    );
+    await expect(embedDocuments([{ text: "hard-fail" }])).rejects.toThrow(/server exploded/);
     expect(mockEmbedContent).toHaveBeenCalledTimes(1);
   });
 
   it("succeeds when text and image branches both complete (mixed batch)", async () => {
     let imgCount = 0;
-    mockEmbedContent.mockImplementation(async (params: { contents: Array<{ parts: unknown[] }> }) => {
-      const parts = params.contents[0].parts as Array<{ text?: string; inlineData?: unknown }>;
-      const isImage = parts.some((p) => p.inlineData !== undefined);
-      if (!isImage) {
-        return {
-          embeddings: params.contents.map((_, i) => ({ values: makeFakeVector(i) })),
-        };
+    mockEmbedContent.mockImplementation(
+      async (params: { contents: Array<{ parts: unknown[] }> }) => {
+        const parts = params.contents[0].parts as Array<{ text?: string; inlineData?: unknown }>;
+        const isImage = parts.some((p) => p.inlineData !== undefined);
+        if (!isImage) {
+          return {
+            embeddings: params.contents.map((_, i) => ({ values: makeFakeVector(i) })),
+          };
+        }
+        imgCount++;
+        return { embeddings: [{ values: makeFakeVector(500 + imgCount) }] };
       }
-      imgCount++;
-      return { embeddings: [{ values: makeFakeVector(500 + imgCount) }] };
-    });
+    );
 
     const inputs = [
       { text: "text1" },
@@ -448,7 +434,7 @@ describe("embedding input identity", () => {
         ...base,
         imageBase64: "different-bytes",
         imageMimeType: "image/jpeg",
-      }),
+      })
     ).not.toBe(first);
   });
 });
@@ -490,7 +476,7 @@ describe("embedQuery", () => {
     controller.abort();
 
     await expect(
-      embedQuery("step3 abort test query", { signal: controller.signal }),
+      embedQuery("step3 abort test query", { signal: controller.signal })
     ).rejects.toThrow(/signal already aborted/);
 
     // Must NOT have called the real SDK — short-circuited before dispatch
@@ -533,9 +519,9 @@ describe("embedQuery", () => {
     });
     mockEmbedContent.mockRejectedValueOnce(quotaErr);
 
-    await expect(
-      embedQuery("step5 nested-quota test query"),
-    ).rejects.toBeInstanceOf(QuotaExhaustedError);
+    await expect(embedQuery("step5 nested-quota test query")).rejects.toBeInstanceOf(
+      QuotaExhaustedError
+    );
   });
 
   it("does NOT convert a generic 500 error into QuotaExhaustedError", async () => {

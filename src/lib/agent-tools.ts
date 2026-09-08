@@ -1,18 +1,9 @@
 import { Type } from "@google/genai";
-import {
-  fetchArticleForRag,
-  queryEditions,
-} from "@/src/lib/db";
+import { fetchArticleForRag, queryEditions } from "@/src/lib/db";
 import { searchAndRankArchive } from "@/src/lib/retrieval";
 import type { RetrievalFilters } from "@/src/lib/retrieval";
 
-const CATEGORIES = [
-  "Campus News",
-  "News",
-  "Sports",
-  "Arts & Entertainment",
-  "Opinion",
-] as const;
+const CATEGORIES = ["Campus News", "News", "Sports", "Arts & Entertainment", "Opinion"] as const;
 
 function mdSafeUrls(urls: string[]): string[] {
   return urls.map((url) => url.replace(/ /g, "%20"));
@@ -106,7 +97,7 @@ function boundedInteger(
   key: string,
   fallback: number,
   min: number,
-  max: number,
+  max: number
 ): number {
   const value = args[key];
   if (value === undefined || value === null) return fallback;
@@ -127,13 +118,13 @@ function dateRange(args: Record<string, unknown>) {
 
 function constrainedFilters(
   requested: { startDate?: string; endDate?: string; category?: string },
-  enforced: RetrievalFilters | undefined,
+  enforced: RetrievalFilters | undefined
 ): RetrievalFilters {
-  const startDates = [requested.startDate, enforced?.startDate].filter(
-    (value): value is string => Boolean(value),
+  const startDates = [requested.startDate, enforced?.startDate].filter((value): value is string =>
+    Boolean(value)
   );
-  const endDates = [requested.endDate, enforced?.endDate].filter(
-    (value): value is string => Boolean(value),
+  const endDates = [requested.endDate, enforced?.endDate].filter((value): value is string =>
+    Boolean(value)
   );
   const startDate = startDates.sort().at(-1);
   const endDate = endDates.sort().at(0);
@@ -149,7 +140,7 @@ function constrainedFilters(
 
 async function executeSearchArchive(
   args: Record<string, unknown>,
-  opts: { signal?: AbortSignal; requestId?: string; filters?: RetrievalFilters },
+  opts: { signal?: AbortSignal; requestId?: string; filters?: RetrievalFilters }
 ): Promise<Record<string, unknown>> {
   const query = requiredString(args, "query");
   const requestedDates = dateRange(args);
@@ -157,10 +148,7 @@ async function executeSearchArchive(
   if (category && !CATEGORIES.includes(category as (typeof CATEGORIES)[number])) {
     throw new ToolArgumentError("category is not supported");
   }
-  const filters = constrainedFilters(
-    { ...requestedDates, category },
-    opts.filters,
-  );
+  const filters = constrainedFilters({ ...requestedDates, category }, opts.filters);
   const limit = boundedInteger(args, "limit", 10, 1, 20);
   const retrieval = await searchAndRankArchive({
     question: query,
@@ -179,10 +167,7 @@ async function executeSearchArchive(
       summary: article.summary,
       byline: article.byline,
       relevantPassages: article.matchedPassages ?? [],
-      excerpt:
-        article.matchedPassages?.join("\n\n") ||
-        article.summary ||
-        article.bodyPlain,
+      excerpt: article.matchedPassages?.join("\n\n") || article.summary || article.bodyPlain,
       relevanceScore: article.relevanceScore,
       contentRevisionId: article.contentRevisionId,
       imageUrls: mdSafeUrls(article.imageUrls),
@@ -199,7 +184,7 @@ async function executeSearchArchive(
 
 async function executeReadArticle(
   args: Record<string, unknown>,
-  opts: { signal?: AbortSignal; filters?: RetrievalFilters },
+  opts: { signal?: AbortSignal; filters?: RetrievalFilters }
 ): Promise<Record<string, unknown>> {
   const articleId = requiredString(args, "articleId", 100);
   if (!/^\d{4}-\d{2}-\d{2}-\d+$/.test(articleId)) {
@@ -230,7 +215,7 @@ async function executeReadArticle(
 
 async function executeListEditions(
   args: Record<string, unknown>,
-  opts: { signal?: AbortSignal; filters?: RetrievalFilters },
+  opts: { signal?: AbortSignal; filters?: RetrievalFilters }
 ): Promise<Record<string, unknown>> {
   const { startDate, endDate } = constrainedFilters(dateRange(args), opts.filters);
   const offset = boundedInteger(args, "offset", 0, 0, 100_000);
@@ -248,7 +233,7 @@ async function executeListEditions(
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
-  opts: { signal?: AbortSignal; requestId?: string; filters?: RetrievalFilters } = {},
+  opts: { signal?: AbortSignal; requestId?: string; filters?: RetrievalFilters } = {}
 ): Promise<Record<string, unknown>> {
   try {
     switch (name) {

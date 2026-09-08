@@ -59,8 +59,12 @@
 }
 
 /* Subtle scrollbar that matches the dark theme */
-.ask-transcript::-webkit-scrollbar { width: 8px; }
-.ask-transcript::-webkit-scrollbar-track { background: transparent; }
+.ask-transcript::-webkit-scrollbar {
+  width: 8px;
+}
+.ask-transcript::-webkit-scrollbar-track {
+  background: transparent;
+}
 .ask-transcript::-webkit-scrollbar-thumb {
   background: color-mix(in oklab, var(--color-text-secondary) 20%, transparent);
   border-radius: var(--radius-default);
@@ -134,7 +138,7 @@
 
 /* Previous-turn compaction: older turns trim to the lede and hide
    scaffolding, so the latest turn owns the viewport. */
-.ask-turn--previous .ask-turn-answer p:nth-of-type(n+3) {
+.ask-turn--previous .ask-turn-answer p:nth-of-type(n + 3) {
   display: none;
 }
 .ask-turn--previous .ask-turn-answer::after {
@@ -188,7 +192,9 @@
 }
 
 @keyframes ask-thinking-bounce {
-  0%, 60%, 100% {
+  0%,
+  60%,
+  100% {
     opacity: 0.3;
     transform: translateY(0);
   }
@@ -249,7 +255,9 @@
   margin-right: 0.55rem;
   font-style: normal;
   display: inline-block;
-  transition: transform var(--duration-fast) ease, opacity var(--duration-fast) ease;
+  transition:
+    transform var(--duration-fast) ease,
+    opacity var(--duration-fast) ease;
 }
 
 .ask-example-chip:last-child {
@@ -326,7 +334,9 @@
   text-transform: uppercase;
   cursor: pointer;
   margin-top: 0.35rem;
-  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+  transition:
+    background var(--duration-fast) ease,
+    color var(--duration-fast) ease;
 }
 
 .ask-error-inline-retry:hover:not(:disabled) {
@@ -340,8 +350,14 @@
 }
 
 @keyframes askFadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .ask-answer-enter {

@@ -10,11 +10,7 @@ interface SourceCardProps {
   onOpen?: () => void;
 }
 
-export const SourceCard: React.FC<SourceCardProps> = ({
-  source,
-  index,
-  onOpen,
-}) => {
+export const SourceCard: React.FC<SourceCardProps> = ({ source, index, onOpen }) => {
   const hasImage = source.imageUrls.length > 0;
 
   return (
@@ -35,12 +31,8 @@ export const SourceCard: React.FC<SourceCardProps> = ({
       <div className="ask-source-card-inner">
         <div className="ask-source-card-text">
           <div className="ask-source-card-meta">
-            <span className="ask-source-card-category">
-              {source.category}
-            </span>
-            <span className="ask-source-card-date">
-              {source.editionDate}
-            </span>
+            <span className="ask-source-card-category">{source.category}</span>
+            <span className="ask-source-card-date">{source.editionDate}</span>
           </div>
 
           <h4 className="ask-source-card-headline">
@@ -48,9 +40,7 @@ export const SourceCard: React.FC<SourceCardProps> = ({
             {source.headline || "Untitled"}
           </h4>
 
-          {source.byline ? (
-            <p className="ask-source-card-byline">{source.byline}</p>
-          ) : null}
+          {source.byline ? <p className="ask-source-card-byline">{source.byline}</p> : null}
 
           {source.bodySnippet ? (
             <p className="ask-source-card-snippet">{source.bodySnippet}</p>

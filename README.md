@@ -21,7 +21,6 @@
 
 ---
 
-
 > Status: the RAG pipeline, OCR pipeline, chat UI, and data ingestion are all functional and deployed on Vercel. Production serves the `legacy` retrieval path; the versioned index is built and validated but not yet activated. Explore the [live demo](https://interactive-newspaper-sable.vercel.app), run it locally, or read [`docs/architecture/`](./docs/architecture/) for production-level deep-dives on each subsystem.
 
 ---
@@ -54,7 +53,7 @@
 
 ## Problem & Solution
 
-Ohio Wesleyan University's student newspaper, *The Transcript*, has been published weekly since 1867. Decades of print editions from the late 20th century exist only as bulk scanned TIF files in the OCLC ContentDM archive — unsearchable, unstructured, and effectively invisible to anyone who didn't know the exact date they were looking for.
+Ohio Wesleyan University's student newspaper, _The Transcript_, has been published weekly since 1867. Decades of print editions from the late 20th century exist only as bulk scanned TIF files in the OCLC ContentDM archive — unsearchable, unstructured, and effectively invisible to anyone who didn't know the exact date they were looking for.
 
 **The goal:** turn half a century of print history into a searchable, queryable, AI-augmented research tool that anyone can use to ask natural-language questions about campus life from 1950 through 2006.
 
@@ -63,7 +62,7 @@ Ohio Wesleyan University's student newspaper, *The Transcript*, has been publish
 1. **Ingest** raw TIF scans from the ContentDM IIIF archive (custom downloader at `scripts/iiif/`).
 2. **OCR** each page through a Python pipeline combining Google Document AI (character-level text), DocLayout-YOLO (photo/illustration region detection), and Google Gemini (structural extraction of articles, headlines, bylines, ads).
 3. **Merge** articles that span multiple pages, deduplicate content, and enrich ads with structured metadata.
-4. **Store** the structured output in Neon Postgres with both `tsvector` full-text search *and* 768-dim `pgvector` embeddings.
+4. **Store** the structured output in Neon Postgres with both `tsvector` full-text search _and_ 768-dim `pgvector` embeddings.
 5. **Serve** a Next.js 16 application with a period-accurate reading UI and an "Ask the Archive" chat experience powered by a full RAG pipeline with agent-loop fallback for complex queries.
 6. **Search multimodally** — text queries match text content; visual queries (e.g., "show me protest photos") match article thumbnails and text in a single shared embedding space.
 
@@ -244,17 +243,17 @@ For the full seven-phase walkthrough, LLM retry policy, diagnostics, and gotchas
 
 ### Seven phases
 
-| Phase | Purpose | Output |
-|---|---|---|
-| 0 | TIF → grayscale PNG | sanitized page images |
-| 1a | Per-page preprocessing | deskewed, contrast-enhanced images |
-| 1b | YOLO region detection | photo/illustration bounding boxes |
-| 1c | DocAI text extraction | paragraphs + token confidence |
-| 2 | Gemini page structuring | articles, ads, other content per page |
-| 3 | Cross-page merging | stitched continuations |
-| 4 | Ad enrichment | category, type, contact fields |
-| 5 | Content triage | ghost-article demotion, rescue promotion |
-| 6 | Write `edition.json` + diagnostics | canonical JSON + `issue_report.json` |
+| Phase | Purpose                            | Output                                   |
+| ----- | ---------------------------------- | ---------------------------------------- |
+| 0     | TIF → grayscale PNG                | sanitized page images                    |
+| 1a    | Per-page preprocessing             | deskewed, contrast-enhanced images       |
+| 1b    | YOLO region detection              | photo/illustration bounding boxes        |
+| 1c    | DocAI text extraction              | paragraphs + token confidence            |
+| 2     | Gemini page structuring            | articles, ads, other content per page    |
+| 3     | Cross-page merging                 | stitched continuations                   |
+| 4     | Ad enrichment                      | category, type, contact fields           |
+| 5     | Content triage                     | ghost-article demotion, rescue promotion |
+| 6     | Write `edition.json` + diagnostics | canonical JSON + `issue_report.json`     |
 
 ### Gotchas worth knowing
 
@@ -269,7 +268,7 @@ Full set: [docs/architecture/ocr-pipeline.md § Gotchas](./docs/architecture/ocr
 
 ## Multimodal Image Embedding
 
-The goal: *"show me photos of the homecoming parade"* should actually surface article thumbnails — not just text hits that happen to mention homecoming.
+The goal: _"show me photos of the homecoming parade"_ should actually surface article thumbnails — not just text hits that happen to mention homecoming.
 
 ### Embed-time
 
@@ -348,20 +347,20 @@ The seed and migration paths update records in place. A SHA-256 fingerprint cove
 
 A representative sample of commits that each address a real failure mode discovered during development, not speculative defensive programming:
 
-| Commit | Area | What was wrong |
-|---|---|---|
-| `18056ce` | Rate limiting | `/api/ask` had no rate limiter; a single user could exhaust the Gemini quota in minutes. Now 10 req/min per IP, durable. |
-| `bd0cb13` | Prompt injection | User input was interpolated raw into the generator prompt. Current prompts encode questions as JSON strings and validate structured responses/citations. |
-| `a2c8c2c` | Token limits | Long articles could push embedding input past the token cap. Now a pre-flight count trims at a sentence boundary. |
-| `74d0a50` | FTS correctness | Article updates left `search_vector` stale. Added a plpgsql trigger that auto-maintains on INSERT/UPDATE. |
-| `fd0470b` | Retry backoff | Backoff was indexed by batch position rather than retry count. Fixed. |
-| `744e79e` | Fallback timeouts | Retrieval could orphan work after a deadline. Neon fetches now receive real cancellation, and timeout/abort never starts a second fallback query. |
-| `964d6af` | Reranker parsing | Reranker rejected decimal scores (`9.5`). Now parses floats. |
-| `a3c8c88` | Ad deduplication | Restoring locked editions double-inserted ads. Added dedup on restore. |
-| `ddab849` | Conversation durability | `done` event could fire before the turn was persisted. Added `persistTurnBounded` 1.5s cap. |
-| `7eb5b03` | History truncation | Long answers bloated `ask_session_turns`. Now capped at 8000 chars with a truncation marker. |
-| `0b04000` | Reranker bounds | Reranker fallback could exceed `maxArticles`. Capped. |
-| `35139f7` | Cache correctness | Answer cache was serving context-flavored answers across sessions. Now bypassed when conversation history is non-empty. |
+| Commit    | Area                    | What was wrong                                                                                                                                           |
+| --------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `18056ce` | Rate limiting           | `/api/ask` had no rate limiter; a single user could exhaust the Gemini quota in minutes. Now 10 req/min per IP, durable.                                 |
+| `bd0cb13` | Prompt injection        | User input was interpolated raw into the generator prompt. Current prompts encode questions as JSON strings and validate structured responses/citations. |
+| `a2c8c2c` | Token limits            | Long articles could push embedding input past the token cap. Now a pre-flight count trims at a sentence boundary.                                        |
+| `74d0a50` | FTS correctness         | Article updates left `search_vector` stale. Added a plpgsql trigger that auto-maintains on INSERT/UPDATE.                                                |
+| `fd0470b` | Retry backoff           | Backoff was indexed by batch position rather than retry count. Fixed.                                                                                    |
+| `744e79e` | Fallback timeouts       | Retrieval could orphan work after a deadline. Neon fetches now receive real cancellation, and timeout/abort never starts a second fallback query.        |
+| `964d6af` | Reranker parsing        | Reranker rejected decimal scores (`9.5`). Now parses floats.                                                                                             |
+| `a3c8c88` | Ad deduplication        | Restoring locked editions double-inserted ads. Added dedup on restore.                                                                                   |
+| `ddab849` | Conversation durability | `done` event could fire before the turn was persisted. Added `persistTurnBounded` 1.5s cap.                                                              |
+| `7eb5b03` | History truncation      | Long answers bloated `ask_session_turns`. Now capped at 8000 chars with a truncation marker.                                                             |
+| `0b04000` | Reranker bounds         | Reranker fallback could exceed `maxArticles`. Capped.                                                                                                    |
+| `35139f7` | Cache correctness       | Answer cache was serving context-flavored answers across sessions. Now bypassed when conversation history is non-empty.                                  |
 
 Every pipeline step has a timeout and a typed error envelope with a `kind` discriminator. Reranking and generation run on Gemini 3.6 Flash; only query reformulation uses Flash-Lite, and retries never change the stage model.
 
@@ -454,31 +453,31 @@ Schema changes live in `scripts/db/migrations/` and are applied with `npm run db
 
 Create `.env.local` from `.env.example`:
 
-| Variable | Required | Purpose |
-|---|---|---|
-| `DATABASE_URL` | Yes | Neon Postgres connection string |
-| `GOOGLE_CLOUD_PROJECT` | Yes locally | Vertex AI/Document AI project used with ADC. Its presence selects Vertex mode; the data pipeline and OCR require it |
-| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Yes on Vercel | API-key auth used when `GOOGLE_CLOUD_PROJECT` is unset — the serving path in production, which has no ADC |
-| `GOOGLE_CLOUD_LOCATION` | Yes | Vertex AI location; use `global` for current RAG models |
-| `GOOGLE_ADC_EXPECTED_PRINCIPAL` | Recommended locally | Optional identity assertion used by the read-only ADC preflight |
-| `RAG_CORPUS_VERSION` | Recommended | Cache namespace; bump after a corpus/index deployment |
-| `RAG_RETRIEVAL_MODE` | Yes | Retrieval selector; defaults to and should remain `legacy` until a validated index is approved |
-| `RAG_ACTIVE_INDEX_BUILD_ID` | Candidate only | Required immutable build identity for `shadow` or `versioned` retrieval |
-| `DOCUMENT_AI_PROCESSOR_ID` | Yes (OCR) | Document AI layout parser processor |
-| `DOCUMENT_AI_LOCATION` | Yes (OCR) | Typically `us` |
-| `R2_ACCOUNT_ID` | Optional | Cloudflare R2 account (production image CDN) |
-| `R2_ACCESS_KEY_ID` | Optional | R2 access key |
-| `R2_SECRET_ACCESS_KEY` | Optional | R2 secret key |
-| `R2_BUCKET_NAME` | Optional | R2 bucket name |
-| `IMAGE_BASE_URL` | Optional | R2 public CDN base URL (falls back to a local API proxy in dev) |
-| `ADMIN_REVALIDATE_TOKEN` | Optional | Auth token for `/api/admin/revalidate` |
-| `CRON_SECRET` | Yes in production | Bearer token the Vercel cron presents to `/api/internal/retention` |
-| `VOYAGE_API_KEY` | Optional | Enables the Voyage reranker provider; falls back to Gemini reranking when unset |
-| `GC_APPROVAL_TOKEN` | Optional | Required confirmation for destructive R2/index garbage-collection scripts |
-| `FEEDBACK_RETENTION_DAYS` | Optional | Overrides the 90-day `ask_feedback` retention window |
-| `EVAL_DATABASE_URL` | Optional | Separate database for the isolated evaluation harness |
-| `OCR_WORKERS` | Optional | Parallel worker count for OCR pipeline (default 1) |
-| `GEMINI_CALL_SPACING_S` | Optional | Minimum gap between Gemini calls (default 0.5) |
+| Variable                            | Required            | Purpose                                                                                                             |
+| ----------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                      | Yes                 | Neon Postgres connection string                                                                                     |
+| `GOOGLE_CLOUD_PROJECT`              | Yes locally         | Vertex AI/Document AI project used with ADC. Its presence selects Vertex mode; the data pipeline and OCR require it |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Yes on Vercel       | API-key auth used when `GOOGLE_CLOUD_PROJECT` is unset — the serving path in production, which has no ADC           |
+| `GOOGLE_CLOUD_LOCATION`             | Yes                 | Vertex AI location; use `global` for current RAG models                                                             |
+| `GOOGLE_ADC_EXPECTED_PRINCIPAL`     | Recommended locally | Optional identity assertion used by the read-only ADC preflight                                                     |
+| `RAG_CORPUS_VERSION`                | Recommended         | Cache namespace; bump after a corpus/index deployment                                                               |
+| `RAG_RETRIEVAL_MODE`                | Yes                 | Retrieval selector; defaults to and should remain `legacy` until a validated index is approved                      |
+| `RAG_ACTIVE_INDEX_BUILD_ID`         | Candidate only      | Required immutable build identity for `shadow` or `versioned` retrieval                                             |
+| `DOCUMENT_AI_PROCESSOR_ID`          | Yes (OCR)           | Document AI layout parser processor                                                                                 |
+| `DOCUMENT_AI_LOCATION`              | Yes (OCR)           | Typically `us`                                                                                                      |
+| `R2_ACCOUNT_ID`                     | Optional            | Cloudflare R2 account (production image CDN)                                                                        |
+| `R2_ACCESS_KEY_ID`                  | Optional            | R2 access key                                                                                                       |
+| `R2_SECRET_ACCESS_KEY`              | Optional            | R2 secret key                                                                                                       |
+| `R2_BUCKET_NAME`                    | Optional            | R2 bucket name                                                                                                      |
+| `IMAGE_BASE_URL`                    | Optional            | R2 public CDN base URL (falls back to a local API proxy in dev)                                                     |
+| `ADMIN_REVALIDATE_TOKEN`            | Optional            | Auth token for `/api/admin/revalidate`                                                                              |
+| `CRON_SECRET`                       | Yes in production   | Bearer token the Vercel cron presents to `/api/internal/retention`                                                  |
+| `VOYAGE_API_KEY`                    | Optional            | Enables the Voyage reranker provider; falls back to Gemini reranking when unset                                     |
+| `GC_APPROVAL_TOKEN`                 | Optional            | Required confirmation for destructive R2/index garbage-collection scripts                                           |
+| `FEEDBACK_RETENTION_DAYS`           | Optional            | Overrides the 90-day `ask_feedback` retention window                                                                |
+| `EVAL_DATABASE_URL`                 | Optional            | Separate database for the isolated evaluation harness                                                               |
+| `OCR_WORKERS`                       | Optional            | Parallel worker count for OCR pipeline (default 1)                                                                  |
+| `GEMINI_CALL_SPACING_S`             | Optional            | Minimum gap between Gemini calls (default 0.5)                                                                      |
 
 The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PLAIN`,
 `OCR_MIN_TEXT_LENGTH`, `DOCAI_CONFIDENCE_THRESHOLD`, `AMERICAN_STORIES_MODEL_PATH`,
@@ -490,26 +489,26 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `npm run dev` | Start Next.js dev server (hot reload) |
-| `npm run build` | Production build |
-| `npm run lint` | ESLint |
-| `npm run test` | Vitest watch mode |
-| `npm run test:run` | Vitest run (CI mode) |
-| `npm run test:invariants` | OCR pipeline invariant tests |
-| `npm run google:verify-adc` | Read-only verification of ADC identity, project/quota project, required Google APIs, and OCR processor |
-| `npm run db:seed` | Seed editions into Neon Postgres |
-| `npm run db:reset` | Drop + recreate tables, then seed |
-| `npm run db:embed` | Generate vector embeddings for articles (incremental) |
-| `npm run db:migrate` | Apply pending SQL migrations |
-| `npm run db:migrate:status` | Show which migrations have been applied |
-| `npm run images:upload` | Upload edition images to Cloudflare R2 |
-| `npm run weather:build:ohio` | Build offline weather archive (1950–2000) |
-| `npm run weather:verify:ohio` | Verify weather archive integrity |
-| `scripts/ocr/process-edition.sh <folder>` | Process a single edition end-to-end |
-| `scripts/ocr/process-unprocessed.sh` | Batch OCR all new inbox folders |
-| `python -m pytest tests/ocr/ -x` | Python OCR test suite |
+| Command                                   | Description                                                                                            |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `npm run dev`                             | Start Next.js dev server (hot reload)                                                                  |
+| `npm run build`                           | Production build                                                                                       |
+| `npm run lint`                            | ESLint                                                                                                 |
+| `npm run test`                            | Vitest watch mode                                                                                      |
+| `npm run test:run`                        | Vitest run (CI mode)                                                                                   |
+| `npm run test:invariants`                 | OCR pipeline invariant tests                                                                           |
+| `npm run google:verify-adc`               | Read-only verification of ADC identity, project/quota project, required Google APIs, and OCR processor |
+| `npm run db:seed`                         | Seed editions into Neon Postgres                                                                       |
+| `npm run db:reset`                        | Drop + recreate tables, then seed                                                                      |
+| `npm run db:embed`                        | Generate vector embeddings for articles (incremental)                                                  |
+| `npm run db:migrate`                      | Apply pending SQL migrations                                                                           |
+| `npm run db:migrate:status`               | Show which migrations have been applied                                                                |
+| `npm run images:upload`                   | Upload edition images to Cloudflare R2                                                                 |
+| `npm run weather:build:ohio`              | Build offline weather archive (1950–2000)                                                              |
+| `npm run weather:verify:ohio`             | Verify weather archive integrity                                                                       |
+| `scripts/ocr/process-edition.sh <folder>` | Process a single edition end-to-end                                                                    |
+| `scripts/ocr/process-unprocessed.sh`      | Batch OCR all new inbox folders                                                                        |
+| `python -m pytest tests/ocr/ -x`          | Python OCR test suite                                                                                  |
 
 ---
 
@@ -589,7 +588,7 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 - **Conventional commits** — `feat(rag):`, `fix(ocr):`, `chore:`, `docs:`, `refactor:`, `ci:`. Summary ≤ 70 chars.
 - **Feature modules** — business logic lives in `src/features/<feature>/`; no cross-feature imports.
 - **API routes** — always validate inputs, return typed JSON with the `AskErrorKind` discriminator, and use correct HTTP status codes.
-- **OCR adapter** — `src/server/ocr-adapter/` is the *only* place that transforms `edition.json` → DB shape. Restores must go through this path, not raw SQL.
+- **OCR adapter** — `src/server/ocr-adapter/` is the _only_ place that transforms `edition.json` → DB shape. Restores must go through this path, not raw SQL.
 - **Dates** — always `YYYY-MM-DD` strings; never `Date` objects across API boundaries.
 - **Design tokens** — colors, typography, and spacing live in `src/styles/tokens/`; components consume the semantic `--color-*` layer, not raw hex values. The four `--owu-*` names are inert compatibility aliases; see [`design.md`](./design.md#legacy---owu--aliases).
 - **Path aliases** — `@/*`, `@/features/*`, `@/shared/*`, `@/styles/*` per `tsconfig.json`.
@@ -650,7 +649,7 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 
 - Domain-driven package layout (Python OCR pipeline) with AST-enforced import boundaries
 - Feature modules (Next.js frontend) with no cross-feature imports
-- Explicit separation of concerns: `src/server/ocr-adapter/` is the *only* place that transforms `edition.json` into DB shape
+- Explicit separation of concerns: `src/server/ocr-adapter/` is the _only_ place that transforms `edition.json` into DB shape
 - Dataflow-oriented architecture: TIF → OCR → JSON → DB → vector → answer
 
 </details>
@@ -694,7 +693,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for issue filing, the conventional comm
 
 ## Acknowledgements
 
-This is an unofficial independent student project. *The Transcript* is Ohio Wesleyan University's student newspaper, used here descriptively — this project is not affiliated with, endorsed by, or an official product of Ohio Wesleyan University.
+This is an unofficial independent student project. _The Transcript_ is Ohio Wesleyan University's student newspaper, used here descriptively — this project is not affiliated with, endorsed by, or an official product of Ohio Wesleyan University.
 
 Newspaper scans sourced from the OCLC ContentDM public archive. Weather data from NOAA. Music chart data from the public Billboard Hot 100 history.
 

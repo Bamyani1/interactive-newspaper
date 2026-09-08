@@ -39,16 +39,12 @@ function asString(value: unknown): string {
 
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => asString(entry).trim())
-    .filter((entry) => entry.length > 0);
+  return value.map((entry) => asString(entry).trim()).filter((entry) => entry.length > 0);
 }
 
 function rowHash(row: Row, omittedKeys: string[] = []): string {
   const omitted = new Set(omittedKeys);
-  return sha256(
-    Object.fromEntries(Object.entries(row).filter(([key]) => !omitted.has(key))),
-  );
+  return sha256(Object.fromEntries(Object.entries(row).filter(([key]) => !omitted.has(key))));
 }
 
 function countByNullableString(rows: Row[], key: string): Record<string, number> {
@@ -57,7 +53,9 @@ function countByNullableString(rows: Row[], key: string): Record<string, number>
     const label = asString(row[key]).trim() || "unlabeled";
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
-  return Object.fromEntries([...counts.entries()].sort(([left], [right]) => left.localeCompare(right)));
+  return Object.fromEntries(
+    [...counts.entries()].sort(([left], [right]) => left.localeCompare(right))
+  );
 }
 
 interface CorpusSnapshotInput {
@@ -151,12 +149,12 @@ export function buildCorpusSnapshot(input: CorpusSnapshotInput) {
   const articleImageReferences = editions.reduce(
     (count, edition) =>
       count + edition.articles.reduce((sum, article) => sum + article.imageUrls.length, 0),
-    0,
+    0
   );
   const articlesWithImages = editions.reduce(
     (count, edition) =>
       count + edition.articles.filter((article) => article.imageUrls.length > 0).length,
-    0,
+    0
   );
   const corpusSha256 = sha256(
     editions.map((edition) => ({
@@ -165,7 +163,7 @@ export function buildCorpusSnapshot(input: CorpusSnapshotInput) {
       declaredArticleCount: edition.declaredArticleCount,
       publicationInfo: edition.publicationInfo,
       editionSha256: edition.editionSha256,
-    })),
+    }))
   );
   const schemaSha256 = sha256(input.schema);
   const candidateIndex = {
@@ -209,7 +207,7 @@ export function buildCorpusSnapshot(input: CorpusSnapshotInput) {
       id: article.id,
       contentSha256: article.contentSha256,
       embedding: article.embedding,
-    })),
+    }))
   );
   const databaseSnapshotSha256 = sha256({
     corpusSha256,
@@ -246,19 +244,19 @@ export function buildCorpusSnapshot(input: CorpusSnapshotInput) {
     embeddingCoverage: {
       currentModel: RAG_EMBEDDING_MODEL,
       articleCurrentModelEmbeddings: input.articles.filter(
-        (row) => row.has_embedding && row.embedding_model === RAG_EMBEDDING_MODEL,
+        (row) => row.has_embedding && row.embedding_model === RAG_EMBEDDING_MODEL
       ).length,
       articleModels: countByNullableString(
         input.articles.filter((row) => row.has_embedding),
-        "embedding_model",
+        "embedding_model"
       ),
       chunkModels: countByNullableString(
         input.chunks.filter((row) => row.has_embedding),
-        "embedding_model",
+        "embedding_model"
       ),
       imageModels: countByNullableString(
         input.images.filter((row) => row.has_embedding),
-        "embedding_model",
+        "embedding_model"
       ),
     },
     auxiliary,
@@ -294,7 +292,7 @@ function writeJsonAtomic(outputPath: string, value: unknown): "created" | "reuse
     }
     throw new Error(
       `Refusing to overwrite immutable corpus snapshot ${outputPath}. ` +
-        "Move the existing artifact aside or choose a new snapshot version after review.",
+        "Move the existing artifact aside or choose a new snapshot version after review."
     );
   }
   const partial = `${outputPath}.part`;
@@ -450,8 +448,8 @@ async function main(): Promise<void> {
         counts: snapshot.counts,
       },
       null,
-      2,
-    ),
+      2
+    )
   );
 }
 

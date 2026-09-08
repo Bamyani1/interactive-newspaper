@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fetchArticleForRagMock, queryEditionsMock, searchAndRankArchiveMock } =
-  vi.hoisted(() => ({
-    fetchArticleForRagMock: vi.fn(),
-    queryEditionsMock: vi.fn(),
-    searchAndRankArchiveMock: vi.fn(),
-  }));
+const { fetchArticleForRagMock, queryEditionsMock, searchAndRankArchiveMock } = vi.hoisted(() => ({
+  fetchArticleForRagMock: vi.fn(),
+  queryEditionsMock: vi.fn(),
+  searchAndRankArchiveMock: vi.fn(),
+}));
 
 vi.mock("@/src/lib/db", () => ({
   fetchArticleForRag: fetchArticleForRagMock,
@@ -62,7 +61,7 @@ describe("agent-tools", () => {
         category: "Sports",
         limit: 5,
       },
-      { signal: controller.signal, requestId: "req-1" },
+      { signal: controller.signal, requestId: "req-1" }
     );
 
     expect(searchAndRankArchiveMock).toHaveBeenCalledWith({
@@ -116,7 +115,7 @@ describe("agent-tools", () => {
           endDate: "1979-12-31",
           category: "Sports",
         },
-      },
+      }
     );
     expect(searchAndRankArchiveMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -125,7 +124,7 @@ describe("agent-tools", () => {
           endDate: "1979-12-31",
           category: "Sports",
         },
-      }),
+      })
     );
   });
 
@@ -136,7 +135,7 @@ describe("agent-tools", () => {
   ])("clamps search limit %s to %s", async (input, expected) => {
     await executeTool("search_archive", { query: "test", limit: input });
     expect(searchAndRankArchiveMock).toHaveBeenCalledWith(
-      expect.objectContaining({ maxArticles: expected }),
+      expect.objectContaining({ maxArticles: expected })
     );
   });
 
@@ -203,9 +202,9 @@ describe("agent-tools", () => {
       kind: "invalid_arguments",
     });
     fetchArticleForRagMock.mockResolvedValue(null);
-    expect(
-      await executeTool("read_article", { articleId: "1965-03-15-99" }),
-    ).toEqual({ error: "Article not found" });
+    expect(await executeTool("read_article", { articleId: "1965-03-15-99" })).toEqual({
+      error: "Article not found",
+    });
   });
 
   it("does not let read_article escape enforced filters", async () => {
@@ -214,8 +213,8 @@ describe("agent-tools", () => {
       executeTool(
         "read_article",
         { articleId: article.id },
-        { filters: { startDate: "1970-01-01" } },
-      ),
+        { filters: { startDate: "1970-01-01" } }
+      )
     ).resolves.toEqual({ error: "Article falls outside the enforced archive filters" });
   });
 
@@ -228,7 +227,7 @@ describe("agent-tools", () => {
     const result = await executeTool(
       "list_editions",
       { startDate: "1965-01-01", endDate: "1965-12-31", offset: 10, limit: 500 },
-      { signal: controller.signal },
+      { signal: controller.signal }
     );
     expect(queryEditionsMock).toHaveBeenCalledWith({
       startDate: "1965-01-01",

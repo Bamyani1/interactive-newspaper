@@ -6,12 +6,16 @@ export function isAdImageDescription(headline: string): boolean {
   // Section banners described by AI (e.g., "Sports section header for the Ohio Wesleyan Transcript.")
   if (h.includes("section header")) return true;
   // AI-generated visual element descriptions (e.g., "A cartoon illustration of a character...")
-  if (/^an?\s+(cartoon|decorative|logo)\s+(illustration|image|drawing|graphic)\b/.test(h)) return true;
+  if (/^an?\s+(cartoon|decorative|logo)\s+(illustration|image|drawing|graphic)\b/.test(h))
+    return true;
   // Newspaper layout-element descriptions (e.g., "the Ohio College Newspaper Association logo within the newspaper's masthead")
   if (/\blogo\b/.test(h) && /\bmasthead\b|\bnameplate\b|\bheader\b|\bbanner\b/.test(h)) return true;
   // AI descriptions of visual elements using spatial language (e.g., "the X logo within the newspaper's Y")
-  if (/\b(logo|emblem|seal|crest|insignia)\b/.test(h) &&
-    /\b(within|inside|depicting|showing)\s+the\s+(newspaper|paper|publication|page)\b/.test(h)) return true;
+  if (
+    /\b(logo|emblem|seal|crest|insignia)\b/.test(h) &&
+    /\b(within|inside|depicting|showing)\s+the\s+(newspaper|paper|publication|page)\b/.test(h)
+  )
+    return true;
   return false;
 }
 
@@ -20,10 +24,7 @@ export function isValidImageFile(filename: string): boolean {
 }
 
 /** True when a caption is just the author's name/mugshot label, not real content. */
-export function isAuthorHeadshot(
-  caption: string | undefined,
-  authorName: string,
-): boolean {
+export function isAuthorHeadshot(caption: string | undefined, authorName: string): boolean {
   if (!caption || !authorName) return false;
   const cap = caption.trim();
   const capWords = cap.split(/\s+/);
@@ -36,8 +37,16 @@ export function isAuthorHeadshot(
  * Detect body/caption duplication. Used to collapse OCR photo-only artifacts.
  */
 export function isBodyMostlyCaption(body: string, caption: string): boolean {
-  const bodyNorm = body.replace(/\s+/g, " ").trim().toLowerCase().replace(/[\s.]+$/, "");
-  const capNorm = caption.replace(/\s+/g, " ").trim().toLowerCase().replace(/[\s.]+$/, "");
+  const bodyNorm = body
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s.]+$/, "");
+  const capNorm = caption
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s.]+$/, "");
   if (bodyNorm.length === 0) return false;
   const shorter = bodyNorm.length <= capNorm.length ? bodyNorm : capNorm;
   const longer = bodyNorm.length <= capNorm.length ? capNorm : bodyNorm;
@@ -49,15 +58,12 @@ export function isBodyMostlyCaption(body: string, caption: string): boolean {
  */
 export function doesLastParagraphMatchAnyCaption(
   body: string,
-  captions: Array<string | null>,
+  captions: Array<string | null>
 ): boolean {
   const paragraphs = body.split(/\n\n+/);
   if (paragraphs.length <= 1) return false;
 
-  const lastPara = paragraphs[paragraphs.length - 1]
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+  const lastPara = paragraphs[paragraphs.length - 1].replace(/\s+/g, " ").trim().toLowerCase();
 
   return captions.some((cap) => {
     if (!cap) return false;

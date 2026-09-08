@@ -58,9 +58,7 @@ describe("AdsSection – category-to-variant mapping", () => {
 describe("AdsSection – anti-monotony variant blocking", () => {
   it("3 Entertainment ads: 3rd blocked from marquee, falls to MEDIUM → one 'Clip & Save'", () => {
     const entertainmentAd = makeAd({ category: "Entertainment", body: body(300) });
-    render(
-      <AdsSection displayAds={[entertainmentAd, entertainmentAd, entertainmentAd]} />,
-    );
+    render(<AdsSection displayAds={[entertainmentAd, entertainmentAd, entertainmentAd]} />);
     // ad1 = marquee, ad2 = marquee, ad3 = blocked → retail-coupon (MEDIUM tier counter=0)
     expect(screen.getAllByText("Clip & Save")).toHaveLength(1);
   });
@@ -79,26 +77,20 @@ describe("AdsSection – anti-monotony variant blocking", () => {
 
 describe("AdsSection – pagination", () => {
   it("4 ads → no 'See All' button", () => {
-    const ads = Array.from({ length: 4 }, (_, i) =>
-      makeAd({ title: `Ad ${i}`, body: body(10) }),
-    );
+    const ads = Array.from({ length: 4 }, (_, i) => makeAd({ title: `Ad ${i}`, body: body(10) }));
     render(<AdsSection displayAds={ads} />);
     expect(screen.queryByText(/See All/)).toBeNull();
   });
 
   it("5 ads → 'See All 5 Ads' button present; 5th ad title NOT in document", () => {
-    const ads = Array.from({ length: 5 }, (_, i) =>
-      makeAd({ title: `Ad ${i}`, body: body(10) }),
-    );
+    const ads = Array.from({ length: 5 }, (_, i) => makeAd({ title: `Ad ${i}`, body: body(10) }));
     render(<AdsSection displayAds={ads} />);
     expect(screen.getByText("See All 5 Ads")).toBeInTheDocument();
     expect(screen.queryByText("Ad 4")).toBeNull();
   });
 
   it("click 'See All 5 Ads' → 5th ad title visible; button gone", () => {
-    const ads = Array.from({ length: 5 }, (_, i) =>
-      makeAd({ title: `Ad ${i}`, body: body(10) }),
-    );
+    const ads = Array.from({ length: 5 }, (_, i) => makeAd({ title: `Ad ${i}`, body: body(10) }));
     render(<AdsSection displayAds={ads} />);
     fireEvent.click(screen.getByText("See All 5 Ads"));
     expect(screen.getByText("Ad 4")).toBeInTheDocument();
@@ -142,7 +134,7 @@ describe("ClassifiedsSection – empty state", () => {
 describe("ClassifiedsSection – pagination", () => {
   it("4 classifieds → no 'See All' button", () => {
     const ads = Array.from({ length: 4 }, (_, i) =>
-      makeAd({ title: `Classified ${i}`, body: body(10) }),
+      makeAd({ title: `Classified ${i}`, body: body(10) })
     );
     render(<ClassifiedsSection classifiedAds={ads} />);
     expect(screen.queryByText(/See All/)).toBeNull();
@@ -150,7 +142,7 @@ describe("ClassifiedsSection – pagination", () => {
 
   it("5 classifieds → 'See All 5 Listings' button; 5th NOT in document", () => {
     const ads = Array.from({ length: 5 }, (_, i) =>
-      makeAd({ title: `Classified ${i}`, body: body(10) }),
+      makeAd({ title: `Classified ${i}`, body: body(10) })
     );
     render(<ClassifiedsSection classifiedAds={ads} />);
     expect(screen.getByText("See All 5 Listings")).toBeInTheDocument();
@@ -159,7 +151,7 @@ describe("ClassifiedsSection – pagination", () => {
 
   it("click 'See All 5 Listings' → 5th classified visible; button gone", () => {
     const ads = Array.from({ length: 5 }, (_, i) =>
-      makeAd({ title: `Classified ${i}`, body: body(10) }),
+      makeAd({ title: `Classified ${i}`, body: body(10) })
     );
     render(<ClassifiedsSection classifiedAds={ads} />);
     fireEvent.click(screen.getByText("See All 5 Listings"));

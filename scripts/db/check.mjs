@@ -17,7 +17,9 @@ const sql = neon(process.env.DATABASE_URL);
 async function main() {
   const result = await sql`SELECT date, article_count, page_count FROM editions ORDER BY date;`;
   console.log(`Found ${result.length} editions in the database:`);
-  result.forEach(r => console.log(`  ${r.date}: ${r.article_count} articles, ${r.page_count} pages`));
+  result.forEach((r) =>
+    console.log(`  ${r.date}: ${r.article_count} articles, ${r.page_count} pages`)
+  );
 }
 
 main().catch(console.error);

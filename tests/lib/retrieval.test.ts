@@ -74,28 +74,26 @@ describe("canonical RAG retrieval", () => {
     embedQueryMock.mockResolvedValue([0.1, 0.2]);
     searchArticlesForRagMock.mockResolvedValue([ftsCandidate]);
     queryArticlesByEmbeddingMock.mockResolvedValue([vectorCandidate]);
-    fuseArticleResultsMock.mockReturnValue([
-      { ...ftsCandidate, source: "both" as const },
-    ]);
+    fuseArticleResultsMock.mockReturnValue([{ ...ftsCandidate, source: "both" as const }]);
     reformulateQueryMock.mockResolvedValue({
       embeddingQuery: "semantic terms",
       ftsQuery: "keyword terms",
       mode: "text",
       complexity: "simple",
     });
-    rerankArticlesMock.mockResolvedValue([
-      { ...ftsCandidate, relevanceScore: 8 },
-    ]);
+    rerankArticlesMock.mockResolvedValue([{ ...ftsCandidate, relevanceScore: 8 }]);
   });
 
   it("starts lexical and embedding/vector branches independently", async () => {
     const controller = new AbortController();
-    const result = await retrieveCandidates(candidateParams({
-      filters: { category: "Sports" },
-      timeoutMs: 5000,
-      signal: controller.signal,
-      requestId: "req-1",
-    }));
+    const result = await retrieveCandidates(
+      candidateParams({
+        filters: { category: "Sports" },
+        timeoutMs: 5000,
+        signal: controller.signal,
+        requestId: "req-1",
+      })
+    );
 
     expect(searchArticlesForRagMock).toHaveBeenCalledWith("keywords", {
       limit: 20,
@@ -134,20 +132,24 @@ describe("canonical RAG retrieval", () => {
   });
 
   it("stratifies across months for wide date ranges but not narrow ones", async () => {
-    await retrieveCandidates(candidateParams({
-      filters: { startDate: "1986-01-01", endDate: "1986-12-31" },
-    }));
+    await retrieveCandidates(
+      candidateParams({
+        filters: { startDate: "1986-01-01", endDate: "1986-12-31" },
+      })
+    );
     expect(queryArticlesByEmbeddingMock).toHaveBeenLastCalledWith(
       [0.1, 0.2],
-      expect.objectContaining({ temporalStratify: true }),
+      expect.objectContaining({ temporalStratify: true })
     );
 
-    await retrieveCandidates(candidateParams({
-      filters: { startDate: "1986-03-01", endDate: "1986-03-31" },
-    }));
+    await retrieveCandidates(
+      candidateParams({
+        filters: { startDate: "1986-03-01", endDate: "1986-03-31" },
+      })
+    );
     expect(queryArticlesByEmbeddingMock).toHaveBeenLastCalledWith(
       [0.1, 0.2],
-      expect.objectContaining({ temporalStratify: false }),
+      expect.objectContaining({ temporalStratify: false })
     );
   });
 
@@ -164,10 +166,7 @@ describe("canonical RAG retrieval", () => {
       .mockResolvedValueOnce([vectorCandidate])
       .mockResolvedValueOnce([shadowVector]);
     fuseArticleResultsMock.mockImplementation(
-      (vector: typeof vectorCandidate[], fts: typeof ftsCandidate[]) => [
-        ...fts,
-        ...vector,
-      ],
+      (vector: (typeof vectorCandidate)[], fts: (typeof ftsCandidate)[]) => [...fts, ...vector]
     );
 
     const result = await retrieveCandidates(candidateParams());
@@ -207,9 +206,7 @@ describe("canonical RAG retrieval", () => {
 
     expect(result.servedTarget).toBe("legacy");
     expect(result.method).toBe("hybrid");
-    expect(result.articles).toEqual([
-      { ...ftsCandidate, source: "both" },
-    ]);
+    expect(result.articles).toEqual([{ ...ftsCandidate, source: "both" }]);
     expect(result.shadow?.articles).toEqual([]);
     expect(result.shadow?.signals.fts.status).toBe("failed");
     expect(result.shadow?.signals.vector.status).toBe("failed");
@@ -256,7 +253,7 @@ describe("canonical RAG retrieval", () => {
       vectorError: expect.any(Error),
     });
     await expect(retrieveCandidates(candidateParams())).rejects.toBeInstanceOf(
-      RetrievalSignalsUnavailableError,
+      RetrievalSignalsUnavailableError
     );
   });
 
@@ -313,12 +310,12 @@ describe("canonical RAG retrieval", () => {
 
     expect(searchArticlesForRagMock).toHaveBeenCalledWith(
       "homecoming parade",
-      expect.objectContaining({ limit: 20, onlyWithImages: true }),
+      expect.objectContaining({ limit: 20, onlyWithImages: true })
     );
     expect(rerankArticlesMock).toHaveBeenCalledWith(
       "Show homecoming photos",
       expect.any(Array),
-      expect.objectContaining({ maxArticles: 7, minScore: 3 }),
+      expect.objectContaining({ maxArticles: 7, minScore: 3 })
     );
     expect(result.mode).toBe("visual");
   });
@@ -341,7 +338,7 @@ describe("canonical RAG retrieval", () => {
       expect.objectContaining({
         startDate: "1980-01-01",
         endDate: "1980-12-31",
-      }),
+      })
     );
   });
 });

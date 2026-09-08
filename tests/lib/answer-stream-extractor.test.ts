@@ -15,9 +15,7 @@ function run(chunks: string[]): { deltas: string[]; extractor: AnswerFieldExtrac
 
 describe("AnswerFieldExtractor", () => {
   it("decodes a complete envelope in one chunk", () => {
-    const { deltas, extractor } = run([
-      '{"answer":"Hello world.","follow_ups":["Next?"]}',
-    ]);
+    const { deltas, extractor } = run(['{"answer":"Hello world.","follow_ups":["Next?"]}']);
     expect(deltas).toEqual(["Hello world."]);
     expect(extractor.complete).toBe(true);
   });
@@ -70,10 +68,7 @@ describe("AnswerFieldExtractor", () => {
   });
 
   it("emits nothing for plain non-JSON text", () => {
-    const { deltas, extractor } = run([
-      "A plain legacy answer ",
-      "with no envelope.",
-    ]);
+    const { deltas, extractor } = run(["A plain legacy answer ", "with no envelope."]);
     expect(deltas).toEqual([]);
     expect(extractor.complete).toBe(false);
   });

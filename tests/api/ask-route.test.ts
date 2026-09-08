@@ -43,7 +43,7 @@ vi.mock("@/src/lib/db", () => ({
     (
       vectorResults: Array<Record<string, unknown>>,
       ftsResults: Array<Record<string, unknown>>,
-      options: { limit: number },
+      options: { limit: number }
     ) => {
       const merged = new Map<string, Record<string, unknown>>();
       for (const article of vectorResults) {
@@ -52,13 +52,10 @@ vi.mock("@/src/lib/db", () => ({
       for (const article of ftsResults) {
         const id = String(article.id);
         const previous = merged.get(id);
-        merged.set(
-          id,
-          previous ? { ...previous, source: "both" } : article,
-        );
+        merged.set(id, previous ? { ...previous, source: "both" } : article);
       }
       return [...merged.values()].slice(0, options.limit);
-    },
+    }
   ),
 }));
 
@@ -117,10 +114,7 @@ import {
 } from "@/src/lib/conversation-store";
 import { clearAnswerCache } from "@/src/lib/answer-cache";
 
-function makeRequest(
-  body: Record<string, unknown>,
-  opts: { stream?: boolean } = {},
-): NextRequest {
+function makeRequest(body: Record<string, unknown>, opts: { stream?: boolean } = {}): NextRequest {
   const url = opts.stream
     ? "http://localhost:3000/api/ask?stream=1"
     : "http://localhost:3000/api/ask";
@@ -134,7 +128,7 @@ function makeRequest(
 // Helper: consume an SSE ReadableStream and return the parsed events in order.
 // Each SSE frame is `data: {json}\n\n`; split on `\n\n` and JSON.parse each.
 async function readSseEvents(
-  response: Response | NextResponse,
+  response: Response | NextResponse
 ): Promise<Array<Record<string, unknown>>> {
   const body = response.body;
   if (!body) throw new Error("Response has no body");
@@ -181,77 +175,59 @@ const mockArticle = {
 // clearAllMocks intentionally preserves implementations, which previously let
 // an FTS rejection from one block leak into unrelated route tests.
 beforeEach(() => {
-  (embedQuery as ReturnType<typeof vi.fn>)
-    .mockReset()
-    .mockResolvedValue(new Array(768).fill(0));
-  (hybridSearch as ReturnType<typeof vi.fn>)
-    .mockReset()
-    .mockResolvedValue([mockArticle]);
+  (embedQuery as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue(new Array(768).fill(0));
+  (hybridSearch as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue([mockArticle]);
   (queryArticlesByEmbedding as ReturnType<typeof vi.fn>)
     .mockReset()
     .mockResolvedValue([mockArticle]);
   (searchArticlesForRag as ReturnType<typeof vi.fn>)
     .mockReset()
     .mockResolvedValue([{ ...mockArticle, source: "fts" as const }]);
-  (queryArchiveCoverage as ReturnType<typeof vi.fn>)
-    .mockReset()
-    .mockResolvedValue({
-      editionCount: 351,
-      articleCount: 11_705,
-      earliestEditionDate: "1950-01-01",
-      latestEditionDate: "2006-12-31",
-      retrievalTarget: "legacy",
-    });
-  (reformulateQuery as ReturnType<typeof vi.fn>)
-    .mockReset()
-    .mockResolvedValue({
-      embeddingQuery: "What happened at OWU?",
-      ftsQuery: "What happened at OWU?",
-      mode: "text",
-      complexity: "simple",
-      coverageIntent: "none",
-    });
+  (queryArchiveCoverage as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue({
+    editionCount: 351,
+    articleCount: 11_705,
+    earliestEditionDate: "1950-01-01",
+    latestEditionDate: "2006-12-31",
+    retrievalTarget: "legacy",
+  });
+  (reformulateQuery as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue({
+    embeddingQuery: "What happened at OWU?",
+    ftsQuery: "What happened at OWU?",
+    mode: "text",
+    complexity: "simple",
+    coverageIntent: "none",
+  });
   (rerankArticles as ReturnType<typeof vi.fn>)
     .mockReset()
     .mockResolvedValue([{ ...mockArticle, relevanceScore: 8 }]);
-  (generateAnswer as ReturnType<typeof vi.fn>)
-    .mockReset()
-    .mockResolvedValue({
-      answer: "Test answer [Source 1]",
-      citations: [
-        {
-          articleId: mockArticle.id,
-          headline: mockArticle.headline,
-          editionDate: mockArticle.editionDate,
-        },
-      ],
-      confidence: "high",
-      followUps: [],
-    });
-  (generateAnswerStream as ReturnType<typeof vi.fn>)
-    .mockReset()
-    .mockImplementation(() =>
-      (async function* () {
-        yield { type: "delta", text: "Stream answer." };
-        yield {
-          type: "done",
-          answer: "Stream answer.",
-          citations: [],
-          confidence: "medium",
-          followUps: [],
-        };
-      })(),
-    );
+  (generateAnswer as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue({
+    answer: "Test answer [Source 1]",
+    citations: [
+      {
+        articleId: mockArticle.id,
+        headline: mockArticle.headline,
+        editionDate: mockArticle.editionDate,
+      },
+    ],
+    confidence: "high",
+    followUps: [],
+  });
+  (generateAnswerStream as ReturnType<typeof vi.fn>).mockReset().mockImplementation(() =>
+    (async function* () {
+      yield { type: "delta", text: "Stream answer." };
+      yield {
+        type: "done",
+        answer: "Stream answer.",
+        citations: [],
+        confidence: "medium",
+        followUps: [],
+      };
+    })()
+  );
   (runAgentLoop as ReturnType<typeof vi.fn>).mockReset();
-  (getConversationHistory as ReturnType<typeof vi.fn>)
-    .mockReset()
-    .mockResolvedValue([]);
-  (addConversationTurn as ReturnType<typeof vi.fn>)
-    .mockReset()
-    .mockResolvedValue(undefined);
-  (formatHistoryForPrompt as ReturnType<typeof vi.fn>)
-    .mockReset()
-    .mockReturnValue("");
+  (getConversationHistory as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue([]);
+  (addConversationTurn as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue(undefined);
+  (formatHistoryForPrompt as ReturnType<typeof vi.fn>).mockReset().mockReturnValue("");
 });
 
 describe("POST /api/ask", () => {
@@ -275,9 +251,7 @@ describe("POST /api/ask", () => {
     });
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
-    (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockResolvedValue([
-      mockArticle,
-    ]);
+    (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (searchArticlesForRag as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, source: "fts" as const },
     ]);
@@ -310,7 +284,7 @@ describe("POST /api/ask", () => {
           confidence: "high",
           followUps: [],
         };
-      })(),
+      })()
     );
   });
 
@@ -354,7 +328,7 @@ describe("POST /api/ask", () => {
 
   it("continues with full-text retrieval when vector quota is exhausted", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new MockQuotaExhaustedError("embedQuery", { code: 429 }),
+      new MockQuotaExhaustedError("embedQuery", { code: 429 })
     );
 
     const response = await POST(makeRequest({ question: "What happened?" }));
@@ -367,7 +341,7 @@ describe("POST /api/ask", () => {
 
   it("tags reformulator errors with stage='reformulate'", async () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("reformulator unexpected crash"),
+      new Error("reformulator unexpected crash")
     );
 
     const response = await POST(makeRequest({ question: "What happened?" }));
@@ -379,9 +353,7 @@ describe("POST /api/ask", () => {
   });
 
   it("tags reranker errors with stage='rerank'", async () => {
-    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("reranker crashed"),
-    );
+    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("reranker crashed"));
 
     const response = await POST(makeRequest({ question: "What happened?" }));
     const body = await response.json();
@@ -392,9 +364,7 @@ describe("POST /api/ask", () => {
   });
 
   it("tags answer-gen errors with stage='generate'", async () => {
-    (generateAnswer as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("generation crashed"),
-    );
+    (generateAnswer as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("generation crashed"));
 
     const response = await POST(makeRequest({ question: "What happened?" }));
     const body = await response.json();
@@ -405,11 +375,9 @@ describe("POST /api/ask", () => {
   });
 
   it("returns a typed retrieval error when both retrieval signals fail", async () => {
-    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("network error"),
-    );
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network error"));
     (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("database unavailable"),
+      new Error("database unavailable")
     );
 
     const response = await POST(makeRequest({ question: "What happened?" }));
@@ -452,14 +420,12 @@ describe("POST /api/ask", () => {
       editionDate: mockArticle.editionDate,
       evidenceSnippet: mockArticle.bodyPlain,
     });
-    expect(snapshots[0].contentRevisionId).toMatch(
-      /^legacy-sha256:[a-f0-9]{64}$/,
-    );
+    expect(snapshots[0].contentRevisionId).toMatch(/^legacy-sha256:[a-f0-9]{64}$/);
   });
 
   it("falls back to vector-only search when full-text retrieval fails", async () => {
     (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("FTS index unavailable"),
+      new Error("FTS index unavailable")
     );
     (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
 
@@ -525,19 +491,19 @@ describe("POST /api/ask", () => {
     // global deadline. Existing assertions must tolerate the extra arg.
     expect(reformulateQuery).toHaveBeenCalledWith(
       "What happened at OWU?",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
     expect(embedQuery).toHaveBeenCalledWith(
       "expanded OWU query",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
     expect(searchArticlesForRag).toHaveBeenCalledWith(
       "OWU OR Ohio Wesleyan",
-      expect.objectContaining({ limit: 20, signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ limit: 20, signal: expect.any(AbortSignal) })
     );
     expect(queryArticlesByEmbedding).toHaveBeenCalledWith(
       expect.any(Array),
-      expect.objectContaining({ limit: 20, signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ limit: 20, signal: expect.any(AbortSignal) })
     );
   });
 
@@ -553,7 +519,7 @@ describe("POST /api/ask", () => {
     expect(generateAnswer).toHaveBeenCalledWith(
       "Original question?",
       expect.any(Array),
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
 
@@ -573,12 +539,12 @@ describe("POST /api/ask", () => {
         maxArticles: 6,
         minScore: 4,
         signal: expect.any(AbortSignal),
-      }),
+      })
     );
     expect(generateAnswer).toHaveBeenCalledWith(
       "Test?",
       reranked,
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
 
@@ -616,7 +582,7 @@ describe("POST /api/ask", () => {
     _setGlobalDeadlineForTests(150);
     try {
       (reformulateQuery as ReturnType<typeof vi.fn>).mockImplementation(
-        () => new Promise(() => {}),
+        () => new Promise(() => {})
       );
 
       const start = Date.now();
@@ -657,17 +623,13 @@ describe("POST /api/ask", () => {
       // AbortSignal-aware Neon wrapper emits at its local budget.
       const rejectAtRetrievalBudget = () =>
         new Promise((_, reject) => {
-          setTimeout(
-            () => reject(new MockDbTimeoutError("retrieval", 150)),
-            150,
-          );
+          setTimeout(() => reject(new MockDbTimeoutError("retrieval", 150)), 150);
         });
       (searchArticlesForRag as ReturnType<typeof vi.fn>).mockImplementation(
-        rejectAtRetrievalBudget,
+        rejectAtRetrievalBudget
       );
-      (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockImplementation(
-        () =>
-          rejectAtRetrievalBudget(),
+      (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockImplementation(() =>
+        rejectAtRetrievalBudget()
       );
 
       const start = Date.now();
@@ -746,13 +708,13 @@ describe("POST /api/ask", () => {
         makeRequest({
           question: "Same question",
           filters: { category: "News" },
-        }),
+        })
       ),
       POST(
         makeRequest({
           question: "Same question",
           filters: { category: "Sports" },
-        }),
+        })
       ),
     ]);
 
@@ -774,14 +736,14 @@ describe("POST /api/ask", () => {
       expect.objectContaining({
         startDate: "1970-01-01",
         endDate: "1979-12-31",
-      }),
+      })
     );
     expect(queryArticlesByEmbedding).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({
         startDate: "1970-01-01",
         endDate: "1979-12-31",
-      }),
+      })
     );
   });
 
@@ -794,23 +756,25 @@ describe("POST /api/ask", () => {
       startDate: "1970-01-01",
       endDate: "1979-12-31",
     });
-    await POST(makeRequest({
-      question: "football",
-      filters: { startDate: "1980-01-01", endDate: "1980-12-31" },
-    }));
+    await POST(
+      makeRequest({
+        question: "football",
+        filters: { startDate: "1980-01-01", endDate: "1980-12-31" },
+      })
+    );
     expect(searchArticlesForRag).toHaveBeenCalledWith(
       "football",
       expect.objectContaining({
         startDate: "1980-01-01",
         endDate: "1980-12-31",
-      }),
+      })
     );
     expect(queryArticlesByEmbedding).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({
         startDate: "1980-01-01",
         endDate: "1980-12-31",
-      }),
+      })
     );
   });
 
@@ -826,7 +790,7 @@ describe("POST /api/ask", () => {
     });
 
     const response = await POST(
-      makeRequest({ question: "Did OWU ever mention computer science in the 1960s?" }),
+      makeRequest({ question: "Did OWU ever mention computer science in the 1960s?" })
     );
     const body = await response.json();
 
@@ -835,7 +799,7 @@ describe("POST /api/ask", () => {
         startDate: "1960-01-01",
         endDate: "1969-12-31",
         signal: expect.any(AbortSignal),
-      }),
+      })
     );
     expect(generateAnswer).toHaveBeenCalledWith(
       expect.any(String),
@@ -846,7 +810,7 @@ describe("POST /api/ask", () => {
           editionCount: 351,
           articleCount: 11_705,
         }),
-      }),
+      })
     );
     expect(body.meta.coverage).toMatchObject({
       intent: "absence",
@@ -954,7 +918,7 @@ describe("POST /api/ask", () => {
 
   it("streaming: happy path emits stage*3 → metadata → delta*2 → done", async () => {
     const response = await POST(
-      makeRequest({ question: "streaming happy path" }, { stream: true }),
+      makeRequest({ question: "streaming happy path" }, { stream: true })
     );
     const events = await readSseEvents(response);
 
@@ -962,22 +926,10 @@ describe("POST /api/ask", () => {
     // Order matters: reformulate → retrieve → rerank stages,
     // then metadata (needs reranked source articles), then deltas from
     // generateAnswerStream, then the final done event.
-    expect(types).toEqual([
-      "stage",
-      "stage",
-      "stage",
-      "metadata",
-      "delta",
-      "delta",
-      "done",
-    ]);
+    expect(types).toEqual(["stage", "stage", "stage", "metadata", "delta", "delta", "done"]);
 
     const stageEvents = events.filter((e) => e.type === "stage");
-    expect(stageEvents.map((e) => e.name)).toEqual([
-      "reformulate",
-      "retrieve",
-      "rerank",
-    ]);
+    expect(stageEvents.map((e) => e.name)).toEqual(["reformulate", "retrieve", "rerank"]);
     for (const stage of stageEvents) {
       expect(typeof stage.elapsedMs).toBe("number");
     }
@@ -1007,9 +959,7 @@ describe("POST /api/ask", () => {
   });
 
   it("streaming: metadata event appears BEFORE any delta event (sidebar renders first)", async () => {
-    const response = await POST(
-      makeRequest({ question: "metadata ordering" }, { stream: true }),
-    );
+    const response = await POST(makeRequest({ question: "metadata ordering" }, { stream: true }));
     const events = await readSseEvents(response);
     const metadataIdx = events.findIndex((e) => e.type === "metadata");
     const firstDeltaIdx = events.findIndex((e) => e.type === "delta");
@@ -1019,12 +969,10 @@ describe("POST /api/ask", () => {
 
   it("streaming: reformulate error → error event with stage=reformulate", async () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("reformulator boom"),
+      new Error("reformulator boom")
     );
 
-    const response = await POST(
-      makeRequest({ question: "err reformulate" }, { stream: true }),
-    );
+    const response = await POST(makeRequest({ question: "err reformulate" }, { stream: true }));
     const events = await readSseEvents(response);
 
     expect(response.status).toBe(200);
@@ -1039,15 +987,13 @@ describe("POST /api/ask", () => {
 
   it("streaming: both signals unavailable surfaces vector quota at retrieve", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new MockQuotaExhaustedError("embedQuery", { code: 429 }),
+      new MockQuotaExhaustedError("embedQuery", { code: 429 })
     );
     (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("database unavailable"),
+      new Error("database unavailable")
     );
 
-    const response = await POST(
-      makeRequest({ question: "err embed quota" }, { stream: true }),
-    );
+    const response = await POST(makeRequest({ question: "err embed quota" }, { stream: true }));
     const events = await readSseEvents(response);
 
     const errorEvent = events.find((e) => e.type === "error");
@@ -1058,16 +1004,12 @@ describe("POST /api/ask", () => {
   });
 
   it("streaming: both generic signal failures report stage=retrieve", async () => {
-    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("network failed"),
-    );
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network failed"));
     (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("database unavailable"),
+      new Error("database unavailable")
     );
 
-    const response = await POST(
-      makeRequest({ question: "err embed generic" }, { stream: true }),
-    );
+    const response = await POST(makeRequest({ question: "err embed generic" }, { stream: true }));
     const events = await readSseEvents(response);
 
     const errorEvent = events.find((e) => e.type === "error");
@@ -1077,13 +1019,9 @@ describe("POST /api/ask", () => {
   });
 
   it("streaming: rerank error → error with stage=rerank", async () => {
-    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("reranker boom"),
-    );
+    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("reranker boom"));
 
-    const response = await POST(
-      makeRequest({ question: "err rerank" }, { stream: true }),
-    );
+    const response = await POST(makeRequest({ question: "err rerank" }, { stream: true }));
     const events = await readSseEvents(response);
 
     const errorEvent = events.find((e) => e.type === "error");
@@ -1104,12 +1042,10 @@ describe("POST /api/ask", () => {
           confidence: "medium",
           followUps: [],
         };
-      })(),
+      })()
     );
 
-    const response = await POST(
-      makeRequest({ question: "delta order" }, { stream: true }),
-    );
+    const response = await POST(makeRequest({ question: "delta order" }, { stream: true }));
     const events = await readSseEvents(response);
 
     const deltas = events.filter((e) => e.type === "delta");
@@ -1136,7 +1072,9 @@ describe("POST /api/ask", () => {
     const mockResponse = {
       clone: cloneSpy,
       status: 200,
-      headers: { forEach: (cb: (v: string, k: string) => void) => cb("application/json", "content-type") },
+      headers: {
+        forEach: (cb: (v: string, k: string) => void) => cb("application/json", "content-type"),
+      },
     } as unknown as NextResponse;
 
     const entry = _askDedupInternalsForTests.makeEntry(mockResponse);
@@ -1172,16 +1110,13 @@ describe("POST /api/ask", () => {
     ]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
-      answer:
-        "I don't have enough information in the archive to answer this question.",
+      answer: "I don't have enough information in the archive to answer this question.",
       citations: [],
       confidence: "low",
       followUps: [],
     });
 
-    const response = await POST(
-      makeRequest({ question: "something totally off-topic" }),
-    );
+    const response = await POST(makeRequest({ question: "something totally off-topic" }));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -1192,8 +1127,8 @@ describe("POST /api/ask", () => {
     // mocks share a contentRevisionId, so fusion dedupes them to one) at
     // relevanceScore 5 — never an empty array, and never a score the
     // generator's tangential gate would refuse without generating.
-    const generatorArticles = (generateAnswer as ReturnType<typeof vi.fn>)
-      .mock.calls[0][1] as Array<{ id: string; relevanceScore: number }>;
+    const generatorArticles = (generateAnswer as ReturnType<typeof vi.fn>).mock
+      .calls[0][1] as Array<{ id: string; relevanceScore: number }>;
     expect(generatorArticles.length).toBeGreaterThan(0);
     expect(generatorArticles[0]).toMatchObject({
       id: mockArticle.id,
@@ -1206,13 +1141,11 @@ describe("POST /api/ask", () => {
   it("uses full-text retrieval when embedding has a transient 503", async () => {
     const serviceUnavailable = Object.assign(
       new Error("Gemini API error: 503 SERVICE_UNAVAILABLE upstream connect error"),
-      { status: "UNAVAILABLE", code: 503 },
+      { status: "UNAVAILABLE", code: 503 }
     );
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(serviceUnavailable);
 
-    const response = await POST(
-      makeRequest({ question: "Kennedy visit to Ohio" }),
-    );
+    const response = await POST(makeRequest({ question: "Kennedy visit to Ohio" }));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -1236,12 +1169,10 @@ describe("POST /api/ask", () => {
         yield { type: "delta", text: "Partial " };
         yield { type: "delta", text: "answer before crash" };
         throw new Error("Gemini stream interrupted");
-      })(),
+      })()
     );
 
-    const response = await POST(
-      makeRequest({ question: "What happened?" }, { stream: true }),
-    );
+    const response = await POST(makeRequest({ question: "What happened?" }, { stream: true }));
     const events = await readSseEvents(response);
 
     // Expect at least the two delta events we yielded before the throw,
@@ -1306,20 +1237,25 @@ describe("Complexity routing", () => {
       toolCallCount: 3,
       rounds: 2,
       articleMeta: new Map([
-        ["1965-03-15-4", {
-          headline: "Greek Life Review",
-          editionDate: "1965-03-15",
-          category: "Campus News",
-          summary: "A review of Greek life",
-          byline: "Staff",
-          bodySnippet: "Fraternities and sororities...",
-          imageUrls: [],
-          imageCaptions: [],
-        }],
+        [
+          "1965-03-15-4",
+          {
+            headline: "Greek Life Review",
+            editionDate: "1965-03-15",
+            category: "Campus News",
+            summary: "A review of Greek life",
+            byline: "Staff",
+            bodySnippet: "Fraternities and sororities...",
+            imageUrls: [],
+            imageCaptions: [],
+          },
+        ],
       ]),
     });
 
-    const response = await POST(makeRequest({ question: "How did Greek life evolve from 1960 to 2000?" }));
+    const response = await POST(
+      makeRequest({ question: "How did Greek life evolve from 1960 to 2000?" })
+    );
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -1348,9 +1284,7 @@ describe("Complexity routing", () => {
     });
     (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer: "The cited evidence identified two parades [1965-03-15-4].",
-      citations: [
-        { articleId: "1965-03-15-4", headline: "Parades", editionDate: "1965-03-15" },
-      ],
+      citations: [{ articleId: "1965-03-15-4", headline: "Parades", editionDate: "1965-03-15" }],
       sourceArticleIds: ["1965-03-15-4"],
       confidence: "medium",
       toolCallCount: 1,
@@ -1361,7 +1295,9 @@ describe("Complexity routing", () => {
       retrievalMethod: "fts",
     });
 
-    const response = await POST(makeRequest({ question: "How many homecoming parades were covered?" }));
+    const response = await POST(
+      makeRequest({ question: "How many homecoming parades were covered?" })
+    );
     const body = await response.json();
 
     expect(runAgentLoop).toHaveBeenCalledWith(
@@ -1371,7 +1307,7 @@ describe("Complexity routing", () => {
           intent: "count",
           editionCount: 351,
         }),
-      }),
+      })
     );
     expect(body.meta.coverage.intent).toBe("count");
     expect(body.meta.method).toBe("fts");
@@ -1386,24 +1322,25 @@ describe("Complexity routing", () => {
     });
     (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer: "Answer [1965-03-15-4].",
-      citations: [
-        { articleId: "1965-03-15-4", headline: "Test", editionDate: "1965-03-15" },
-      ],
+      citations: [{ articleId: "1965-03-15-4", headline: "Test", editionDate: "1965-03-15" }],
       sourceArticleIds: ["1965-03-15-4"],
       confidence: "high",
       toolCallCount: 1,
       rounds: 1,
       articleMeta: new Map([
-        ["1965-03-15-4", {
-          headline: "Test",
-          editionDate: "1965-03-15",
-          category: "News",
-          summary: "Summary",
-          byline: "Author",
-          bodySnippet: "Snippet",
-          imageUrls: ["img.jpg"],
-          imageCaptions: ["A photo caption"],
-        }],
+        [
+          "1965-03-15-4",
+          {
+            headline: "Test",
+            editionDate: "1965-03-15",
+            category: "News",
+            summary: "Summary",
+            byline: "Author",
+            bodySnippet: "Snippet",
+            imageUrls: ["img.jpg"],
+            imageCaptions: ["A photo caption"],
+          },
+        ],
       ]),
     });
 
@@ -1429,34 +1366,38 @@ describe("Complexity routing", () => {
     // chip, no lightbox -- and stays that way after the turn is restored.
     (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer: "Prose [1965-03-15-1]. ![a photo](https://cdn/b.jpg)",
-      citations: [
-        { articleId: "1965-03-15-1", headline: "Cited", editionDate: "1965-03-15" },
-      ],
+      citations: [{ articleId: "1965-03-15-1", headline: "Cited", editionDate: "1965-03-15" }],
       sourceArticleIds: ["1965-03-15-1", "1965-03-15-2"],
       confidence: "high",
       toolCallCount: 1,
       rounds: 1,
       articleMeta: new Map([
-        ["1965-03-15-1", {
-          headline: "Cited",
-          editionDate: "1965-03-15",
-          category: "News",
-          summary: "",
-          byline: null,
-          bodySnippet: "",
-          imageUrls: [],
-          imageCaptions: [],
-        }],
-        ["1965-03-15-2", {
-          headline: "Photo Owner",
-          editionDate: "1965-03-15",
-          category: "Photo",
-          summary: "",
-          byline: null,
-          bodySnippet: "",
-          imageUrls: ["https://cdn/b.jpg"],
-          imageCaptions: ["A caption"],
-        }],
+        [
+          "1965-03-15-1",
+          {
+            headline: "Cited",
+            editionDate: "1965-03-15",
+            category: "News",
+            summary: "",
+            byline: null,
+            bodySnippet: "",
+            imageUrls: [],
+            imageCaptions: [],
+          },
+        ],
+        [
+          "1965-03-15-2",
+          {
+            headline: "Photo Owner",
+            editionDate: "1965-03-15",
+            category: "Photo",
+            summary: "",
+            byline: null,
+            bodySnippet: "",
+            imageUrls: ["https://cdn/b.jpg"],
+            imageCaptions: ["A caption"],
+          },
+        ],
       ]),
     });
 
@@ -1478,7 +1419,7 @@ describe("Complexity routing", () => {
       "complex question",
       expect.any(String),
       ["1965-03-15-1", "1965-03-15-2"],
-      expect.anything(),
+      expect.anything()
     );
   });
 
@@ -1519,7 +1460,7 @@ describe("Complexity routing", () => {
       "complex q",
       "Agent answer.",
       ["a1"],
-      expect.any(Array),
+      expect.any(Array)
     );
   });
 });
@@ -1604,7 +1545,7 @@ describe("CRAG retry (streaming)", () => {
           confidence: "medium",
           followUps: [],
         };
-      })(),
+      })()
     );
   });
 
@@ -1613,9 +1554,7 @@ describe("CRAG retry (streaming)", () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ ...mockArticle, relevanceScore: 5 }]);
 
-    const response = await POST(
-      makeRequest({ question: "obscure topic" }, { stream: true }),
-    );
+    const response = await POST(makeRequest({ question: "obscure topic" }, { stream: true }));
     const events = await readSseEvents(response);
 
     // Retry fires: both reformulate and rerank ran twice.
@@ -1645,9 +1584,7 @@ describe("CRAG retry (streaming)", () => {
       .mockResolvedValueOnce([{ ...mockArticle, source: "fts" as const }])
       .mockRejectedValueOnce(new Error("database unavailable"));
 
-    const response = await POST(
-      makeRequest({ question: "obscure topic" }, { stream: true }),
-    );
+    const response = await POST(makeRequest({ question: "obscure topic" }, { stream: true }));
     const events = await readSseEvents(response);
 
     const errorEvent = events.find((e) => e.type === "error");
@@ -1671,8 +1608,14 @@ describe("Streaming + agent", () => {
     (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
       (async function* () {
         yield { type: "delta", text: "Answer." };
-        yield { type: "done", answer: "Answer.", citations: [], confidence: "medium", followUps: [] };
-      })(),
+        yield {
+          type: "done",
+          answer: "Answer.",
+          citations: [],
+          confidence: "medium",
+          followUps: [],
+        };
+      })()
     );
   });
 
@@ -1693,7 +1636,9 @@ describe("Streaming + agent", () => {
       articleMeta: new Map(),
     });
 
-    const response = await POST(makeRequest({ question: "How did Greek life evolve?" }, { stream: true }));
+    const response = await POST(
+      makeRequest({ question: "How did Greek life evolve?" }, { stream: true })
+    );
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("text/event-stream");
 
@@ -1733,7 +1678,7 @@ describe("Streaming + agent", () => {
       "streaming complex q",
       "Streaming agent answer.",
       [],
-      expect.any(Array),
+      expect.any(Array)
     );
   });
 
@@ -1770,7 +1715,7 @@ describe("Streaming + agent", () => {
     });
 
     const response = await POST(
-      makeRequest({ question: "List all housing examples" }, { stream: true }),
+      makeRequest({ question: "List all housing examples" }, { stream: true })
     );
     const events = await readSseEvents(response);
 
@@ -1782,14 +1727,12 @@ describe("Streaming + agent", () => {
           intent: "exhaustive",
           editionCount: 50,
         }),
-      }),
+      })
     );
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: "stage", name: "coverage" }),
-    );
+    expect(events).toContainEqual(expect.objectContaining({ type: "stage", name: "coverage" }));
     const doneEvent = events.find((event) => event.type === "done");
     expect(
-      ((doneEvent?.meta as Record<string, unknown>)?.coverage as Record<string, unknown>)?.intent,
+      ((doneEvent?.meta as Record<string, unknown>)?.coverage as Record<string, unknown>)?.intent
     ).toBe("exhaustive");
   });
 
@@ -1801,7 +1744,7 @@ describe("Streaming + agent", () => {
       complexity: "complex",
     });
     (runAgentLoop as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Gemini API key invalid"),
+      new Error("Gemini API key invalid")
     );
 
     const response = await POST(makeRequest({ question: "fail question" }, { stream: true }));
@@ -1822,7 +1765,9 @@ describe("Streaming + agent", () => {
       complexity: "simple",
     });
 
-    const response = await POST(makeRequest({ question: "pipeline streaming q" }, { stream: true }));
+    const response = await POST(
+      makeRequest({ question: "pipeline streaming q" }, { stream: true })
+    );
     await readSseEvents(response);
 
     expect(addConversationTurn).toHaveBeenCalledWith(
@@ -1830,7 +1775,7 @@ describe("Streaming + agent", () => {
       "pipeline streaming q",
       "Answer.",
       [],
-      expect.any(Array),
+      expect.any(Array)
     );
   });
 });
@@ -1867,23 +1812,19 @@ describe("Every question runs the RAG pipeline (streaming)", () => {
           confidence: "high",
           followUps: ["Tell me more?", "Any sources?"],
         };
-      })(),
+      })()
     );
   });
 
   it("re-runs retrieval and generation for an identical repeat question", async () => {
-    const first = await POST(
-      makeRequest({ question: "cache test" }, { stream: true }),
-    );
+    const first = await POST(makeRequest({ question: "cache test" }, { stream: true }));
     const firstDone = (await readSseEvents(first)).find((e) => e.type === "done");
     expect(firstDone).toBeDefined();
     expect(generateAnswerStream).toHaveBeenCalledTimes(1);
 
     // The same question again must not be replayed from anywhere: no answer
     // is ever served without the pipeline that produced it running again.
-    const second = await POST(
-      makeRequest({ question: "cache test" }, { stream: true }),
-    );
+    const second = await POST(makeRequest({ question: "cache test" }, { stream: true }));
     const secondDone = (await readSseEvents(second)).find((e) => e.type === "done");
     expect(secondDone).toBeDefined();
     expect((secondDone?.meta as Record<string, unknown>)?.cacheHit).toBeUndefined();
@@ -1894,12 +1835,8 @@ describe("Every question runs the RAG pipeline (streaming)", () => {
   });
 
   it("streams the answer as deltas before the done event on a repeat", async () => {
-    await readSseEvents(
-      await POST(makeRequest({ question: "cache test" }, { stream: true })),
-    );
-    const cached = await POST(
-      makeRequest({ question: "cache test" }, { stream: true }),
-    );
+    await readSseEvents(await POST(makeRequest({ question: "cache test" }, { stream: true })));
+    const cached = await POST(makeRequest({ question: "cache test" }, { stream: true }));
     const events = await readSseEvents(cached);
     const deltas = events.filter((e) => e.type === "delta");
     expect(deltas.length).toBeGreaterThan(0);
@@ -1925,12 +1862,8 @@ describe("Every question runs the RAG pipeline (streaming)", () => {
     });
 
     // Two identical agent-path requests
-    await readSseEvents(
-      await POST(makeRequest({ question: "complex q" }, { stream: true })),
-    );
-    await readSseEvents(
-      await POST(makeRequest({ question: "complex q" }, { stream: true })),
-    );
+    await readSseEvents(await POST(makeRequest({ question: "complex q" }, { stream: true })));
+    await readSseEvents(await POST(makeRequest({ question: "complex q" }, { stream: true })));
     // Agent path ran twice; cache didn't short-circuit
     expect(runAgentLoop).toHaveBeenCalledTimes(2);
   });
@@ -1950,22 +1883,14 @@ describe("Every question runs the RAG pipeline (streaming)", () => {
 
     // First POST with sessionId: pipeline runs.
     await readSseEvents(
-      await POST(
-        makeRequest(
-          { question: "cache test", sessionId: "sess-A" },
-          { stream: true },
-        ),
-      ),
+      await POST(makeRequest({ question: "cache test", sessionId: "sess-A" }, { stream: true }))
     );
     expect(generateAnswerStream).toHaveBeenCalledTimes(1);
 
     // Second POST, same sessionId + question: should re-run pipeline
     // rather than reading from cache.
     const second = await POST(
-      makeRequest(
-        { question: "cache test", sessionId: "sess-A" },
-        { stream: true },
-      ),
+      makeRequest({ question: "cache test", sessionId: "sess-A" }, { stream: true })
     );
     const secondEvents = await readSseEvents(second);
     const secondDone = secondEvents.find((e) => e.type === "done");
@@ -1984,12 +1909,7 @@ describe("Every question runs the RAG pipeline (streaming)", () => {
       },
     ]);
     await readSseEvents(
-      await POST(
-        makeRequest(
-          { question: "cache test", sessionId: "sess-A" },
-          { stream: true },
-        ),
-      ),
+      await POST(makeRequest({ question: "cache test", sessionId: "sess-A" }, { stream: true }))
     );
     expect(generateAnswerStream).toHaveBeenCalledTimes(1);
 
@@ -1997,10 +1917,7 @@ describe("Every question runs the RAG pipeline (streaming)", () => {
     // was not cached, this one must still run the pipeline.
     (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     const second = await POST(
-      makeRequest(
-        { question: "cache test", sessionId: "sess-B" },
-        { stream: true },
-      ),
+      makeRequest({ question: "cache test", sessionId: "sess-B" }, { stream: true })
     );
     const secondEvents = await readSseEvents(second);
     const secondDone = secondEvents.find((e) => e.type === "done");
@@ -2020,9 +1937,7 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
       mode: "text",
       complexity: "simple",
     });
-    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(
-      new Array(768).fill(0),
-    );
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
@@ -2055,7 +1970,7 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
           confidence: "high",
           followUps: [],
         };
-      })(),
+      })()
     );
   });
 
@@ -2068,14 +1983,11 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
             writeResolved = true;
             resolve();
           }, 50);
-        }),
+        })
     );
 
     const response = await POST(
-      makeRequest(
-        { question: "race-q", sessionId: "race-sess-stream" },
-        { stream: true },
-      ),
+      makeRequest({ question: "race-q", sessionId: "race-sess-stream" }, { stream: true })
     );
     const events = await readSseEvents(response);
 
@@ -2092,12 +2004,10 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
             writeResolved = true;
             resolve();
           }, 50);
-        }),
+        })
     );
 
-    const response = await POST(
-      makeRequest({ question: "race-q", sessionId: "race-sess-json" }),
-    );
+    const response = await POST(makeRequest({ question: "race-q", sessionId: "race-sess-json" }));
 
     expect(response.status).toBe(200);
     expect(writeResolved).toBe(true);
@@ -2112,20 +2022,16 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
         timestamp: Date.now(),
       },
     ]);
-    (formatHistoryForPrompt as ReturnType<typeof vi.fn>).mockReturnValue(
-      "[Turn 1] Q: Q1\nA: A1",
-    );
+    (formatHistoryForPrompt as ReturnType<typeof vi.fn>).mockReturnValue("[Turn 1] Q: Q1\nA: A1");
 
-    await POST(
-      makeRequest({ question: "follow-up", sessionId: "hist-sess" }),
-    );
+    await POST(makeRequest({ question: "follow-up", sessionId: "hist-sess" }));
 
     expect(generateAnswer).toHaveBeenCalledWith(
       "follow-up",
       expect.any(Array),
       expect.objectContaining({
         conversationContext: "[Turn 1] Q: Q1\nA: A1",
-      }),
+      })
     );
   });
 
@@ -2138,17 +2044,12 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
         timestamp: Date.now(),
       },
     ]);
-    (formatHistoryForPrompt as ReturnType<typeof vi.fn>).mockReturnValue(
-      "[Turn 1] Q: Q1\nA: A1",
-    );
+    (formatHistoryForPrompt as ReturnType<typeof vi.fn>).mockReturnValue("[Turn 1] Q: Q1\nA: A1");
 
     await readSseEvents(
       await POST(
-        makeRequest(
-          { question: "follow-up", sessionId: "hist-sess-stream" },
-          { stream: true },
-        ),
-      ),
+        makeRequest({ question: "follow-up", sessionId: "hist-sess-stream" }, { stream: true })
+      )
     );
 
     expect(generateAnswerStream).toHaveBeenCalledWith(
@@ -2156,7 +2057,7 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
       expect.any(Array),
       expect.objectContaining({
         conversationContext: "[Turn 1] Q: Q1\nA: A1",
-      }),
+      })
     );
   });
 
@@ -2170,7 +2071,7 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
       expect.any(Array),
       expect.objectContaining({
         conversationContext: undefined,
-      }),
+      })
     );
   });
 });
@@ -2185,9 +2086,7 @@ describe("typed AskError response body", () => {
       ftsQuery: "q",
       mode: "text",
     });
-    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(
-      new Array(768).fill(0),
-    );
+    (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (hybridSearch as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
@@ -2225,9 +2124,7 @@ describe("typed AskError response body", () => {
   });
 
   it("400 bad_request for too-long question", async () => {
-    const response = await POST(
-      makeRequest({ question: "a".repeat(1001) }),
-    );
+    const response = await POST(makeRequest({ question: "a".repeat(1001) }));
     const body = await response.json();
 
     expect(response.status).toBe(400);
@@ -2236,10 +2133,10 @@ describe("typed AskError response body", () => {
 
   it("429 budget when vector quota and full-text retrieval both fail", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new MockQuotaExhaustedError("embedQuery", { code: 429 }),
+      new MockQuotaExhaustedError("embedQuery", { code: 429 })
     );
     (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("database unavailable"),
+      new Error("database unavailable")
     );
 
     const response = await POST(makeRequest({ question: "q" }));
@@ -2254,11 +2151,9 @@ describe("typed AskError response body", () => {
   });
 
   it("500 server when both retrieval signals fail generically", async () => {
-    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("network error"),
-    );
+    (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network error"));
     (searchArticlesForRag as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("database unavailable"),
+      new Error("database unavailable")
     );
 
     const response = await POST(makeRequest({ question: "q" }));
@@ -2271,9 +2166,7 @@ describe("typed AskError response body", () => {
   });
 
   it("500 server on unexpected reranker error", async () => {
-    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("reranker crashed"),
-    );
+    (rerankArticles as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("reranker crashed"));
 
     const response = await POST(makeRequest({ question: "q" }));
     const body = await response.json();

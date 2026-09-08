@@ -5,6 +5,6 @@ import AskWorkspace from "./AskWorkspace";
 export const revalidate = 3_600;
 
 export default function AskPage() {
-    const suggestionDate = new Date().toISOString().slice(0, 10);
-    return <AskWorkspace suggestionDate={suggestionDate} />;
+  const suggestionDate = new Date().toISOString().slice(0, 10);
+  return <AskWorkspace suggestionDate={suggestionDate} />;
 }
