@@ -35,6 +35,7 @@ vi.mock("@/src/lib/embeddings", () => ({
 
 vi.mock("@/src/lib/db", () => ({
   DbTimeoutError: MockDbTimeoutError,
+  fetchYearDigest: vi.fn(),
   hybridSearch: vi.fn(),
   queryArticlesByEmbedding: vi.fn(),
   searchArticlesForRag: vi.fn(),
@@ -107,6 +108,7 @@ import {
 import type { NextResponse } from "next/server";
 import { embedQuery } from "@/src/lib/embeddings";
 import {
+  fetchYearDigest,
   hybridSearch,
   queryArticlesByEmbedding,
   searchArticlesForRag,
@@ -682,6 +684,35 @@ describe("POST /api/ask", () => {
       expect(elapsed).toBeGreaterThanOrEqual(140);
     } finally {
       _setGlobalDeadlineForTests(null);
+    }
+  });
+
+  it("gives up on a hung year digest and answers without it", async () => {
+    // The digest is non-citable guidance; it had no timer of its own, only
+    // the 55s global, so one hung read could eat the whole request budget.
+    vi.useFakeTimers();
+    try {
+      (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+        embeddingQuery: "1962 sports",
+        ftsQuery: "1962 sports",
+        mode: "text",
+        complexity: "simple",
+        coverageIntent: "exhaustive",
+        startDate: "1962-01-01",
+        endDate: "1962-12-31",
+      });
+      (fetchYearDigest as ReturnType<typeof vi.fn>).mockImplementation(
+        () => new Promise(() => {})
+      );
+
+      const pending = POST(makeRequest({ question: "Every 1962 game?" }));
+      await vi.advanceTimersByTimeAsync(3_000);
+      const response = await pending;
+
+      expect(response.status).toBe(200);
+      expect(fetchYearDigest).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
     }
   });
 
