@@ -12,10 +12,11 @@
  *     turns: Array<{
  *       question, answer, citedArticleIds, sourceArticles, timestamp
  *     }>,
- *     expired: boolean   // true iff the session existed but aged out
- *                        // of the 30-min TTL; lets the UI show a
- *                        // "your last conversation expired" banner
- *                        // instead of a silent empty state.
+ *     expired: boolean   // true iff the session existed but every row
+ *                        // fell outside the recall window
+ *                        // (ASK_SESSION_TTL_DAYS, default 7); lets the
+ *                        // UI show a "your last conversation expired"
+ *                        // banner instead of a silent empty state.
  *   }
  *
  * Rate-limited like the other ask endpoints so a script can't scrape
@@ -163,7 +164,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
  *
  * Wipes every stored turn for the session. Called by the "Clear
  * conversation" button so the user's transcript is gone from the
- * server immediately instead of lingering until the 30-min TTL.
+ * server immediately instead of lingering to the end of its window.
  * Returns 204 on success (including deleting zero rows); if the store
  * reports a database failure, returns 500 so the client knows the
  * transcript may still exist server-side.
