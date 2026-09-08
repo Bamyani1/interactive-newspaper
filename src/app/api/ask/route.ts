@@ -60,6 +60,7 @@ import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
 import type { CoverageIntent } from "@/src/lib/query-reformulator";
 import type { ArchiveCoverage } from "@/src/lib/rag-coverage";
 import { buildCitationSnapshots, type CitationSnapshotSource } from "@/src/lib/citation-snapshot";
+import { isValidSessionId } from "@/src/lib/session-id";
 
 export { _clearAskDedupForTests, _askDedupInternalsForTests, _computeRerankSignalsForTests };
 
@@ -491,10 +492,7 @@ function isValidIsoDate(value: string): boolean {
 }
 
 function validateAskContext(body: AskRequestBody): string | null {
-  if (
-    body.sessionId !== undefined &&
-    (typeof body.sessionId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(body.sessionId))
-  ) {
+  if (body.sessionId !== undefined && !isValidSessionId(body.sessionId)) {
     return "sessionId has an invalid format";
   }
   if (body.regenerate !== undefined) {

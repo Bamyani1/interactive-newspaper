@@ -277,6 +277,20 @@ describe("GET /api/ask/session", () => {
     expect(body.expired).toBe(false);
     expect(getConversationHistory).not.toHaveBeenCalled();
   });
+
+  it("rejects ids outside /api/ask's contract without touching the store", async () => {
+    // The two endpoints disagreed: /api/ask enforced the character set, this
+    // one accepted any string up to 128 chars, so ids /api/ask would refuse
+    // could still be used to probe the store.
+    for (const id of ["has space", "a/b", "sess:1"]) {
+      const response = await GET(makeRequest(id));
+      const body = await response.json();
+      expect(response.status).toBe(200);
+      expect(body).toEqual({ turns: [], expired: false });
+    }
+    expect(getConversationHistory).not.toHaveBeenCalled();
+    expect(sessionHasAnyTurns).not.toHaveBeenCalled();
+  });
 });
 
 describe("DELETE /api/ask/session", () => {
@@ -311,6 +325,14 @@ describe("DELETE /api/ask/session", () => {
     const response = await DELETE(makeRequest(undefined, "DELETE"));
 
     expect(response.status).toBe(204);
+    expect(deleteConversationTurns).not.toHaveBeenCalled();
+  });
+
+  it("rejects ids outside /api/ask's contract without touching the store", async () => {
+    for (const id of ["has space", "a/b", "sess:1"]) {
+      const response = await DELETE(makeRequest(id, "DELETE"));
+      expect(response.status).toBe(204);
+    }
     expect(deleteConversationTurns).not.toHaveBeenCalled();
   });
 

@@ -375,6 +375,15 @@ describe("POST /api/ask", () => {
     expect(body.error).toBe(message);
   });
 
+  it("rejects a sessionId outside the shared contract", async () => {
+    for (const sessionId of ["has space", "a/b", "x".repeat(129), ""]) {
+      const response = await POST(makeRequest({ question: "What happened?", sessionId }));
+      const body = await response.json();
+      expect(response.status, `expected ${JSON.stringify(sessionId)} to be rejected`).toBe(400);
+      expect(body.error).toBe("sessionId has an invalid format");
+    }
+  });
+
   it("rejects a regenerate field that is not an object", async () => {
     const response = await POST(
       makeRequest({ question: "What happened?", sessionId: "s-1", regenerate: "yes" })
