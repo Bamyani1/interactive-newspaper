@@ -664,6 +664,49 @@ describe("POST /api/ask", () => {
     }
   });
 
+  it("degrades to an empty history when the history read hangs", async () => {
+    // The history read is best-effort context, not a system of record: a
+    // hung Neon must cost the follow-up its context, not the whole answer.
+    vi.useFakeTimers();
+    try {
+      (getConversationHistory as ReturnType<typeof vi.fn>).mockImplementation(
+        () => new Promise(() => {})
+      );
+
+      const pending = POST(makeRequest({ question: "Follow-up?", sessionId: "s-hang" }));
+      await vi.advanceTimersByTimeAsync(2_000);
+      const response = await pending;
+
+      expect(response.status).toBe(200);
+      expect(reformulateQuery).toHaveBeenCalledWith(
+        "Follow-up?",
+        expect.objectContaining({ conversationHistory: [] })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("counts the pre-pipeline awaits against the global deadline", async () => {
+    // The deadline used to be armed only after the rate-limit and budget
+    // awaits, so a slow session read bought the pipeline a fresh 55s on top
+    // of time already spent — past Vercel's own 60s ceiling.
+    _setGlobalDeadlineForTests(120);
+    try {
+      (getConversationHistory as ReturnType<typeof vi.fn>).mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve([]), 300))
+      );
+
+      const response = await POST(makeRequest({ question: "Slow session", sessionId: "s-slow" }));
+      const body = await response.json();
+
+      expect(response.status).toBe(504);
+      expect(body.stage).toBe("deadline");
+    } finally {
+      _setGlobalDeadlineForTests(null);
+    }
+  });
+
   it("global deadline does not fire for normal fast requests", async () => {
     _setGlobalDeadlineForTests(5000);
     try {

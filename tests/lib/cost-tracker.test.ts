@@ -161,6 +161,39 @@ describe("checkDailyBudget", () => {
     sqlMock.mockRejectedValueOnce(new Error("neon unreachable"));
     await expect(checkDailyBudget()).resolves.toBeUndefined();
   });
+
+  it("gives up on a hung budget read instead of stalling the request path", async () => {
+    // Neon's serverless driver has no AbortSignal support, so a hung read
+    // never settles on its own — without the race /api/ask waits forever
+    // before its first Gemini call.
+    vi.useFakeTimers();
+    try {
+      sqlMock.mockImplementationOnce(() => new Promise(() => {}));
+      const pending = checkDailyBudget();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(pending).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("applies the outage ceiling to a timed-out read, not just a rejected one", async () => {
+    vi.useFakeTimers();
+    try {
+      sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
+      await recordUsage(
+        "gemini-3.5-flash-lite",
+        { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 }, // $2.80
+        { op: "outage.large" }
+      );
+      sqlMock.mockImplementationOnce(() => new Promise(() => {}));
+      const pending = checkDailyBudget();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(pending).rejects.toBeInstanceOf(DailyBudgetExceededError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("recordUsage", () => {
