@@ -2350,6 +2350,68 @@ describe("canned error answers are never stored as history", () => {
     expect(addConversationTurn).not.toHaveBeenCalled();
   });
 
+  it("returns 429 and stores nothing when agent research hits the quota", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+      coverageIntent: "none",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "The archive research ran into the daily AI limit. Please try again later.",
+      citations: [],
+      sourceArticleIds: [],
+      confidence: "low",
+      outcome: "error",
+      errorKind: "rate_limit",
+      retryAfterSec: 24,
+      toolCallCount: 1,
+      rounds: 0,
+      articleMeta: new Map(),
+    });
+
+    const response = await POST(makeRequest({ question: "complex q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body.kind).toBe("rate_limit");
+    expect(body.retryAfterSec).toBe(24);
+    expect(response.headers.get("Retry-After")).toBe("24");
+    expect(addConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("emits an SSE error and stores nothing when streaming agent research fails", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+      coverageIntent: "none",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer:
+        "The request timed out before a complete answer could be generated. Please try a simpler question.",
+      citations: [],
+      sourceArticleIds: [],
+      confidence: "low",
+      outcome: "error",
+      errorKind: "timeout",
+      toolCallCount: 0,
+      rounds: 0,
+      articleMeta: new Map(),
+    });
+
+    const response = await POST(makeRequest({ question: "complex q" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    expect(events.find((e) => e.type === "done")).toBeUndefined();
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent?.kind).toBe("timeout");
+    expect(errorEvent?.stage).toBe("agent");
+    expect(addConversationTurn).not.toHaveBeenCalled();
+  });
+
   it("streams a no-evidence answer through to done and stores it", async () => {
     (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
       (async function* () {

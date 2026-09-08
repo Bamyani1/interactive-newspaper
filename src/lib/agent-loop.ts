@@ -16,7 +16,8 @@ import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import { AGENT_TOOL_DECLARATIONS, executeTool } from "@/src/lib/agent-tools";
 import type { RetrievalFilters } from "@/src/lib/retrieval";
 import type { RetrievalMethod } from "@/src/lib/db";
-import type { Citation } from "@/src/types";
+import type { AnswerOutcome, AskErrorKind, Citation } from "@/src/types";
+import { kindForQuota } from "@/src/lib/gemini-quota";
 import { groundAgentAnswer } from "@/src/lib/answer-grounding";
 import {
   applyCoverageAnswerPolicy,
@@ -93,6 +94,20 @@ export interface ArticleMeta {
 export interface AgentResult {
   answer: string;
   citations: Citation[];
+  /**
+   * Whether `answer` is a reply at all. `error` means it is a canned
+   * apology — the route reports it and does not persist it as history.
+   */
+  outcome: AnswerOutcome;
+  /** Only with `outcome: "error"`; picks the recovery the reader is offered. */
+  errorKind?: AskErrorKind;
+  retryAfterSec?: number;
+  /**
+   * An archive lookup timed out mid-research, so this answer stands on
+   * whatever evidence arrived before it did. Caps confidence at "low":
+   * the same honesty rule as the reranker's `rerankDegraded`.
+   */
+  degraded?: true;
   /**
    * Ordered union of the articles this turn should surface as sources:
    * every article cited in prose, then any article that owns an image the
@@ -217,8 +232,11 @@ export function scoreConfidence(
     articleLookup?: Map<string, ArticleMeta>;
     toolErrorCount?: number;
     successfulSearchCount?: number;
+    /** A lookup timed out, so the evidence set is knowingly incomplete. */
+    degraded?: boolean;
   } = {}
 ): "low" | "medium" | "high" {
+  if (evidence.degraded) return "low";
   if (toolCallCount === 0) return "low";
   if (/don[''\u2019]t have enough information/i.test(answer)) return "low";
   if (citations.length === 0) return "low";
@@ -478,24 +496,42 @@ export async function runAgentLoop(
   let toolErrorCount = 0;
   let successfulSearchCount = 0;
   let finalAnswerProduced = false;
+  let toolTimedOut = false;
+  let quotaStop: { retryAfterSec: number } | undefined;
   const retrievalMethods = new Set<RetrievalMethod>();
+
+  /** Shared tail for every return: the counters are identical either way. */
+  const resultBase = () => ({
+    toolCallCount,
+    rounds: round,
+    articleMeta: articleLookup,
+    retrievalTimeMs,
+    generationTimeMs,
+    retrievalMethod: combinedRetrievalMethod(retrievalMethods),
+  });
+
+  const failed = (
+    answer: string,
+    errorKind: AskErrorKind,
+    retryAfterSec?: number
+  ): AgentResult => ({
+    answer,
+    citations: [],
+    sourceArticleIds: [],
+    confidence: "low",
+    outcome: "error",
+    errorKind,
+    ...(retryAfterSec !== undefined ? { retryAfterSec } : {}),
+    ...resultBase(),
+  });
+
+  const TIMED_OUT_ANSWER =
+    "The request timed out before a complete answer could be generated. Please try a simpler question.";
 
   try {
     while (round < MAX_TOOL_ROUNDS) {
       if (signal?.aborted) {
-        return {
-          answer:
-            "The request timed out before a complete answer could be generated. Please try a simpler question.",
-          citations: [],
-          sourceArticleIds: [],
-          confidence: "low",
-          toolCallCount,
-          rounds: round,
-          articleMeta: articleLookup,
-          retrievalTimeMs,
-          generationTimeMs,
-          retrievalMethod: combinedRetrievalMethod(retrievalMethods),
-        };
+        return failed(TIMED_OUT_ANSWER, "timeout");
       }
 
       const modelStart = Date.now();
@@ -547,8 +583,20 @@ export async function runAgentLoop(
               logWarn(requestId, `tool ${call.name} returned error`, {
                 tool: call.name,
                 round,
+                kind: toolResult.kind,
                 error: toolResult.error,
               });
+              // A spent quota is terminal — every later call fails the same
+              // way — while a timeout leaves the evidence set knowingly
+              // incomplete, so the answer is capped rather than abandoned.
+              if (toolResult.kind === "quota") {
+                quotaStop = {
+                  retryAfterSec:
+                    typeof toolResult.retryAfterSec === "number" ? toolResult.retryAfterSec : 30,
+                };
+              } else if (toolResult.kind === "timeout") {
+                toolTimedOut = true;
+              }
             }
             if (call.name === "search_archive" && Array.isArray(toolResult.results)) {
               successfulSearchCount += 1;
@@ -583,6 +631,18 @@ export async function runAgentLoop(
         }
 
         toolCallCount += functionCalls.length;
+
+        if (quotaStop) {
+          logWarn(requestId, "archive lookup hit the model quota; stopping the loop", {
+            round,
+            retryAfterSec: quotaStop.retryAfterSec,
+          });
+          return failed(
+            "The archive research ran into the daily AI limit. Please try again later.",
+            kindForQuota(quotaStop.retryAfterSec),
+            quotaStop.retryAfterSec
+          );
+        }
 
         // Capture any text the model produced alongside function calls
         const responseText = textFromParts(response.candidates?.[0]?.content?.parts);
@@ -698,6 +758,7 @@ export async function runAgentLoop(
       articleLookup,
       toolErrorCount,
       successfulSearchCount,
+      degraded: toolTimedOut,
     });
 
     return {
@@ -705,43 +766,20 @@ export async function runAgentLoop(
       citations,
       sourceArticleIds: buildAgentSourceArticleIds(answerText, citations, articleLookup),
       confidence,
-      toolCallCount,
-      rounds: round,
-      articleMeta: articleLookup,
-      retrievalTimeMs,
-      generationTimeMs,
-      retrievalMethod: combinedRetrievalMethod(retrievalMethods),
+      outcome: citations.length > 0 ? "answered" : "no_evidence",
+      ...(toolTimedOut ? { degraded: true as const } : {}),
+      ...resultBase(),
     };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       logWarn(requestId, "agent loop aborted by signal", { rounds: round, toolCallCount });
-      return {
-        answer:
-          "The request timed out before a complete answer could be generated. Please try a simpler question.",
-        citations: [],
-        sourceArticleIds: [],
-        confidence: "low",
-        toolCallCount,
-        rounds: round,
-        articleMeta: articleLookup,
-        retrievalTimeMs,
-        generationTimeMs,
-        retrievalMethod: combinedRetrievalMethod(retrievalMethods),
-      };
+      return failed(TIMED_OUT_ANSWER, "timeout");
     }
 
     logError(requestId, "agent loop failed", err);
-    return {
-      answer: "I encountered an error while researching your question. Please try again.",
-      citations: [],
-      sourceArticleIds: [],
-      confidence: "low",
-      toolCallCount,
-      rounds: round,
-      articleMeta: articleLookup,
-      retrievalTimeMs,
-      generationTimeMs,
-      retrievalMethod: combinedRetrievalMethod(retrievalMethods),
-    };
+    return failed(
+      "I encountered an error while researching your question. Please try again.",
+      "server"
+    );
   }
 }
