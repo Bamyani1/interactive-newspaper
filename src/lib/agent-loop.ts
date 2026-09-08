@@ -31,7 +31,12 @@ import { AGENT_TOOL_DECLARATIONS, executeTool } from "@/src/lib/agent-tools";
 import type { RetrievalFilters } from "@/src/lib/retrieval";
 import type { RetrievalMethod } from "@/src/lib/db";
 import type { AnswerOutcome, AskErrorKind, Citation } from "@/src/types";
-import { kindForQuota, retryOnQuota } from "@/src/lib/gemini-quota";
+import {
+  isQuotaFailure,
+  kindForQuota,
+  retryAfterSecFromQuotaError,
+  retryOnQuota,
+} from "@/src/lib/gemini-quota";
 import { groundAgentAnswer } from "@/src/lib/answer-grounding";
 import {
   applyCoverageAnswerPolicy,
@@ -908,6 +913,19 @@ export async function runAgentLoop(
     if (err instanceof Error && err.name === "AbortError") {
       logWarn(requestId, "agent loop aborted by signal", { rounds: round, toolCallCount });
       return failed(TIMED_OUT_ANSWER, "timeout");
+    }
+
+    // A generation call can exhaust the quota just as a tool can, and the
+    // reader needs the same wait-and-retry either way rather than being told
+    // to report a bug.
+    if (isQuotaFailure(err)) {
+      const retryAfterSec = retryAfterSecFromQuotaError(err);
+      logWarn(requestId, "agent generation hit the model quota", { rounds: round, retryAfterSec });
+      return failed(
+        "The archive research ran into the daily AI limit. Please try again later.",
+        kindForQuota(retryAfterSec),
+        retryAfterSec
+      );
     }
 
     logError(requestId, "agent loop failed", err);
