@@ -839,19 +839,25 @@ export function useAskArchive(): UseAskArchiveReturn {
         state.turns[state.turns.length - 1]?.status;
     const turnCount = state.turns.length;
     useEffect(() => {
-        const activeId = sessionIdRef.current;
+        // The session id has to come from the same render as the turns.
+        // Reading `sessionIdRef` here instead let `newConversation` repoint
+        // it first — child effects commit before this one — so a pending
+        // effect filed the previous thread's turns under the new session.
+        const activeId = state.activeThreadId;
         if (!activeId) return;
         if (turnCount === 0) return;
         if (lastTurnStatus === "streaming") return;
         const archive = upsertArchive(activeId, state.turns);
         // Mirror the just-written archive back into the reducer so the
-        // sidebar summary stays live with the latest turn count.
+        // sidebar summary stays live with the latest turn count. The active
+        // thread is deliberately left alone: this effect can run for a
+        // thread the reader has already moved on from, and re-claiming the
+        // pointer would drag them back to it.
         dispatch({
             type: "SET_THREADS",
             threads: summariesFrom(archive),
-            activeThreadId: activeId,
         });
-    }, [turnCount, lastTurnStatus, state.turns]);
+    }, [turnCount, lastTurnStatus, state.turns, state.activeThreadId]);
 
     return {
         turns: state.turns,

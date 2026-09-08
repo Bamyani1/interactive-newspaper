@@ -88,7 +88,8 @@ export type AskAction =
     | {
           type: "SET_THREADS";
           threads: ThreadSummary[];
-          activeThreadId: string | null;
+          /** Omit to refresh the summaries without moving the active thread. */
+          activeThreadId?: string | null;
       }
     | {
           type: "SWITCH_THREAD";
@@ -198,7 +199,10 @@ export function askReducer(state: AskState, action: AskAction): AskState {
             return {
                 ...state,
                 threads: action.threads,
-                activeThreadId: action.activeThreadId,
+                activeThreadId:
+                    action.activeThreadId !== undefined
+                        ? action.activeThreadId
+                        : state.activeThreadId,
             };
         case "SWITCH_THREAD":
             // Replace the working transcript with the target thread's
