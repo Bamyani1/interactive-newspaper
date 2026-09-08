@@ -6,6 +6,7 @@ import {
   expectNoUnexpectedNoJsDiagnostics,
   observeBrowserDiagnostics,
   readCumulativeLayoutShift,
+  recordFulfilledMockRequest,
   waitForSettledUi,
 } from "../support/harness";
 import {
@@ -428,6 +429,10 @@ test.describe("Ask response states", () => {
               })}\n\n`
             : DETERMINISTIC_ASK_STREAM,
       });
+      // The diagnostics gate only forgives an aborted Ask POST that a mock
+      // actually answered; this handler bypasses `installApiMocks`, so it
+      // records its own fulfilment.
+      recordFulfilledMockRequest(request);
     });
 
     await page.goto("/ask");
