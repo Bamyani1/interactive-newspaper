@@ -1801,6 +1801,53 @@ describe("Streaming + agent", () => {
     expect((doneEvent?.meta as Record<string, unknown>)?.agentSteps).toBe(1);
   });
 
+  it("forwards agent deltas and announces generate before the first one", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+      coverageIntent: "none",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockImplementation(
+      async (
+        _question: string,
+        opts: { onProgress?: (event: Record<string, unknown>) => void }
+      ) => {
+        opts.onProgress?.({ type: "tool_call", tool: "search_archive", round: 0 });
+        opts.onProgress?.({ type: "tool_result", tool: "search_archive", round: 0 });
+        opts.onProgress?.({ type: "delta", text: "Students " });
+        opts.onProgress?.({ type: "delta", text: "marched." });
+        return {
+          answer: "Students marched.",
+          citations: [],
+          sourceArticleIds: [],
+          confidence: "medium",
+          outcome: "no_evidence",
+          toolCallCount: 1,
+          rounds: 1,
+          articleMeta: new Map(),
+        };
+      }
+    );
+
+    const response = await POST(makeRequest({ question: "complex q" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    const types = events.map((e) => e.type);
+    expect(events.filter((e) => e.type === "delta").map((e) => e.text)).toEqual([
+      "Students ",
+      "marched.",
+    ]);
+    // Exactly one generate stage, and it lands before the first delta so the
+    // pill does not sit on "Researching" while prose is already arriving.
+    const generateStages = events.filter((e) => e.type === "stage" && e.name === "generate");
+    expect(generateStages).toHaveLength(1);
+    expect(types.indexOf("delta")).toBeGreaterThan(
+      types.findIndex((t, i) => t === "stage" && events[i].name === "generate")
+    );
+  });
+
   it("stores conversation turn in streaming agent path", async () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "test",
