@@ -47,7 +47,19 @@ import {
 
 const AGENT_MODEL = RAG_MODEL_CONFIG.agent.model;
 const MAX_TOOL_ROUNDS = 3;
-const MAX_OUTPUT_TOKENS = 4096;
+/**
+ * Thinking is billed against this same budget, not on top of it, and the
+ * agent thinks at MEDIUM. At 4096 that was not a ceiling the answer rarely
+ * touched — it was the answer's actual length: production rounds landed on
+ * 3,932 thinking + 160 prose, 3,251 + 1,134, 3,097 + 995, all summing to
+ * 4,092 of 4,096. Every complex answer stopped mid-sentence, and because
+ * MAX_TOKENS was never inspected, it stopped silently.
+ *
+ * 16,384 leaves roughly 12k of prose behind the observed thinking ceiling.
+ * It is a ceiling, not a target — answer length is set by the prompt, and
+ * the simple path writes ~800 tokens under an 8,192 budget.
+ */
+const MAX_OUTPUT_TOKENS = 16_384;
 const MAX_FINAL_ARTICLES = 12;
 const MAX_FINAL_EVIDENCE_CHARS = 8_000;
 
@@ -121,9 +133,11 @@ export interface AgentResult {
   errorKind?: AskErrorKind;
   retryAfterSec?: number;
   /**
-   * An archive lookup timed out mid-research, so this answer stands on
-   * whatever evidence arrived before it did. Caps confidence at "low":
-   * the same honesty rule as the reranker's `rerankDegraded`.
+   * This answer is not the one the model set out to write: either an
+   * archive lookup timed out mid-research, so it stands on whatever
+   * evidence arrived before it did, or the model ran out of output budget
+   * and stopped mid-sentence. Caps confidence at "low": the same honesty
+   * rule as the reranker's `rerankDegraded`.
    */
   degraded?: true;
   /**
@@ -598,17 +612,33 @@ export async function runAgentLoop(
   let successfulSearchCount = 0;
   let finalAnswerProduced = false;
   let toolTimedOut = false;
+  let answerTruncated = false;
   let quotaStop: { retryAfterSec: number } | undefined;
   const retrievalMethods = new Set<RetrievalMethod>();
 
+  /**
+   * A turn the model did not get to finish. The prose stops mid-sentence
+   * and reads exactly like a completed answer, so the only way a reader
+   * ever learns about it is if the loop says so here.
+   */
+  const noteFinishReason = (turn: ModelTurn, op: string): void => {
+    if (turn.finishReason !== "MAX_TOKENS") return;
+    answerTruncated = true;
+    logWarn(requestId, "answer truncated at the output token cap", {
+      op,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      answerChars: turn.text.length,
+    });
+  };
+
   /** Shared tail for every return: the counters are identical either way. */
   const resultBase = () => ({
-          toolCallCount,
-          rounds: round,
-          articleMeta: articleLookup,
-          retrievalTimeMs,
-          generationTimeMs,
-          retrievalMethod: combinedRetrievalMethod(retrievalMethods),
+    toolCallCount,
+    rounds: round,
+    articleMeta: articleLookup,
+    retrievalTimeMs,
+    generationTimeMs,
+    retrievalMethod: combinedRetrievalMethod(retrievalMethods),
   });
 
   const failed = (
@@ -637,17 +667,17 @@ export async function runAgentLoop(
 
       const modelStart = Date.now();
       const roundRequest: GenerateContentParameters = {
-            model: AGENT_MODEL,
-            contents,
-            config: {
-              systemInstruction: AGENT_SYSTEM_PROMPT,
-              tools: [{ functionDeclarations: AGENT_TOOL_DECLARATIONS as FunctionDeclaration[] }],
-              maxOutputTokens: MAX_OUTPUT_TOKENS,
-              thinkingConfig: {
-                thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
-              },
-              abortSignal: signal,
-            },
+        model: AGENT_MODEL,
+        contents,
+        config: {
+          systemInstruction: AGENT_SYSTEM_PROMPT,
+          tools: [{ functionDeclarations: AGENT_TOOL_DECLARATIONS as FunctionDeclaration[] }],
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          thinkingConfig: {
+            thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
+          },
+          abortSignal: signal,
+        },
       };
       const turnOpts = { op: `agent.round${round}`, requestId, signal };
       // Every round streams, because any round can be the one that writes
@@ -664,6 +694,7 @@ export async function runAgentLoop(
         onDelta: (text) => onProgress?.({ type: "delta", text }),
       });
       generationTimeMs += Date.now() - modelStart;
+      noteFinishReason(response, `agent.round${round}`);
 
       const functionCalls = response.functionCalls;
 
@@ -795,42 +826,43 @@ export async function runAgentLoop(
         signal,
         onDelta: (text) => onProgress?.({ type: "delta", text }),
         request: {
-            model: AGENT_MODEL,
-            // Start a fresh synthesis turn. Replaying prior model
-            // function-call parts conditions Flash-Lite to emit another
-            // call even when function calling is explicitly NONE.
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text: buildFinalSynthesisInput({
-                      question,
-                      filters,
-                      conversationContext,
-                      coverage,
-                      articles: articleLookup,
-                    }),
-                  },
-                ],
-              },
-            ],
-            config: {
-              systemInstruction: AGENT_FINAL_SYSTEM_PROMPT,
-              toolConfig: {
-                functionCallingConfig: {
-                  mode: FunctionCallingConfigMode.NONE,
+          model: AGENT_MODEL,
+          // Start a fresh synthesis turn. Replaying prior model
+          // function-call parts conditions Flash-Lite to emit another
+          // call even when function calling is explicitly NONE.
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: buildFinalSynthesisInput({
+                    question,
+                    filters,
+                    conversationContext,
+                    coverage,
+                    articles: articleLookup,
+                  }),
                 },
-              },
-              maxOutputTokens: MAX_OUTPUT_TOKENS,
-              thinkingConfig: {
-                thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
-              },
-              abortSignal: signal,
+              ],
             },
+          ],
+          config: {
+            systemInstruction: AGENT_FINAL_SYSTEM_PROMPT,
+            toolConfig: {
+              functionCallingConfig: {
+                mode: FunctionCallingConfigMode.NONE,
+              },
+            },
+            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            thinkingConfig: {
+              thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
+            },
+            abortSignal: signal,
+          },
         },
       });
       generationTimeMs += Date.now() - finalStart;
+      noteFinishReason(finalResponse, "agent.finalize");
       answerText = finalResponse.text;
       finalAnswerProduced = Boolean(answerText);
       if (!finalAnswerProduced) {
@@ -866,7 +898,7 @@ export async function runAgentLoop(
       articleLookup,
       toolErrorCount,
       successfulSearchCount,
-      degraded: toolTimedOut,
+      degraded: toolTimedOut || answerTruncated,
     });
 
     return {
@@ -875,7 +907,7 @@ export async function runAgentLoop(
       sourceArticleIds: buildAgentSourceArticleIds(answerText, citations, articleLookup),
       confidence,
       outcome: citations.length > 0 ? "answered" : "no_evidence",
-      ...(toolTimedOut ? { degraded: true as const } : {}),
+      ...(toolTimedOut || answerTruncated ? { degraded: true as const } : {}),
       ...resultBase(),
     };
   } catch (err) {
