@@ -6,6 +6,7 @@ import {
   expectNoUnexpectedNoJsDiagnostics,
   observeBrowserDiagnostics,
   readCumulativeLayoutShift,
+  recordFulfilledMockRequest,
   waitForSettledUi,
 } from "../support/harness";
 import {
@@ -56,15 +57,12 @@ function expectStableBox(before: ElementBox, after: ElementBox): void {
   for (const key of ["height", "width", "x", "y"] as const) {
     expect(
       Math.abs(after[key] - before[key]),
-      `${key} changed from ${before[key]} to ${after[key]}`,
+      `${key} changed from ${before[key]} to ${after[key]}`
     ).toBeLessThanOrEqual(1);
   }
 }
 
-async function expectMinimumTarget(
-  locator: Locator,
-  label: string,
-): Promise<void> {
+async function expectMinimumTarget(locator: Locator, label: string): Promise<void> {
   await locator.scrollIntoViewIfNeeded();
   const box = await locator.boundingBox();
   expect(box, `${label} should have rendered geometry`).not.toBeNull();
@@ -72,18 +70,18 @@ async function expectMinimumTarget(
   expect(box!.height, `${label} height`).toBeGreaterThanOrEqual(43.99);
 }
 
-async function expectMinimumFontSize(
-  locator: Locator,
-  label: string,
-): Promise<void> {
+async function expectMinimumFontSize(locator: Locator, label: string): Promise<void> {
   const fontSize = await locator.evaluate((element) =>
-    Number.parseFloat(getComputedStyle(element).fontSize),
+    Number.parseFloat(getComputedStyle(element).fontSize)
   );
   expect(fontSize, `${label} computed font size`).toBeGreaterThanOrEqual(12);
 }
 
 function parseRgb(value: string): [number, number, number] {
-  const channels = value.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+  const channels = value
+    .match(/[\d.]+/g)
+    ?.slice(0, 3)
+    .map(Number);
   if (!channels || channels.length !== 3) {
     throw new Error(`Expected an RGB color, received ${value}`);
   }
@@ -93,18 +91,12 @@ function parseRgb(value: string): [number, number, number] {
 function relativeLuminance([red, green, blue]: [number, number, number]) {
   const linear = [red, green, blue].map((channel) => {
     const value = channel / 255;
-    return value <= 0.04045
-      ? value / 12.92
-      : ((value + 0.055) / 1.055) ** 2.4;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
   });
   return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
 }
 
-async function expectTextContrast(
-  locator: Locator,
-  label: string,
-  minimum = 4.5,
-): Promise<void> {
+async function expectTextContrast(locator: Locator, label: string, minimum = 4.5): Promise<void> {
   const colors = await locator.evaluate((element) => {
     const style = getComputedStyle(element);
     return { background: style.backgroundColor, foreground: style.color };
@@ -112,12 +104,10 @@ async function expectTextContrast(
   const foreground = relativeLuminance(parseRgb(colors.foreground));
   const background = relativeLuminance(parseRgb(colors.background));
   const ratio =
-    (Math.max(foreground, background) + 0.05) /
-    (Math.min(foreground, background) + 0.05);
-  expect(
-    ratio,
-    `${label}: ${colors.foreground} on ${colors.background}`,
-  ).toBeGreaterThanOrEqual(minimum);
+    (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+  expect(ratio, `${label}: ${colors.foreground} on ${colors.background}`).toBeGreaterThanOrEqual(
+    minimum
+  );
 }
 
 async function submitQuestion(page: Page, question: string): Promise<void> {
@@ -127,15 +117,9 @@ async function submitQuestion(page: Page, question: string): Promise<void> {
   await page.getByRole("button", { name: "Send question" }).click();
 }
 
-function visibleConversationAction(
-  page: Page,
-  projectName: string,
-  name: RegExp,
-) {
+function visibleConversationAction(page: Page, projectName: string, name: RegExp) {
   const container = page.locator(
-    projectName === "chromium-mobile"
-      ? ".ask-mobile-actions"
-      : ".ask-sidebar",
+    projectName === "chromium-mobile" ? ".ask-mobile-actions" : ".ask-sidebar"
   );
   return container.getByRole("button", { name });
 }
@@ -161,13 +145,10 @@ async function installControlledAskStream(page: Page): Promise<void> {
         }
 
         const body =
-          typeof init?.body === "string"
-            ? (JSON.parse(init.body) as { question?: string })
-            : {};
+          typeof init?.body === "string" ? (JSON.parse(init.body) as { question?: string }) : {};
         const encoder = new TextEncoder();
         let cursor = 0;
-        let streamController: ReadableStreamDefaultController<Uint8Array> | null =
-          null;
+        let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
             streamController = controller;
@@ -181,9 +162,7 @@ async function installControlledAskStream(page: Page): Promise<void> {
         };
         const emitNext = () => {
           if (!streamController || cursor >= events.length) return;
-          streamController.enqueue(
-            encoder.encode(`data: ${JSON.stringify(events[cursor])}\n\n`),
-          );
+          streamController.enqueue(encoder.encode(`data: ${JSON.stringify(events[cursor])}\n\n`));
           cursor += 1;
           state.remaining = events.length - cursor;
           if (cursor === events.length) streamController.close();
@@ -202,27 +181,25 @@ async function installControlledAskStream(page: Page): Promise<void> {
         });
       };
     },
-    { events: DELAYED_ASK_STREAM_EVENTS },
+    { events: DELAYED_ASK_STREAM_EVENTS }
   );
 }
 
 async function advanceControlledAskStream(page: Page): Promise<void> {
   await page.evaluate(() => {
-    const state = (
-      window as Window & { __auditAskStream?: ControlledAskStreamState }
-    ).__auditAskStream;
+    const state = (window as Window & { __auditAskStream?: ControlledAskStreamState })
+      .__auditAskStream;
     if (!state) throw new Error("Controlled Ask stream was not installed");
     state.advance();
   });
 }
 
 async function readControlledAskStream(
-  page: Page,
+  page: Page
 ): Promise<Omit<ControlledAskStreamState, "advance"> | null> {
   return page.evaluate(() => {
-    const state = (
-      window as Window & { __auditAskStream?: ControlledAskStreamState }
-    ).__auditAskStream;
+    const state = (window as Window & { __auditAskStream?: ControlledAskStreamState })
+      .__auditAskStream;
     if (!state) return null;
     return {
       postCount: state.postCount,
@@ -232,10 +209,7 @@ async function readControlledAskStream(
   });
 }
 
-async function holdSessionRestore(
-  page: Page,
-  json: unknown,
-): Promise<() => void> {
+async function holdSessionRestore(page: Page, json: unknown): Promise<() => void> {
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -263,9 +237,7 @@ test.describe("Ask workspace shell", () => {
     const isMobile = testInfo.project.name === "chromium-mobile";
     const context = await browser.newContext({
       javaScriptEnabled: false,
-      viewport: isMobile
-        ? { width: 390, height: 844 }
-        : { width: 1440, height: 900 },
+      viewport: isMobile ? { width: 390, height: 844 } : { width: 1440, height: 900 },
       hasTouch: isMobile,
       isMobile,
     });
@@ -277,12 +249,9 @@ test.describe("Ask workspace shell", () => {
     const response = await page.goto(new URL("/ask", baseURL).href);
     expect(response?.status()).toBe(200);
     await expect(page.locator("main#main-content")).toBeVisible();
-    await expect(page.locator(".ask-landing-title")).toHaveText(
-      /Ask the archive/i,
-    );
+    await expect(page.locator(".ask-landing-title")).toHaveText(/What did students say/i);
     await expect(page.getByLabel("Ask a question")).toBeVisible();
     await expect(page.getByLabel("Ask a question")).toBeDisabled();
-    await expect(page.locator(".ask-loading-skeleton")).toHaveCount(0);
 
     if (isMobile) {
       await expect(page.locator(".ask-sidebar")).toBeHidden();
@@ -300,20 +269,14 @@ test.describe("Ask workspace shell", () => {
     await context.close();
   });
 
-  test("first visit exposes stable landmarks and reduced-motion controls", async ({
-    page,
-  }) => {
+  test("first visit exposes stable landmarks and reduced-motion controls", async ({ page }) => {
     await page.goto("/ask");
     await waitForSettledUi(page);
 
     await expect(page.locator(".ask-landing-title")).toBeVisible();
-    await expect(page.locator(".ask-transcript")).toHaveAttribute(
-      "aria-busy",
-      "false",
-    );
+    await expect(page.locator(".ask-transcript")).toHaveAttribute("aria-busy", "false");
     await expect(page.locator(".ask-composer")).toBeVisible();
     await expect(page.getByLabel("Ask a question")).toBeEnabled();
-    await expect(page.locator(".ask-loading-skeleton")).toHaveCount(0);
 
     const transitionDuration = await page
       .locator(".ask-landing-suggestion")
@@ -328,10 +291,7 @@ test.describe("Ask workspace shell", () => {
     const releaseSession = await holdSessionRestore(page, EMPTY_ASK_SESSION);
     const submittedQuestions: string[] = [];
     page.on("request", (request) => {
-      if (
-        new URL(request.url()).pathname === "/api/ask" &&
-        request.method() === "POST"
-      ) {
+      if (new URL(request.url()).pathname === "/api/ask" && request.method() === "POST") {
         const body = request.postDataJSON() as { question?: string };
         if (body.question) submittedQuestions.push(body.question);
       }
@@ -347,7 +307,7 @@ test.describe("Ask workspace shell", () => {
     await expect(page.getByText(DETERMINISTIC_ASK_ANSWER)).toBeVisible();
     expect(submittedQuestions).toEqual(["Who edited the paper?"]);
     await expect(page).toHaveURL(
-      (url) => url.pathname === "/ask" && url.search === "" && url.hash === "",
+      (url) => url.pathname === "/ask" && url.search === "" && url.hash === ""
     );
 
     await page.reload();
@@ -356,9 +316,7 @@ test.describe("Ask workspace shell", () => {
     expect(submittedQuestions).toEqual(["Who edited the paper?"]);
   });
 
-  test("Search to Ask stays below the transition CLS budget", async ({
-    page,
-  }) => {
+  test("Search to Ask stays below the transition CLS budget", async ({ page }) => {
     await page.goto("/search");
     await waitForSettledUi(page);
     const before = await readCumulativeLayoutShift(page);
@@ -382,9 +340,7 @@ test.describe("Ask response states", () => {
     await waitForSettledUi(page);
 
     const railSelector =
-      testInfo.project.name === "chromium-mobile"
-        ? ".ask-mobile-actions"
-        : ".ask-sidebar";
+      testInfo.project.name === "chromium-mobile" ? ".ask-mobile-actions" : ".ask-sidebar";
     const before = {
       column: await elementBox(page, ".ask-column"),
       composer: await elementBox(page, ".ask-composer"),
@@ -392,9 +348,9 @@ test.describe("Ask response states", () => {
     };
 
     await submitQuestion(page, DELAYED_ASK_QUESTION);
-    await expect(page.locator(".ask-thinking-rule")).toContainText(
-      "Thinking…",
-    );
+    // The fixture releases the first frame with the response, so the pill
+    // is already reporting the reformulate stage by name here.
+    await expect(page.locator(".ask-thinking-rule")).toContainText("Understanding your question…");
     await expect
       .poll(() => readControlledAskStream(page))
       .toMatchObject({
@@ -404,24 +360,25 @@ test.describe("Ask response states", () => {
       });
 
     await advanceControlledAskStream(page);
-    await expect(page.locator(".ask-thinking-rule")).toContainText(
-      "Searching archive…",
-    );
+    await expect(page.locator(".ask-thinking-rule")).toContainText("Searching the archive…");
     await advanceControlledAskStream(page);
-    await expect(page.locator(".ask-thinking-rule")).toContainText(
-      "Ranking sources…",
-    );
+    await expect(page.locator(".ask-thinking-rule")).toContainText("Ranking sources…");
     await advanceControlledAskStream(page);
-    await expect(page.locator(".ask-thinking-rule")).toContainText(
-      "Writing answer…",
-    );
+    await expect(page.locator(".ask-thinking-rule")).toContainText("Writing answer…");
 
     await advanceControlledAskStream(page);
-    await expect(page.locator(".ask-thinking-rule")).toContainText(
-      "Writing answer…",
-    );
+    await expect(page.locator(".ask-thinking-rule")).toContainText("Writing answer…");
     await advanceControlledAskStream(page);
-    await expect(page.getByText(DELAYED_ASK_PARTIAL_ANSWER)).toBeVisible();
+    // The typewriter deliberately parks on a partial word until the next
+    // delta arrives (see DeltaTypewriter: emitting mid-word makes the line
+    // re-wrap and tremble). Mid-stream the reader therefore sees the burst
+    // minus its final word, so assert the prefix that is actually painted
+    // rather than the whole delta — the full text is asserted after `done`.
+    const partialPrefix = DELAYED_ASK_PARTIAL_ANSWER.slice(
+      0,
+      DELAYED_ASK_PARTIAL_ANSWER.lastIndexOf(" ")
+    );
+    await expect(page.locator(".ask-turn").last()).toContainText(partialPrefix);
     await expect(page.locator(".ask-thinking-rule")).toHaveCount(0);
 
     await advanceControlledAskStream(page);
@@ -449,10 +406,7 @@ test.describe("Ask response states", () => {
     let postCount = 0;
     await page.route("**/api/ask**", async (route) => {
       const request = route.request();
-      if (
-        new URL(request.url()).pathname !== "/api/ask" ||
-        request.method() !== "POST"
-      ) {
+      if (new URL(request.url()).pathname !== "/api/ask" || request.method() !== "POST") {
         await route.fallback();
         return;
       }
@@ -462,8 +416,7 @@ test.describe("Ask response states", () => {
         headers: {
           "cache-control": "no-store",
           "content-type": "text/event-stream; charset=utf-8",
-          "x-audit-fixture":
-            postCount === 1 ? "ask-stream-error" : "ask-stream-recovery",
+          "x-audit-fixture": postCount === 1 ? "ask-stream-error" : "ask-stream-recovery",
         },
         body:
           postCount === 1
@@ -474,14 +427,16 @@ test.describe("Ask response states", () => {
               })}\n\n`
             : DETERMINISTIC_ASK_STREAM,
       });
+      // The diagnostics gate only forgives an aborted Ask POST that a mock
+      // actually answered; this handler bypasses `installApiMocks`, so it
+      // records its own fulfilment.
+      recordFulfilledMockRequest(request);
     });
 
     await page.goto("/ask");
     await waitForSettledUi(page);
     const railSelector =
-      testInfo.project.name === "chromium-mobile"
-        ? ".ask-mobile-actions"
-        : ".ask-sidebar";
+      testInfo.project.name === "chromium-mobile" ? ".ask-mobile-actions" : ".ask-sidebar";
     const before = {
       column: await elementBox(page, ".ask-column"),
       composer: await elementBox(page, ".ask-composer"),
@@ -491,12 +446,8 @@ test.describe("Ask response states", () => {
     await submitQuestion(page, "Trigger the deterministic error");
     const alert = page.locator(".ask-error-inline");
     await expect(alert).toContainText("Notice");
-    await expect(alert).toContainText(
-      "The deterministic archive fixture is unavailable.",
-    );
-    await expect(
-      alert.getByRole("button", { name: "Retry this question" }),
-    ).toBeEnabled();
+    await expect(alert).toContainText("The deterministic archive fixture is unavailable.");
+    await expect(alert.getByRole("button", { name: "Retry this question" })).toBeEnabled();
     await expect(page.getByLabel("Ask a question")).toBeEnabled();
     expect(postCount).toBe(1);
 
@@ -517,9 +468,7 @@ test.describe("Ask response states", () => {
 });
 
 test.describe("expired Ask workspace", () => {
-  test("keeps the landing and composer usable beneath the expiry notice", async ({
-    page,
-  }) => {
+  test("keeps the landing and composer usable beneath the expiry notice", async ({ page }) => {
     await page.route("**/api/ask/session**", async (route) => {
       if (route.request().method() !== "GET") {
         await route.fallback();
@@ -536,14 +485,11 @@ test.describe("expired Ask workspace", () => {
     });
     await page.goto("/ask");
     await expect(page.getByRole("status")).toContainText(
-      "Your last conversation expired. Starting fresh.",
+      "Server memory for this conversation has aged out. Follow-ups start fresh context."
     );
     await expect(page.locator(".ask-landing-title")).toBeVisible();
     await expect(page.getByLabel("Ask a question")).toBeEnabled();
-    await expect(page.locator(".ask-transcript")).toHaveAttribute(
-      "aria-busy",
-      "false",
-    );
+    await expect(page.locator(".ask-transcript")).toHaveAttribute("aria-busy", "false");
   });
 });
 
@@ -553,12 +499,9 @@ test.describe("returning Ask workspace", () => {
   test("restores content without moving the desktop or mobile shell", async ({
     page,
   }, testInfo) => {
-    const releaseSession = await holdSessionRestore(
-      page,
-      RETURNING_ASK_SESSION,
-    );
+    const releaseSession = await holdSessionRestore(page, RETURNING_ASK_SESSION);
     const sessionRequest = page.waitForRequest((request) =>
-      new URL(request.url()).pathname.startsWith("/api/ask/session"),
+      new URL(request.url()).pathname.startsWith("/api/ask/session")
     );
 
     await page.goto("/ask");
@@ -587,29 +530,51 @@ test.describe("returning Ask workspace", () => {
     expectStableBox(before.rail, after.rail);
   });
 
-  test("an existing conversation consumes a deep link without submission", async ({
+  test("a deep link answers in a new thread and archives the open conversation", async ({
     page,
-  }) => {
+  }, testInfo) => {
+    const deepLinkQuestion = "Do not duplicate this";
     let postCount = 0;
     page.on("request", (request) => {
-      if (
-        new URL(request.url()).pathname === "/api/ask" &&
-        request.method() === "POST"
-      ) {
+      if (new URL(request.url()).pathname === "/api/ask" && request.method() === "POST") {
         postCount += 1;
       }
     });
 
-    await page.goto("/ask?q=Do%20not%20duplicate%20this");
-    await expect(page.getByText(RETURNING_ASK_ANSWER)).toBeVisible();
+    await page.goto(`/ask?q=${encodeURIComponent(deepLinkQuestion)}`);
+
+    // A deep link carries a question, so it gets asked — exactly once —
+    // instead of being swallowed by the conversation already on screen.
+    const transcript = page.locator(".ask-transcript");
+    await expect(transcript.getByText(deepLinkQuestion)).toBeVisible();
+    await expect(transcript.getByText(DETERMINISTIC_ASK_ANSWER)).toBeVisible();
     await expect(page).toHaveURL(
-      (url) => url.pathname === "/ask" && url.search === "" && url.hash === "",
+      (url) => url.pathname === "/ask" && url.search === "" && url.hash === ""
     );
+
+    // The conversation that was open is archived rather than overwritten:
+    // kept in the local archive, and no longer in the live transcript.
+    await expect(transcript.getByText(RETURNING_ASK_ANSWER)).toHaveCount(0);
+    const archivedQuestions = await page.evaluate(() => {
+      const raw = window.localStorage.getItem("owu-ask-threads");
+      const threads = raw ? (JSON.parse(raw) as { firstQuestion?: string }[]) : [];
+      return threads.map((thread) => thread.firstQuestion);
+    });
+    expect(archivedQuestions).toContain(RETURNING_ASK_QUESTION);
+
+    // Desktop surfaces that archive as the thread rail. Mobile has no
+    // thread list yet, so there is nothing to assert there.
+    if (testInfo.project.name === "chromium-desktop") {
+      await expect(
+        page.getByRole("button", { name: `Open thread: ${RETURNING_ASK_QUESTION}` })
+      ).toBeVisible();
+    }
+
     await page.waitForTimeout(250);
-    expect(postCount).toBe(0);
+    expect(postCount).toBe(1);
   });
 
-  test("clears the restored thread locally and deletes only its server session", async ({
+  test("warns, then clears all restored threads and deletes their server sessions", async ({
     page,
   }, testInfo) => {
     const deletedSessionUrls: string[] = [];
@@ -636,31 +601,29 @@ test.describe("returning Ask workspace", () => {
 
     await page.goto("/ask");
     await expect(page.getByText(RETURNING_ASK_ANSWER)).toBeVisible();
-    const clear = visibleConversationAction(
-      page,
-      testInfo.project.name,
-      /clear the current thread/i,
-    );
+    const clear = visibleConversationAction(page, testInfo.project.name, /clear all threads/i);
     await expect(clear).toBeEnabled();
+    await clear.click();
+    const warning = page.getByRole("alertdialog", {
+      name: /clear all threads/i,
+    });
+    await expect(warning).toContainText(/cannot be undone/i);
     const deleteResponse = page.waitForResponse((response) => {
       const request = response.request();
       return (
-        new URL(response.url()).pathname === "/api/ask/session" &&
-        request.method() === "DELETE"
+        new URL(response.url()).pathname === "/api/ask/session" && request.method() === "DELETE"
       );
     });
-    await clear.click();
+    await warning.getByRole("button", { name: /^clear all$/i }).click();
     await deleteResponse;
 
     await expect(page.getByRole("status")).toContainText(
-      "Conversation cleared — ask a new question below.",
+      "All threads cleared — ask a new question below."
     );
     await expect(page.getByText(RETURNING_ASK_ANSWER)).toHaveCount(0);
     await expect(page.getByLabel("Ask a question")).toBeEnabled();
     await expect.poll(() => deletedSessionUrls.length).toBe(1);
-    expect(new URL(deletedSessionUrls[0]).searchParams.get("sessionId")).toBe(
-      FIXED_ASK_SESSION_ID,
-    );
+    expect(new URL(deletedSessionUrls[0]).searchParams.get("sessionId")).toBe(FIXED_ASK_SESSION_ID);
     expect(askPostCount).toBe(0);
 
     const storage = await page.evaluate(() => ({
@@ -680,17 +643,12 @@ test.describe("returning Ask workspace", () => {
     const exportButton = visibleConversationAction(
       page,
       testInfo.project.name,
-      /export the conversation as a pdf/i,
+      /export the conversation as a pdf/i
     );
     await expect(exportButton).toBeEnabled();
 
-    const [download] = await Promise.all([
-      page.waitForEvent("download"),
-      exportButton.click(),
-    ]);
-    expect(download.suggestedFilename()).toBe(
-      "ask-the-archive-who-edited-the-paper-in-1960.pdf",
-    );
+    const [download] = await Promise.all([page.waitForEvent("download"), exportButton.click()]);
+    expect(download.suggestedFilename()).toBe("ask-the-archive-who-edited-the-paper-in-1960.pdf");
     expect(await download.failure()).toBeNull();
     expect(await download.path()).not.toBeNull();
   });
@@ -704,7 +662,7 @@ test.describe("archived Ask threads", () => {
   }, testInfo) => {
     test.skip(
       testInfo.project.name === "chromium-mobile",
-      "The thread rail is a desktop-only control.",
+      "The thread rail is a desktop-only control."
     );
     const askRequests: string[] = [];
     page.on("request", (request) => {
@@ -716,9 +674,7 @@ test.describe("archived Ask threads", () => {
 
     await page.goto("/ask");
     await expect(page.getByText(RETURNING_ASK_ANSWER)).toBeVisible();
-    await expect(page.locator(".ask-sidebar-section-label")).toContainText(
-      "2",
-    );
+    await expect(page.locator(".ask-sidebar-section-label")).toContainText("2");
 
     const secondThread = page.getByRole("button", {
       name: `Open thread: ${SECOND_ASK_QUESTION}`,
@@ -727,11 +683,9 @@ test.describe("archived Ask threads", () => {
     await expect(page.getByText(SECOND_ASK_ANSWER)).toBeVisible();
     await expect(page.getByText(RETURNING_ASK_ANSWER)).toHaveCount(0);
     await expect(secondThread).toHaveAttribute("aria-current", "true");
-    expect(
-      await page.evaluate(() =>
-        window.localStorage.getItem("owu-ask-session-id"),
-      ),
-    ).toBe(SECOND_ASK_SESSION_ID);
+    expect(await page.evaluate(() => window.localStorage.getItem("owu-ask-session-id"))).toBe(
+      SECOND_ASK_SESSION_ID
+    );
 
     const firstThread = page.getByRole("button", {
       name: `Open thread: ${RETURNING_ASK_QUESTION}`,
@@ -781,9 +735,7 @@ test.describe("visual Ask sources", () => {
     });
   });
 
-  test("opens a keyboard-complete source reader without moving the Ask shell", async ({
-    page,
-  }) => {
+  test("opens a keyboard-complete source reader without moving the Ask shell", async ({ page }) => {
     let editionRequestCount = 0;
     page.on("request", (request) => {
       if (
@@ -796,10 +748,10 @@ test.describe("visual Ask sources", () => {
 
     await page.goto("/ask");
     await expect(page.getByText(VISUAL_ASK_ANSWER)).toBeVisible();
-    await page
-      .getByRole("button", { name: "Sources — 2 articles" })
-      .click();
-    const sourceTrigger = page.locator(".ask-source-card").first();
+    await page.getByRole("button", { name: "Sources — 2 articles" }).click();
+    const sourceTrigger = page
+      .getByRole("button", { name: `Read: ${VISUAL_ASK_SOURCE_HEADLINE}` })
+      .first();
     await sourceTrigger.focus();
     await sourceTrigger.click();
 
@@ -812,18 +764,12 @@ test.describe("visual Ask sources", () => {
     await expect(reader).toBeVisible();
     await expect(close).toBeFocused();
     await expect(reader.getByRole("status")).toHaveText("Loading…");
-    await expect(
-      reader.getByText("The editors assembled around the newsroom desk."),
-    ).toBeVisible();
+    await expect(reader.getByText("The editors assembled around the newsroom desk.")).toBeVisible();
     expect(editionRequestCount).toBe(1);
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe(
-      "hidden",
-    );
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
 
     await page.keyboard.press("Shift+Tab");
-    await expect(
-      reader.getByRole("link", { name: "Open full edition →" }),
-    ).toBeFocused();
+    await expect(reader.getByRole("link", { name: "Open full edition →" })).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(close).toBeFocused();
 
@@ -838,9 +784,7 @@ test.describe("visual Ask sources", () => {
   }) => {
     await page.goto("/ask");
     await expect(page.getByText(VISUAL_ASK_ANSWER)).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "More pictures — 3" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "More pictures — 3" })).toBeVisible();
 
     const answerPhoto = page.getByRole("button", {
       name: "Open photo: Reading the archive",
@@ -848,9 +792,7 @@ test.describe("visual Ask sources", () => {
     await answerPhoto.click();
     let lightbox = page.getByRole("dialog", { name: "Photo viewer" });
     await expect(lightbox).toBeVisible();
-    await expect(
-      lightbox.getByRole("button", { name: "Close photo viewer" }),
-    ).toBeFocused();
+    await expect(lightbox.getByRole("button", { name: "Close photo viewer" })).toBeFocused();
     await expect(lightbox.getByText("1 / 3")).toBeVisible();
     await page.keyboard.press("ArrowRight");
     await expect(lightbox.getByText("2 / 3")).toBeVisible();
@@ -859,10 +801,10 @@ test.describe("visual Ask sources", () => {
     await expect(lightbox).toHaveCount(0);
     await expect(answerPhoto).toBeFocused();
 
-    await page
-      .getByRole("button", { name: "Sources — 2 articles" })
-      .click();
-    const sourceTrigger = page.locator(".ask-source-card").first();
+    await page.getByRole("button", { name: "Sources — 2 articles" }).click();
+    const sourceTrigger = page
+      .getByRole("button", { name: `Read: ${VISUAL_ASK_SOURCE_HEADLINE}` })
+      .first();
     await sourceTrigger.click();
     const reader = page.getByRole("dialog", {
       name: VISUAL_ASK_SOURCE_HEADLINE,
@@ -893,33 +835,29 @@ test.describe("visual Ask sources", () => {
   }, testInfo) => {
     test.skip(
       testInfo.project.name !== "chromium-mobile",
-      "This is the explicit 390×844 rendered accessibility probe.",
+      "This is the explicit 390×844 rendered accessibility probe."
     );
 
     await page.goto("/ask");
     await expect(page.getByText(VISUAL_ASK_ANSWER)).toBeVisible();
 
+    // Every action in the strip, not a fixed count: the point is that
+    // each one is reachable, and pinning the number only made the audit
+    // fail the next time the strip grew (it gained Threads, which is the
+    // sole route to the archive at this width).
     const mobileActions = page.locator(".ask-mobile-action");
-    await expect(mobileActions).toHaveCount(3);
-    for (let index = 0; index < 3; index += 1) {
-      await expectMinimumTarget(
-        mobileActions.nth(index),
-        `mobile action ${index + 1}`,
-      );
-      await expectMinimumFontSize(
-        mobileActions.nth(index),
-        `mobile action ${index + 1}`,
-      );
+    const actionCount = await mobileActions.count();
+    expect(actionCount).toBeGreaterThanOrEqual(3);
+    for (let index = 0; index < actionCount; index += 1) {
+      await expectMinimumTarget(mobileActions.nth(index), `mobile action ${index + 1}`);
+      await expectMinimumFontSize(mobileActions.nth(index), `mobile action ${index + 1}`);
     }
 
     const followUp = page.getByRole("button", {
       name: "Which photographs came from the newsroom?",
     });
     await expectMinimumTarget(followUp, "follow-up question");
-    await expectMinimumFontSize(
-      page.locator(".ask-followups-label"),
-      "follow-up label",
-    );
+    await expectMinimumFontSize(page.locator(".ask-followups-label"), "follow-up label");
 
     for (const [selector, label] of [
       [".ask-turn-user-label", "question label"],
@@ -939,8 +877,14 @@ test.describe("visual Ask sources", () => {
     await sourceToggle.click();
 
     const sourceCard = page.locator(".ask-source-card").first();
-    await expectMinimumTarget(sourceCard, "source card");
-    await sourceCard.focus();
+    // The card is a record, not a control: `role="button"` on an <article>
+    // flattened its heading, byline, snippet and photo count into one
+    // accessible name. Its "Read" button is the target that must clear 44px.
+    const sourceRead = sourceCard.getByRole("button", {
+      name: `Read: ${VISUAL_ASK_SOURCE_HEADLINE}`,
+    });
+    await expectMinimumTarget(sourceRead, "source read control");
+    await sourceRead.focus();
     for (const [selector, label] of [
       [".ask-source-card-category", "source category"],
       [".ask-source-card-date", "source date"],
@@ -950,17 +894,11 @@ test.describe("visual Ask sources", () => {
     ] as const) {
       await expectMinimumFontSize(sourceCard.locator(selector), label);
     }
-    await expect(sourceCard.locator(".ask-source-card-date")).toHaveCSS(
-      "opacity",
-      "1",
-    );
-    await expect(sourceCard.locator(".ask-source-card-num")).toHaveCSS(
-      "opacity",
-      "1",
-    );
+    await expect(sourceCard.locator(".ask-source-card-date")).toHaveCSS("opacity", "1");
+    await expect(sourceCard.locator(".ask-source-card-num")).toHaveCSS("opacity", "1");
     await expectNoSeriousOrCriticalAxeViolations(page);
 
-    await sourceCard.click();
+    await sourceRead.click();
     const reader = page.getByRole("dialog", {
       name: VISUAL_ASK_SOURCE_HEADLINE,
     });
@@ -975,7 +913,7 @@ test.describe("visual Ask sources", () => {
     await expect(lightbox).toBeVisible();
     await expectMinimumTarget(
       lightbox.getByRole("button", { name: "Close photo viewer" }),
-      "lightbox close",
+      "lightbox close"
     );
     const caption = lightbox.getByText("Reading the archive");
     await expect(caption).toBeVisible();

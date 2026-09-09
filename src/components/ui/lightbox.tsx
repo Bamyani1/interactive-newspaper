@@ -75,13 +75,9 @@ type LightboxProps =
 export function Lightbox(props: LightboxProps) {
   const [mounted, setMounted] = React.useState(false);
   const isGallery = "images" in props;
-  const images: LightboxImage[] = isGallery
-    ? props.images
-    : props.src
-    ? [{ src: props.src }]
-    : [];
+  const images: LightboxImage[] = isGallery ? props.images : props.src ? [{ src: props.src }] : [];
   const open = images.length > 0;
-  const initialIndex = isGallery ? props.initialIndex ?? 0 : 0;
+  const initialIndex = isGallery ? (props.initialIndex ?? 0) : 0;
 
   // Hold the latest onClose in a ref so the keyboard effect doesn't
   // tear down + re-register on every parent render. Passing `props`
@@ -183,9 +179,7 @@ export function Lightbox(props: LightboxProps) {
             />
 
             {current.caption ? (
-              <p
-                className="mx-auto mt-2 max-w-[80ch] rounded-sm bg-inverse px-3 py-2 text-center font-body text-sm italic text-text-inverse"
-              >
+              <p className="mx-auto mt-2 max-w-[80ch] rounded-sm bg-inverse px-3 py-2 text-center font-body text-sm italic text-text-inverse">
                 {current.caption}
               </p>
             ) : null}
@@ -198,9 +192,7 @@ export function Lightbox(props: LightboxProps) {
                 <button
                   type="button"
                   aria-label="Previous photo"
-                  onClick={() =>
-                    setIndex((i) => (i - 1 + total) % total)
-                  }
+                  onClick={() => setIndex((i) => (i - 1 + total) % total)}
                   className="absolute left-2 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] flex items-center justify-center text-white text-3xl font-serif leading-none cursor-pointer select-none rounded-full bg-black/55 border border-white/25 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]"
                 >
                   ‹
@@ -225,6 +217,6 @@ export function Lightbox(props: LightboxProps) {
         </motion.div>
       )}
     </AnimatePresence>,
-    document.body,
+    document.body
   );
 }

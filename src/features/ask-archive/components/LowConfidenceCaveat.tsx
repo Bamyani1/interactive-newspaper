@@ -17,7 +17,8 @@ export const LowConfidenceCaveat: React.FC<LowConfidenceCaveatProps> = ({ confid
         <span className="ask-caveat-label">Heads up</span>
       </div>
       <p className="ask-caveat-body">
-        Limited sources found for this question. The answer below may be incomplete or imprecise — verify against the source articles.
+        Limited sources found for this question. The answer below may be incomplete or imprecise —
+        verify against the source articles.
       </p>
     </aside>
   );

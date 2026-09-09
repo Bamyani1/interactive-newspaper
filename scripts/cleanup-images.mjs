@@ -65,8 +65,7 @@ const SPORTS_RE =
 const ARTS_RE =
   /\b(album|film|movie|theater|theatre|concert|exhibit|gallery|sculpture|play\b.*(?:about|loyalty|love)|review|rock and roll|VCR|ceramics|photography|dance alloy|artist)\b/i;
 
-const GREEK_RE =
-  /\b(fraternity|sorority|greek|pledge|rush|chapter|panhellenic|IFC|house)\b/i;
+const GREEK_RE = /\b(fraternity|sorority|greek|pledge|rush|chapter|panhellenic|IFC|house)\b/i;
 
 function classifyText(text) {
   if (SPORTS_RE.test(text)) return "sports";
@@ -80,11 +79,47 @@ function classifyText(text) {
 // Common institutional terms that appear in most articles/captions and
 // don't help distinguish relevance between articles in the same paper.
 const STOP_WORDS = new Set([
-  "the", "and", "for", "was", "are", "were", "has", "have", "had", "but",
-  "not", "this", "that", "with", "from", "will", "been", "its", "also",
-  "who", "which", "their", "than", "they", "all", "can", "more", "when",
-  "ohio", "wesleyan", "owu", "university", "delaware", "campus", "student",
-  "students", "college", "transcript", "professor", "faculty", "year",
+  "the",
+  "and",
+  "for",
+  "was",
+  "are",
+  "were",
+  "has",
+  "have",
+  "had",
+  "but",
+  "not",
+  "this",
+  "that",
+  "with",
+  "from",
+  "will",
+  "been",
+  "its",
+  "also",
+  "who",
+  "which",
+  "their",
+  "than",
+  "they",
+  "all",
+  "can",
+  "more",
+  "when",
+  "ohio",
+  "wesleyan",
+  "owu",
+  "university",
+  "delaware",
+  "campus",
+  "student",
+  "students",
+  "college",
+  "transcript",
+  "professor",
+  "faculty",
+  "year",
 ]);
 
 function tokenize(text) {
@@ -106,12 +141,59 @@ function extractProperNames(text) {
   }
   // Also match single capitalized words that aren't common sentence starters
   const commonWords = new Set([
-    "the", "this", "that", "these", "those", "here", "there", "where",
-    "when", "what", "which", "who", "how", "its", "also", "but", "and",
-    "for", "not", "with", "from", "they", "their", "been", "have", "has",
-    "was", "were", "are", "will", "can", "may", "all", "one", "two",
-    "new", "old", "last", "first", "next", "each", "both", "many", "some",
-    "our", "her", "his", "any", "back", "after", "before", "over", "under",
+    "the",
+    "this",
+    "that",
+    "these",
+    "those",
+    "here",
+    "there",
+    "where",
+    "when",
+    "what",
+    "which",
+    "who",
+    "how",
+    "its",
+    "also",
+    "but",
+    "and",
+    "for",
+    "not",
+    "with",
+    "from",
+    "they",
+    "their",
+    "been",
+    "have",
+    "has",
+    "was",
+    "were",
+    "are",
+    "will",
+    "can",
+    "may",
+    "all",
+    "one",
+    "two",
+    "new",
+    "old",
+    "last",
+    "first",
+    "next",
+    "each",
+    "both",
+    "many",
+    "some",
+    "our",
+    "her",
+    "his",
+    "any",
+    "back",
+    "after",
+    "before",
+    "over",
+    "under",
   ]);
   const singleCaps = text.match(/\b[A-Z][a-z]{2,}\b/g) || [];
   for (const w of singleCaps) {
@@ -130,7 +212,10 @@ function scoreRelevance(caption, articleHeadline, articleBody, articleCategory) 
   // If the caption contains the article headline, the image clearly belongs here
   // (e.g. AI caption "A cartoon titled 'PROSPECTIVE??!'" for article "PROSPECTIVE??!")
   if (articleHeadline && articleHeadline.trim().length >= 3) {
-    const headlineNorm = articleHeadline.trim().toLowerCase().replace(/[^a-z0-9\s]/g, "");
+    const headlineNorm = articleHeadline
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "");
     const captionNorm = caption.toLowerCase().replace(/[^a-z0-9\s]/g, "");
     if (headlineNorm.length >= 3 && captionNorm.includes(headlineNorm)) {
       return 1.0;
@@ -156,9 +241,7 @@ function scoreRelevance(caption, articleHeadline, articleBody, articleCategory) 
   let nameScore = 0;
   if (captionNames.length > 0) {
     const articleTextLower = articleText.toLowerCase();
-    const matched = captionNames.filter((name) =>
-      articleTextLower.includes(name)
-    ).length;
+    const matched = captionNames.filter((name) => articleTextLower.includes(name)).length;
     nameScore = matched / captionNames.length;
   } else {
     nameScore = 0.5; // neutral when no names to check
@@ -166,8 +249,8 @@ function scoreRelevance(caption, articleHeadline, articleBody, articleCategory) 
 
   // Signal 3: Category match (weight 0.25)
   const captionCategory = classifyText(caption);
-  const catScore = captionCategory === "general" ? 0.5 :
-    captionCategory === articleCategory ? 1.0 : 0.0;
+  const catScore =
+    captionCategory === "general" ? 0.5 : captionCategory === articleCategory ? 1.0 : 0.0;
 
   return tokenScore * 0.35 + nameScore * 0.4 + catScore * 0.25;
 }
@@ -185,10 +268,7 @@ function isPhotoOnly(article) {
   for (const cap of captions) {
     const capNorm = cap.replace(/\s+/g, " ").trim().toLowerCase();
     const bodyNorm = body.toLowerCase();
-    if (
-      bodyNorm.length < 500 &&
-      (capNorm.includes(bodyNorm) || bodyNorm.includes(capNorm))
-    ) {
+    if (bodyNorm.length < 500 && (capNorm.includes(bodyNorm) || bodyNorm.includes(capNorm))) {
       return true;
     }
   }
@@ -298,7 +378,12 @@ async function main() {
         let score = 0;
         let caption = allCaptions[0];
         for (const cap of allCaptions) {
-          const s = scoreRelevance(cap, article.headline || "", article.body || "", articleCategory);
+          const s = scoreRelevance(
+            cap,
+            article.headline || "",
+            article.body || "",
+            articleCategory
+          );
           if (s > score) {
             score = s;
             caption = cap;

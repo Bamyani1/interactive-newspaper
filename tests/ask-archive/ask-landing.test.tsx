@@ -1,105 +1,99 @@
 import React from "react";
-import {
-    describe,
-    it,
-    expect,
-    vi,
-    beforeEach,
-    afterEach,
-} from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AskLanding } from "@/features/ask-archive/components/AskLanding";
+import { pickDailyQuestion } from "@/features/ask-archive/data/question-pool";
 
 describe("AskLanding", () => {
-    beforeEach(() => {
-        window.localStorage.clear();
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders the kicker, hero, lede, and provenance strip", () => {
+    render(<AskLanding onPickQuestion={vi.fn()} />);
+
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent(/What did students say\?/);
+
+    // Kicker carries the archive's span.
+    expect(screen.getByText(/Primary-source research/i)).toBeInTheDocument();
+
+    // Lede orients the reader without over-promising.
+    expect(screen.getByText(/Search more than five decades of/i)).toBeInTheDocument();
+
+    // Provenance strip: the standing verification disclaimer survives
+    // the redesign — answers are generated over OCR'd historical text.
+    // The counts are no longer part of it: they were hardcoded, so every
+    // edition added to the archive made this line quietly wrong. The route
+    // counts the corpus and passes it in.
+    expect(screen.getByText(/Answers cite primary sources\. Always verify\./)).toBeInTheDocument();
+    expect(screen.queryByText(/editions/)).not.toBeInTheDocument();
+  });
+
+  it("states the corpus size the route measured", () => {
+    render(
+      <AskLanding onPickQuestion={() => {}} corpus={{ editionCount: 352, articleCount: 11_812 }} />
+    );
+    const strip = document.querySelector(".ask-landing-stats");
+    expect(strip?.textContent).toContain("352 editions");
+    expect(strip?.textContent).toContain("11,812 articles");
+  });
+
+  it("does NOT render the demo card, dateline, or expired notice", () => {
+    render(<AskLanding onPickQuestion={vi.fn()} />);
+
+    // Regression guards — earlier iterations shipped these; v2.1 removed
+    // the demo card + dateline + expired notice because they duplicated
+    // scope, shouted over the H1, or cluttered the hero.
+    expect(screen.queryByLabelText(/example of how an answer looks/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Example answer/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Research Desk · Vol\. LVI/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/server memory for this conversation has aged out/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders three daily suggestions and fires onPickQuestion on click", () => {
+    const onPick = vi.fn();
+    render(<AskLanding onPickQuestion={onPick} />);
+
+    const list = screen.getByLabelText(/suggested questions, refreshed daily/i);
+    const buttons = list.querySelectorAll<HTMLButtonElement>(".ask-landing-suggestion");
+    expect(buttons).toHaveLength(3);
+
+    // The homepage teaser's question of the day is excluded, so a
+    // reader arriving from it is never offered the same prompt twice.
+    const daily = pickDailyQuestion(new Date("2000-01-01T12:00:00.000Z"));
+    buttons.forEach((btn) => {
+      expect(btn.textContent).not.toContain(daily);
     });
 
-    afterEach(() => {
-        vi.restoreAllMocks();
+    // Each row is labelled with the research lens it represents.
+    buttons.forEach((btn) => {
+      const lens = btn.querySelector(".ask-landing-suggestion-lens");
+      expect(lens?.textContent ?? "").not.toEqual("");
     });
 
-    it("renders the hero, lede, and combined footer strip", () => {
-        render(<AskLanding onPickQuestion={vi.fn()} />);
+    fireEvent.click(buttons[0]);
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(onPick.mock.calls[0][0]).toEqual(expect.stringMatching(/.+\?|.+\./));
+  });
 
-        // H1 with accent on "archive"
-        const heading = screen.getByRole("heading", { level: 1 });
-        expect(heading).toHaveTextContent(/Ask the archive/);
+  it("keeps suggestions visible but inert during session restoration", () => {
+    const onPick = vi.fn();
+    render(<AskLanding onPickQuestion={onPick} disabled />);
 
-        // Lede mentions The Transcript and the verification claim.
-        expect(
-            screen.getByText(/research desk for/i),
-        ).toBeInTheDocument();
-        expect(
-            screen.getByText(/cites the stories it comes from/i),
-        ).toBeInTheDocument();
-
-        // Single combined footer: verification disclaimer + archive scope.
-        expect(
-            screen.getByText(
-                /Answers cite primary sources\. Always verify\. · 1950\s*[–-]\s*2006 · 351 editions · 11,705 articles/,
-            ),
-        ).toBeInTheDocument();
+    const suggestions = screen.getAllByRole("button");
+    expect(suggestions).toHaveLength(3);
+    suggestions.forEach((suggestion) => {
+      expect(suggestion).toBeDisabled();
+      fireEvent.click(suggestion);
     });
-
-    it("does NOT render the demo card, dateline, or expired notice", () => {
-        render(<AskLanding onPickQuestion={vi.fn()} />);
-
-        // Regression guards — earlier iterations shipped these; v2.1 removed
-        // the demo card + dateline + expired notice because they duplicated
-        // scope, shouted over the H1, or cluttered the hero.
-        expect(
-            screen.queryByLabelText(/example of how an answer looks/i),
-        ).not.toBeInTheDocument();
-        expect(screen.queryByText(/Example answer/)).not.toBeInTheDocument();
-        expect(
-            screen.queryByText(/Research Desk · Vol\. LVI/),
-        ).not.toBeInTheDocument();
-        expect(
-            screen.queryByText(/your last conversation expired/i),
-        ).not.toBeInTheDocument();
-    });
-
-    it("renders three daily suggestions and fires onPickQuestion on click", () => {
-        const onPick = vi.fn();
-        render(<AskLanding onPickQuestion={onPick} />);
-
-        const list = screen.getByLabelText(
-            /suggested questions, refreshed daily/i,
-        );
-        const buttons = list.querySelectorAll<HTMLButtonElement>(
-            ".ask-landing-suggestion",
-        );
-        expect(buttons).toHaveLength(3);
-
-        // None of the suggestions should duplicate the excluded question —
-        // keeps the landing varied across days.
-        buttons.forEach((btn) => {
-            expect(btn.textContent).not.toMatch(
-                /Tell me about Homecoming in the 1970s/,
-            );
-        });
-
-        fireEvent.click(buttons[0]);
-        expect(onPick).toHaveBeenCalledTimes(1);
-        expect(onPick.mock.calls[0][0]).toEqual(
-            expect.stringMatching(/.+\?|.+\./),
-        );
-    });
-
-    it("keeps suggestions visible but inert during session restoration", () => {
-        const onPick = vi.fn();
-        render(<AskLanding onPickQuestion={onPick} disabled />);
-
-        const suggestions = screen.getAllByRole("button");
-        expect(suggestions).toHaveLength(3);
-        suggestions.forEach((suggestion) => {
-            expect(suggestion).toBeDisabled();
-            fireEvent.click(suggestion);
-        });
-        expect(onPick).not.toHaveBeenCalled();
-        expect(document.querySelector(".ask-landing")).not.toHaveAttribute(
-            "data-animate",
-        );
-    });
+    expect(onPick).not.toHaveBeenCalled();
+    expect(document.querySelector(".ask-landing")).not.toHaveAttribute("data-animate");
+  });
 });

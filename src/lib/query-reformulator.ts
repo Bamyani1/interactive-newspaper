@@ -10,6 +10,8 @@
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
 import { executeTrackedGenerationCall } from "@/src/lib/cost-tracker";
+import { QuotaExhaustedError } from "@/src/lib/embeddings";
+import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import { formatHistoryForPrompt } from "@/src/lib/conversation-store";
 import type { ConversationTurn } from "@/src/lib/conversation-store";
@@ -22,14 +24,139 @@ export type Complexity = "simple" | "complex";
 export type CoverageIntent = "none" | "absence" | "count" | "exhaustive";
 
 export interface ReformulatedQuery {
-    embeddingQuery: string;
-    ftsQuery: string;
-    mode: "text" | "visual";
-    complexity: Complexity;
-    coverageIntent: CoverageIntent;
-    /** Inferred only from an explicit year/decade/range in the user's query. */
-    startDate?: string;
-    endDate?: string;
+  embeddingQuery: string;
+  ftsQuery: string;
+  mode: "text" | "visual";
+  complexity: Complexity;
+  coverageIntent: CoverageIntent;
+  /** Inferred only from an explicit year/decade/range in the user's query. */
+  startDate?: string;
+  endDate?: string;
+  /**
+   * The model never answered, so `ftsQuery` is a locally derived keyword
+   * set rather than a reformulation, and `mode`/`coverageIntent` are
+   * defaults rather than judgements. Surfaced as `meta.reformulationDegraded`
+   * so a weak answer can be told apart from a question the reformulator
+   * simply had nothing to add to.
+   */
+  reformulationDegraded?: true;
+}
+
+/**
+ * Function words that carry no retrieval signal but which
+ * `websearch_to_tsquery` still ANDs into the query, so a raw question like
+ * "What happened at OWU in the 1960s?" demands a document containing
+ * "what" AND "at" AND "in" and matches almost nothing. Deliberately short:
+ * anything domain-specific belongs in the model's reformulation, not here.
+ */
+const FTS_STOPWORDS = new Set([
+  "a",
+  "about",
+  "after",
+  "all",
+  "an",
+  "and",
+  "any",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "before",
+  "but",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "during",
+  "ever",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "he",
+  "her",
+  "him",
+  "his",
+  "how",
+  "i",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "many",
+  "me",
+  "much",
+  "my",
+  "of",
+  "on",
+  "or",
+  "our",
+  "over",
+  "she",
+  "should",
+  "some",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "us",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "whom",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your",
+]);
+
+/** More than this and the ANDed tsquery is too narrow to match anything. */
+const MAX_FALLBACK_FTS_TOKENS = 6;
+
+/**
+ * Keyword query to use when the reformulator produced nothing. Lowercases,
+ * strips punctuation, drops the stopwords above, and keeps at most the six
+ * longest survivors in the order they were asked — longest because length
+ * is the cheapest available proxy for specificity without a model. Returns
+ * the raw question only when nothing survives, which is the old behaviour
+ * and is still better than an empty tsquery.
+ */
+export function fallbackFtsQuery(question: string): string {
+  const tokens = question
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(/\s+/)
+    // Single characters are punctuation fallout ("Kennedy's" -> kennedy, s),
+    // never a search term.
+    .filter((token) => token.length > 1);
+  const kept = [...new Set(tokens.filter((token) => !FTS_STOPWORDS.has(token)))];
+  if (kept.length === 0) return normalizeFtsQuery(question);
+  const longest = new Set(
+    [...kept].sort((a, b) => b.length - a.length).slice(0, MAX_FALLBACK_FTS_TOKENS)
+  );
+  return normalizeFtsQuery(kept.filter((token) => longest.has(token)).join(" "));
 }
 
 const REFORMULATION_PROMPT = `You help reformulate modern search queries for The Transcript Archive (Ohio Wesleyan University, 1950-2006).
@@ -51,225 +178,229 @@ If CONVERSATION HISTORY is provided below the question, use it to resolve ambigu
 Return only the requested structured JSON fields.`;
 
 const REFORMULATION_SCHEMA = {
-    type: "object",
-    properties: {
-        embeddingQuery: { type: "string" },
-        ftsQuery: { type: "string", maxLength: 100 },
-        mode: { type: "string", enum: ["text", "visual"] },
-        complexity: { type: "string", enum: ["simple", "complex"] },
-        coverageIntent: {
-            type: "string",
-            enum: ["none", "absence", "count", "exhaustive"],
-        },
-        startYear: { type: "integer", minimum: 0, maximum: 2006 },
-        endYear: { type: "integer", minimum: 0, maximum: 2006 },
+  type: "object",
+  properties: {
+    embeddingQuery: { type: "string" },
+    ftsQuery: { type: "string", maxLength: 100 },
+    mode: { type: "string", enum: ["text", "visual"] },
+    complexity: { type: "string", enum: ["simple", "complex"] },
+    coverageIntent: {
+      type: "string",
+      enum: ["none", "absence", "count", "exhaustive"],
     },
-    required: [
-        "embeddingQuery",
-        "ftsQuery",
-        "mode",
-        "complexity",
-        "coverageIntent",
-        "startYear",
-        "endYear",
-    ],
-    additionalProperties: false,
+    startYear: { type: "integer", minimum: 0, maximum: 2006 },
+    endYear: { type: "integer", minimum: 0, maximum: 2006 },
+  },
+  required: [
+    "embeddingQuery",
+    "ftsQuery",
+    "mode",
+    "complexity",
+    "coverageIntent",
+    "startYear",
+    "endYear",
+  ],
+  additionalProperties: false,
 } as const;
 
 export async function reformulateQuery(
-    originalQuestion: string,
-    opts: {
-        signal?: AbortSignal;
-        requestId?: string;
-        conversationHistory?: ConversationTurn[];
-    } = {},
+  originalQuestion: string,
+  opts: {
+    signal?: AbortSignal;
+    requestId?: string;
+    conversationHistory?: ConversationTurn[];
+  } = {}
 ): Promise<ReformulatedQuery> {
-    const fallback: ReformulatedQuery = {
-        embeddingQuery: originalQuestion,
-        ftsQuery: originalQuestion,
-        mode: "text",
-        complexity: "simple",
-        coverageIntent: "none",
-    };
+  // The degraded shape, not the raw question: a failed reformulation used
+  // to push the whole sentence into websearch_to_tsquery, which ANDs its
+  // function words and collapses recall to near zero.
+  const fallback: ReformulatedQuery = {
+    embeddingQuery: originalQuestion,
+    ftsQuery: fallbackFtsQuery(originalQuestion),
+    mode: "text",
+    complexity: "simple",
+    coverageIntent: "none",
+    reformulationDegraded: true,
+  };
 
-    try {
-        const client = getGeminiClient();
+  try {
+    const client = getGeminiClient();
 
+    const response = await retryOnQuota(
+      "reformulate",
+      () => {
+        // Fresh timeout per attempt: a retried call must get its own
+        // 5s budget, not the remains of the first attempt's.
         const controller = new AbortController();
-        const timeout = setTimeout(
-            () => controller.abort(),
-            REFORMULATION_TIMEOUT_MS,
-        );
+        const timeout = setTimeout(() => controller.abort(), REFORMULATION_TIMEOUT_MS);
 
         // Combine the outer request signal (from /api/ask's global deadline)
         // with the internal 5s timeout. Either firing aborts the SDK call.
         const combinedSignal = opts.signal
-            ? AbortSignal.any([opts.signal, controller.signal])
-            : controller.signal;
+          ? AbortSignal.any([opts.signal, controller.signal])
+          : controller.signal;
 
-        const response = await executeTrackedGenerationCall({
-            model: REFORMULATION_MODEL,
-            maxOutputTokens: REFORMULATION_MAX_TOKENS,
-            requestId: opts.requestId,
-            op: "reformulate",
-            call: () =>
-                client.models.generateContent({
-                    model: REFORMULATION_MODEL,
-                    contents: [
-                        {
-                            role: "user",
-                            parts: [{ text: buildReformulatorInput(originalQuestion, opts.conversationHistory) }],
-                        },
-                    ],
-                    config: {
-                        systemInstruction: REFORMULATION_PROMPT,
-                        maxOutputTokens: REFORMULATION_MAX_TOKENS,
-                        thinkingConfig: {
-                            thinkingLevel: RAG_MODEL_CONFIG.reformulate.thinkingLevel,
-                        },
-                        responseMimeType: "application/json",
-                        responseJsonSchema: REFORMULATION_SCHEMA,
-                        abortSignal: combinedSignal,
-                    },
-                }),
-        });
-
-        clearTimeout(timeout);
-
-        const text = response.text?.trim() ?? "";
-        return parseReformulationResponse(text, fallback);
-    } catch (err) {
-        const isTimeout = err instanceof Error && err.name === "AbortError";
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                route: "/api/ask",
-                requestId: opts.requestId,
-                stage: "reformulate",
-                msg: isTimeout
-                    ? "reformulation timed out, using original query"
-                    : "reformulation failed, using original query",
-                err: err instanceof Error ? err.message : String(err),
+        return executeTrackedGenerationCall({
+          model: REFORMULATION_MODEL,
+          maxOutputTokens: REFORMULATION_MAX_TOKENS,
+          requestId: opts.requestId,
+          op: "reformulate",
+          call: () =>
+            client.models.generateContent({
+              model: REFORMULATION_MODEL,
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    { text: buildReformulatorInput(originalQuestion, opts.conversationHistory) },
+                  ],
+                },
+              ],
+              config: {
+                systemInstruction: REFORMULATION_PROMPT,
+                maxOutputTokens: REFORMULATION_MAX_TOKENS,
+                thinkingConfig: {
+                  thinkingLevel: RAG_MODEL_CONFIG.reformulate.thinkingLevel,
+                },
+                responseMimeType: "application/json",
+                responseJsonSchema: REFORMULATION_SCHEMA,
+                abortSignal: combinedSignal,
+              },
             }),
-        );
-        return fallback;
-    }
+        }).finally(() => clearTimeout(timeout));
+      },
+      { signal: opts.signal, requestId: opts.requestId }
+    );
+
+    const text = response.text?.trim() ?? "";
+    return parseReformulationResponse(text, fallback);
+  } catch (err) {
+    const quota = isQuotaError(err);
+    const isTimeout = err instanceof Error && err.name === "AbortError";
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        route: "/api/ask",
+        requestId: opts.requestId,
+        stage: "reformulate",
+        quota,
+        msg: quota
+          ? "reformulation hit the model quota"
+          : isTimeout
+            ? "reformulation timed out, using degraded keyword query"
+            : "reformulation failed, using degraded keyword query",
+        err: err instanceof Error ? err.message : String(err),
+      })
+    );
+    // A spent quota is not degradable: every later model call in this
+    // request will 429 too, so tell the reader to come back rather than
+    // spending the budget on an answer built from a weakened query.
+    if (quota) throw new QuotaExhaustedError("reformulate", err);
+    return fallback;
+  }
 }
 
-function buildReformulatorInput(
-    question: string,
-    history?: ConversationTurn[],
-): string {
-    const historyBlock = history && history.length > 0
-        ? `CONVERSATION HISTORY:\n${formatHistoryForPrompt(history)}\n\n`
-        : "";
-    return `${historyBlock}USER QUESTION (JSON string): ${JSON.stringify(question)}`;
+function buildReformulatorInput(question: string, history?: ConversationTurn[]): string {
+  const historyBlock =
+    history && history.length > 0
+      ? `CONVERSATION HISTORY:\n${formatHistoryForPrompt(history)}\n\n`
+      : "";
+  return `${historyBlock}USER QUESTION (JSON string): ${JSON.stringify(question)}`;
 }
 
 export function parseReformulationResponse(
-    text: string,
-    fallback: ReformulatedQuery,
+  text: string,
+  fallback: ReformulatedQuery
 ): ReformulatedQuery {
-    try {
-        const parsed = JSON.parse(text) as Record<string, unknown>;
-        const embeddingQuery =
-            typeof parsed.embeddingQuery === "string"
-                ? parsed.embeddingQuery.trim()
-                : "";
-        const ftsQuery = normalizeFtsQuery(
-            typeof parsed.ftsQuery === "string" ? parsed.ftsQuery : "",
-        );
-        if (embeddingQuery && ftsQuery) {
-            const dates = parseExplicitYearRange(parsed.startYear, parsed.endYear);
-            return {
-                embeddingQuery,
-                ftsQuery,
-                mode: parsed.mode === "visual" ? "visual" : "text",
-                complexity:
-                    parsed.complexity === "complex" ? "complex" : "simple",
-                coverageIntent: parseCoverageIntent(parsed.coverageIntent),
-                ...dates,
-            };
-        }
-    } catch {
-        // Backward-compatible parser below keeps recorded fixtures readable.
-    }
-
-    const semanticMatch = text.match(/^SEMANTIC:\s*(.+)$/m);
-    const keywordsMatch = text.match(/^KEYWORDS:\s*(.+)$/m);
-
-    if (!semanticMatch || !keywordsMatch) {
-        return fallback;
-    }
-
-    const embeddingQuery = semanticMatch[1].trim();
-    const ftsQuery = normalizeFtsQuery(keywordsMatch[1]);
-
-    // Sanity check: don't return empty strings
-    if (!embeddingQuery || !ftsQuery) {
-        return fallback;
-    }
-
-    const modeMatch = text.match(/^MODE:\s*(.+)$/m);
-    const mode = modeMatch && modeMatch[1].trim().toLowerCase() === "visual" ? "visual" : "text";
-
-    const complexityMatch = text.match(/^COMPLEXITY:\s*(.+)$/m);
-    const complexity: Complexity =
-        complexityMatch && complexityMatch[1].trim().toLowerCase() === "complex"
-            ? "complex"
-            : "simple";
-
-    return {
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const embeddingQuery =
+      typeof parsed.embeddingQuery === "string" ? parsed.embeddingQuery.trim() : "";
+    const ftsQuery = normalizeFtsQuery(typeof parsed.ftsQuery === "string" ? parsed.ftsQuery : "");
+    if (embeddingQuery && ftsQuery) {
+      const dates = parseExplicitYearRange(parsed.startYear, parsed.endYear);
+      return {
         embeddingQuery,
         ftsQuery,
-        mode,
-        complexity,
-        coverageIntent: "none",
-    };
+        mode: parsed.mode === "visual" ? "visual" : "text",
+        complexity: parsed.complexity === "complex" ? "complex" : "simple",
+        coverageIntent: parseCoverageIntent(parsed.coverageIntent),
+        ...dates,
+      };
+    }
+  } catch {
+    // Backward-compatible parser below keeps recorded fixtures readable.
+  }
+
+  const semanticMatch = text.match(/^SEMANTIC:\s*(.+)$/m);
+  const keywordsMatch = text.match(/^KEYWORDS:\s*(.+)$/m);
+
+  if (!semanticMatch || !keywordsMatch) {
+    return fallback;
+  }
+
+  const embeddingQuery = semanticMatch[1].trim();
+  const ftsQuery = normalizeFtsQuery(keywordsMatch[1]);
+
+  // Sanity check: don't return empty strings
+  if (!embeddingQuery || !ftsQuery) {
+    return fallback;
+  }
+
+  const modeMatch = text.match(/^MODE:\s*(.+)$/m);
+  const mode = modeMatch && modeMatch[1].trim().toLowerCase() === "visual" ? "visual" : "text";
+
+  const complexityMatch = text.match(/^COMPLEXITY:\s*(.+)$/m);
+  const complexity: Complexity =
+    complexityMatch && complexityMatch[1].trim().toLowerCase() === "complex" ? "complex" : "simple";
+
+  return {
+    embeddingQuery,
+    ftsQuery,
+    mode,
+    complexity,
+    coverageIntent: "none",
+  };
 }
 
 function parseCoverageIntent(value: unknown): CoverageIntent {
-    return value === "absence" ||
-        value === "count" ||
-        value === "exhaustive"
-        ? value
-        : "none";
+  return value === "absence" || value === "count" || value === "exhaustive" ? value : "none";
 }
 
 /** Remove malformed leading/trailing/repeated OR tokens before PostgreSQL sees them. */
 export function normalizeFtsQuery(value: string): string {
-    const rawTokens = value.trim().replace(/\s+/g, " ").split(" ");
-    const tokens: string[] = [];
-    for (const token of rawTokens) {
-        if (!token) continue;
-        if (token.toUpperCase() === "OR") {
-            if (tokens.length === 0 || tokens.at(-1)?.toUpperCase() === "OR") continue;
-            tokens.push("OR");
-            continue;
-        }
-        tokens.push(token);
+  const rawTokens = value.trim().replace(/\s+/g, " ").split(" ");
+  const tokens: string[] = [];
+  for (const token of rawTokens) {
+    if (!token) continue;
+    if (token.toUpperCase() === "OR") {
+      if (tokens.length === 0 || tokens.at(-1)?.toUpperCase() === "OR") continue;
+      tokens.push("OR");
+      continue;
     }
-    while (tokens.at(-1)?.toUpperCase() === "OR") tokens.pop();
-    return tokens.join(" ").slice(0, 240).trim();
+    tokens.push(token);
+  }
+  while (tokens.at(-1)?.toUpperCase() === "OR") tokens.pop();
+  return tokens.join(" ").slice(0, 240).trim();
 }
 
 function parseExplicitYearRange(
-    startValue: unknown,
-    endValue: unknown,
+  startValue: unknown,
+  endValue: unknown
 ): Pick<ReformulatedQuery, "startDate" | "endDate"> {
-    const startYear = Number(startValue);
-    const endYear = Number(endValue);
-    if (
-        !Number.isInteger(startYear) ||
-        !Number.isInteger(endYear) ||
-        startYear < 1950 ||
-        endYear > 2006 ||
-        startYear > endYear
-    ) {
-        return {};
-    }
-    return {
-        startDate: `${startYear}-01-01`,
-        endDate: `${endYear}-12-31`,
-    };
+  const startYear = Number(startValue);
+  const endYear = Number(endValue);
+  if (
+    !Number.isInteger(startYear) ||
+    !Number.isInteger(endYear) ||
+    startYear < 1950 ||
+    endYear > 2006 ||
+    startYear > endYear
+  ) {
+    return {};
+  }
+  return {
+    startDate: `${startYear}-01-01`,
+    endDate: `${endYear}-12-31`,
+  };
 }

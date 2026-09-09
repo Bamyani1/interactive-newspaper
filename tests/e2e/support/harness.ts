@@ -95,27 +95,82 @@ export function isIgnorableOptimizedImageAbort(input: {
   return isImageOptimizerRequest && input.errorText.includes("ERR_ABORTED");
 }
 
-export function observeBrowserDiagnostics(
-  page: Page,
-  diagnostics: BrowserDiagnostics,
-): () => void {
-  let mayConsumeDocumentBootMotionWarning = true;
-  let documentBootTimer: ReturnType<typeof setTimeout> | undefined;
-  const openDocumentBootWindow = () => {
-    mayConsumeDocumentBootMotionWarning = true;
-    if (documentBootTimer) clearTimeout(documentBootTimer);
-    documentBootTimer = undefined;
-  };
+const fulfilledMockRequests = new WeakSet<Request>();
+
+/**
+ * Record a request a route mock actually fulfilled. Only such requests are
+ * eligible for the abort exemption below, so every mock that answers the Ask
+ * endpoint itself — rather than through `installApiMocks` — must call this
+ * after its own `route.fulfill()`.
+ */
+export function recordFulfilledMockRequest(request: Request): void {
+  fulfilledMockRequests.add(request);
+}
+
+/**
+ * Playwright fulfils the deterministic Ask stream in a single shot, so the
+ * whole SSE body is already buffered before the workspace asks for it. The
+ * workspace drains that body lazily — it types each delta out and awaits the
+ * typewriter between reads — and Chrome tears the intercepted request down
+ * during that pause, reporting `net::ERR_ABORTED` even though the reader
+ * still receives its final `done` and the turn completes normally. A live SSE
+ * connection just applies backpressure instead, so this is an artifact of
+ * route interception, not app behaviour.
+ *
+ * Only a POST the mock actually answered qualifies (`fulfilledByMock`, from
+ * `recordFulfilledMockRequest`). An aborted Ask POST that was never fulfilled
+ * is the client cancelling its own request — a double submit or a switch
+ * mid-stream — and stays fatal, which is the failure this predicate must
+ * never hide. Request counts in `ask-workspace.spec.ts` still cover the case
+ * where a duplicate submission is fulfilled before it is cancelled.
+ */
+export function isIgnorableMockedAskStreamAbort(input: {
+  method: string;
+  url: string;
+  errorText: string;
+  fulfilledByMock: boolean;
+}): boolean {
+  if (!input.fulfilledByMock) return false;
+  const path = input.url.split("?")[0];
+  return (
+    input.method.toUpperCase() === "POST" &&
+    path.endsWith("/api/ask") &&
+    input.errorText.includes("ERR_ABORTED")
+  );
+}
+
+/**
+ * Next prefetches route payloads speculatively, and the browser cancels any
+ * still in flight when the page navigates. A sweep that walks hundreds of
+ * routes therefore cancels prefetches constantly — `net::ERR_ABORTED` on a
+ * `?_rsc=` GET is that cancellation, never a failed navigation: the route the
+ * sweep actually visits is asserted through its own first-paint check.
+ */
+export function isIgnorableRscPrefetchAbort(input: {
+  method: string;
+  url: string;
+  errorText: string;
+}): boolean {
+  if (input.method.toUpperCase() !== "GET") return false;
+  if (!input.errorText.includes("ERR_ABORTED")) return false;
+  try {
+    return new URL(input.url).searchParams.has("_rsc");
+  } catch {
+    return false;
+  }
+}
+
+export function observeBrowserDiagnostics(page: Page, diagnostics: BrowserDiagnostics): () => void {
   const onConsole = (message: ConsoleMessage) => {
     const text = consoleMessageText(message);
     if (message.type() === "error") diagnostics.consoleErrors.push(text);
-    if (
-      message.type() === "warning" &&
-      mayConsumeDocumentBootMotionWarning &&
-      isExpectedFramerMotionReducedMotionDevWarning(text)
-    ) {
-      mayConsumeDocumentBootMotionWarning = false;
-      if (documentBootTimer) clearTimeout(documentBootTimer);
+    // Motion emits this warning every time a motion subtree mounts under the
+    // reduced-motion setting the audit context itself forces — once per full
+    // document load and again after each client-side route change. It reports
+    // nothing about the app, and the predicate already refuses to match unless
+    // the text is exact, the source is a local dev chunk, and the server is in
+    // development mode, so consume it whenever it appears.
+    if (message.type() === "warning" && isExpectedFramerMotionReducedMotionDevWarning(text)) {
       return;
     }
     if (message.type() === "warning") {
@@ -123,23 +178,6 @@ export function observeBrowserDiagnostics(
     }
     if (/hydration|did not match|server rendered html/i.test(text)) {
       diagnostics.hydrationErrors.push(text);
-    }
-  };
-  const onLoad = () => {
-    // Motion's reduced-motion effect runs just after the load event. Keep the
-    // exception one-shot per full document and close its boot window before
-    // settled assertions. Client-side navigations never reopen this window.
-    documentBootTimer = setTimeout(() => {
-      mayConsumeDocumentBootMotionWarning = false;
-    }, 250);
-  };
-  const onRequest = (request: Request) => {
-    if (
-      request.isNavigationRequest() &&
-      request.resourceType() === "document" &&
-      request.frame() === page.mainFrame()
-    ) {
-      openDocumentBootWindow();
     }
   };
   const onPageError = (error: Error) => {
@@ -160,9 +198,26 @@ export function observeBrowserDiagnostics(
     ) {
       return;
     }
-    diagnostics.requestFailures.push(
-      `${request.method()} ${request.url()} — ${errorText}`,
-    );
+    if (
+      isIgnorableMockedAskStreamAbort({
+        method: request.method(),
+        url: request.url(),
+        errorText,
+        fulfilledByMock: fulfilledMockRequests.has(request),
+      })
+    ) {
+      return;
+    }
+    if (
+      isIgnorableRscPrefetchAbort({
+        method: request.method(),
+        url: request.url(),
+        errorText,
+      })
+    ) {
+      return;
+    }
+    diagnostics.requestFailures.push(`${request.method()} ${request.url()} — ${errorText}`);
   };
   const onResponse = (response: Response) => {
     if (response.status() < 400) return;
@@ -176,26 +231,19 @@ export function observeBrowserDiagnostics(
   };
 
   page.on("console", onConsole);
-  page.on("load", onLoad);
-  page.on("request", onRequest);
   page.on("pageerror", onPageError);
   page.on("requestfailed", onRequestFailed);
   page.on("response", onResponse);
 
   return () => {
     page.off("console", onConsole);
-    page.off("load", onLoad);
-    page.off("request", onRequest);
     page.off("pageerror", onPageError);
     page.off("requestfailed", onRequestFailed);
     page.off("response", onResponse);
-    if (documentBootTimer) clearTimeout(documentBootTimer);
   };
 }
 
-export function resetBrowserDiagnostics(
-  diagnostics: BrowserDiagnostics,
-): void {
+export function resetBrowserDiagnostics(diagnostics: BrowserDiagnostics): void {
   diagnostics.consoleErrors.length = 0;
   diagnostics.consoleWarnings.length = 0;
   diagnostics.httpErrors.length = 0;
@@ -205,37 +253,24 @@ export function resetBrowserDiagnostics(
   diagnostics.cumulativeLayoutShift = 0;
 }
 
-export async function installBrowserStorage(
-  page: Page,
-  seed: BrowserStorageSeed,
-): Promise<void> {
+export async function installBrowserStorage(page: Page, seed: BrowserStorageSeed): Promise<void> {
   await page.addInitScript((initialStorage) => {
     window.localStorage.clear();
     window.sessionStorage.clear();
 
-    for (const [key, value] of Object.entries(
-      initialStorage.localStorage ?? {},
-    )) {
+    for (const [key, value] of Object.entries(initialStorage.localStorage ?? {})) {
       window.localStorage.setItem(key, value);
     }
-    for (const [key, value] of Object.entries(
-      initialStorage.sessionStorage ?? {},
-    )) {
+    for (const [key, value] of Object.entries(initialStorage.sessionStorage ?? {})) {
       window.sessionStorage.setItem(key, value);
     }
   }, seed);
 }
 
-export async function installApiMocks(
-  page: Page,
-  mocks: ApiMock[],
-): Promise<void> {
+export async function installApiMocks(page: Page, mocks: ApiMock[]): Promise<void> {
   for (const mock of mocks) {
     await page.route(mock.url, async (route: Route) => {
-      if (
-        mock.method &&
-        route.request().method().toUpperCase() !== mock.method.toUpperCase()
-      ) {
+      if (mock.method && route.request().method().toUpperCase() !== mock.method.toUpperCase()) {
         await route.fallback();
         return;
       }
@@ -255,6 +290,7 @@ export async function installApiMocks(
           headers,
           json: mock.json,
         });
+        recordFulfilledMockRequest(route.request());
         return;
       }
 
@@ -264,13 +300,12 @@ export async function installApiMocks(
         contentType: mock.contentType ?? "text/plain; charset=utf-8",
         body: mock.text ?? "",
       });
+      recordFulfilledMockRequest(route.request());
     });
   }
 }
 
-export async function installCumulativeLayoutShiftObserver(
-  page: Page,
-): Promise<void> {
+export async function installCumulativeLayoutShiftObserver(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const auditWindow = window as Window & {
       __auditCls?: number;
@@ -302,31 +337,28 @@ export async function installCumulativeLayoutShiftObserver(
             value: number;
           };
           if (!layoutShift.hadRecentInput) {
-            auditWindow.__auditCls =
-              (auditWindow.__auditCls ?? 0) + layoutShift.value;
-            const sources = (
-              layoutShift as PerformanceEntry & {
-                sources?: Array<{
-                  currentRect: DOMRectReadOnly;
-                  node?: Node | null;
-                  previousRect: DOMRectReadOnly;
-                }>;
-              }
-            ).sources ?? [];
+            auditWindow.__auditCls = (auditWindow.__auditCls ?? 0) + layoutShift.value;
+            const sources =
+              (
+                layoutShift as PerformanceEntry & {
+                  sources?: Array<{
+                    currentRect: DOMRectReadOnly;
+                    node?: Node | null;
+                    previousRect: DOMRectReadOnly;
+                  }>;
+                }
+              ).sources ?? [];
             auditWindow.__auditClsSamples?.push({
               value: layoutShift.value,
               sources: sources.map((source) => {
-                const element =
-                  source.node instanceof Element ? source.node : null;
+                const element = source.node instanceof Element ? source.node : null;
                 return {
                   currentRect: source.currentRect,
                   node: element
                     ? element.id
                       ? `#${element.id}`
                       : `${element.tagName.toLowerCase()}${
-                          element.classList.length > 0
-                            ? `.${[...element.classList].join(".")}`
-                            : ""
+                          element.classList.length > 0 ? `.${[...element.classList].join(".")}` : ""
                         }`
                     : "unknown",
                   previousRect: source.previousRect,
@@ -366,31 +398,21 @@ export async function readCumulativeLayoutShift(page: Page): Promise<number> {
   });
 }
 
-export async function waitForSettledUi(
-  page: Page,
-  settleMs = 250,
-): Promise<void> {
+export async function waitForSettledUi(page: Page, settleMs = 250): Promise<void> {
   await page.waitForLoadState("domcontentloaded");
-  await page
-    .waitForLoadState("networkidle", { timeout: 5_000 })
-    .catch(() => undefined);
+  await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(settleMs);
 }
 
 export async function analyzeAccessibility(page: Page) {
-  return new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    .analyze();
+  return new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
 }
 
-export async function expectNoSeriousOrCriticalAxeViolations(
-  page: Page,
-): Promise<void> {
+export async function expectNoSeriousOrCriticalAxeViolations(page: Page): Promise<void> {
   const results = await analyzeAccessibility(page);
   const blocking = results.violations.filter(
-    (violation) =>
-      violation.impact === "serious" || violation.impact === "critical",
+    (violation) => violation.impact === "serious" || violation.impact === "critical"
   );
 
   expect(
@@ -399,7 +421,7 @@ export async function expectNoSeriousOrCriticalAxeViolations(
       impact,
       help,
       targets: nodes.map((node) => node.target),
-    })),
+    }))
   ).toEqual([]);
 }
 
@@ -407,19 +429,20 @@ export const FRAMER_MOTION_REDUCED_MOTION_DEV_WARNING =
   "warning: You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled";
 
 export const FIREFOX_FRAME_ANCESTORS_COMPATIBILITY_WARNING =
-  "warning: [JavaScript Warning: \"Content-Security-Policy: Ignoring ‘x-frame-options’ because of ‘frame-ancestors’ directive.\"]";
+  'warning: [JavaScript Warning: "Content-Security-Policy: Ignoring ‘x-frame-options’ because of ‘frame-ancestors’ directive."]';
 
 /**
- * Framer Motion 12 emits this development-only warning while the first
- * document boots whenever the browser explicitly prefers reduced motion, even
- * when MotionConfig correctly uses `reducedMotion="user"`. The observer uses
- * this predicate only once during the initial load's tightly bounded boot
- * window. The final diagnostics gate remains strict so an application cannot
- * impersonate it after the UI settles.
+ * Framer Motion 12 emits this development-only warning whenever a motion
+ * subtree mounts under the reduced-motion setting the audit context itself
+ * forces, even when MotionConfig correctly uses `reducedMotion="user"` — once
+ * per full document load and again after every client-side route change. The
+ * observer therefore consumes it whenever it appears rather than inside any
+ * boot window. Impersonation is ruled out by the predicate instead: the text
+ * must be exact, the source a local dev chunk, and the server in development
+ * mode. `expectNoUnexpectedDiagnostics` never applies this allowance, so a
+ * warning that reaches the gate stays fatal.
  */
-export function isExpectedFramerMotionReducedMotionDevWarning(
-  warning: string,
-): boolean {
+export function isExpectedFramerMotionReducedMotionDevWarning(warning: string): boolean {
   if (process.env.PLAYWRIGHT_SERVER_MODE === "production") return false;
 
   const prefix = `${FRAMER_MOTION_REDUCED_MOTION_DEV_WARNING} [`;
@@ -429,13 +452,10 @@ export function isExpectedFramerMotionReducedMotionDevWarning(
   try {
     const url = new URL(source);
     const isLocalDevelopmentSource =
-      url.protocol === "http:" &&
-      (url.hostname === "127.0.0.1" || url.hostname === "localhost");
+      url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost");
     return (
       isLocalDevelopmentSource &&
-      /^\/_next\/static\/chunks\/node_modules_[A-Za-z0-9._-]+\.js$/.test(
-        url.pathname,
-      )
+      /^\/_next\/static\/chunks\/node_modules_[A-Za-z0-9._-]+\.js$/.test(url.pathname)
     );
   } catch {
     return false;
@@ -449,11 +469,9 @@ function isExpectedBrowserCompatibilityWarning(warning: string): boolean {
   return warning === FIREFOX_FRAME_ANCESTORS_COMPATIBILITY_WARNING;
 }
 
-export function expectNoUnexpectedDiagnostics(
-  diagnostics: BrowserDiagnostics,
-): void {
+export function expectNoUnexpectedDiagnostics(diagnostics: BrowserDiagnostics): void {
   const appConsoleWarnings = diagnostics.consoleWarnings.filter(
-    (warning) => !isExpectedBrowserCompatibilityWarning(warning),
+    (warning) => !isExpectedBrowserCompatibilityWarning(warning)
   );
 
   expect({
@@ -473,10 +491,7 @@ export function expectNoUnexpectedDiagnostics(
   });
 }
 
-function isSameOriginChromiumNoJsChunkCspFailure(
-  failure: string,
-  origin: string,
-): boolean {
+function isSameOriginChromiumNoJsChunkCspFailure(failure: string, origin: string): boolean {
   const match = failure.match(/^GET (\S+) — csp$/i);
   if (!match) return false;
 
@@ -505,13 +520,12 @@ export function expectNoUnexpectedNoJsDiagnostics(
   }: {
     browserName: string;
     origin: string;
-  },
+  }
 ): void {
   const requestFailures =
     browserName === "chromium"
       ? diagnostics.requestFailures.filter(
-          (failure) =>
-            !isSameOriginChromiumNoJsChunkCspFailure(failure, origin),
+          (failure) => !isSameOriginChromiumNoJsChunkCspFailure(failure, origin)
         )
       : diagnostics.requestFailures;
 
@@ -527,7 +541,7 @@ export function consumeExpectedDocumentHttpError(
   }: {
     status: number;
     url: string;
-  },
+  }
 ): void {
   const matchingHttpErrors = diagnostics.httpErrors
     .map((failure, index) => ({ failure, index }))
@@ -536,12 +550,12 @@ export function consumeExpectedDocumentHttpError(
         failure.method === "GET" &&
         failure.resourceType === "document" &&
         failure.status === status &&
-        failure.url === url,
+        failure.url === url
     );
 
   expect(
     matchingHttpErrors,
-    `expected one fulfilled document HTTP ${status} for ${url}`,
+    `expected one fulfilled document HTTP ${status} for ${url}`
   ).toHaveLength(1);
   diagnostics.httpErrors.splice(matchingHttpErrors[0].index, 1);
 
@@ -549,7 +563,7 @@ export function consumeExpectedDocumentHttpError(
     (error) =>
       error.startsWith("error: Failed to load resource:") &&
       error.includes(`${status} (`) &&
-      error.endsWith(`[${url}]`),
+      error.endsWith(`[${url}]`)
   );
   if (consoleErrorIndex !== -1) {
     diagnostics.consoleErrors.splice(consoleErrorIndex, 1);
@@ -560,20 +574,13 @@ export function consumeExpectedDocumentHttpError(
 // half of a `_next/image` optimizer URL carries the server port, which varies
 // per run, so the deferral keys on the decoded `url` query parameter — the
 // stable R2 object address — never on the outer optimizer host or width.
-const AUDIT_R2_IMAGE_HOST =
-  "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev";
+const AUDIT_R2_IMAGE_HOST = "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev";
 
-export function auditR2ImageObjectUrl(
-  editionDate: string,
-  object: string,
-): string {
+export function auditR2ImageObjectUrl(editionDate: string, object: string): string {
   return `${AUDIT_R2_IMAGE_HOST}/${editionDate}/images/${object}`;
 }
 
-function isOptimizedImageRequestForObject(
-  rawUrl: string,
-  exactObjectUrl: string,
-): boolean {
+function isOptimizedImageRequestForObject(rawUrl: string, exactObjectUrl: string): boolean {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -617,7 +624,7 @@ export function consumeExpectedOptimizedImageFailure(
   }: {
     editionDate: string;
     object: string;
-  },
+  }
 ): void {
   const exactObjectUrl = auditR2ImageObjectUrl(editionDate, object);
 
@@ -627,17 +634,14 @@ export function consumeExpectedOptimizedImageFailure(
       failure.method === "GET" &&
       failure.resourceType === "image" &&
       failure.status === 404 &&
-      isOptimizedImageRequestForObject(failure.url, exactObjectUrl),
+      isOptimizedImageRequestForObject(failure.url, exactObjectUrl)
   );
 
   spliceMatching(diagnostics.consoleErrors, (error) => {
     if (!error.startsWith("error: Failed to load resource:")) return false;
     if (!error.includes("404 (")) return false;
     const source = bracketedSourceUrl(error);
-    return (
-      source !== null &&
-      isOptimizedImageRequestForObject(source, exactObjectUrl)
-    );
+    return source !== null && isOptimizedImageRequestForObject(source, exactObjectUrl);
   });
 
   spliceMatching(diagnostics.requestFailures, (failure) => {
@@ -657,7 +661,7 @@ interface FirstPaintSnapshot {
 
 async function readFirstPaintSnapshot(
   page: Page,
-  expectation: FirstPaintExpectation,
+  expectation: FirstPaintExpectation
 ): Promise<FirstPaintSnapshot | null> {
   const locator = page.locator(expectation.selector).first();
   if ((await locator.count()) === 0) return null;
@@ -692,9 +696,7 @@ async function readFirstPaintSnapshot(
         opacity <= 0.01
       ) {
         hiddenAncestor =
-          ancestor.id ||
-          ancestor.getAttribute("class") ||
-          ancestor.tagName.toLowerCase();
+          ancestor.id || ancestor.getAttribute("class") || ancestor.tagName.toLowerCase();
         break;
       }
       ancestor = ancestor.parentElement;
@@ -712,7 +714,7 @@ async function readFirstPaintSnapshot(
 
 function snapshotMatches(
   snapshot: FirstPaintSnapshot | null,
-  expectation: FirstPaintExpectation,
+  expectation: FirstPaintExpectation
 ): boolean {
   if (!snapshot?.visible || !snapshot.content.trim()) return false;
   if (!expectation.expectedText) return true;
@@ -724,24 +726,24 @@ function snapshotMatches(
 export async function expectVisibleNonEmptyFirstPaint(
   page: Page,
   expectation: FirstPaintExpectation,
-  label: string,
+  label: string
 ): Promise<void> {
   await expect(
     page.locator(expectation.selector).first(),
-    `${label}: expected first-paint selector ${expectation.selector}`,
+    `${label}: expected first-paint selector ${expectation.selector}`
   ).toBeAttached({ timeout: 1_000 });
   const snapshot = await readFirstPaintSnapshot(page, expectation);
 
   expect(
     snapshotMatches(snapshot, expectation),
-    `${label}: first paint must be visible and nonempty (${JSON.stringify(snapshot)})`,
+    `${label}: first paint must be visible and nonempty (${JSON.stringify(snapshot)})`
   ).toBe(true);
 }
 
 export async function expectOneOfFirstPaint(
   page: Page,
   expectations: FirstPaintExpectation[],
-  label: string,
+  label: string
 ): Promise<void> {
   let snapshots: Array<FirstPaintSnapshot | null> = [];
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -749,75 +751,71 @@ export async function expectOneOfFirstPaint(
       // Read every candidate in one browser task. Separate locator evaluations
       // can straddle an atomic App Router commit and falsely report that both
       // the outgoing and incoming surfaces were absent.
-      snapshots = await page.evaluate((selectors) => {
-        const read = (selector: string): FirstPaintSnapshot | null => {
-          const element = document.querySelector(selector);
-          if (!element) return null;
-          const htmlElement = element as HTMLElement;
-          const text = (htmlElement.textContent ?? "")
-            .replace(/\s+/g, " ")
-            .trim();
-          const value =
-            element instanceof HTMLInputElement ||
-            element instanceof HTMLTextAreaElement ||
-            element instanceof HTMLSelectElement
-              ? element.value
-              : "";
-          const content =
-            text ||
-            value ||
-            element.getAttribute("placeholder") ||
-            element.getAttribute("aria-label") ||
-            element.getAttribute("alt") ||
-            "";
-          const rect = htmlElement.getBoundingClientRect();
-          let hiddenAncestor: string | null = null;
-          let ancestor: Element | null = element;
-          while (ancestor) {
-            const style = window.getComputedStyle(ancestor);
-            const opacity = Number.parseFloat(style.opacity || "1");
-            if (
-              style.display === "none" ||
-              style.visibility === "hidden" ||
-              style.visibility === "collapse" ||
-              opacity <= 0.01
-            ) {
-              hiddenAncestor =
-                ancestor.id ||
-                ancestor.getAttribute("class") ||
-                ancestor.tagName.toLowerCase();
-              break;
+      snapshots = await page.evaluate(
+        (selectors) => {
+          const read = (selector: string): FirstPaintSnapshot | null => {
+            const element = document.querySelector(selector);
+            if (!element) return null;
+            const htmlElement = element as HTMLElement;
+            const text = (htmlElement.textContent ?? "").replace(/\s+/g, " ").trim();
+            const value =
+              element instanceof HTMLInputElement ||
+              element instanceof HTMLTextAreaElement ||
+              element instanceof HTMLSelectElement
+                ? element.value
+                : "";
+            const content =
+              text ||
+              value ||
+              element.getAttribute("placeholder") ||
+              element.getAttribute("aria-label") ||
+              element.getAttribute("alt") ||
+              "";
+            const rect = htmlElement.getBoundingClientRect();
+            let hiddenAncestor: string | null = null;
+            let ancestor: Element | null = element;
+            while (ancestor) {
+              const style = window.getComputedStyle(ancestor);
+              const opacity = Number.parseFloat(style.opacity || "1");
+              if (
+                style.display === "none" ||
+                style.visibility === "hidden" ||
+                style.visibility === "collapse" ||
+                opacity <= 0.01
+              ) {
+                hiddenAncestor =
+                  ancestor.id || ancestor.getAttribute("class") || ancestor.tagName.toLowerCase();
+                break;
+              }
+              ancestor = ancestor.parentElement;
             }
-            ancestor = ancestor.parentElement;
-          }
-          return {
-            content,
-            height: rect.height,
-            hiddenAncestor,
-            visible: !hiddenAncestor && rect.width > 0 && rect.height > 0,
-            width: rect.width,
+            return {
+              content,
+              height: rect.height,
+              hiddenAncestor,
+              visible: !hiddenAncestor && rect.width > 0 && rect.height > 0,
+              width: rect.width,
+            };
           };
-        };
-        return selectors.map(read);
-      }, expectations.map((expectation) => expectation.selector));
+          return selectors.map(read);
+        },
+        expectations.map((expectation) => expectation.selector)
+      );
       break;
     } catch (error) {
-      if (
-        attempt === 2 ||
-        !/execution context was destroyed|navigation/i.test(String(error))
-      ) {
+      if (attempt === 2 || !/execution context was destroyed|navigation/i.test(String(error))) {
         throw error;
       }
       await page.waitForTimeout(10);
     }
   }
   const matched = expectations.some((expectation, index) =>
-    snapshotMatches(snapshots[index], expectation),
+    snapshotMatches(snapshots[index], expectation)
   );
 
   expect(
     matched,
-    `${label}: expected one coherent route surface (${JSON.stringify(snapshots)})`,
+    `${label}: expected one coherent route surface (${JSON.stringify(snapshots)})`
   ).toBe(true);
 }
 
@@ -860,13 +858,7 @@ export function evidencePath({
   state: string;
   viewport: string;
 }): string {
-  return path.join(
-    phase,
-    routeSlug(route),
-    routeSlug(state),
-    routeSlug(viewport),
-    file,
-  );
+  return path.join(phase, routeSlug(route), routeSlug(state), routeSlug(viewport), file);
 }
 
 function portableAuditPath(outputPath: string): string {
@@ -876,7 +868,7 @@ function portableAuditPath(outputPath: string): string {
 export async function captureAuditScreenshot(
   page: Page,
   relativePath: string,
-  { fullPage = true }: { fullPage?: boolean } = {},
+  { fullPage = true }: { fullPage?: boolean } = {}
 ): Promise<string> {
   const outputPath = path.resolve(AUDIT_FULL_DIR, relativePath);
   if (!outputPath.startsWith(`${AUDIT_FULL_DIR}${path.sep}`)) {
@@ -890,10 +882,7 @@ export async function captureAuditScreenshot(
   return portableAuditPath(outputPath);
 }
 
-export async function writeAuditJson(
-  relativePath: string,
-  value: unknown,
-): Promise<string> {
+export async function writeAuditJson(relativePath: string, value: unknown): Promise<string> {
   const outputPath = path.resolve(AUDIT_FULL_DIR, relativePath);
   if (!outputPath.startsWith(`${AUDIT_FULL_DIR}${path.sep}`)) {
     throw new Error(`Audit output escapes audit-evidence/full: ${relativePath}`);
@@ -925,7 +914,7 @@ export async function captureFilmstrip(
     prefix,
     requestedTimes = [0, 50, 100, 250, 500, 1_000],
     assertFrame,
-  }: FilmstripOptions,
+  }: FilmstripOptions
 ): Promise<FilmstripFrame[]> {
   const startedAt = performance.now();
   const action = trigger();
@@ -938,10 +927,7 @@ export async function captureFilmstrip(
     await assertFrame?.(elapsedMs);
     const screenshotPath = await captureAuditScreenshot(
       page,
-      path.join(
-        outputDir,
-        `${prefix}-${String(index).padStart(2, "0")}-${elapsedMs}ms.png`,
-      ),
+      path.join(outputDir, `${prefix}-${String(index).padStart(2, "0")}-${elapsedMs}ms.png`)
     );
     frames.push({ elapsedMs, path: screenshotPath, requestedMs });
   }

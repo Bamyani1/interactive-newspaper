@@ -16,34 +16,24 @@ import { pickDailyQuestion } from "../data/question-pool";
  * by one line-height once the question lands.
  */
 export const LandingAskTeaser: React.FC = () => {
-    const [question, setQuestion] = useState<string | null>(null);
+  const [question, setQuestion] = useState<string | null>(null);
 
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot post-hydration pick
-        setQuestion(pickDailyQuestion(new Date()));
-    }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot post-hydration pick
+    setQuestion(pickDailyQuestion(new Date()));
+  }, []);
 
-    return (
-        <div className="cinema-ask-teaser-slot">
-            {question ? (
-                <Link
-                    href={`/ask?q=${encodeURIComponent(question)}`}
-                    className="cinema-ask-teaser"
-                >
-                    <span className="cinema-ask-teaser-label">
-                        Try asking
-                    </span>
-                    <span className="cinema-ask-teaser-text">
-                        &ldquo;{question}&rdquo;
-                    </span>
-                    <span
-                        className="cinema-ask-teaser-arrow"
-                        aria-hidden="true"
-                    >
-                        →
-                    </span>
-                </Link>
-            ) : null}
-        </div>
-    );
+  return (
+    <div className="cinema-ask-teaser-slot">
+      {question ? (
+        <Link href={`/ask?q=${encodeURIComponent(question)}`} className="cinema-ask-teaser">
+          <span className="cinema-ask-teaser-label">Start with a question</span>
+          <span className="cinema-ask-teaser-text">&ldquo;{question}&rdquo;</span>
+          <span className="cinema-ask-teaser-arrow" aria-hidden="true">
+            →
+          </span>
+        </Link>
+      ) : null}
+    </div>
+  );
 };

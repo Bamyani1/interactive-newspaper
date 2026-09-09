@@ -1,14 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { searchArticles } from "@/src/lib/db";
-import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 
 const MAX_QUERY_LENGTH = 200;
 const SEARCH_TIMEOUT_MS = 8_000;
 
-const searchRateLimiter = createRateLimiter({ bucket: "search", limit: 20, windowMs: 60_000 });
-
 function newRequestId(): string {
-  return Math.random().toString(36).slice(2, 10);
+  return randomUUID();
 }
 
 function clampParam(raw: string | null, fallback: number, min: number, max: number): number {
@@ -17,21 +15,10 @@ function clampParam(raw: string | null, fallback: number, min: number, max: numb
   return Math.min(Math.max(parsed, min), max);
 }
 
+// Rate limiting lives in middleware.ts (the `mw-search` bucket, 20/min per
+// IP) — not here. A second bucket in this route meant two Neon writes per
+// search and two limits to keep in agreement.
 export async function GET(request: NextRequest) {
-  const ip = getClientIp(request);
-  const rate = await searchRateLimiter(ip);
-  if (!rate.allowed) {
-    return NextResponse.json(
-      { error: "Too many search requests. Please wait a moment and try again." },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(Math.ceil((rate.resetAt - Date.now()) / 1000)),
-        },
-      },
-    );
-  }
-
   const requestId = newRequestId();
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.trim();
@@ -39,7 +26,7 @@ export async function GET(request: NextRequest) {
   if (!q) {
     return NextResponse.json(
       { error: "Missing required query parameter: q", requestId },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -51,7 +38,7 @@ export async function GET(request: NextRequest) {
         error: `Query too long (${q.length} chars). Maximum is ${MAX_QUERY_LENGTH}.`,
         requestId,
       },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -67,10 +54,7 @@ export async function GET(request: NextRequest) {
   // Wrap the DB call in a timeout race so a hung Neon request can't block
   // /api/search forever. 504 on fire matches /api/ask retrieval semantics.
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(
-      () => reject(new Error("Search timeout")),
-      SEARCH_TIMEOUT_MS,
-    ),
+    setTimeout(() => reject(new Error("Search timeout")), SEARCH_TIMEOUT_MS)
   );
 
   try {
@@ -98,16 +82,14 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Search timeout") {
-      console.warn(
-        `[search requestId=${requestId}] timed out after ${SEARCH_TIMEOUT_MS}ms`,
-      );
+      console.warn(`[search requestId=${requestId}] timed out after ${SEARCH_TIMEOUT_MS}ms`);
       return NextResponse.json(
         {
           error: "Search took too long. Please try a more specific query.",
           cause: "timeout",
           requestId,
         },
-        { status: 504 },
+        { status: 504 }
       );
     }
     console.error(`[search requestId=${requestId}] failed:`, error);
@@ -117,7 +99,7 @@ export async function GET(request: NextRequest) {
         cause: "internal_error",
         requestId,
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }

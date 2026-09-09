@@ -4,8 +4,8 @@ import React from "react";
 import { useAnswerImages } from "./AnswerImageContext";
 
 interface InlineAnswerImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
-    src: string;
-    alt?: string;
+  src: string;
+  alt?: string;
 }
 
 /**
@@ -20,84 +20,69 @@ interface InlineAnswerImageProps extends React.ImgHTMLAttributes<HTMLImageElemen
  * hydration errors when the LLM emits an image in the middle of a
  * sentence with a citation.
  */
-export const InlineAnswerImage: React.FC<InlineAnswerImageProps> = ({
-    src,
-    alt,
-    ...rest
-}) => {
-    const ctx = useAnswerImages();
-    const meta = ctx?.metaByUrl.get(src);
+export const InlineAnswerImage: React.FC<InlineAnswerImageProps> = ({ src, alt, ...rest }) => {
+  const ctx = useAnswerImages();
+  const meta = ctx?.metaByUrl.get(src);
 
-    const img = (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-            {...rest}
-            src={src}
-            alt={alt ?? meta?.caption ?? ""}
-            loading="lazy"
-            decoding="async"
-            className="ask-answer-image"
-        />
-    );
+  const img = (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      {...rest}
+      src={src}
+      alt={alt ?? meta?.caption ?? ""}
+      loading="lazy"
+      decoding="async"
+      className="ask-answer-image"
+    />
+  );
 
-    if (!ctx || !meta) return img;
+  if (!ctx || !meta) return img;
 
-    const onAttrClick: React.MouseEventHandler<HTMLAnchorElement> = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const n = meta.sourceIndex;
-        const flash = () => {
-            const target = document.getElementById(`ask-source-${n}`);
-            if (!target) return false;
-            target.scrollIntoView({ behavior: "smooth", block: "center" });
-            target.setAttribute("data-highlighted", "true");
-            window.setTimeout(
-                () => target.removeAttribute("data-highlighted"),
-                1200,
-            );
-            return true;
-        };
-        if (flash()) return;
-        document
-            .querySelectorAll<HTMLButtonElement>(
-                '.ask-source-toggle[aria-expanded="false"]',
-            )
-            .forEach((btn) => btn.click());
-        window.requestAnimationFrame(() => {
-            window.requestAnimationFrame(() => {
-                flash();
-            });
-        });
+  const onAttrClick: React.MouseEventHandler<HTMLAnchorElement> = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const n = meta.sourceIndex;
+    const flash = () => {
+      const target = document.getElementById(`ask-source-${n}`);
+      if (!target) return false;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.setAttribute("data-highlighted", "true");
+      window.setTimeout(() => target.removeAttribute("data-highlighted"), 1200);
+      return true;
     };
+    if (flash()) return;
+    document
+      .querySelectorAll<HTMLButtonElement>('.ask-source-toggle[aria-expanded="false"]')
+      .forEach((btn) => btn.click());
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        flash();
+      });
+    });
+  };
 
-    return (
-        <span
-            className="ask-answer-figure"
-            role="figure"
-            aria-label={meta.caption ?? "Photo from the archive"}
-        >
-            <button
-                type="button"
-                className="ask-answer-image-btn"
-                aria-label={
-                    meta.caption
-                        ? `Expand photo: ${meta.caption}`
-                        : "Expand photo"
-                }
-                onClick={() => ctx.openLightbox(src)}
-            >
-                {img}
-            </button>
-            {meta.caption ? (
-                <span className="ask-answer-figcaption">{meta.caption}</span>
-            ) : null}
-            <a
-                className="ask-citation-link ask-answer-image-attr"
-                href={`#ask-source-${meta.sourceIndex}`}
-                onClick={onAttrClick}
-            >
-                from [{meta.sourceIndex}]
-            </a>
-        </span>
-    );
+  return (
+    <span
+      className="ask-answer-figure"
+      role="figure"
+      aria-label={meta.caption ?? "Photo from the archive"}
+    >
+      <button
+        type="button"
+        className="ask-answer-image-btn"
+        aria-label={meta.caption ? `Expand photo: ${meta.caption}` : "Expand photo"}
+        onClick={() => ctx.openLightbox(src)}
+      >
+        {img}
+      </button>
+      {meta.caption ? <span className="ask-answer-figcaption">{meta.caption}</span> : null}
+      <a
+        className="ask-citation-link ask-answer-image-attr"
+        href={`#ask-source-${meta.sourceIndex}`}
+        onClick={onAttrClick}
+      >
+        from [{meta.sourceIndex}]
+      </a>
+    </span>
+  );
 };

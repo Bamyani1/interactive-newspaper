@@ -19,9 +19,7 @@ export interface TurnImage {
  * encoding drift between the pipeline and the model doesn't create
  * phantom duplicates.
  */
-export function dedupSourceImages(
-  sources: AskResponse["sourceArticles"],
-): TurnImage[] {
+export function dedupSourceImages(sources: AskResponse["sourceArticles"]): TurnImage[] {
   const seen = new Set<string>();
   const out: TurnImage[] = [];
   sources.forEach((s, i) => {
@@ -69,9 +67,7 @@ export function extractInlineImageUrls(markdown: string): Set<string> {
  * the map with every form that we can derive locally without
  * guessing at arbitrary characters.
  */
-export function indexImagesByUrl(
-  images: TurnImage[],
-): Map<string, TurnImage & { index: number }> {
+export function indexImagesByUrl(images: TurnImage[]): Map<string, TurnImage & { index: number }> {
   const map = new Map<string, TurnImage & { index: number }>();
   images.forEach((img, index) => {
     const entry = { ...img, index };

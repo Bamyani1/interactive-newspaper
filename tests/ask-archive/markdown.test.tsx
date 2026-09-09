@@ -4,154 +4,176 @@ import { render, screen } from "@testing-library/react";
 import { Markdown } from "@/features/ask-archive/components/Markdown";
 
 describe("Markdown renderer", () => {
-    it("renders bold and italic", () => {
-        const { container } = render(
-            <Markdown>{"This is **bold** and *italic* text."}</Markdown>,
-        );
-        expect(container.querySelector("strong")?.textContent).toBe("bold");
-        expect(container.querySelector("em")?.textContent).toBe("italic");
-    });
+  it("renders bold and italic", () => {
+    const { container } = render(
+      <Markdown turnId="t-1">{"This is **bold** and *italic* text."}</Markdown>
+    );
+    expect(container.querySelector("strong")?.textContent).toBe("bold");
+    expect(container.querySelector("em")?.textContent).toBe("italic");
+  });
 
-    it("renders ## as <h2> and ### as <h3>", () => {
-        const { container } = render(
-            <Markdown>{"## H2\n\n### H3"}</Markdown>,
-        );
-        expect(container.querySelector("h2")?.textContent).toBe("H2");
-        expect(container.querySelector("h3")?.textContent).toBe("H3");
-    });
+  it("renders ## as <h2> and ### as <h3>", () => {
+    const { container } = render(<Markdown turnId="t-1">{"## H2\n\n### H3"}</Markdown>);
+    expect(container.querySelector("h2")?.textContent).toBe("H2");
+    expect(container.querySelector("h3")?.textContent).toBe("H3");
+  });
 
-    it("renders fenced code blocks", () => {
-        const { container } = render(
-            <Markdown>{"```\nconst x = 1;\n```"}</Markdown>,
-        );
-        const code = container.querySelector("pre code");
-        expect(code?.textContent).toContain("const x = 1;");
-        expect(code?.parentElement).toHaveAttribute("tabindex", "0");
-    });
+  it("renders fenced code blocks", () => {
+    const { container } = render(<Markdown turnId="t-1">{"```\nconst x = 1;\n```"}</Markdown>);
+    const code = container.querySelector("pre code");
+    expect(code?.textContent).toContain("const x = 1;");
+    expect(code?.parentElement).toHaveAttribute("tabindex", "0");
+  });
 
-    it("renders ordered and unordered lists", () => {
-        const { container } = render(
-            <Markdown>
-                {"- one\n- two\n\n1. first\n2. second"}
-            </Markdown>,
-        );
-        expect(container.querySelectorAll("ul li")).toHaveLength(2);
-        expect(container.querySelectorAll("ol li")).toHaveLength(2);
-    });
+  it("renders ordered and unordered lists", () => {
+    const { container } = render(
+      <Markdown turnId="t-1">{"- one\n- two\n\n1. first\n2. second"}</Markdown>
+    );
+    expect(container.querySelectorAll("ul li")).toHaveLength(2);
+    expect(container.querySelectorAll("ol li")).toHaveLength(2);
+  });
 
-    it("renders GFM tables", () => {
-        const md = [
-            "| A | B |",
-            "| - | - |",
-            "| 1 | 2 |",
-            "| 3 | 4 |",
-        ].join("\n");
-        const { container } = render(<Markdown>{md}</Markdown>);
-        expect(container.querySelector("table")).not.toBeNull();
-        expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
-    });
+  it("renders GFM tables", () => {
+    const md = ["| A | B |", "| - | - |", "| 1 | 2 |", "| 3 | 4 |"].join("\n");
+    const { container } = render(<Markdown turnId="t-1">{md}</Markdown>);
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+  });
 
-    it("turns [Source N] citations into #ask-source-N anchors", () => {
-        render(<Markdown>{"Foo [Source 1] bar [Source 2]."}</Markdown>);
-        const links = screen.getAllByRole("link");
-        expect(links).toHaveLength(2);
-        expect(links[0]).toHaveAttribute("href", "#ask-source-1");
-        expect(links[0].textContent).toBe("[1]");
-        expect(links[0].className).toContain("ask-citation-link");
-        expect(links[1]).toHaveAttribute("href", "#ask-source-2");
-    });
+  it("turns [Source N] citations into anchors scoped to their own turn", () => {
+    render(<Markdown turnId="t-1">{"Foo [Source 1] bar [Source 2]."}</Markdown>);
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+    // Scoped to the turn: an unscoped `#ask-source-1` matched the first
+    // such id in the whole document, so a citation in the fourth answer
+    // scrolled the reader back to the first answer's first source. The
+    // label the reader sees stays the plain index.
+    expect(links[0]).toHaveAttribute("href", "#ask-source-t-1-1");
+    expect(links[0].textContent).toBe("[1]");
+    expect(links[0].className).toContain("ask-citation-link");
+    expect(links[1]).toHaveAttribute("href", "#ask-source-t-1-2");
+  });
 
-    it("maps agent [YYYY-MM-DD-N] citations via articleIdIndex", () => {
-        const index = new Map<string, number>([
-            ["1960-01-07-0", 1],
-            ["1965-03-12-4", 2],
-        ]);
-        render(
-            <Markdown articleIdIndex={index}>
-                {"X [1960-01-07-0] Y [1965-03-12-4] Z"}
-            </Markdown>,
-        );
-        const links = screen.getAllByRole("link");
-        expect(links).toHaveLength(2);
-        expect(links[0]).toHaveAttribute("href", "#ask-source-1");
-        expect(links[1]).toHaveAttribute("href", "#ask-source-2");
-    });
+  // The generator groups evidence as readily as it cites one article.
+  // Only a lone [Source N] used to be rewritten, so a grouped citation
+  // stayed on screen as literal brackets in the middle of the prose.
+  it("turns a grouped [Source N, Source M] citation into one anchor each", () => {
+    render(<Markdown turnId="t-1">{"Students objected [Source 1, Source 2]."}</Markdown>);
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute("href", "#ask-source-t-1-1");
+    expect(links[1]).toHaveAttribute("href", "#ask-source-t-1-2");
+    expect(screen.queryByText(/\[Source/)).toBeNull();
+  });
 
-    it("leaves agent citations unlinked when articleIdIndex has no match", () => {
-        render(
-            <Markdown>{"unmapped [1970-01-01-0] citation"}</Markdown>,
-        );
-        // No link rendered for the unknown citation
-        const links = screen.queryAllByRole("link");
-        expect(links).toHaveLength(0);
-    });
+  it("accepts the shorthand [Source N, M] the generator also writes", () => {
+    render(<Markdown turnId="t-1">{"Editors replied [Source 3, 4]."}</Markdown>);
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+    expect(links[1]).toHaveAttribute("href", "#ask-source-t-1-4");
+  });
 
-    it("external links open in a new tab", () => {
-        render(
-            <Markdown>
-                {"See [the docs](https://example.com/docs) for more."}
-            </Markdown>,
-        );
-        const link = screen.getByRole("link");
-        expect(link).toHaveAttribute("href", "https://example.com/docs");
-        expect(link).toHaveAttribute("target", "_blank");
-        expect(link).toHaveAttribute("rel", "noopener noreferrer");
-    });
+  it("maps agent [YYYY-MM-DD-N] citations via articleIdIndex", () => {
+    const index = new Map<string, number>([
+      ["1960-01-07-0", 1],
+      ["1965-03-12-4", 2],
+    ]);
+    render(
+      <Markdown articleIdIndex={index} turnId="t-1">
+        {"X [1960-01-07-0] Y [1965-03-12-4] Z"}
+      </Markdown>
+    );
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute("href", "#ask-source-t-1-1");
+    expect(links[1]).toHaveAttribute("href", "#ask-source-t-1-2");
+  });
+
+  it("leaves agent citations unlinked when articleIdIndex has no match", () => {
+    render(<Markdown turnId="t-1">{"unmapped [1970-01-01-0] citation"}</Markdown>);
+    // No link rendered for the unknown citation
+    const links = screen.queryAllByRole("link");
+    expect(links).toHaveLength(0);
+  });
+
+  it("tidies the space the model leaves in front of punctuation", () => {
+    // The agent writes "West Campus [id] ." — a space before the full
+    // stop — which rendered as a floating "[3] ." mid-sentence.
+    const index = new Map([["1963-02-14-3", 3]]);
+    const { container } = render(
+      <Markdown articleIdIndex={index} turnId="t-1">
+        {"restricted to West Campus [1963-02-14-3] . Next sentence."}
+      </Markdown>
+    );
+    expect(container.textContent).toContain("West Campus [3]. Next sentence.");
+  });
+
+  it("leaves no orphan punctuation when a citation cannot be resolved", () => {
+    // An agent answer streams before its source list arrives, so for the
+    // whole of it nothing resolves. Dropping the bracket alone left " .".
+    const { container } = render(
+      <Markdown turnId="t-1">{"a claim about dress codes [1963-02-14-3] ."}</Markdown>
+    );
+    expect(container.textContent).toBe("a claim about dress codes.");
+  });
+
+  it("never glues a citation to the word after it", () => {
+    const index = new Map([["1963-02-14-3", 3]]);
+    const { container } = render(
+      <Markdown articleIdIndex={index} turnId="t-1">
+        {"reported [1963-02-14-3] and repeated later"}
+      </Markdown>
+    );
+    expect(container.textContent).toContain("reported [3] and repeated later");
+  });
+
+  it("external links open in a new tab", () => {
+    render(
+      <Markdown turnId="t-1">{"See [the docs](https://example.com/docs) for more."}</Markdown>
+    );
+    const link = screen.getByRole("link");
+    expect(link).toHaveAttribute("href", "https://example.com/docs");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
 });
 
 describe("splitMarkdownBlocks", () => {
-    it("splits paragraphs and headings on blank lines", async () => {
-        const { splitMarkdownBlocks } = await import(
-            "@/features/ask-archive/components/Markdown"
-        );
-        expect(splitMarkdownBlocks("## Head\n\nPara one.\n\nPara two.")).toEqual([
-            "## Head",
-            "Para one.",
-            "Para two.",
-        ]);
-    });
+  it("splits paragraphs and headings on blank lines", async () => {
+    const { splitMarkdownBlocks } = await import("@/features/ask-archive/components/Markdown");
+    expect(splitMarkdownBlocks("## Head\n\nPara one.\n\nPara two.")).toEqual([
+      "## Head",
+      "Para one.",
+      "Para two.",
+    ]);
+  });
 
-    it("keeps a fenced code block with internal blank lines intact", async () => {
-        const { splitMarkdownBlocks } = await import(
-            "@/features/ask-archive/components/Markdown"
-        );
-        const text = "Intro\n\n```\nline\n\nline after gap\n```\n\nOutro";
-        const blocks = splitMarkdownBlocks(text);
-        expect(blocks).toEqual([
-            "Intro",
-            "```\nline\n\nline after gap\n```",
-            "Outro",
-        ]);
-    });
+  it("keeps a fenced code block with internal blank lines intact", async () => {
+    const { splitMarkdownBlocks } = await import("@/features/ask-archive/components/Markdown");
+    const text = "Intro\n\n```\nline\n\nline after gap\n```\n\nOutro";
+    const blocks = splitMarkdownBlocks(text);
+    expect(blocks).toEqual(["Intro", "```\nline\n\nline after gap\n```", "Outro"]);
+  });
 
-    it("keeps a loose ordered list in one block so numbering survives", async () => {
-        const { splitMarkdownBlocks } = await import(
-            "@/features/ask-archive/components/Markdown"
-        );
-        const blocks = splitMarkdownBlocks("1. first\n\n2. second\n\n3. third");
-        expect(blocks).toEqual(["1. first\n\n2. second\n\n3. third"]);
-    });
+  it("keeps a loose ordered list in one block so numbering survives", async () => {
+    const { splitMarkdownBlocks } = await import("@/features/ask-archive/components/Markdown");
+    const blocks = splitMarkdownBlocks("1. first\n\n2. second\n\n3. third");
+    expect(blocks).toEqual(["1. first\n\n2. second\n\n3. third"]);
+  });
 
-    it("renders a loose ordered list with continuous numbering", () => {
-        const { container } = render(
-            <Markdown>{"1. first\n\n2. second"}</Markdown>,
-        );
-        const lists = container.querySelectorAll("ol");
-        expect(lists.length).toBe(1);
-        expect(lists[0].querySelectorAll("li").length).toBe(2);
-    });
+  it("renders a loose ordered list with continuous numbering", () => {
+    const { container } = render(<Markdown turnId="t-1">{"1. first\n\n2. second"}</Markdown>);
+    const lists = container.querySelectorAll("ol");
+    expect(lists.length).toBe(1);
+    expect(lists[0].querySelectorAll("li").length).toBe(2);
+  });
 });
 
 describe("splitMarkdownBlocks separator fidelity", () => {
-    it("preserves blank-line runs inside fenced code verbatim", async () => {
-        const { splitMarkdownBlocks } = await import(
-            "@/features/ask-archive/components/Markdown"
-        );
-        const text = "Intro\n\n```\ndef foo():\n    pass\n\n\ndef bar():\n    pass\n```";
-        const blocks = splitMarkdownBlocks(text);
-        expect(blocks).toEqual([
-            "Intro",
-            "```\ndef foo():\n    pass\n\n\ndef bar():\n    pass\n```",
-        ]);
-    });
+  it("preserves blank-line runs inside fenced code verbatim", async () => {
+    const { splitMarkdownBlocks } = await import("@/features/ask-archive/components/Markdown");
+    const text = "Intro\n\n```\ndef foo():\n    pass\n\n\ndef bar():\n    pass\n```";
+    const blocks = splitMarkdownBlocks(text);
+    expect(blocks).toEqual(["Intro", "```\ndef foo():\n    pass\n\n\ndef bar():\n    pass\n```"]);
+  });
 });

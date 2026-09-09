@@ -9,89 +9,95 @@
  */
 
 import { neon } from "@neondatabase/serverless";
+import { runWithDbTimeout } from "@/src/lib/db-timeout";
+
+// The limiter gates every /api/* request, so its budget is the tightest on
+// the request path: past this the in-memory window is the better answer.
+const NEON_CHECK_TIMEOUT_MS = 1_500;
 
 interface RateLimitEntry {
-    count: number;
-    resetAt: number;
+  count: number;
+  resetAt: number;
 }
 
 interface RateLimiterOptions {
-    /** Distinguishes buckets (e.g. "ask", "feedback"). Part of the DB key. */
-    bucket: string;
-    /** Maximum requests allowed within the window. */
-    limit: number;
-    /** Window duration in milliseconds. */
-    windowMs: number;
+  /** Distinguishes buckets (e.g. "ask", "feedback"). Part of the DB key. */
+  bucket: string;
+  /** Maximum requests allowed within the window. */
+  limit: number;
+  /** Window duration in milliseconds. */
+  windowMs: number;
 }
 
 interface RateLimitResult {
-    allowed: boolean;
-    limit: number;
-    remaining: number;
-    resetAt: number;
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  resetAt: number;
 }
 
 // Module-level Neon client; lazy-initialized once DATABASE_URL is known.
 let _sql: ReturnType<typeof neon> | null = null;
 function getSql(): ReturnType<typeof neon> | null {
-    if (_sql !== null) return _sql;
-    const url = process.env.DATABASE_URL;
-    if (!url) return null;
-    _sql = neon(url);
-    return _sql;
+  if (_sql !== null) return _sql;
+  const url = process.env.DATABASE_URL;
+  if (!url) return null;
+  _sql = neon(url);
+  return _sql;
 }
 
 function checkInMemory(
-    fallback: Map<string, RateLimitEntry>,
-    options: RateLimiterOptions,
-    ip: string,
+  fallback: Map<string, RateLimitEntry>,
+  options: RateLimiterOptions,
+  ip: string
 ): RateLimitResult {
-    const now = Date.now();
-    const key = `${options.bucket}:${ip}`;
-    const entry = fallback.get(key);
-    if (!entry || now >= entry.resetAt) {
-        fallback.set(key, { count: 1, resetAt: now + options.windowMs });
-        return {
-            allowed: true,
-            limit: options.limit,
-            remaining: options.limit - 1,
-            resetAt: now + options.windowMs,
-        };
-    }
-    entry.count++;
-    if (entry.count > options.limit) {
-        return {
-            allowed: false,
-            limit: options.limit,
-            remaining: 0,
-            resetAt: entry.resetAt,
-        };
-    }
+  const now = Date.now();
+  const key = `${options.bucket}:${ip}`;
+  const entry = fallback.get(key);
+  if (!entry || now >= entry.resetAt) {
+    fallback.set(key, { count: 1, resetAt: now + options.windowMs });
     return {
-        allowed: true,
-        limit: options.limit,
-        remaining: options.limit - entry.count,
-        resetAt: entry.resetAt,
+      allowed: true,
+      limit: options.limit,
+      remaining: options.limit - 1,
+      resetAt: now + options.windowMs,
     };
+  }
+  entry.count++;
+  if (entry.count > options.limit) {
+    return {
+      allowed: false,
+      limit: options.limit,
+      remaining: 0,
+      resetAt: entry.resetAt,
+    };
+  }
+  return {
+    allowed: true,
+    limit: options.limit,
+    remaining: options.limit - entry.count,
+    resetAt: entry.resetAt,
+  };
 }
 
-// Module-level fallback store used by createRateLimiter factories when
-// no per-instance map is wanted. Callers that want full isolation pass
-// their own. Exposed via _clearRateLimitFallbackForTests for test hygiene.
-const sharedFallback = new Map<string, RateLimitEntry>();
-
 async function checkNeon(
-    sql: ReturnType<typeof neon>,
-    options: RateLimiterOptions,
-    ip: string,
+  sql: ReturnType<typeof neon>,
+  options: RateLimiterOptions,
+  ip: string
 ): Promise<RateLimitResult> {
-    const now = Date.now();
-    const windowEndIso = new Date(now + options.windowMs).toISOString();
-    const key = `${options.bucket}:${ip}`;
-    // Atomic upsert + increment. If the existing window has expired we
-    // reset the counter to 1 and push expires_at forward; otherwise we
-    // increment. RETURNING gives us the post-update count + expiry.
-    const rows = (await sql`
+  const now = Date.now();
+  const windowEndIso = new Date(now + options.windowMs).toISOString();
+  const key = `${options.bucket}:${ip}`;
+  // Atomic upsert + increment. If the existing window has expired we
+  // reset the counter to 1 and push expires_at forward; otherwise we
+  // increment. RETURNING gives us the post-update count + expiry.
+  // Raced against a timer: the limiter is the first await on every /api/*
+  // request, and Neon's serverless driver has no AbortSignal support, so a
+  // hung upsert would stall everything behind it. A timeout lands in the
+  // caller's catch and degrades to the in-memory window.
+  const rows = (await runWithDbTimeout(
+    "rateLimitCheck",
+    () => sql`
         INSERT INTO api_rate_bucket (key, count, expires_at)
         VALUES (${key}, 1, ${windowEndIso})
         ON CONFLICT (key) DO UPDATE
@@ -99,43 +105,45 @@ async function checkNeon(
             count = CASE WHEN api_rate_bucket.expires_at < NOW() THEN 1 ELSE api_rate_bucket.count + 1 END,
             expires_at = CASE WHEN api_rate_bucket.expires_at < NOW() THEN ${windowEndIso} ELSE api_rate_bucket.expires_at END
         RETURNING count, expires_at
-    `) as Array<{ count: number; expires_at: string | Date }>;
-    const count = Number(rows[0]?.count ?? 1);
-    const resetAt =
-        rows[0]?.expires_at instanceof Date
-            ? rows[0].expires_at.getTime()
-            : new Date(String(rows[0]?.expires_at)).getTime();
-    return {
-        allowed: count <= options.limit,
-        limit: options.limit,
-        remaining: Math.max(0, options.limit - count),
-        resetAt,
-    };
+    `,
+    NEON_CHECK_TIMEOUT_MS
+  )) as Array<{ count: number; expires_at: string | Date }>;
+  const count = Number(rows[0]?.count ?? 1);
+  const resetAt =
+    rows[0]?.expires_at instanceof Date
+      ? rows[0].expires_at.getTime()
+      : new Date(String(rows[0]?.expires_at)).getTime();
+  return {
+    allowed: count <= options.limit,
+    limit: options.limit,
+    remaining: Math.max(0, options.limit - count),
+    resetAt,
+  };
 }
 
 export function createRateLimiter(options: RateLimiterOptions) {
-    // Each factory instance gets its own fallback Map so concurrent
-    // limiters in tests (or the same module loaded twice) don't collide.
-    const fallback = new Map<string, RateLimitEntry>();
-    return async function check(ip: string): Promise<RateLimitResult> {
-        const sql = getSql();
-        if (sql) {
-            try {
-                return await checkNeon(sql, options, ip);
-            } catch (err) {
-                console.warn(
-                    JSON.stringify({
-                        level: "warn",
-                        module: "rate-limit",
-                        bucket: options.bucket,
-                        msg: "neon check failed, falling back to in-memory",
-                        err: err instanceof Error ? err.message : String(err),
-                    }),
-                );
-            }
-        }
-        return checkInMemory(fallback, options, ip);
-    };
+  // Each factory instance gets its own fallback Map so concurrent
+  // limiters in tests (or the same module loaded twice) don't collide.
+  const fallback = new Map<string, RateLimitEntry>();
+  return async function check(ip: string): Promise<RateLimitResult> {
+    const sql = getSql();
+    if (sql) {
+      try {
+        return await checkNeon(sql, options, ip);
+      } catch (err) {
+        console.warn(
+          JSON.stringify({
+            level: "warn",
+            module: "rate-limit",
+            bucket: options.bucket,
+            msg: "neon check failed, falling back to in-memory",
+            err: err instanceof Error ? err.message : String(err),
+          })
+        );
+      }
+    }
+    return checkInMemory(fallback, options, ip);
+  };
 }
 
 /**
@@ -150,23 +158,16 @@ export function createRateLimiter(options: RateLimiterOptions) {
  * last one an untrusted client cannot forge.
  */
 export function getClientIp(request: Request): string {
-    const trusted =
-        request.headers.get("x-vercel-forwarded-for") ??
-        request.headers.get("x-real-ip");
-    if (trusted?.trim()) return trusted.trim();
+  const trusted = request.headers.get("x-vercel-forwarded-for") ?? request.headers.get("x-real-ip");
+  if (trusted?.trim()) return trusted.trim();
 
-    const forwarded = request.headers.get("x-forwarded-for");
-    if (forwarded) {
-        const hops = forwarded
-            .split(",")
-            .map((hop) => hop.trim())
-            .filter(Boolean);
-        if (hops.length > 0) return hops[hops.length - 1];
-    }
-    return "127.0.0.1";
-}
-
-/** Test helper — clears the shared fallback so tests don't leak. */
-export function _clearRateLimitFallbackForTests(): void {
-    sharedFallback.clear();
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const hops = forwarded
+      .split(",")
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    if (hops.length > 0) return hops[hops.length - 1];
+  }
+  return "127.0.0.1";
 }

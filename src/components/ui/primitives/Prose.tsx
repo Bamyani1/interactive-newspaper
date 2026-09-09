@@ -1,14 +1,11 @@
 import * as React from "react";
 
-export type ProseProps = Omit<
-    React.HTMLAttributes<HTMLDivElement>,
-    "children"
-> & {
-    /** Tag to wrap the prose content with. Defaults to `<div>` for safe nesting. */
-    as?: "div" | "article" | "section";
-    /** Optional max-width override; defaults to the article reading measure. */
-    measure?: "narrow" | "wide";
-    children: React.ReactNode;
+export type ProseProps = Omit<React.HTMLAttributes<HTMLDivElement>, "children"> & {
+  /** Tag to wrap the prose content with. Defaults to `<div>` for safe nesting. */
+  as?: "div" | "article" | "section";
+  /** Optional max-width override; defaults to the article reading measure. */
+  measure?: "narrow" | "wide";
+  children: React.ReactNode;
 };
 
 export type ProseCodeBlockProps = React.ComponentPropsWithoutRef<"pre">;
@@ -24,20 +21,15 @@ export type ProseCodeBlockProps = React.ComponentPropsWithoutRef<"pre">;
  * to opt in.
  */
 export const Prose = React.forwardRef<HTMLDivElement, ProseProps>(
-    ({ as = "div", measure = "narrow", className = "", children, ...rest }, ref) => {
-        const Tag = as as React.ElementType;
-        const measureClass =
-            measure === "wide" ? "max-w-[58rem]" : "max-w-[42rem]";
-        return (
-            <Tag
-                ref={ref}
-                className={`prose ${measureClass} ${className}`.trim()}
-                {...rest}
-            >
-                {children}
-            </Tag>
-        );
-    },
+  ({ as = "div", measure = "narrow", className = "", children, ...rest }, ref) => {
+    const Tag = as as React.ElementType;
+    const measureClass = measure === "wide" ? "max-w-[58rem]" : "max-w-[42rem]";
+    return (
+      <Tag ref={ref} className={`prose ${measureClass} ${className}`.trim()} {...rest}>
+        {children}
+      </Tag>
+    );
+  }
 );
 
 Prose.displayName = "Prose";
@@ -46,11 +38,8 @@ Prose.displayName = "Prose";
  * Keyboard-focusable wrapper for horizontally scrollable prose code blocks.
  * Axe requires scroll regions to be reachable without a pointing device.
  */
-export const ProseCodeBlock = React.forwardRef<
-    HTMLPreElement,
-    ProseCodeBlockProps
->(({ tabIndex = 0, ...rest }, ref) => (
-    <pre ref={ref} tabIndex={tabIndex} {...rest} />
-));
+export const ProseCodeBlock = React.forwardRef<HTMLPreElement, ProseCodeBlockProps>(
+  ({ tabIndex = 0, ...rest }, ref) => <pre ref={ref} tabIndex={tabIndex} {...rest} />
+);
 
 ProseCodeBlock.displayName = "ProseCodeBlock";

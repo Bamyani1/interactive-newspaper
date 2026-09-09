@@ -17,11 +17,11 @@ export const FIRST_PAINT = {
   },
   ask: {
     selector: 'textarea[aria-label="Ask a question"]',
-    expectedText: "Ask a question about OWU history",
+    expectedText: "Ask your own question",
   },
   search: {
     selector: "main h1",
-    expectedText: "Search the Archive",
+    expectedText: "Search 56 years of The Transcript",
   },
   edition: {
     selector: ".edition-feed-surface h2",
@@ -33,7 +33,7 @@ export const FIRST_PAINT = {
   },
   contact: {
     selector: "main h1",
-    expectedText: "Reach the Archive Team",
+    expectedText: "Found something we should revisit?",
   },
   notFound: {
     selector: "main h1",
@@ -77,8 +77,7 @@ export const STATIC_AUDIT_ROUTES: AuditRoute[] = [
     // `/dev/primitives` returns HTTP 200 in development but calls `notFound()`
     // in a production build, so its accepted status and first paint depend on
     // the server mode the sweep runs against.
-    acceptedStatuses:
-      process.env.PLAYWRIGHT_SERVER_MODE === "production" ? [404] : [200],
+    acceptedStatuses: process.env.PLAYWRIGHT_SERVER_MODE === "production" ? [404] : [200],
     firstPaint:
       process.env.PLAYWRIGHT_SERVER_MODE === "production"
         ? FIRST_PAINT.notFound
@@ -86,11 +85,7 @@ export const STATIC_AUDIT_ROUTES: AuditRoute[] = [
   },
 ];
 
-export const DEEP_TEST_EDITIONS = [
-  "1960-01-13",
-  "1994-01-19",
-  "2006-04-20",
-] as const;
+export const DEEP_TEST_EDITIONS = ["1960-01-13", "1994-01-19", "2006-04-20"] as const;
 
 export interface TransitionCase {
   name: string;

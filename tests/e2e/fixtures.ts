@@ -1,14 +1,5 @@
-import {
-  test as base,
-  expect,
-  type Page,
-  type TestInfo,
-} from "@playwright/test";
-import {
-  DEFAULT_API_MOCKS,
-  DEFAULT_STORAGE_SEED,
-  FIXED_NOW,
-} from "./support/deterministic";
+import { test as base, expect, type Page, type TestInfo } from "@playwright/test";
+import { DEFAULT_API_MOCKS, DEFAULT_STORAGE_SEED, FIXED_NOW } from "./support/deterministic";
 import {
   createBrowserDiagnostics,
   expectNoUnexpectedDiagnostics,
@@ -31,11 +22,7 @@ interface AuditFixtures {
   diagnostics: BrowserDiagnostics;
 }
 
-async function attachJson(
-  testInfo: TestInfo,
-  name: string,
-  value: unknown,
-): Promise<void> {
+async function attachJson(testInfo: TestInfo, name: string, value: unknown): Promise<void> {
   await testInfo.attach(name, {
     body: Buffer.from(JSON.stringify(value, null, 2)),
     contentType: "application/json",
@@ -60,9 +47,7 @@ export const test = base.extend<AuditOptions & AuditFixtures>({
       await use(diagnostics);
 
       if (!page.isClosed() && page.url() !== "about:blank") {
-        diagnostics.cumulativeLayoutShift = await readCumulativeLayoutShift(
-          page,
-        ).catch(() => 0);
+        diagnostics.cumulativeLayoutShift = await readCumulativeLayoutShift(page).catch(() => 0);
       }
       await attachJson(testInfo, "browser-diagnostics", diagnostics);
       stopObserving();

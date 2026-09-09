@@ -27,7 +27,7 @@ test("desktop edition weather is served by the deterministic fixture, never the 
           reason = "<non-json>";
         }
         return { status: response.status(), reason };
-      })(),
+      })()
     );
   });
 

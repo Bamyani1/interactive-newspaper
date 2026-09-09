@@ -1,80 +1,93 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { pickSuggestions } from "../data/question-pool";
+import { getQuestionPrompt, pickDailyQuestion, pickSuggestions } from "../data/question-pool";
 
 interface AskLandingProps {
-    /** Fire the given question against the live /api/ask flow. */
-    onPickQuestion: (question: string) => void;
-    /** Keep suggestions visible but inert while a saved session restores. */
-    disabled?: boolean;
-    /** UTC date seed rendered by the route server component. */
-    suggestionDate?: string;
+  /** Fire the given question against the live /api/ask flow. */
+  onPickQuestion: (question: string) => void;
+  /** Keep suggestions visible but inert while a saved session restores. */
+  disabled?: boolean;
+  /** UTC date seed rendered by the route server component. */
+  suggestionDate?: string;
+  /**
+   * Real corpus size, counted server-side. The stats line used to hardcode
+   * "351 editions · 11,705 articles", so every edition added to the archive
+   * made this page quietly wrong with nobody to notice.
+   */
+  corpus?: { editionCount: number; articleCount: number };
 }
 
-// Excluded from the daily suggestions so the pool doesn't collide with
-// any pinned example copy elsewhere on this surface.
-const EXCLUDED_FROM_ROTATION = "Tell me about Homecoming in the 1970s.";
-
 export const AskLanding: React.FC<AskLandingProps> = ({
-    onPickQuestion,
-    disabled = false,
-    suggestionDate = "2000-01-01",
+  onPickQuestion,
+  disabled = false,
+  suggestionDate = "2000-01-01",
+  corpus,
 }) => {
-    const suggestions = useMemo(
-        () =>
-            pickSuggestions(
-                new Date(`${suggestionDate}T12:00:00.000Z`),
-                EXCLUDED_FROM_ROTATION,
-            ),
-        [suggestionDate],
-    );
+  // Exclude whatever the homepage teaser is pinning today so a reader
+  // arriving from it isn't offered the same question twice.
+  const suggestions = useMemo(() => {
+    const date = new Date(`${suggestionDate}T12:00:00.000Z`);
+    return pickSuggestions(date, pickDailyQuestion(date));
+  }, [suggestionDate]);
 
-    return (
-        <div className="ask-landing">
-            <h1 className="ask-landing-title">
-                Ask the <em>archive</em>.
-            </h1>
+  return (
+    <div className="ask-landing">
+      <div className="ask-landing-intro">
+        <p className="ask-landing-kicker">
+          Primary-source research <span aria-hidden="true">·</span> 1950–2006
+        </p>
+        <h1 className="ask-landing-title">
+          What did students <em>say?</em>
+        </h1>
 
-            <p className="ask-landing-lede">
-                A research desk for <em>The Transcript</em>, Ohio Wesleyan&rsquo;s
-                student paper. Every answer cites the stories it comes from —
-                so you can verify before you quote.
-            </p>
+        <p className="ask-landing-lede">
+          Search more than five decades of <em>The Transcript</em>. Compare eras, trace campus
+          debates, and uncover everyday student life.
+        </p>
 
-            <section
-                className="ask-landing-suggestions"
-                aria-label="Suggested questions, refreshed daily"
-            >
-                <header className="ask-landing-suggestions-label">
-                    Try asking
-                </header>
-                <ul>
-                    {suggestions.map((q) => (
-                        <li key={q}>
-                            <button
-                                type="button"
-                                className="ask-landing-suggestion"
-                                onClick={() => onPickQuestion(q)}
-                                disabled={disabled}
-                            >
-                                <span
-                                    className="ask-landing-suggestion-arrow"
-                                    aria-hidden="true"
-                                >
-                                    →
-                                </span>
-                                <span>{q}</span>
-                            </button>
-                        </li>
-                    ))}
-                </ul>
-            </section>
+        <p className="ask-landing-stats">
+          Answers cite primary sources. Always verify.
+          {corpus ? (
+            <>
+              {" · "}
+              {corpus.editionCount.toLocaleString("en-US")} editions{" · "}
+              {corpus.articleCount.toLocaleString("en-US")} articles
+            </>
+          ) : null}
+        </p>
+      </div>
 
-            <p className="ask-landing-stats">
-                Answers cite primary sources. Always verify. · 1950 – 2006 ·
-                351 editions · 11,705 articles
-            </p>
-        </div>
-    );
+      <section
+        className="ask-landing-suggestions"
+        aria-label="Suggested questions, refreshed daily"
+      >
+        <ul>
+          {suggestions.map((question, index) => (
+            <li key={question}>
+              <button
+                type="button"
+                className="ask-landing-suggestion"
+                onClick={() => onPickQuestion(question)}
+                disabled={disabled}
+              >
+                <span className="ask-landing-suggestion-index" aria-hidden="true">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <span className="ask-landing-suggestion-copy">
+                  <span className="ask-landing-suggestion-lens">
+                    {getQuestionPrompt(question)?.lens ?? "Explore the archive"}
+                  </span>
+                  <span className="ask-landing-suggestion-question">{question}</span>
+                </span>
+                <span className="ask-landing-suggestion-arrow" aria-hidden="true">
+                  →
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
 };

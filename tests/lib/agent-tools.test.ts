@@ -1,13 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fetchArticleForRagMock, queryEditionsMock, searchAndRankArchiveMock } =
-  vi.hoisted(() => ({
-    fetchArticleForRagMock: vi.fn(),
-    queryEditionsMock: vi.fn(),
-    searchAndRankArchiveMock: vi.fn(),
-  }));
+const { fetchArticleForRagMock, queryEditionsMock, searchAndRankArchiveMock, MockDbTimeoutError } =
+  vi.hoisted(() => {
+    class MockDbTimeoutError extends Error {
+      constructor(
+        readonly op: string,
+        readonly timeoutMs: number
+      ) {
+        super(`Database operation timed out: ${op} after ${timeoutMs}ms`);
+        this.name = "DbTimeoutError";
+      }
+    }
+    return {
+      fetchArticleForRagMock: vi.fn(),
+      queryEditionsMock: vi.fn(),
+      searchAndRankArchiveMock: vi.fn(),
+      MockDbTimeoutError,
+    };
+  });
 
 vi.mock("@/src/lib/db", () => ({
+  DbTimeoutError: MockDbTimeoutError,
   fetchArticleForRag: fetchArticleForRagMock,
   queryEditions: queryEditionsMock,
 }));
@@ -62,7 +75,7 @@ describe("agent-tools", () => {
         category: "Sports",
         limit: 5,
       },
-      { signal: controller.signal, requestId: "req-1" },
+      { signal: controller.signal, requestId: "req-1" }
     );
 
     expect(searchAndRankArchiveMock).toHaveBeenCalledWith({
@@ -116,7 +129,7 @@ describe("agent-tools", () => {
           endDate: "1979-12-31",
           category: "Sports",
         },
-      },
+      }
     );
     expect(searchAndRankArchiveMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -125,7 +138,7 @@ describe("agent-tools", () => {
           endDate: "1979-12-31",
           category: "Sports",
         },
-      }),
+      })
     );
   });
 
@@ -136,7 +149,7 @@ describe("agent-tools", () => {
   ])("clamps search limit %s to %s", async (input, expected) => {
     await executeTool("search_archive", { query: "test", limit: input });
     expect(searchAndRankArchiveMock).toHaveBeenCalledWith(
-      expect.objectContaining({ maxArticles: expected }),
+      expect.objectContaining({ maxArticles: expected })
     );
   });
 
@@ -203,9 +216,9 @@ describe("agent-tools", () => {
       kind: "invalid_arguments",
     });
     fetchArticleForRagMock.mockResolvedValue(null);
-    expect(
-      await executeTool("read_article", { articleId: "1965-03-15-99" }),
-    ).toEqual({ error: "Article not found" });
+    expect(await executeTool("read_article", { articleId: "1965-03-15-99" })).toEqual({
+      error: "Article not found",
+    });
   });
 
   it("does not let read_article escape enforced filters", async () => {
@@ -214,8 +227,8 @@ describe("agent-tools", () => {
       executeTool(
         "read_article",
         { articleId: article.id },
-        { filters: { startDate: "1970-01-01" } },
-      ),
+        { filters: { startDate: "1970-01-01" } }
+      )
     ).resolves.toEqual({ error: "Article falls outside the enforced archive filters" });
   });
 
@@ -228,7 +241,7 @@ describe("agent-tools", () => {
     const result = await executeTool(
       "list_editions",
       { startDate: "1965-01-01", endDate: "1965-12-31", offset: 10, limit: 500 },
-      { signal: controller.signal },
+      { signal: controller.signal }
     );
     expect(queryEditionsMock).toHaveBeenCalledWith({
       startDate: "1965-01-01",
@@ -241,5 +254,36 @@ describe("agent-tools", () => {
       editions: [{ date: "1965-03-15", articleCount: 12 }],
       pagination: { offset: 10, limit: 100, hasMore: false },
     });
+  });
+
+  // Every typed failure used to flatten into a bare { error }, which the
+  // model reads as "archive lookup failed" and the loop treats as a normal
+  // empty result — so a spent quota kept researching and a timed-out lookup
+  // produced an answer at normal confidence.
+  it("labels a spent model quota, with the wait it reported", async () => {
+    const quotaError = new Error(
+      'Gemini API quota exhausted: {"error":{"code":429,"details":[{"retryDelay":"18s"}]}}'
+    );
+    quotaError.name = "QuotaExhaustedError";
+    searchAndRankArchiveMock.mockRejectedValue(quotaError);
+
+    const result = await executeTool("search_archive", { query: "football" });
+    expect(result.kind).toBe("quota");
+    expect(result.retryAfterSec).toBe(18);
+  });
+
+  it("labels a database timeout", async () => {
+    searchAndRankArchiveMock.mockRejectedValue(new MockDbTimeoutError("hybridSearch", 10_000));
+
+    const result = await executeTool("search_archive", { query: "football" });
+    expect(result.kind).toBe("timeout");
+  });
+
+  it("labels anything else as a plain failure", async () => {
+    searchAndRankArchiveMock.mockRejectedValue(new Error("index exploded"));
+
+    const result = await executeTool("search_archive", { query: "football" });
+    expect(result.kind).toBe("failed");
+    expect(result.error).toBe("index exploded");
   });
 });

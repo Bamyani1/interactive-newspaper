@@ -34,11 +34,7 @@ function makeArticle(overrides: Partial<Article> = {}): Article {
 
 describe("SectionPrintEdition", () => {
   it("renders lead article with H1 headline", () => {
-    render(
-      <SectionPrintEdition
-        articles={[makeArticle()]}
-      />
-    );
+    render(<SectionPrintEdition articles={[makeArticle()]} />);
 
     const h1 = screen.getByRole("heading", { level: 1 });
     expect(h1).toHaveTextContent("Lead Story Headline");
@@ -64,11 +60,7 @@ describe("SectionPrintEdition", () => {
   });
 
   it("renders DoubleRule at top", () => {
-    const { container } = render(
-      <SectionPrintEdition
-        articles={[makeArticle()]}
-      />
-    );
+    const { container } = render(<SectionPrintEdition articles={[makeArticle()]} />);
 
     // DoubleRule renders an aria-hidden div with two child divs (thick + thin borders)
     const ariaHiddenDivs = container.querySelectorAll("[aria-hidden='true']");
@@ -79,29 +71,19 @@ describe("SectionPrintEdition", () => {
   });
 
   it("renders OrnamentRow at bottom", () => {
-    render(
-      <SectionPrintEdition
-        articles={[makeArticle()]}
-      />
-    );
+    render(<SectionPrintEdition articles={[makeArticle()]} />);
 
     expect(screen.getByText("— § —")).toBeTruthy();
   });
 
   it("returns null for empty articles array", () => {
-    const { container } = render(
-      <SectionPrintEdition articles={[]} />
-    );
+    const { container } = render(<SectionPrintEdition articles={[]} />);
 
     expect(container.innerHTML).toBe("");
   });
 
   it("handles single article (hero only, no featured)", () => {
-    render(
-      <SectionPrintEdition
-        articles={[makeArticle({ headline: "Solo Article" })]}
-      />
-    );
+    render(<SectionPrintEdition articles={[makeArticle({ headline: "Solo Article" })]} />);
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Solo Article");
     expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
@@ -122,21 +104,13 @@ describe("SectionPrintEdition", () => {
   });
 
   it("renders Byline when present", () => {
-    render(
-      <SectionPrintEdition
-        articles={[makeArticle({ byline: "Jane Reporter" })]}
-      />
-    );
+    render(<SectionPrintEdition articles={[makeArticle({ byline: "Jane Reporter" })]} />);
 
     expect(screen.getByText("By Jane Reporter")).toBeTruthy();
   });
 
   it("does not render Byline when absent", () => {
-    render(
-      <SectionPrintEdition
-        articles={[makeArticle({ byline: null })]}
-      />
-    );
+    render(<SectionPrintEdition articles={[makeArticle({ byline: null })]} />);
 
     expect(screen.queryByText(/^By /)).toBeNull();
   });

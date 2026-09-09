@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildDataLineageCatalog,
-  buildFreezeReport,
-} from "../../scripts/rag/build-freeze-report";
+import { buildDataLineageCatalog, buildFreezeReport } from "../../scripts/rag/build-freeze-report";
 
 function corpusFixture() {
   return {
@@ -108,28 +105,24 @@ describe("RAG freeze report", () => {
 
     expect(report.pageMetadataAudit.exactManifestCount).toBe(1);
     expect(report.pageMetadataAudit.legacyUndercount).toBe(1);
-    expect(report.pageMetadataAudit.belowSeventyPercentProxyDates).toEqual([
-      "1970-01-01",
-    ]);
+    expect(report.pageMetadataAudit.belowSeventyPercentProxyDates).toEqual(["1970-01-01"]);
     expect(report.pageMetadataAudit.interpretation).toContain("cannot prove OCR");
   });
 
   it("fails closed when source and corpus versions differ", () => {
     const source = sourceFixture();
     source.corpusVersion = "different";
-    expect(() => buildFreezeReport(corpusFixture(), source)).toThrow(
-      /Corpus\/source mismatch/,
-    );
+    expect(() => buildFreezeReport(corpusFixture(), source)).toThrow(/Corpus\/source mismatch/);
   });
 
   it("marks private and unused database datasets explicitly", () => {
     const lineage = buildDataLineageCatalog(corpusFixture(), sourceFixture());
-    expect(
-      lineage.datasets.find((dataset) => dataset.id === "ask_session_turns"),
-    ).toMatchObject({ privacyClass: "private_user_content" });
-    expect(
-      lineage.datasets.find((dataset) => dataset.id === "weather_music"),
-    ).toMatchObject({ ragUsage: "unused" });
+    expect(lineage.datasets.find((dataset) => dataset.id === "ask_session_turns")).toMatchObject({
+      privacyClass: "private_user_content",
+    });
+    expect(lineage.datasets.find((dataset) => dataset.id === "weather_music")).toMatchObject({
+      ragUsage: "unused",
+    });
     expect(lineage.lineageSha256).toMatch(/^[a-f0-9]{64}$/);
   });
 });

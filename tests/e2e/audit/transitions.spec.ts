@@ -10,6 +10,7 @@ import {
   expectVisibleNonEmptyFirstPaint,
   readCumulativeLayoutShift,
   readCumulativeLayoutShiftSamples,
+  recordFulfilledMockRequest,
   resetBrowserDiagnostics,
   waitForSettledUi,
   writeAuditJson,
@@ -68,7 +69,7 @@ test.describe("primary navigation transition filmstrips", () => {
       await expectVisibleNonEmptyFirstPaint(
         page,
         transition.fromFirstPaint,
-        `${transition.name} source first paint`,
+        `${transition.name} source first paint`
       );
       const link = page.getByRole("link", { name: transition.linkName }).first();
       await expect(link).toBeVisible();
@@ -76,8 +77,8 @@ test.describe("primary navigation transition filmstrips", () => {
       await expect
         .poll(() =>
           link.evaluate((element) =>
-            Object.keys(element).some((key) => key.startsWith("__reactProps$")),
-          ),
+            Object.keys(element).some((key) => key.startsWith("__reactProps$"))
+          )
         )
         .toBe(true);
       expectNoUnexpectedDiagnostics(diagnostics);
@@ -105,20 +106,16 @@ test.describe("primary navigation transition filmstrips", () => {
         state: "transition",
         viewport,
       });
-      const frames = await captureFilmstrip(
-        page,
-        () => link.click({ noWaitAfter: true }),
-        {
-          assertFrame: (elapsedMs) =>
-            expectOneOfFirstPaint(
-              page,
-              [transition.fromFirstPaint, transition.toFirstPaint],
-              `${transition.name} frame at measured ${elapsedMs}ms`,
-            ),
-          outputDir,
-          prefix: "frame",
-        },
-      );
+      const frames = await captureFilmstrip(page, () => link.click({ noWaitAfter: true }), {
+        assertFrame: (elapsedMs) =>
+          expectOneOfFirstPaint(
+            page,
+            [transition.fromFirstPaint, transition.toFirstPaint],
+            `${transition.name} frame at measured ${elapsedMs}ms`
+          ),
+        outputDir,
+        prefix: "frame",
+      });
 
       await expect
         .poll(() => new URL(page.url()).pathname, {
@@ -128,15 +125,12 @@ test.describe("primary navigation transition filmstrips", () => {
       await expectVisibleNonEmptyFirstPaint(
         page,
         transition.toFirstPaint,
-        `${transition.name} target first paint`,
+        `${transition.name} target first paint`
       );
       await waitForSettledUi(page);
       const layoutShiftAfter = await readCumulativeLayoutShift(page);
       const layoutShiftSamples = await readCumulativeLayoutShiftSamples(page);
-      const transitionLayoutShift = Math.max(
-        0,
-        layoutShiftAfter - layoutShiftBefore,
-      );
+      const transitionLayoutShift = Math.max(0, layoutShiftAfter - layoutShiftBefore);
       await writeAuditJson(
         evidencePath({
           file: "metrics.json",
@@ -158,12 +152,12 @@ test.describe("primary navigation transition filmstrips", () => {
           layoutShiftAfter,
           layoutShiftSamples,
           transitionLayoutShift,
-        },
+        }
       );
 
       expect(
         delayedRscRequests,
-        `${transition.name} must exercise a delayed client RSC request`,
+        `${transition.name} must exercise a delayed client RSC request`
       ).toBeGreaterThan(0);
       expect(releasedTargetRequests).toBeGreaterThan(0);
       expect(delayedDocumentRequests).toBe(0);
@@ -208,44 +202,27 @@ test("delayed Search API keeps its stable shell until results are ready", async 
   await page.goto("/search");
   await waitForSettledUi(page);
   const input = page.getByRole("textbox", { name: "Search the archive" });
-  const frames = await captureFilmstrip(
-    page,
-    () => input.fill("campus"),
-    {
-      assertFrame: async () => {
-        await expectVisibleNonEmptyFirstPaint(
-          page,
-          FIRST_PAINT.search,
-          "delayed Search API shell",
-        );
-        await expect(input).toBeVisible();
-      },
-      outputDir: evidencePath({
-        file: "",
-        route: "search-api",
-        state: "delayed-response",
-        viewport: auditViewport(testInfo.project.name),
-      }),
-      prefix: "frame",
+  const frames = await captureFilmstrip(page, () => input.fill("campus"), {
+    assertFrame: async () => {
+      await expectVisibleNonEmptyFirstPaint(page, FIRST_PAINT.search, "delayed Search API shell");
+      await expect(input).toBeVisible();
     },
-  );
-  await expect(
-    page.getByRole("link", { name: "Students Open a New Semester" }),
-  ).toBeVisible();
+    outputDir: evidencePath({
+      file: "",
+      route: "search-api",
+      state: "delayed-response",
+      viewport: auditViewport(testInfo.project.name),
+    }),
+    prefix: "frame",
+  });
+  await expect(page.getByRole("link", { name: "Students Open a New Semester" })).toBeVisible();
   expect(requestStartedAt).toBeGreaterThan(0);
-  expect(requestReleasedAt - requestStartedAt).toBeGreaterThanOrEqual(
-    API_DELAY_MS - 10,
-  );
-  expect(frames.map((frame) => frame.requestedMs)).toEqual([
-    0, 50, 100, 250, 500, 1_000,
-  ]);
+  expect(requestReleasedAt - requestStartedAt).toBeGreaterThanOrEqual(API_DELAY_MS - 10);
+  expect(frames.map((frame) => frame.requestedMs)).toEqual([0, 50, 100, 250, 500, 1_000]);
   expectNoUnexpectedDiagnostics(diagnostics);
 });
 
-test("delayed Ask API keeps the hydrated workspace visible", async ({
-  page,
-  diagnostics,
-}) => {
+test("delayed Ask API keeps the hydrated workspace visible", async ({ page, diagnostics }) => {
   let requestStartedAt = 0;
   let requestReleasedAt = 0;
   await page.route("**/api/ask**", async (route) => {
@@ -265,22 +242,20 @@ test("delayed Ask API keeps the hydrated workspace visible", async ({
       },
       body: DETERMINISTIC_ASK_STREAM,
     });
+    // The diagnostics gate only forgives an aborted Ask POST that a mock
+    // actually answered; this handler bypasses `installApiMocks`, so it
+    // records its own fulfilment.
+    recordFulfilledMockRequest(route.request());
   });
 
   await page.goto("/ask?q=Who%20edited%20the%20paper%3F");
   await expect.poll(() => requestStartedAt).toBeGreaterThan(0);
   await page.waitForTimeout(250);
-  await expectVisibleNonEmptyFirstPaint(
-    page,
-    FIRST_PAINT.ask,
-    "delayed Ask API workspace",
-  );
+  await expectVisibleNonEmptyFirstPaint(page, FIRST_PAINT.ask, "delayed Ask API workspace");
   await expect(page.locator("main#main-content")).toBeVisible();
   await expect(page.locator(".ask-transcript")).toBeVisible();
   await expect(page.locator(".ask-composer")).toBeVisible();
   await expect(page.getByText(/local Playwright fixture/i)).toBeVisible();
-  expect(requestReleasedAt - requestStartedAt).toBeGreaterThanOrEqual(
-    API_DELAY_MS - 10,
-  );
+  expect(requestReleasedAt - requestStartedAt).toBeGreaterThanOrEqual(API_DELAY_MS - 10);
   expectNoUnexpectedDiagnostics(diagnostics);
 });

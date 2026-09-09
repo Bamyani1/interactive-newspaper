@@ -21,23 +21,23 @@ describe("Google ADC preflight configuration", () => {
   });
 
   it("rejects API keys even when an ADC project is configured", () => {
-    expect(() =>
-      validateGoogleRuntimeEnv({ ...validEnv, GEMINI_API_KEY: "legacy-key" }),
-    ).toThrow(/ADC-only policy violation/);
-    expect(() =>
-      validateGoogleRuntimeEnv({ ...validEnv, GOOGLE_API_KEY: "legacy-key" }),
-    ).toThrow(/ADC-only policy violation/);
+    expect(() => validateGoogleRuntimeEnv({ ...validEnv, GEMINI_API_KEY: "legacy-key" })).toThrow(
+      /ADC-only policy violation/
+    );
+    expect(() => validateGoogleRuntimeEnv({ ...validEnv, GOOGLE_API_KEY: "legacy-key" })).toThrow(
+      /ADC-only policy violation/
+    );
   });
 
   it("rejects a missing project, processor, or non-global Vertex location", () => {
+    expect(() => validateGoogleRuntimeEnv({ ...validEnv, GOOGLE_CLOUD_PROJECT: "" })).toThrow(
+      /GOOGLE_CLOUD_PROJECT/
+    );
+    expect(() => validateGoogleRuntimeEnv({ ...validEnv, DOCUMENT_AI_PROCESSOR_ID: "" })).toThrow(
+      /DOCUMENT_AI_PROCESSOR_ID/
+    );
     expect(() =>
-      validateGoogleRuntimeEnv({ ...validEnv, GOOGLE_CLOUD_PROJECT: "" }),
-    ).toThrow(/GOOGLE_CLOUD_PROJECT/);
-    expect(() =>
-      validateGoogleRuntimeEnv({ ...validEnv, DOCUMENT_AI_PROCESSOR_ID: "" }),
-    ).toThrow(/DOCUMENT_AI_PROCESSOR_ID/);
-    expect(() =>
-      validateGoogleRuntimeEnv({ ...validEnv, GOOGLE_CLOUD_LOCATION: "us-central1" }),
+      validateGoogleRuntimeEnv({ ...validEnv, GOOGLE_CLOUD_LOCATION: "us-central1" })
     ).toThrow(/must be global/);
   });
 });

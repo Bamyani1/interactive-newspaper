@@ -59,7 +59,9 @@ describe("transformArticles", () => {
   it("extracts summary from first paragraph", () => {
     const edition = makeEdition({
       articles: [
-        makeArticle({ body: "Short first paragraph.\n\nSecond paragraph with more detail about the upcoming campus events and renovations that will affect daily student life throughout the remainder of the academic term." }),
+        makeArticle({
+          body: "Short first paragraph.\n\nSecond paragraph with more detail about the upcoming campus events and renovations that will affect daily student life throughout the remainder of the academic term.",
+        }),
       ],
     });
 
@@ -90,7 +92,11 @@ describe("transformArticles", () => {
 
   it("converts body to HTML with escaped characters", () => {
     const edition = makeEdition({
-      articles: [makeArticle({ body: "Hello <world> & friends.\n\nSecond paragraph continues with additional details about the campus event schedule and upcoming renovations that will affect the student body throughout the remainder of the term." })],
+      articles: [
+        makeArticle({
+          body: "Hello <world> & friends.\n\nSecond paragraph continues with additional details about the campus event schedule and upcoming renovations that will affect the student body throughout the remainder of the term.",
+        }),
+      ],
     });
 
     const [article] = transformArticles(edition);
@@ -101,7 +107,11 @@ describe("transformArticles", () => {
 
   it("strips OCR page-break markers from body", () => {
     const edition = makeEdition({
-      articles: [makeArticle({ body: "Start of text with an extended opening that provides enough context for the article to pass content filters.\n. 7\nContinued text covers the remaining details about the student organization event and its impact on campus life." })],
+      articles: [
+        makeArticle({
+          body: "Start of text with an extended opening that provides enough context for the article to pass content filters.\n. 7\nContinued text covers the remaining details about the student organization event and its impact on campus life.",
+        }),
+      ],
     });
 
     const [article] = transformArticles(edition);
@@ -130,9 +140,7 @@ describe("transformArticles", () => {
 
   it("constructs image URLs correctly", () => {
     const edition = makeEdition({
-      articles: [
-        makeArticle({ image_files: ["images/photo1.jpg", "images/photo2.png"] }),
-      ],
+      articles: [makeArticle({ image_files: ["images/photo1.jpg", "images/photo2.png"] })],
     });
 
     const [article] = transformArticles(edition);
@@ -589,7 +597,12 @@ describe("headshot filtering", () => {
           headline: "Senator To Speak",
           body: "The senator will speak at commencement this June and the campus community is buzzing with anticipation for this major event.\n\nMore details about the event and venue were released by the administration this week.\n\nSENATOR JOHN DOE will address the graduating class on June 14.",
           image_files: ["images/senator.jpg"],
-          images: [{ caption: "SENATOR JOHN DOE will address the graduating class on June 14.", position: "top" }],
+          images: [
+            {
+              caption: "SENATOR JOHN DOE will address the graduating class on June 14.",
+              position: "top",
+            },
+          ],
         }),
       ],
     });
@@ -690,9 +703,11 @@ describe("classifyCategory (via transformArticles)", () => {
   });
 
   it("detects Opinion from letter to editor", () => {
-    expect(classifyVia({ body: "Editor, The Transcript\n\nI write to complain about the recent decision to close the student center on weekends, which significantly reduces the available gathering spaces for student organizations and social activities during a critical time." })).toBe(
-      "Opinion"
-    );
+    expect(
+      classifyVia({
+        body: "Editor, The Transcript\n\nI write to complain about the recent decision to close the student center on weekends, which significantly reduces the available gathering spaces for student organizations and social activities during a critical time.",
+      })
+    ).toBe("Opinion");
   });
 
   it("detects Opinion from 'by editorial' byline", () => {
@@ -708,7 +723,9 @@ describe("classifyCategory (via transformArticles)", () => {
   });
 
   it("detects Arts & Entertainment from headline keywords", () => {
-    expect(classifyVia({ headline: "New Film Festival Opens on Campus" })).toBe("Arts & Entertainment");
+    expect(classifyVia({ headline: "New Film Festival Opens on Campus" })).toBe(
+      "Arts & Entertainment"
+    );
   });
 
   it("defaults to Campus News", () => {
@@ -796,10 +813,7 @@ describe("transformAds", () => {
 describe("computePageCount", () => {
   it("returns highest page number across articles", () => {
     const edition = makeEdition({
-      articles: [
-        makeArticle({ source_pages: ["1", "2"] }),
-        makeArticle({ source_pages: ["4"] }),
-      ],
+      articles: [makeArticle({ source_pages: ["1", "2"] }), makeArticle({ source_pages: ["4"] })],
     });
     expect(computePageCount(edition)).toBe(4);
   });
@@ -828,4 +842,3 @@ describe("computePageCount", () => {
     expect(computePageCount(edition)).toBe(1);
   });
 });
-

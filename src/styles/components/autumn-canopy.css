@@ -22,18 +22,22 @@
    ========================================= */
 
 :root {
-    /* Scene primitives — JS overrides these per-theme via inline style */
-    --foliage-shadow: color-mix(in srgb, var(--ink-900) 92%, #0a1428);
-    --foliage-amber:  #c8a030;
-    --foliage-gold:   #ffe060;
-    --foliage-red:    var(--red-700);
-    --foliage-rust:   color-mix(in srgb, var(--red-800) 70%, var(--ink-900));
+  /* Scene primitives — JS overrides these per-theme via inline style */
+  --foliage-shadow: color-mix(in srgb, var(--ink-900) 92%, #0a1428);
+  --foliage-amber: #c8a030;
+  --foliage-gold: #ffe060;
+  --foliage-red: var(--red-700);
+  --foliage-rust: color-mix(in srgb, var(--red-800) 70%, var(--ink-900));
 
-    /* Control-chrome tokens (glassmorphic toolbar, z-index: 10) */
-    --foliage-control-ink:        var(--ink-900);
-    --foliage-control-paper:      var(--newsprint-50);
-    --foliage-control-text-dark:  color-mix(in srgb, var(--ink-900) 80%, var(--foliage-amber) 20%);
-    --foliage-control-text-light: color-mix(in srgb, var(--newsprint-50) 85%, var(--foliage-gold) 15%);
+  /* Control-chrome tokens (glassmorphic toolbar, z-index: 10) */
+  --foliage-control-ink: var(--ink-900);
+  --foliage-control-paper: var(--newsprint-50);
+  --foliage-control-text-dark: color-mix(in srgb, var(--ink-900) 80%, var(--foliage-amber) 20%);
+  --foliage-control-text-light: color-mix(
+    in srgb,
+    var(--newsprint-50) 85%,
+    var(--foliage-gold) 15%
+  );
 }
 
 /* =========================================
@@ -41,16 +45,16 @@
    ========================================= */
 
 .canopy-root {
-    --canopy-base: var(--foliage-shadow);
-    --canopy-gold: var(--foliage-amber);
-    --canopy-gold-bright: var(--foliage-gold);
-    position: fixed;
-    inset: 0;
-    overflow: hidden;
-    isolation: isolate;
-    background: var(--canopy-base);
-    cursor: default;
-    transition: background 1.2s ease-in-out;
+  --canopy-base: var(--foliage-shadow);
+  --canopy-gold: var(--foliage-amber);
+  --canopy-gold-bright: var(--foliage-gold);
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--canopy-base);
+  cursor: default;
+  transition: background 1.2s ease-in-out;
 }
 
 /* =========================================
@@ -58,10 +62,10 @@
    ========================================= */
 
 .canopy-sky {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    transition: background 0.3s ease-in-out;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  transition: background 0.3s ease-in-out;
 }
 
 /* =========================================
@@ -69,37 +73,37 @@
    ========================================= */
 
 .canopy-clouds {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .canopy-cloud {
-    position: absolute;
-    border-radius: 50%;
-    transition: background 0.3s ease-in-out;
+  position: absolute;
+  border-radius: 50%;
+  transition: background 0.3s ease-in-out;
 }
 
 .canopy-cloud--0 {
-    left: 10%;
-    top: 5%;
-    width: 40%;
-    height: 40%;
+  left: 10%;
+  top: 5%;
+  width: 40%;
+  height: 40%;
 }
 
 .canopy-cloud--1 {
-    left: 52%;
-    top: -3%;
-    width: 36%;
-    height: 36%;
+  left: 52%;
+  top: -3%;
+  width: 36%;
+  height: 36%;
 }
 
 .canopy-cloud--2 {
-    left: 28%;
-    top: 13%;
-    width: 44%;
-    height: 44%;
+  left: 28%;
+  top: 13%;
+  width: 44%;
+  height: 44%;
 }
 
 /* =========================================
@@ -107,11 +111,11 @@
    ========================================= */
 
 .canopy-motes--behind {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    pointer-events: none;
-    overflow: hidden;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 /* =========================================
@@ -119,20 +123,20 @@
    ========================================= */
 
 .canopy-glass {
-    position: absolute;
-    inset: 0;
-    z-index: 3;
-    overflow: hidden;
-    animation: canopyGlassFadeIn 1.5s ease-out forwards;
-    will-change: opacity, transform;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  animation: canopyGlassFadeIn 1.5s ease-out forwards;
+  will-change: opacity, transform;
 }
 
 .canopy-glass object,
 .canopy-glass img {
-    width: 100%;
-    height: 100%;
-    display: block;
-    transition: filter 0.8s ease-in-out;
+  width: 100%;
+  height: 100%;
+  display: block;
+  transition: filter 0.8s ease-in-out;
 }
 
 /* =========================================
@@ -140,11 +144,11 @@
    ========================================= */
 
 .canopy-motes--front {
-    position: absolute;
-    inset: 0;
-    z-index: 6;
-    pointer-events: none;
-    overflow: hidden;
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 /* =========================================
@@ -152,35 +156,35 @@
    ========================================= */
 
 .canopy-mote {
-    position: absolute;
-    will-change: transform, opacity;
+  position: absolute;
+  will-change: transform, opacity;
 }
 
 /* ── Shape variants ── */
 
 .canopy-mote--leaf {
-    border-radius: 40% 60% 50% 50%;
+  border-radius: 40% 60% 50% 50%;
 }
 
 .canopy-mote--circle {
-    border-radius: 50%;
+  border-radius: 50%;
 }
 
 .canopy-mote--square {
-    border-radius: 2px;
+  border-radius: 2px;
 }
 
 .canopy-mote--petal {
-    border-radius: 60% 0% 60% 0%;
+  border-radius: 60% 0% 60% 0%;
 }
 
 .canopy-mote--line {
-    border-radius: 1px;
+  border-radius: 1px;
 }
 
 .canopy-mote--wisp {
-    border-radius: 50%;
-    filter: blur(20px);
+  border-radius: 50%;
+  filter: blur(20px);
 }
 
 /* =========================================
@@ -188,16 +192,16 @@
    ========================================= */
 
 .canopy-grain {
-    position: absolute;
-    inset: 0;
-    z-index: 8;
-    pointer-events: none;
-    opacity: 0.04;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-    background-repeat: repeat;
-    background-size: 256px 256px;
-    mix-blend-mode: overlay;
-    transition: opacity 0.8s ease-in-out;
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+  mix-blend-mode: overlay;
+  transition: opacity 0.8s ease-in-out;
 }
 
 /* =========================================
@@ -205,14 +209,14 @@
    ========================================= */
 
 @keyframes canopyGlassFadeIn {
-    from {
-        opacity: 0;
-        transform: scale(1.02);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
+  from {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* =========================================
@@ -220,81 +224,87 @@
    ========================================= */
 
 @keyframes canopyLeafNear {
-    0% {
-        transform: translateY(0) translateX(0) rotate(0deg) scale(1);
-        opacity: 0;
-    }
-    8% {
-        opacity: var(--leaf-opacity, 0.7);
-    }
-    25% {
-        transform: translateY(25vh) translateX(var(--leaf-sway, 35px)) rotate(110deg) scale(0.95);
-    }
-    50% {
-        transform: translateY(50vh) translateX(calc(var(--leaf-sway, 35px) * -0.6)) rotate(200deg) scale(0.9);
-    }
-    75% {
-        transform: translateY(75vh) translateX(var(--leaf-sway, 35px)) rotate(290deg) scale(0.85);
-    }
-    92% {
-        opacity: var(--leaf-opacity, 0.7);
-    }
-    100% {
-        transform: translateY(110vh) translateX(calc(var(--leaf-sway, 35px) * -1)) rotate(380deg) scale(0.8);
-        opacity: 0;
-    }
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  8% {
+    opacity: var(--leaf-opacity, 0.7);
+  }
+  25% {
+    transform: translateY(25vh) translateX(var(--leaf-sway, 35px)) rotate(110deg) scale(0.95);
+  }
+  50% {
+    transform: translateY(50vh) translateX(calc(var(--leaf-sway, 35px) * -0.6)) rotate(200deg)
+      scale(0.9);
+  }
+  75% {
+    transform: translateY(75vh) translateX(var(--leaf-sway, 35px)) rotate(290deg) scale(0.85);
+  }
+  92% {
+    opacity: var(--leaf-opacity, 0.7);
+  }
+  100% {
+    transform: translateY(110vh) translateX(calc(var(--leaf-sway, 35px) * -1)) rotate(380deg)
+      scale(0.8);
+    opacity: 0;
+  }
 }
 
 @keyframes canopyLeafMid {
-    0% {
-        transform: translateY(0) translateX(0) rotate(0deg) scale(1);
-        opacity: 0;
-    }
-    10% {
-        opacity: var(--leaf-opacity, 0.5);
-    }
-    25% {
-        transform: translateY(25vh) translateX(var(--leaf-sway, 20px)) rotate(90deg) scale(0.95);
-    }
-    50% {
-        transform: translateY(50vh) translateX(calc(var(--leaf-sway, 20px) * -0.5)) rotate(180deg) scale(0.9);
-    }
-    75% {
-        transform: translateY(75vh) translateX(var(--leaf-sway, 20px)) rotate(270deg) scale(0.85);
-    }
-    90% {
-        opacity: var(--leaf-opacity, 0.5);
-    }
-    100% {
-        transform: translateY(110vh) translateX(calc(var(--leaf-sway, 20px) * -1)) rotate(360deg) scale(0.8);
-        opacity: 0;
-    }
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--leaf-opacity, 0.5);
+  }
+  25% {
+    transform: translateY(25vh) translateX(var(--leaf-sway, 20px)) rotate(90deg) scale(0.95);
+  }
+  50% {
+    transform: translateY(50vh) translateX(calc(var(--leaf-sway, 20px) * -0.5)) rotate(180deg)
+      scale(0.9);
+  }
+  75% {
+    transform: translateY(75vh) translateX(var(--leaf-sway, 20px)) rotate(270deg) scale(0.85);
+  }
+  90% {
+    opacity: var(--leaf-opacity, 0.5);
+  }
+  100% {
+    transform: translateY(110vh) translateX(calc(var(--leaf-sway, 20px) * -1)) rotate(360deg)
+      scale(0.8);
+    opacity: 0;
+  }
 }
 
 @keyframes canopyLeafFar {
-    0% {
-        transform: translateY(0) translateX(0) rotate(0deg) scale(1);
-        opacity: 0;
-    }
-    12% {
-        opacity: var(--leaf-opacity, 0.3);
-    }
-    25% {
-        transform: translateY(25vh) translateX(var(--leaf-sway, 8px)) rotate(70deg) scale(0.97);
-    }
-    50% {
-        transform: translateY(50vh) translateX(calc(var(--leaf-sway, 8px) * -0.4)) rotate(150deg) scale(0.95);
-    }
-    75% {
-        transform: translateY(75vh) translateX(var(--leaf-sway, 8px)) rotate(240deg) scale(0.92);
-    }
-    88% {
-        opacity: var(--leaf-opacity, 0.3);
-    }
-    100% {
-        transform: translateY(110vh) translateX(calc(var(--leaf-sway, 8px) * -1)) rotate(340deg) scale(0.9);
-        opacity: 0;
-    }
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--leaf-opacity, 0.3);
+  }
+  25% {
+    transform: translateY(25vh) translateX(var(--leaf-sway, 8px)) rotate(70deg) scale(0.97);
+  }
+  50% {
+    transform: translateY(50vh) translateX(calc(var(--leaf-sway, 8px) * -0.4)) rotate(150deg)
+      scale(0.95);
+  }
+  75% {
+    transform: translateY(75vh) translateX(var(--leaf-sway, 8px)) rotate(240deg) scale(0.92);
+  }
+  88% {
+    opacity: var(--leaf-opacity, 0.3);
+  }
+  100% {
+    transform: translateY(110vh) translateX(calc(var(--leaf-sway, 8px) * -1)) rotate(340deg)
+      scale(0.9);
+    opacity: 0;
+  }
 }
 
 /* =========================================
@@ -302,81 +312,87 @@
    ========================================= */
 
 @keyframes canopyRiseNear {
-    0% {
-        transform: translateY(0) translateX(0) rotate(0deg) scale(1);
-        opacity: 0;
-    }
-    8% {
-        opacity: var(--leaf-opacity, 0.7);
-    }
-    25% {
-        transform: translateY(-25vh) translateX(var(--leaf-sway, 25px)) rotate(-80deg) scale(0.95);
-    }
-    50% {
-        transform: translateY(-50vh) translateX(calc(var(--leaf-sway, 25px) * -0.6)) rotate(-160deg) scale(0.9);
-    }
-    75% {
-        transform: translateY(-75vh) translateX(var(--leaf-sway, 25px)) rotate(-240deg) scale(0.85);
-    }
-    92% {
-        opacity: var(--leaf-opacity, 0.7);
-    }
-    100% {
-        transform: translateY(-115vh) translateX(calc(var(--leaf-sway, 25px) * -1)) rotate(-320deg) scale(0.8);
-        opacity: 0;
-    }
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  8% {
+    opacity: var(--leaf-opacity, 0.7);
+  }
+  25% {
+    transform: translateY(-25vh) translateX(var(--leaf-sway, 25px)) rotate(-80deg) scale(0.95);
+  }
+  50% {
+    transform: translateY(-50vh) translateX(calc(var(--leaf-sway, 25px) * -0.6)) rotate(-160deg)
+      scale(0.9);
+  }
+  75% {
+    transform: translateY(-75vh) translateX(var(--leaf-sway, 25px)) rotate(-240deg) scale(0.85);
+  }
+  92% {
+    opacity: var(--leaf-opacity, 0.7);
+  }
+  100% {
+    transform: translateY(-115vh) translateX(calc(var(--leaf-sway, 25px) * -1)) rotate(-320deg)
+      scale(0.8);
+    opacity: 0;
+  }
 }
 
 @keyframes canopyRiseMid {
-    0% {
-        transform: translateY(0) translateX(0) rotate(0deg) scale(1);
-        opacity: 0;
-    }
-    10% {
-        opacity: var(--leaf-opacity, 0.5);
-    }
-    25% {
-        transform: translateY(-25vh) translateX(var(--leaf-sway, 15px)) rotate(-70deg) scale(0.95);
-    }
-    50% {
-        transform: translateY(-50vh) translateX(calc(var(--leaf-sway, 15px) * -0.5)) rotate(-140deg) scale(0.9);
-    }
-    75% {
-        transform: translateY(-75vh) translateX(var(--leaf-sway, 15px)) rotate(-210deg) scale(0.85);
-    }
-    90% {
-        opacity: var(--leaf-opacity, 0.5);
-    }
-    100% {
-        transform: translateY(-115vh) translateX(calc(var(--leaf-sway, 15px) * -1)) rotate(-280deg) scale(0.8);
-        opacity: 0;
-    }
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--leaf-opacity, 0.5);
+  }
+  25% {
+    transform: translateY(-25vh) translateX(var(--leaf-sway, 15px)) rotate(-70deg) scale(0.95);
+  }
+  50% {
+    transform: translateY(-50vh) translateX(calc(var(--leaf-sway, 15px) * -0.5)) rotate(-140deg)
+      scale(0.9);
+  }
+  75% {
+    transform: translateY(-75vh) translateX(var(--leaf-sway, 15px)) rotate(-210deg) scale(0.85);
+  }
+  90% {
+    opacity: var(--leaf-opacity, 0.5);
+  }
+  100% {
+    transform: translateY(-115vh) translateX(calc(var(--leaf-sway, 15px) * -1)) rotate(-280deg)
+      scale(0.8);
+    opacity: 0;
+  }
 }
 
 @keyframes canopyRiseFar {
-    0% {
-        transform: translateY(0) translateX(0) rotate(0deg) scale(1);
-        opacity: 0;
-    }
-    12% {
-        opacity: var(--leaf-opacity, 0.3);
-    }
-    25% {
-        transform: translateY(-25vh) translateX(var(--leaf-sway, 6px)) rotate(-50deg) scale(0.97);
-    }
-    50% {
-        transform: translateY(-50vh) translateX(calc(var(--leaf-sway, 6px) * -0.4)) rotate(-100deg) scale(0.95);
-    }
-    75% {
-        transform: translateY(-75vh) translateX(var(--leaf-sway, 6px)) rotate(-160deg) scale(0.92);
-    }
-    88% {
-        opacity: var(--leaf-opacity, 0.3);
-    }
-    100% {
-        transform: translateY(-115vh) translateX(calc(var(--leaf-sway, 6px) * -1)) rotate(-220deg) scale(0.9);
-        opacity: 0;
-    }
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--leaf-opacity, 0.3);
+  }
+  25% {
+    transform: translateY(-25vh) translateX(var(--leaf-sway, 6px)) rotate(-50deg) scale(0.97);
+  }
+  50% {
+    transform: translateY(-50vh) translateX(calc(var(--leaf-sway, 6px) * -0.4)) rotate(-100deg)
+      scale(0.95);
+  }
+  75% {
+    transform: translateY(-75vh) translateX(var(--leaf-sway, 6px)) rotate(-160deg) scale(0.92);
+  }
+  88% {
+    opacity: var(--leaf-opacity, 0.3);
+  }
+  100% {
+    transform: translateY(-115vh) translateX(calc(var(--leaf-sway, 6px) * -1)) rotate(-220deg)
+      scale(0.9);
+    opacity: 0;
+  }
 }
 
 /* =========================================
@@ -384,81 +400,87 @@
    ========================================= */
 
 @keyframes canopyDriftNear {
-    0% {
-        transform: translateX(0) translateY(0) rotate(0deg) scale(1);
-        opacity: 0;
-    }
-    8% {
-        opacity: var(--leaf-opacity, 0.7);
-    }
-    25% {
-        transform: translateX(25vw) translateY(var(--leaf-sway, 20px)) rotate(30deg) scale(0.95);
-    }
-    50% {
-        transform: translateX(50vw) translateY(calc(var(--leaf-sway, 20px) * -0.5)) rotate(60deg) scale(0.9);
-    }
-    75% {
-        transform: translateX(75vw) translateY(var(--leaf-sway, 20px)) rotate(90deg) scale(0.85);
-    }
-    92% {
-        opacity: var(--leaf-opacity, 0.7);
-    }
-    100% {
-        transform: translateX(110vw) translateY(calc(var(--leaf-sway, 20px) * -1)) rotate(120deg) scale(0.8);
-        opacity: 0;
-    }
+  0% {
+    transform: translateX(0) translateY(0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  8% {
+    opacity: var(--leaf-opacity, 0.7);
+  }
+  25% {
+    transform: translateX(25vw) translateY(var(--leaf-sway, 20px)) rotate(30deg) scale(0.95);
+  }
+  50% {
+    transform: translateX(50vw) translateY(calc(var(--leaf-sway, 20px) * -0.5)) rotate(60deg)
+      scale(0.9);
+  }
+  75% {
+    transform: translateX(75vw) translateY(var(--leaf-sway, 20px)) rotate(90deg) scale(0.85);
+  }
+  92% {
+    opacity: var(--leaf-opacity, 0.7);
+  }
+  100% {
+    transform: translateX(110vw) translateY(calc(var(--leaf-sway, 20px) * -1)) rotate(120deg)
+      scale(0.8);
+    opacity: 0;
+  }
 }
 
 @keyframes canopyDriftMid {
-    0% {
-        transform: translateX(0) translateY(0) rotate(0deg) scale(1);
-        opacity: 0;
-    }
-    10% {
-        opacity: var(--leaf-opacity, 0.5);
-    }
-    25% {
-        transform: translateX(25vw) translateY(var(--leaf-sway, 12px)) rotate(20deg) scale(0.95);
-    }
-    50% {
-        transform: translateX(50vw) translateY(calc(var(--leaf-sway, 12px) * -0.4)) rotate(40deg) scale(0.9);
-    }
-    75% {
-        transform: translateX(75vw) translateY(var(--leaf-sway, 12px)) rotate(60deg) scale(0.85);
-    }
-    90% {
-        opacity: var(--leaf-opacity, 0.5);
-    }
-    100% {
-        transform: translateX(110vw) translateY(calc(var(--leaf-sway, 12px) * -1)) rotate(80deg) scale(0.8);
-        opacity: 0;
-    }
+  0% {
+    transform: translateX(0) translateY(0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--leaf-opacity, 0.5);
+  }
+  25% {
+    transform: translateX(25vw) translateY(var(--leaf-sway, 12px)) rotate(20deg) scale(0.95);
+  }
+  50% {
+    transform: translateX(50vw) translateY(calc(var(--leaf-sway, 12px) * -0.4)) rotate(40deg)
+      scale(0.9);
+  }
+  75% {
+    transform: translateX(75vw) translateY(var(--leaf-sway, 12px)) rotate(60deg) scale(0.85);
+  }
+  90% {
+    opacity: var(--leaf-opacity, 0.5);
+  }
+  100% {
+    transform: translateX(110vw) translateY(calc(var(--leaf-sway, 12px) * -1)) rotate(80deg)
+      scale(0.8);
+    opacity: 0;
+  }
 }
 
 @keyframes canopyDriftFar {
-    0% {
-        transform: translateX(0) translateY(0) rotate(0deg) scale(1);
-        opacity: 0;
-    }
-    12% {
-        opacity: var(--leaf-opacity, 0.3);
-    }
-    25% {
-        transform: translateX(25vw) translateY(var(--leaf-sway, 6px)) rotate(10deg) scale(0.97);
-    }
-    50% {
-        transform: translateX(50vw) translateY(calc(var(--leaf-sway, 6px) * -0.3)) rotate(25deg) scale(0.95);
-    }
-    75% {
-        transform: translateX(75vw) translateY(var(--leaf-sway, 6px)) rotate(40deg) scale(0.92);
-    }
-    88% {
-        opacity: var(--leaf-opacity, 0.3);
-    }
-    100% {
-        transform: translateX(110vw) translateY(calc(var(--leaf-sway, 6px) * -1)) rotate(55deg) scale(0.9);
-        opacity: 0;
-    }
+  0% {
+    transform: translateX(0) translateY(0) rotate(0deg) scale(1);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--leaf-opacity, 0.3);
+  }
+  25% {
+    transform: translateX(25vw) translateY(var(--leaf-sway, 6px)) rotate(10deg) scale(0.97);
+  }
+  50% {
+    transform: translateX(50vw) translateY(calc(var(--leaf-sway, 6px) * -0.3)) rotate(25deg)
+      scale(0.95);
+  }
+  75% {
+    transform: translateX(75vw) translateY(var(--leaf-sway, 6px)) rotate(40deg) scale(0.92);
+  }
+  88% {
+    opacity: var(--leaf-opacity, 0.3);
+  }
+  100% {
+    transform: translateX(110vw) translateY(calc(var(--leaf-sway, 6px) * -1)) rotate(55deg)
+      scale(0.9);
+    opacity: 0;
+  }
 }
 
 /* =========================================
@@ -466,63 +488,63 @@
    ========================================= */
 
 @keyframes canopyRainNear {
-    0% {
-        transform: translateY(0) translateX(0) scale(1);
-        opacity: 0;
-    }
-    5% {
-        opacity: var(--leaf-opacity, 0.6);
-    }
-    50% {
-        transform: translateY(55vh) translateX(var(--leaf-sway, 4px)) scale(1);
-    }
-    95% {
-        opacity: var(--leaf-opacity, 0.6);
-    }
-    100% {
-        transform: translateY(115vh) translateX(calc(var(--leaf-sway, 4px) * -0.5)) scale(1);
-        opacity: 0;
-    }
+  0% {
+    transform: translateY(0) translateX(0) scale(1);
+    opacity: 0;
+  }
+  5% {
+    opacity: var(--leaf-opacity, 0.6);
+  }
+  50% {
+    transform: translateY(55vh) translateX(var(--leaf-sway, 4px)) scale(1);
+  }
+  95% {
+    opacity: var(--leaf-opacity, 0.6);
+  }
+  100% {
+    transform: translateY(115vh) translateX(calc(var(--leaf-sway, 4px) * -0.5)) scale(1);
+    opacity: 0;
+  }
 }
 
 @keyframes canopyRainMid {
-    0% {
-        transform: translateY(0) translateX(0) scale(1);
-        opacity: 0;
-    }
-    6% {
-        opacity: var(--leaf-opacity, 0.4);
-    }
-    50% {
-        transform: translateY(55vh) translateX(var(--leaf-sway, 3px)) scale(1);
-    }
-    94% {
-        opacity: var(--leaf-opacity, 0.4);
-    }
-    100% {
-        transform: translateY(115vh) translateX(calc(var(--leaf-sway, 3px) * -0.5)) scale(1);
-        opacity: 0;
-    }
+  0% {
+    transform: translateY(0) translateX(0) scale(1);
+    opacity: 0;
+  }
+  6% {
+    opacity: var(--leaf-opacity, 0.4);
+  }
+  50% {
+    transform: translateY(55vh) translateX(var(--leaf-sway, 3px)) scale(1);
+  }
+  94% {
+    opacity: var(--leaf-opacity, 0.4);
+  }
+  100% {
+    transform: translateY(115vh) translateX(calc(var(--leaf-sway, 3px) * -0.5)) scale(1);
+    opacity: 0;
+  }
 }
 
 @keyframes canopyRainFar {
-    0% {
-        transform: translateY(0) translateX(0) scale(1);
-        opacity: 0;
-    }
-    8% {
-        opacity: var(--leaf-opacity, 0.25);
-    }
-    50% {
-        transform: translateY(55vh) translateX(var(--leaf-sway, 2px)) scale(1);
-    }
-    92% {
-        opacity: var(--leaf-opacity, 0.25);
-    }
-    100% {
-        transform: translateY(115vh) translateX(calc(var(--leaf-sway, 2px) * -0.5)) scale(1);
-        opacity: 0;
-    }
+  0% {
+    transform: translateY(0) translateX(0) scale(1);
+    opacity: 0;
+  }
+  8% {
+    opacity: var(--leaf-opacity, 0.25);
+  }
+  50% {
+    transform: translateY(55vh) translateX(var(--leaf-sway, 2px)) scale(1);
+  }
+  92% {
+    opacity: var(--leaf-opacity, 0.25);
+  }
+  100% {
+    transform: translateY(115vh) translateX(calc(var(--leaf-sway, 2px) * -0.5)) scale(1);
+    opacity: 0;
+  }
 }
 
 /* =========================================
@@ -530,60 +552,60 @@
    ========================================= */
 
 @keyframes canopyTwinkleNear {
-    0% {
-        opacity: 0;
-    }
-    15% {
-        opacity: var(--leaf-opacity, 0.8);
-    }
-    40% {
-        opacity: calc(var(--leaf-opacity, 0.8) * 0.3);
-    }
-    65% {
-        opacity: var(--leaf-opacity, 0.8);
-    }
-    85% {
-        opacity: calc(var(--leaf-opacity, 0.8) * 0.5);
-    }
-    100% {
-        opacity: 0;
-    }
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: var(--leaf-opacity, 0.8);
+  }
+  40% {
+    opacity: calc(var(--leaf-opacity, 0.8) * 0.3);
+  }
+  65% {
+    opacity: var(--leaf-opacity, 0.8);
+  }
+  85% {
+    opacity: calc(var(--leaf-opacity, 0.8) * 0.5);
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 @keyframes canopyTwinkleMid {
-    0% {
-        opacity: 0;
-    }
-    20% {
-        opacity: var(--leaf-opacity, 0.5);
-    }
-    45% {
-        opacity: calc(var(--leaf-opacity, 0.5) * 0.2);
-    }
-    70% {
-        opacity: var(--leaf-opacity, 0.5);
-    }
-    100% {
-        opacity: 0;
-    }
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: var(--leaf-opacity, 0.5);
+  }
+  45% {
+    opacity: calc(var(--leaf-opacity, 0.5) * 0.2);
+  }
+  70% {
+    opacity: var(--leaf-opacity, 0.5);
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 @keyframes canopyTwinkleFar {
-    0% {
-        opacity: 0;
-    }
-    25% {
-        opacity: var(--leaf-opacity, 0.3);
-    }
-    50% {
-        opacity: calc(var(--leaf-opacity, 0.3) * 0.15);
-    }
-    75% {
-        opacity: var(--leaf-opacity, 0.3);
-    }
-    100% {
-        opacity: 0;
-    }
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: var(--leaf-opacity, 0.3);
+  }
+  50% {
+    opacity: calc(var(--leaf-opacity, 0.3) * 0.15);
+  }
+  75% {
+    opacity: var(--leaf-opacity, 0.3);
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 /* =========================================
@@ -591,132 +613,141 @@
    ========================================= */
 
 .canopy-controls {
-    position: fixed;
-    bottom: var(--space-6);
-    right: var(--space-6);
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-3);
+  position: fixed;
+  bottom: var(--space-6);
+  right: var(--space-6);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 /* ── Mode toggle button ── */
 
 .canopy-mode-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--foliage-control-ink) 40%, transparent);
-    backdrop-filter: blur(8px);
-    border: 1px solid color-mix(in srgb, var(--foliage-control-paper) 20%, transparent);
-    color: color-mix(in srgb, var(--foliage-control-text-light) 85%, transparent);
-    cursor: pointer;
-    transition: background 0.3s, transform 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--foliage-control-ink) 40%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--foliage-control-paper) 20%, transparent);
+  color: color-mix(in srgb, var(--foliage-control-text-light) 85%, transparent);
+  cursor: pointer;
+  transition:
+    background 0.3s,
+    transform 0.2s;
 }
 
 .canopy-mode-toggle:hover {
-    background: color-mix(in srgb, var(--foliage-control-ink) 60%, transparent);
-    transform: scale(1.1);
+  background: color-mix(in srgb, var(--foliage-control-ink) 60%, transparent);
+  transform: scale(1.1);
 }
 
-[data-mode='light'] .canopy-mode-toggle {
-    background: color-mix(in srgb, var(--foliage-control-paper) 50%, transparent);
-    border-color: color-mix(in srgb, var(--foliage-control-ink) 15%, transparent);
-    color: color-mix(in srgb, var(--foliage-control-text-dark) 85%, transparent);
+[data-mode="light"] .canopy-mode-toggle {
+  background: color-mix(in srgb, var(--foliage-control-paper) 50%, transparent);
+  border-color: color-mix(in srgb, var(--foliage-control-ink) 15%, transparent);
+  color: color-mix(in srgb, var(--foliage-control-text-dark) 85%, transparent);
 }
 
-[data-mode='light'] .canopy-mode-toggle:hover {
-    background: color-mix(in srgb, var(--foliage-control-paper) 70%, transparent);
+[data-mode="light"] .canopy-mode-toggle:hover {
+  background: color-mix(in srgb, var(--foliage-control-paper) 70%, transparent);
 }
 
 /* ── Theme selector ── */
 
 .canopy-theme-selector {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .canopy-theme-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--foliage-control-ink) 40%, transparent);
-    backdrop-filter: blur(8px);
-    border: 1px solid color-mix(in srgb, var(--foliage-control-paper) 20%, transparent);
-    color: color-mix(in srgb, var(--foliage-control-text-light) 85%, transparent);
-    cursor: pointer;
-    transition: background 0.3s, transform 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--foliage-control-ink) 40%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--foliage-control-paper) 20%, transparent);
+  color: color-mix(in srgb, var(--foliage-control-text-light) 85%, transparent);
+  cursor: pointer;
+  transition:
+    background 0.3s,
+    transform 0.2s;
 }
 
 .canopy-theme-trigger:hover {
-    background: color-mix(in srgb, var(--foliage-control-ink) 60%, transparent);
-    transform: scale(1.1);
+  background: color-mix(in srgb, var(--foliage-control-ink) 60%, transparent);
+  transform: scale(1.1);
 }
 
-[data-mode='light'] .canopy-theme-trigger {
-    background: color-mix(in srgb, var(--foliage-control-paper) 50%, transparent);
-    border-color: color-mix(in srgb, var(--foliage-control-ink) 15%, transparent);
-    color: color-mix(in srgb, var(--foliage-control-text-dark) 85%, transparent);
+[data-mode="light"] .canopy-theme-trigger {
+  background: color-mix(in srgb, var(--foliage-control-paper) 50%, transparent);
+  border-color: color-mix(in srgb, var(--foliage-control-ink) 15%, transparent);
+  color: color-mix(in srgb, var(--foliage-control-text-dark) 85%, transparent);
 }
 
-[data-mode='light'] .canopy-theme-trigger:hover {
-    background: color-mix(in srgb, var(--foliage-control-paper) 70%, transparent);
+[data-mode="light"] .canopy-theme-trigger:hover {
+  background: color-mix(in srgb, var(--foliage-control-paper) 70%, transparent);
 }
 
 /* ── Theme swatch strip ── */
 
 .canopy-theme-strip {
-    display: flex;
-    flex-direction: column-reverse;
-    gap: var(--space-2);
-    position: absolute;
-    bottom: calc(100% + var(--space-2));
-    right: 0;
-    padding: var(--space-2);
-    border-radius: 22px;
-    background: color-mix(in srgb, var(--foliage-control-ink) 50%, transparent);
-    backdrop-filter: blur(12px);
-    border: 1px solid color-mix(in srgb, var(--foliage-control-paper) 12%, transparent);
-    opacity: 0;
-    transform: translateY(10px) scale(0.95);
-    pointer-events: none;
-    transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-2);
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  right: 0;
+  padding: var(--space-2);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--foliage-control-ink) 50%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--foliage-control-paper) 12%, transparent);
+  opacity: 0;
+  transform: translateY(10px) scale(0.95);
+  pointer-events: none;
+  transition:
+    opacity 0.25s ease-out,
+    transform 0.25s ease-out;
 }
 
 .canopy-theme-strip--open {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
 }
 
 .canopy-theme-swatch {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    border: 2px solid color-mix(in srgb, var(--foliage-control-paper) 25%, transparent);
-    cursor: pointer;
-    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
-    flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--foliage-control-paper) 25%, transparent);
+  cursor: pointer;
+  transition:
+    transform 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
+  flex-shrink: 0;
 }
 
 .canopy-theme-swatch:hover {
-    transform: scale(1.15);
-    border-color: color-mix(in srgb, var(--foliage-control-paper) 60%, transparent);
+  transform: scale(1.15);
+  border-color: color-mix(in srgb, var(--foliage-control-paper) 60%, transparent);
 }
 
 .canopy-theme-swatch--active {
-    border-color: color-mix(in srgb, var(--foliage-control-paper) 90%, transparent);
-    box-shadow: 0 0 10px color-mix(in srgb, var(--foliage-control-paper) 40%, transparent);
-    transform: scale(1.1);
+  border-color: color-mix(in srgb, var(--foliage-control-paper) 90%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--foliage-control-paper) 40%, transparent);
+  transform: scale(1.1);
 }
 
 /* =========================================
@@ -724,20 +755,20 @@
    ========================================= */
 
 @media (max-width: 768px) {
-    .canopy-mote {
-        transform: scale(0.8);
-    }
+  .canopy-mote {
+    transform: scale(0.8);
+  }
 
-    .canopy-controls {
-        bottom: var(--space-4);
-        right: var(--space-4);
-        gap: var(--space-2);
-    }
+  .canopy-controls {
+    bottom: var(--space-4);
+    right: var(--space-4);
+    gap: var(--space-2);
+  }
 
-    .canopy-theme-swatch {
-        width: 24px;
-        height: 24px;
-    }
+  .canopy-theme-swatch {
+    width: 24px;
+    height: 24px;
+  }
 }
 
 /* =========================================
@@ -745,21 +776,21 @@
    ========================================= */
 
 @media (prefers-reduced-motion: reduce) {
-    .canopy-glass {
-        animation: none;
-        opacity: 1;
-    }
+  .canopy-glass {
+    animation: none;
+    opacity: 1;
+  }
 
-    .canopy-mote {
-        animation: none !important;
-        opacity: 0.3;
-    }
+  .canopy-mote {
+    animation: none !important;
+    opacity: 0.3;
+  }
 
-    .canopy-root {
-        transition: none;
-    }
+  .canopy-root {
+    transition: none;
+  }
 
-    .canopy-grain {
-        transition: none;
-    }
+  .canopy-grain {
+    transition: none;
+  }
 }

@@ -20,22 +20,17 @@ describe("landing ticker", () => {
   it("exposes one milestone sequence and hides the visual loop copy", () => {
     const { container } = render(<Ticker items={items} />);
 
-    expect(
-      screen.getByRole("list", { name: "Ohio Wesleyan milestones" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Ohio Wesleyan milestones" })).toBeInTheDocument();
     expect(screen.getAllByText("OWU Chartered")).toHaveLength(2);
-    expect(
-      container.querySelectorAll('.cinema-ticker-sequence[aria-hidden="true"]'),
-    ).toHaveLength(1);
+    expect(container.querySelectorAll('.cinema-ticker-sequence[aria-hidden="true"]')).toHaveLength(
+      1
+    );
   });
 
   it("hides the duplicated bottom rail from assistive technology", () => {
     const { container } = render(<Ticker items={items} reverse />);
 
-    expect(container.querySelector(".cinema-ticker-bottom")).toHaveAttribute(
-      "aria-hidden",
-      "true",
-    );
+    expect(container.querySelector(".cinema-ticker-bottom")).toHaveAttribute("aria-hidden", "true");
   });
 
   it("does not start WAAPI movement when reduced motion is requested", async () => {
@@ -56,10 +51,9 @@ describe("landing ticker", () => {
     const { container } = render(<AnimatedTicker />);
 
     await waitFor(() => {
-      expect(
-        container.querySelector<HTMLElement>(".cinema-ticker-track")?.style
-          .transform,
-      ).toBe("none");
+      expect(container.querySelector<HTMLElement>(".cinema-ticker-track")?.style.transform).toBe(
+        "none"
+      );
     });
     expect(animate).not.toHaveBeenCalled();
   });

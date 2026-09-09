@@ -26,9 +26,7 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) =>
         <span className="text-xs uppercase tracking-label-md text-[var(--color-accent-text)]">
           {result.category}
         </span>
-        <span className="text-xs text-[var(--color-text-secondary)]">
-          {result.editionDate}
-        </span>
+        <span className="text-xs text-[var(--color-text-secondary)]">{result.editionDate}</span>
       </div>
 
       <Link

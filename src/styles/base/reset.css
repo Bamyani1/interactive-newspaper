@@ -5,30 +5,31 @@
 
 /* Base HTML setup */
 html {
-    font-size: 16px;
-    scroll-behavior: auto;
+  font-size: 16px;
+  scroll-behavior: auto;
 }
 
 /* Body defaults */
 body {
-    background-color: var(--color-bg-primary);
-    color: var(--color-text-primary);
-    font-family: var(--font-body);
-    line-height: var(--leading-body);
-    transition: background-color var(--duration-slow) var(--ease-default),
-        color var(--duration-slow) var(--ease-default);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  line-height: var(--leading-body);
+  transition:
+    background-color var(--duration-slow) var(--ease-default),
+    color var(--duration-slow) var(--ease-default);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    html {
-        scroll-behavior: auto;
-    }
+  html {
+    scroll-behavior: auto;
+  }
 
-    body {
-        transition: none;
-    }
+  body {
+    transition: none;
+  }
 }
 
 /* =========================================
@@ -36,12 +37,12 @@ body {
    ========================================= */
 
 .scrollbar-hide::-webkit-scrollbar {
-    display: none;
+  display: none;
 }
 
 .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* =========================================
@@ -50,33 +51,31 @@ body {
    ========================================= */
 
 .prose {
-    font-family: var(--font-body);
-    font-size: var(--text-base);
-    line-height: var(--leading-body);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
 }
 
 .prose p {
-    margin-bottom: var(--space-4);
+  margin-bottom: var(--space-4);
 }
 
 .prose li {
-    margin-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
 }
-
-
 
 /* =========================================
    IMAGE & MEDIA UTILITIES
    ========================================= */
 
 .image-caption {
-    font-style: italic;
-    opacity: 0.8;
+  font-style: italic;
+  opacity: 0.8;
 }
 
 /* Vintage photo effect (sepia removed) */
 .sepia-vintage {
-    transition: filter var(--duration-slow) ease;
+  transition: filter var(--duration-slow) ease;
 }
 
 /* =========================================
@@ -85,9 +84,9 @@ body {
 
 /* Section divider styling */
 .section-divider {
-    padding-top: var(--space-6);
-    margin-top: var(--space-4);
-    border-top: 2px solid color-mix(in srgb, var(--color-text-primary) 60%, transparent);
+  padding-top: var(--space-6);
+  margin-top: var(--space-4);
+  border-top: 2px solid color-mix(in srgb, var(--color-text-primary) 60%, transparent);
 }
 
 /* =========================================
@@ -97,32 +96,32 @@ body {
    ========================================= */
 
 :focus-visible {
-    outline: 2px solid var(--color-focus-ring);
-    outline-offset: 2px;
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 .focus-ring:focus-visible {
-    outline: 2px solid var(--color-focus-ring);
-    outline-offset: 2px;
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 /* Tailwind's bare `rounded` utility is a fixed 4px value. Keep legacy
    consumers inside the canonical shape scale until they migrate to rounded-sm. */
 .rounded {
-    border-radius: var(--radius-sm);
+  border-radius: var(--radius-sm);
 }
 
 /* Skip link helper for keyboard users — used at the top of the page tree */
 .skip-link {
-    position: absolute;
-    left: -9999px;
-    z-index: var(--z-max);
+  position: absolute;
+  left: -9999px;
+  z-index: var(--z-max);
 }
 .skip-link:focus-visible {
-    left: var(--space-4);
-    top: var(--space-4);
-    padding: var(--space-2) var(--space-4);
-    background: var(--color-bg-paper);
-    color: var(--color-text-body);
-    border: 2px solid var(--color-focus-ring);
+  left: var(--space-4);
+  top: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-bg-paper);
+  color: var(--color-text-body);
+  border: 2px solid var(--color-focus-ring);
 }

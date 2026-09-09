@@ -5,372 +5,566 @@
 
 import { describe, it, expect } from "vitest";
 import {
-    askReducer,
-    INITIAL_STATE,
-    type AskState,
-    type Turn,
+  askReducer,
+  INITIAL_STATE,
+  type AskState,
+  type Turn,
 } from "@/features/ask-archive/hooks/askReducer";
 
 const META = {
-    retrievalTimeMs: 100,
-    generationTimeMs: 200,
-    totalTimeMs: 300,
-    articlesSearched: 3,
-    method: "hybrid" as const,
+  retrievalTimeMs: 100,
+  generationTimeMs: 200,
+  totalTimeMs: 300,
+  articlesSearched: 3,
+  method: "hybrid" as const,
 };
 
 function makeTurn(overrides: Partial<Turn> = {}): Turn {
-    return {
-        id: "t-1",
-        question: "Q",
-        answer: "A",
-        status: "done",
-        sourceArticles: [],
-        citations: [],
-        meta: META,
-        confidence: "high",
-        requestId: "req-1",
-        mode: "text",
-        createdAt: 0,
-        ...overrides,
-    };
+  return {
+    id: "t-1",
+    question: "Q",
+    answer: "A",
+    status: "done",
+    sourceArticles: [],
+    citations: [],
+    meta: META,
+    confidence: "high",
+    requestId: "req-1",
+    mode: "text",
+    createdAt: 0,
+    ...overrides,
+  };
 }
 
 describe("askReducer", () => {
-    it("HYDRATING sets isHydrating", () => {
-        const next = askReducer(INITIAL_STATE, { type: "HYDRATING" });
-        expect(next.isHydrating).toBe(true);
+  it("HYDRATING sets isHydrating", () => {
+    const next = askReducer(INITIAL_STATE, { type: "HYDRATING" });
+    expect(next.isHydrating).toBe(true);
+  });
+
+  it("HYDRATE replaces turns and resets the hydrating flag", () => {
+    const turns = [makeTurn()];
+    const next = askReducer(
+      { ...INITIAL_STATE, isHydrating: true },
+      { type: "HYDRATE", turns, expired: false }
+    );
+    expect(next.isHydrating).toBe(false);
+    expect(next.turns).toHaveLength(1);
+    expect(next.expiredBanner).toBe(false);
+  });
+
+  it("HYDRATE with expired:true raises the banner", () => {
+    const next = askReducer(INITIAL_STATE, {
+      type: "HYDRATE",
+      turns: [],
+      expired: true,
+    });
+    expect(next.expiredBanner).toBe(true);
+  });
+
+  it("finishes hydration without overwriting newer local interaction", () => {
+    const currentTurn = makeTurn({ id: "current", question: "New question" });
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [currentTurn],
+      threads: [
+        {
+          id: "current-session",
+          firstQuestion: "New question",
+          turnCount: 1,
+          lastUpdatedAt: 20,
+        },
+      ],
+      activeThreadId: "current-session",
+    };
+    const next = askReducer(state, {
+      type: "HYDRATE",
+      turns: [makeTurn({ id: "stale", question: "Old question" })],
+      expired: true,
+      threads: [],
+      activeThreadId: "stale-session",
+      preserveCurrentState: true,
     });
 
-    it("HYDRATE replaces turns and resets the hydrating flag", () => {
-        const turns = [makeTurn()];
-        const next = askReducer(
-            { ...INITIAL_STATE, isHydrating: true },
-            { type: "HYDRATE", turns, expired: false },
-        );
-        expect(next.isHydrating).toBe(false);
-        expect(next.turns).toHaveLength(1);
-        expect(next.expiredBanner).toBe(false);
-    });
+    expect(next).toEqual({ ...state, isHydrating: false });
+  });
 
-    it("HYDRATE with expired:true raises the banner", () => {
-        const next = askReducer(INITIAL_STATE, {
-            type: "HYDRATE",
-            turns: [],
-            expired: true,
-        });
-        expect(next.expiredBanner).toBe(true);
+  it("a preserved hydrate still adopts the thread pointer state lacks", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "typed-during-hydrate" })],
+    };
+    const next = askReducer(state, {
+      type: "HYDRATE",
+      turns: [makeTurn({ id: "stale-restore" })],
+      expired: false,
+      threads: [
+        { id: "s-1", firstQuestion: "older", turnCount: 1, lastUpdatedAt: 10 },
+      ],
+      activeThreadId: "s-1",
+      preserveCurrentState: true,
     });
+    // The reader's turns win, but the pointer and summaries land: the
+    // persist effect needs an activeThreadId to file anything at all.
+    expect(next.turns[0].id).toBe("typed-during-hydrate");
+    expect(next.activeThreadId).toBe("s-1");
+    expect(next.threads).toHaveLength(1);
+    expect(next.isHydrating).toBe(false);
+  });
 
-    it("finishes hydration without overwriting newer local interaction", () => {
-        const currentTurn = makeTurn({ id: "current", question: "New question" });
-        const state: AskState = {
-            ...INITIAL_STATE,
-            turns: [currentTurn],
-            threads: [
-                {
-                    id: "current-session",
-                    firstQuestion: "New question",
-                    turnCount: 1,
-                    lastUpdatedAt: 20,
-                },
-            ],
-            activeThreadId: "current-session",
-        };
-        const next = askReducer(state, {
-            type: "HYDRATE",
-            turns: [makeTurn({ id: "stale", question: "Old question" })],
-            expired: true,
-            threads: [],
-            activeThreadId: "stale-session",
-            preserveCurrentState: true,
-        });
-
-        expect(next).toEqual({ ...state, isHydrating: false });
+  it("a preserved hydrate never repoints a thread the reader already has", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn()],
+      activeThreadId: "mine",
+      threads: [{ id: "mine", firstQuestion: "Q", turnCount: 1, lastUpdatedAt: 99 }],
+    };
+    const next = askReducer(state, {
+      type: "HYDRATE",
+      turns: [],
+      expired: false,
+      threads: [{ id: "theirs", firstQuestion: "other", turnCount: 3, lastUpdatedAt: 1 }],
+      activeThreadId: "theirs",
+      preserveCurrentState: true,
     });
+    expect(next.activeThreadId).toBe("mine");
+    expect(next.threads[0].id).toBe("mine");
+  });
 
-    it("APPEND_USER adds a new streaming turn", () => {
-        const next = askReducer(INITIAL_STATE, {
-            type: "APPEND_USER",
-            id: "t-new",
-            question: "Hello?",
-            createdAt: 42,
-        });
-        expect(next.turns).toHaveLength(1);
-        expect(next.turns[0].id).toBe("t-new");
-        expect(next.turns[0].question).toBe("Hello?");
-        expect(next.turns[0].status).toBe("streaming");
-        expect(next.turns[0].createdAt).toBe(42);
+  it("NEW_CONVERSATION sets the fresh thread pointer in one dispatch", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn()],
+      activeThreadId: "previous",
+    };
+    const next = askReducer(state, {
+      type: "NEW_CONVERSATION",
+      activeThreadId: "fresh",
+      threads: [{ id: "previous", firstQuestion: "Q", turnCount: 1, lastUpdatedAt: 5 }],
     });
+    expect(next.activeThreadId).toBe("fresh");
+    expect(next.threads.map((t) => t.id)).toEqual(["previous"]);
+    expect(next.turns).toEqual([]);
+  });
 
-    it("APPEND_USER freezes any still-streaming previous turn at 'done'", () => {
-        const state: AskState = {
-            ...INITIAL_STATE,
-            turns: [
-                makeTurn({
-                    id: "t-prev",
-                    status: "streaming",
-                    answer: "partial",
-                }),
-            ],
-        };
-        const next = askReducer(state, {
-            type: "APPEND_USER",
-            id: "t-new",
-            question: "follow-up",
-        });
-        expect(next.turns).toHaveLength(2);
-        expect(next.turns[0].status).toBe("done");
-        expect(next.turns[0].answer).toBe("partial");
-        expect(next.turns[1].status).toBe("streaming");
+  it("APPEND_USER adds a new streaming turn", () => {
+    const next = askReducer(INITIAL_STATE, {
+      type: "APPEND_USER",
+      id: "t-new",
+      question: "Hello?",
+      createdAt: 42,
     });
+    expect(next.turns).toHaveLength(1);
+    expect(next.turns[0].id).toBe("t-new");
+    expect(next.turns[0].question).toBe("Hello?");
+    expect(next.turns[0].status).toBe("streaming");
+    expect(next.turns[0].createdAt).toBe(42);
+  });
 
-    it("APPEND_USER clears the expired banner", () => {
-        const state: AskState = { ...INITIAL_STATE, expiredBanner: true };
-        const next = askReducer(state, {
-            type: "APPEND_USER",
-            id: "t-1",
-            question: "q",
-        });
-        expect(next.expiredBanner).toBe(false);
+  it("APPEND_USER freezes any still-streaming previous turn at 'stopped'", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [
+        makeTurn({
+          id: "t-prev",
+          status: "streaming",
+          answer: "partial",
+        }),
+      ],
+    };
+    const next = askReducer(state, {
+      type: "APPEND_USER",
+      id: "t-new",
+      question: "follow-up",
     });
+    expect(next.turns).toHaveLength(2);
+    expect(next.turns[0].status).toBe("stopped");
+    expect(next.turns[0].answer).toBe("partial");
+    expect(next.turns[1].status).toBe("streaming");
+  });
 
-    it("TURN_META fills mode/requestId/sourceArticles/meta", () => {
-        const state: AskState = {
-            ...INITIAL_STATE,
-            turns: [
-                makeTurn({ id: "t-1", status: "streaming", answer: "" }),
-            ],
-        };
-        const next = askReducer(state, {
-            type: "TURN_META",
-            id: "t-1",
-            mode: "text",
-            requestId: "req-xyz",
-            sourceArticles: [],
-            meta: { retrievalTimeMs: 50 },
-        });
-        expect(next.turns[0].requestId).toBe("req-xyz");
-        expect(next.turns[0].meta?.retrievalTimeMs).toBe(50);
+  it("APPEND_USER clears the expired banner", () => {
+    const state: AskState = { ...INITIAL_STATE, expiredBanner: true };
+    const next = askReducer(state, {
+      type: "APPEND_USER",
+      id: "t-1",
+      question: "q",
     });
+    expect(next.expiredBanner).toBe(false);
+  });
 
-    it("TURN_STAGE updates the Thinking pill", () => {
-        const state: AskState = {
-            ...INITIAL_STATE,
-            turns: [makeTurn({ id: "t-1", status: "streaming" })],
-        };
-        const next = askReducer(state, {
-            type: "TURN_STAGE",
-            id: "t-1",
-            stage: "retrieve",
-        });
-        expect(next.turns[0].stage).toBe("retrieve");
+  it("TURN_META fills mode/requestId/sourceArticles/meta", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1", status: "streaming", answer: "" })],
+    };
+    const next = askReducer(state, {
+      type: "TURN_META",
+      id: "t-1",
+      mode: "text",
+      requestId: "req-xyz",
+      sourceArticles: [],
+      meta: { retrievalTimeMs: 50 },
     });
+    expect(next.turns[0].requestId).toBe("req-xyz");
+    expect(next.turns[0].meta?.retrievalTimeMs).toBe(50);
+  });
 
-    it("TURN_DELTA appends to answer and clears the stage pill", () => {
-        const state: AskState = {
-            ...INITIAL_STATE,
-            turns: [
-                makeTurn({
-                    id: "t-1",
-                    status: "streaming",
-                    answer: "Hello ",
-                    stage: "generate",
-                }),
-            ],
-        };
-        const next = askReducer(state, {
-            type: "TURN_DELTA",
-            id: "t-1",
-            text: "world.",
-        });
-        expect(next.turns[0].answer).toBe("Hello world.");
-        expect(next.turns[0].stage).toBeUndefined();
+  it("TURN_STAGE updates the Thinking pill", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1", status: "streaming" })],
+    };
+    const next = askReducer(state, {
+      type: "TURN_STAGE",
+      id: "t-1",
+      stage: "retrieve",
     });
+    expect(next.turns[0].stage).toBe("retrieve");
+  });
 
-    it("TURN_DONE freezes the turn with final fields", () => {
-        const state: AskState = {
-            ...INITIAL_STATE,
-            turns: [makeTurn({ id: "t-1", status: "streaming", answer: "" })],
-        };
-        const next = askReducer(state, {
-            type: "TURN_DONE",
-            id: "t-1",
-            answer: "Final answer.",
-            citations: [
-                {
-                    articleId: "1960-01-07-0",
-                    headline: "H",
-                    editionDate: "1960-01-07",
-                },
-            ],
-            confidence: "high",
-            meta: META,
-            followUpQuestions: ["Tell me more?"],
-        });
-        expect(next.turns[0].status).toBe("done");
-        expect(next.turns[0].answer).toBe("Final answer.");
-        expect(next.turns[0].confidence).toBe("high");
-        expect(next.turns[0].followUpQuestions).toEqual(["Tell me more?"]);
+  it("TURN_DELTA appends to answer and clears the stage pill", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [
+        makeTurn({
+          id: "t-1",
+          status: "streaming",
+          answer: "Hello ",
+          stage: "generate",
+        }),
+      ],
+    };
+    const next = askReducer(state, {
+      type: "TURN_DELTA",
+      id: "t-1",
+      text: "world.",
     });
+    expect(next.turns[0].answer).toBe("Hello world.");
+    expect(next.turns[0].stage).toBeUndefined();
+  });
 
-    it("TURN_ERROR replaces the assistant region with a typed error", () => {
-        const state: AskState = {
-            ...INITIAL_STATE,
-            turns: [makeTurn({ id: "t-1", status: "streaming" })],
-        };
-        const next = askReducer(state, {
-            type: "TURN_ERROR",
-            id: "t-1",
-            kind: "rate_limit",
-            message: "Too many requests",
-            retryAfterSec: 42,
-        });
-        expect(next.turns[0].status).toBe("error");
-        expect(next.turns[0].errorKind).toBe("rate_limit");
-        expect(next.turns[0].errorMessage).toBe("Too many requests");
-        expect(next.turns[0].retryAfterSec).toBe(42);
+  it("TURN_DONE freezes the turn with final fields", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1", status: "streaming", answer: "" })],
+    };
+    const next = askReducer(state, {
+      type: "TURN_DONE",
+      id: "t-1",
+      answer: "Final answer.",
+      citations: [
+        {
+          articleId: "1960-01-07-0",
+          headline: "H",
+          editionDate: "1960-01-07",
+        },
+      ],
+      confidence: "high",
+      meta: META,
+      followUpQuestions: ["Tell me more?"],
     });
+    expect(next.turns[0].status).toBe("done");
+    expect(next.turns[0].answer).toBe("Final answer.");
+    expect(next.turns[0].confidence).toBe("high");
+    expect(next.turns[0].followUpQuestions).toEqual(["Tell me more?"]);
+  });
 
-    it("CLEAR_CONVERSATION empties turns, bumps sessionGen, marks emptyReason='cleared'", () => {
-        const state: AskState = {
-            ...INITIAL_STATE,
-            turns: [makeTurn()],
-            expiredBanner: true,
-        };
-        const next = askReducer(state, { type: "CLEAR_CONVERSATION" });
-        expect(next.turns).toEqual([]);
-        expect(next.expiredBanner).toBe(false);
-        expect(next.sessionGen).toBe(INITIAL_STATE.sessionGen + 1);
-        expect(next.emptyReason).toBe("cleared");
+  it("TURN_ERROR replaces the assistant region with a typed error", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1", status: "streaming" })],
+    };
+    const next = askReducer(state, {
+      type: "TURN_ERROR",
+      id: "t-1",
+      kind: "rate_limit",
+      message: "Too many requests",
+      retryAfterSec: 42,
     });
+    expect(next.turns[0].status).toBe("error");
+    expect(next.turns[0].errorKind).toBe("rate_limit");
+    expect(next.turns[0].errorMessage).toBe("Too many requests");
+    expect(next.turns[0].retryAfterSec).toBe(42);
+  });
 
-    it("NEW_CONVERSATION empties turns, bumps sessionGen, marks emptyReason='new'", () => {
-        const state: AskState = {
-            ...INITIAL_STATE,
-            turns: [makeTurn()],
-            expiredBanner: true,
-            sessionGen: 3,
-        };
-        const next = askReducer(state, { type: "NEW_CONVERSATION" });
-        expect(next.turns).toEqual([]);
-        expect(next.expiredBanner).toBe(false);
-        // sessionGen keeps incrementing so the sidebar stays mounted —
-        // we do NOT reset to 0 (which would trigger the page-level
-        // editorial landing takeover).
-        expect(next.sessionGen).toBe(4);
-        expect(next.emptyReason).toBe("new");
-    });
+  it("CLEAR_ALL_THREADS empties turns, bumps sessionGen, marks emptyReason='cleared'", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn()],
+      expiredBanner: true,
+    };
+    const next = askReducer(state, { type: "CLEAR_ALL_THREADS" });
+    expect(next.turns).toEqual([]);
+    expect(next.expiredBanner).toBe(false);
+    expect(next.sessionGen).toBe(INITIAL_STATE.sessionGen + 1);
+    expect(next.emptyReason).toBe("cleared");
+  });
 
-    it("APPEND_USER clears a prior emptyReason so the Transcript renders turns, not the empty state", () => {
-        const state: AskState = {
-            ...INITIAL_STATE,
-            emptyReason: "new",
-            sessionGen: 2,
-        };
-        const next = askReducer(state, {
-            type: "APPEND_USER",
-            id: "t-1",
-            question: "hello?",
-            createdAt: 0,
-        });
-        expect(next.turns).toHaveLength(1);
-        expect(next.emptyReason).toBeNull();
-    });
+  it("CLEAR_ALL_THREADS also drops the sidebar archive and the active thread", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn()],
+      activeThreadId: "session-active",
+      threads: [
+        {
+          id: "session-old",
+          firstQuestion: "An older question?",
+          turnCount: 2,
+          lastUpdatedAt: 1,
+        },
+      ],
+    };
+    const next = askReducer(state, { type: "CLEAR_ALL_THREADS" });
+    expect(next.threads).toEqual([]);
+    expect(next.activeThreadId).toBeNull();
+  });
 
-    it("SET_THREADS replaces threads summary + activeThreadId", () => {
-        const next = askReducer(INITIAL_STATE, {
-            type: "SET_THREADS",
-            threads: [
-                {
-                    id: "t-a",
-                    firstQuestion: "old q",
-                    turnCount: 3,
-                    lastUpdatedAt: 1,
-                },
-            ],
-            activeThreadId: "t-a",
-        });
-        expect(next.threads).toHaveLength(1);
-        expect(next.threads[0].id).toBe("t-a");
-        expect(next.activeThreadId).toBe("t-a");
-    });
+  it("NEW_CONVERSATION empties turns, bumps sessionGen, marks emptyReason='new'", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn()],
+      expiredBanner: true,
+      sessionGen: 3,
+    };
+    const next = askReducer(state, { type: "NEW_CONVERSATION" });
+    expect(next.turns).toEqual([]);
+    expect(next.expiredBanner).toBe(false);
+    // sessionGen keeps incrementing so the sidebar stays mounted —
+    // we do NOT reset to 0 (which would trigger the page-level
+    // editorial landing takeover).
+    expect(next.sessionGen).toBe(4);
+    expect(next.emptyReason).toBe("new");
+  });
 
-    it("SWITCH_THREAD replaces turns + activeThreadId and bumps sessionGen", () => {
-        const archived = [makeTurn({ id: "arch-1", question: "old one" })];
-        const next = askReducer(
-            {
-                ...INITIAL_STATE,
-                turns: [makeTurn({ id: "cur-1" })],
-                sessionGen: 2,
-                emptyReason: null,
-            },
-            {
-                type: "SWITCH_THREAD",
-                activeThreadId: "arch-session",
-                turns: archived,
-            },
-        );
-        expect(next.turns).toEqual(archived);
-        expect(next.activeThreadId).toBe("arch-session");
-        expect(next.sessionGen).toBe(3); // bumped
-        expect(next.isHydrating).toBe(false);
-        expect(next.expiredBanner).toBe(false);
-        expect(next.emptyReason).toBeNull();
+  it("APPEND_USER clears a prior emptyReason so the Transcript renders turns, not the empty state", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      emptyReason: "new",
+      sessionGen: 2,
+    };
+    const next = askReducer(state, {
+      type: "APPEND_USER",
+      id: "t-1",
+      question: "hello?",
+      createdAt: 0,
     });
+    expect(next.turns).toHaveLength(1);
+    expect(next.emptyReason).toBeNull();
+  });
 
-    it("HYDRATE merges threads + activeThreadId when provided", () => {
-        const next = askReducer(INITIAL_STATE, {
-            type: "HYDRATE",
-            turns: [],
-            expired: false,
-            threads: [
-                {
-                    id: "t-arch",
-                    firstQuestion: "archived q",
-                    turnCount: 2,
-                    lastUpdatedAt: 10,
-                },
-            ],
-            activeThreadId: "t-arch",
-        });
-        expect(next.threads).toHaveLength(1);
-        expect(next.threads[0].id).toBe("t-arch");
-        expect(next.activeThreadId).toBe("t-arch");
+  it("SET_THREADS replaces threads summary + activeThreadId", () => {
+    const next = askReducer(INITIAL_STATE, {
+      type: "SET_THREADS",
+      threads: [
+        {
+          id: "t-a",
+          firstQuestion: "old q",
+          turnCount: 3,
+          lastUpdatedAt: 1,
+        },
+      ],
+      activeThreadId: "t-a",
     });
+    expect(next.threads).toHaveLength(1);
+    expect(next.threads[0].id).toBe("t-a");
+    expect(next.activeThreadId).toBe("t-a");
+  });
 
-    it("HYDRATE without threads/activeThreadId preserves prior values", () => {
-        const prior: AskState = {
-            ...INITIAL_STATE,
-            threads: [
-                {
-                    id: "keep",
-                    firstQuestion: "keep me",
-                    turnCount: 1,
-                    lastUpdatedAt: 0,
-                },
-            ],
-            activeThreadId: "keep",
-        };
-        const next = askReducer(prior, {
-            type: "HYDRATE",
-            turns: [],
-            expired: false,
-        });
-        expect(next.threads).toEqual(prior.threads);
-        expect(next.activeThreadId).toBe("keep");
-    });
+  it("SWITCH_THREAD replaces turns + activeThreadId and bumps sessionGen", () => {
+    const archived = [makeTurn({ id: "arch-1", question: "old one" })];
+    const next = askReducer(
+      {
+        ...INITIAL_STATE,
+        turns: [makeTurn({ id: "cur-1" })],
+        sessionGen: 2,
+        emptyReason: null,
+      },
+      {
+        type: "SWITCH_THREAD",
+        activeThreadId: "arch-session",
+        turns: archived,
+      }
+    );
+    expect(next.turns).toEqual(archived);
+    expect(next.activeThreadId).toBe("arch-session");
+    expect(next.sessionGen).toBe(3); // bumped
+    expect(next.isHydrating).toBe(false);
+    expect(next.expiredBanner).toBe(false);
+    expect(next.emptyReason).toBeNull();
+  });
 
-    it("unknown turn ids are no-ops (state unchanged)", () => {
-        const state: AskState = {
-            ...INITIAL_STATE,
-            turns: [makeTurn({ id: "t-1" })],
-        };
-        const next = askReducer(state, {
-            type: "TURN_DELTA",
-            id: "t-UNKNOWN",
-            text: "ignored",
-        });
-        expect(next).toBe(state);
+  it("HYDRATE merges threads + activeThreadId when provided", () => {
+    const next = askReducer(INITIAL_STATE, {
+      type: "HYDRATE",
+      turns: [],
+      expired: false,
+      threads: [
+        {
+          id: "t-arch",
+          firstQuestion: "archived q",
+          turnCount: 2,
+          lastUpdatedAt: 10,
+        },
+      ],
+      activeThreadId: "t-arch",
     });
+    expect(next.threads).toHaveLength(1);
+    expect(next.threads[0].id).toBe("t-arch");
+    expect(next.activeThreadId).toBe("t-arch");
+  });
+
+  it("HYDRATE without threads/activeThreadId preserves prior values", () => {
+    const prior: AskState = {
+      ...INITIAL_STATE,
+      threads: [
+        {
+          id: "keep",
+          firstQuestion: "keep me",
+          turnCount: 1,
+          lastUpdatedAt: 0,
+        },
+      ],
+      activeThreadId: "keep",
+    };
+    const next = askReducer(prior, {
+      type: "HYDRATE",
+      turns: [],
+      expired: false,
+    });
+    expect(next.threads).toEqual(prior.threads);
+    expect(next.activeThreadId).toBe("keep");
+  });
+
+  it("TURN_RESTART resets the turn in place, keeping its id and position", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      expiredBanner: true,
+      turns: [
+        makeTurn({ id: "t-first", question: "first", answer: "kept" }),
+        makeTurn({
+          id: "t-last",
+          question: "who edited it?",
+          answer: "a wrong answer",
+          status: "error",
+          errorKind: "server",
+          errorMessage: "Boom",
+          createdAt: 1234,
+          followUpQuestions: ["stale?"],
+        }),
+      ],
+    };
+    const next = askReducer(state, {
+      type: "TURN_RESTART",
+      id: "t-last",
+      question: "who edited it in 1962?",
+    });
+    expect(next.turns).toHaveLength(2);
+    expect(next.turns[0].answer).toBe("kept");
+    // Same id and createdAt, so it holds its slot in the transcript and
+    // in the archive rather than appending a duplicate row.
+    expect(next.turns[1].id).toBe("t-last");
+    expect(next.turns[1].createdAt).toBe(1234);
+    expect(next.turns[1].question).toBe("who edited it in 1962?");
+    expect(next.turns[1].status).toBe("streaming");
+    expect(next.turns[1].answer).toBe("");
+    expect(next.turns[1].errorKind).toBeUndefined();
+    expect(next.turns[1].followUpQuestions).toBeUndefined();
+    // Re-asking is a fresh question in intent, so the aged-out notice goes.
+    expect(next.expiredBanner).toBe(false);
+  });
+
+  it("TURN_RESTART leaves a turn that is still streaming alone", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1", status: "streaming", answer: "arriving" })],
+    };
+    const next = askReducer(state, { type: "TURN_RESTART", id: "t-1", question: "again" });
+    expect(next.turns[0].answer).toBe("arriving");
+    expect(next.turns[0].status).toBe("streaming");
+  });
+
+  it("TURN_STOPPED freezes a streaming turn and keeps its partial answer", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [
+        makeTurn({
+          id: "t-1",
+          status: "streaming",
+          answer: "Half an ans",
+          stage: "Writing answer…",
+        }),
+      ],
+    };
+    const next = askReducer(state, { type: "TURN_STOPPED", id: "t-1" });
+    expect(next.turns[0].status).toBe("stopped");
+    expect(next.turns[0].answer).toBe("Half an ans");
+    expect(next.turns[0].stage).toBeUndefined();
+  });
+
+  it("TURN_STOPPED leaves an already-finished turn alone", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1", status: "done", answer: "Complete." })],
+    };
+    const next = askReducer(state, { type: "TURN_STOPPED", id: "t-1" });
+    expect(next).toBe(state);
+  });
+
+  // Late frames from a stream the reader abandoned must not reanimate the
+  // turn: a `done` arriving after a stop would swap the full answer back
+  // in, and any of these flipping status back to "streaming" would
+  // re-disable the composer with no stream left to finish it.
+  it.each([
+    ["stopped" as const],
+    ["done" as const],
+    ["error" as const],
+  ])("ignores stream events for a turn already %s", (status) => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1", status, answer: "kept" })],
+    };
+    const actions = [
+      { type: "TURN_STAGE" as const, id: "t-1", stage: "Ranking sources…" },
+      { type: "TURN_DELTA" as const, id: "t-1", text: " more" },
+      {
+        type: "TURN_META" as const,
+        id: "t-1",
+        mode: "visual" as const,
+        requestId: "late",
+        sourceArticles: [],
+        meta: {},
+      },
+      {
+        type: "TURN_DONE" as const,
+        id: "t-1",
+        answer: "the whole answer",
+        citations: [],
+        confidence: "high" as const,
+        meta: META,
+      },
+      {
+        type: "TURN_ERROR" as const,
+        id: "t-1",
+        kind: "network" as const,
+        message: "late failure",
+      },
+    ];
+    for (const action of actions) {
+      expect(askReducer(state, action)).toBe(state);
+    }
+  });
+
+  it("unknown turn ids are no-ops (state unchanged)", () => {
+    const state: AskState = {
+      ...INITIAL_STATE,
+      turns: [makeTurn({ id: "t-1" })],
+    };
+    const next = askReducer(state, {
+      type: "TURN_DELTA",
+      id: "t-UNKNOWN",
+      text: "ignored",
+    });
+    expect(next).toBe(state);
+  });
 });

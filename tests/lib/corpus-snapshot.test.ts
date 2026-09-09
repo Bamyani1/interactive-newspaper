@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildCorpusSnapshot,
-  sha256,
-  stableStringify,
-} from "../../scripts/rag/snapshot-corpus";
+import { buildCorpusSnapshot, sha256, stableStringify } from "../../scripts/rag/snapshot-corpus";
 
 function fixture() {
   return {
@@ -107,8 +103,6 @@ describe("corpus snapshot", () => {
     const reembedded = buildCorpusSnapshot(reembeddedInput);
 
     expect(reembedded.corpusSha256).toBe(original.corpusSha256);
-    expect(reembedded.databaseSnapshotSha256).not.toBe(
-      original.databaseSnapshotSha256,
-    );
+    expect(reembedded.databaseSnapshotSha256).not.toBe(original.databaseSnapshotSha256);
   });
 });

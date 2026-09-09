@@ -22,9 +22,9 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
   onEndDateChange,
 }) => {
   return (
-    <fieldset className="flex flex-wrap items-center gap-3">
+    <fieldset className="search-filters">
       <legend className="sr-only">Filter archive search results</legend>
-      <div>
+      <div className="search-filter-field search-filter-field--category">
         <label htmlFor="search-category" className="sr-only">
           Category
         </label>
@@ -43,7 +43,7 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
         </select>
       </div>
 
-      <div>
+      <div className="search-filter-field">
         <label htmlFor="search-start-date" className="sr-only">
           From date
         </label>
@@ -56,7 +56,7 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
         />
       </div>
 
-      <div>
+      <div className="search-filter-field">
         <label htmlFor="search-end-date" className="sr-only">
           To date
         </label>

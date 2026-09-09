@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const require = createRequire(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "package.json"),
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "package.json")
 );
 const pg = require("pg");
 
@@ -47,14 +47,14 @@ const ALLOWED_DATABASES = new Set(
   (process.env.SHIM_ALLOWED_DATABASES ?? defaultDatabase)
     .split(",")
     .map((name) => name.trim())
-    .filter(Boolean),
+    .filter(Boolean)
 );
 
 const pools = new Map();
 function poolFor(database) {
   if (!ALLOWED_DATABASES.has(database)) {
     throw new Error(
-      `neon-http-shim refuses database "${database}"; allowed: ${[...ALLOWED_DATABASES].join(", ")}.`,
+      `neon-http-shim refuses database "${database}"; allowed: ${[...ALLOWED_DATABASES].join(", ")}.`
     );
   }
   let pool = pools.get(database);
@@ -89,9 +89,22 @@ function toResult(res) {
 function pgErrorBody(error) {
   const body = { message: error.message };
   for (const key of [
-    "severity", "code", "detail", "hint", "position", "internalPosition",
-    "internalQuery", "where", "schema", "table", "column", "dataType",
-    "constraint", "file", "line", "routine",
+    "severity",
+    "code",
+    "detail",
+    "hint",
+    "position",
+    "internalPosition",
+    "internalQuery",
+    "where",
+    "schema",
+    "table",
+    "column",
+    "dataType",
+    "constraint",
+    "file",
+    "line",
+    "routine",
   ]) {
     if (error[key] !== undefined) body[key] = String(error[key]);
   }
@@ -156,9 +169,11 @@ const server = http.createServer((req, res) => {
       const conn = parseConnection(req.headers["neon-connection-string"] ?? "");
       if (conn.host !== EXPECTED_HOST) {
         res.writeHead(400, { "content-type": "application/json" });
-        res.end(JSON.stringify({
-          message: `neon-http-shim refuses host "${conn.host}"; expected "${EXPECTED_HOST}". This shim only serves allowlisted local databases.`,
-        }));
+        res.end(
+          JSON.stringify({
+            message: `neon-http-shim refuses host "${conn.host}"; expected "${EXPECTED_HOST}". This shim only serves allowlisted local databases.`,
+          })
+        );
         return;
       }
       const pool = poolFor(conn.database);

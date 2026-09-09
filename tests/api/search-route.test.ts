@@ -5,6 +5,24 @@ vi.mock("@/src/lib/db", () => ({
   searchArticles: vi.fn(),
 }));
 
+// Buckets created at import time. Recorded in a plain array rather than on a
+// spy because the suite's vi.clearAllMocks() would erase spy call history
+// before any assertion could read it.
+const { rateLimiterBuckets } = vi.hoisted(() => ({ rateLimiterBuckets: [] as string[] }));
+
+vi.mock("@/src/lib/rate-limit", () => ({
+  createRateLimiter: (options: { bucket: string }) => {
+    rateLimiterBuckets.push(options.bucket);
+    return async () => ({
+      allowed: true,
+      limit: 20,
+      remaining: 19,
+      resetAt: Date.now() + 60_000,
+    });
+  },
+  getClientIp: () => "127.0.0.1",
+}));
+
 import { GET } from "@/src/app/api/search/route";
 import { searchArticles } from "@/src/lib/db";
 
@@ -32,12 +50,28 @@ describe("GET /api/search", () => {
     });
   });
 
+  it("leaves rate limiting to the middleware", async () => {
+    // The route used to build its own 20/min bucket on top of the
+    // middleware's, so every search cost two Neon writes and the two limits
+    // disagreed. Middleware is now the single gate.
+    expect(rateLimiterBuckets).toEqual([]);
+  });
+
   it("returns 400 when q is missing", async () => {
     const response = await GET(makeRequest(""));
     const body = await response.json();
     expect(response.status).toBe(400);
     expect(body.error).toMatch(/missing/i);
     expect(body.requestId).toBeDefined();
+  });
+
+  it("stamps a UUID request id, not 8 characters of Math.random()", async () => {
+    const a = await (await GET(makeRequest(""))).json();
+    const b = await (await GET(makeRequest(""))).json();
+    expect(a.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    expect(a.requestId).not.toBe(b.requestId);
   });
 
   it("returns 400 when q is empty after trim", async () => {
@@ -78,9 +112,7 @@ describe("GET /api/search", () => {
   });
 
   it("returns 504 with cause='timeout' when DB call hangs", async () => {
-    (searchArticles as ReturnType<typeof vi.fn>).mockImplementation(
-      () => new Promise(() => {}),
-    );
+    (searchArticles as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise(() => {}));
 
     vi.useFakeTimers();
     try {
@@ -106,7 +138,7 @@ describe("GET /api/search", () => {
 
   it("returns 500 with cause='internal_error' on generic DB failure", async () => {
     (searchArticles as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Neon connection refused"),
+      new Error("Neon connection refused")
     );
 
     const response = await GET(makeRequest("q=test"));
@@ -120,16 +152,12 @@ describe("GET /api/search", () => {
 
   it("respects limit and offset query params", async () => {
     await GET(makeRequest("q=test&limit=5&offset=10"));
-    expect(searchArticles).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 5, offset: 10 }),
-    );
+    expect(searchArticles).toHaveBeenCalledWith(expect.objectContaining({ limit: 5, offset: 10 }));
   });
 
   it("caps limit at 100", async () => {
     await GET(makeRequest("q=test&limit=999"));
-    expect(searchArticles).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 100 }),
-    );
+    expect(searchArticles).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
   });
 
   it("forwards filters to searchArticles", async () => {
@@ -140,7 +168,7 @@ describe("GET /api/search", () => {
         category: "News",
         startDate: "1960-01-01",
         endDate: "1969-12-31",
-      }),
+      })
     );
   });
 });

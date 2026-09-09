@@ -1,450 +1,495 @@
-import {
-    fuseArticleResults,
-    queryArticlesByEmbedding,
-    searchArticlesForRag,
-} from "@/src/lib/db";
+import { fuseArticleResults, queryArticlesByEmbedding, searchArticlesForRag } from "@/src/lib/db";
 import type { RetrievedArticle } from "@/src/lib/db";
 import type { RetrievalMethod } from "@/src/lib/db";
-import { embedQuery } from "@/src/lib/embeddings";
+import { embedQuery, QuotaExhaustedError } from "@/src/lib/embeddings";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
-import type {
-    ConversationTurn,
-} from "@/src/lib/conversation-store";
+import type { ConversationTurn } from "@/src/lib/conversation-store";
 import { rerankArticles } from "@/src/lib/reranker";
 import type { RankedArticle } from "@/src/lib/reranker";
 import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
 
 export interface RetrievalFilters {
-    category?: string;
-    startDate?: string;
-    endDate?: string;
+  category?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface CandidateRetrievalResult {
+  articles: RetrievedArticle[];
+  method: RetrievalMethod;
+  retrievalTimeMs: number;
+  rawFts: RetrievedArticle[];
+  rawVector: RetrievedArticle[];
+  signals: {
+    fts: { status: "success" | "failed"; count: number; error?: string };
+    vector: { status: "success" | "failed"; count: number; error?: string };
+  };
+  identity: ReturnType<typeof getRagRetrievalConfig>;
+  servedTarget: "legacy" | "versioned";
+  shadow?: {
     articles: RetrievedArticle[];
     method: RetrievalMethod;
-    retrievalTimeMs: number;
-    rawFts: RetrievedArticle[];
-    rawVector: RetrievedArticle[];
-    signals: {
-        fts: { status: "success" | "failed"; count: number; error?: string };
-        vector: { status: "success" | "failed"; count: number; error?: string };
-    };
-    identity: ReturnType<typeof getRagRetrievalConfig>;
-    servedTarget: "legacy" | "versioned";
-    shadow?: {
-        articles: RetrievedArticle[];
-        method: RetrievalMethod | "none";
-        signals: CandidateRetrievalResult["signals"];
-    };
+    signals: CandidateRetrievalResult["signals"];
+  };
+}
+
+/** The steps of the corrective retry, in the order they can fail. */
+export type RetrievalStage = "rerank" | "reformulate-retry" | "retrieve-retry" | "rerank-retry";
+
+/**
+ * Attributes a corrective-retry failure to the step that produced it, so a
+ * caller can name that step without re-implementing the retry to know it. The
+ * ask route re-tags these onto its own StageError; agent tools, which turn any
+ * throw into a tool-result string, only ever read `message`.
+ */
+export class RetrievalStageError extends Error {
+  constructor(
+    public readonly stage: RetrievalStage,
+    public readonly cause: unknown
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "RetrievalStageError";
+  }
+}
+
+/**
+ * Tags a step's failure with its stage. QuotaExhaustedError passes through
+ * untagged, mirroring the ask route's own wrapStage: callers branch on it by
+ * identity to return 429, and burying it inside a wrapper would cost them that.
+ */
+function withStage<T>(stage: RetrievalStage, fn: () => Promise<T>): Promise<T> {
+  return fn().catch((error: unknown) => {
+    if (error instanceof RetrievalStageError || error instanceof QuotaExhaustedError) {
+      throw error;
+    }
+    throw new RetrievalStageError(stage, error);
+  });
 }
 
 export class RetrievalSignalsUnavailableError extends Error {
-    constructor(
-        public readonly ftsError: unknown,
-        public readonly vectorError: unknown,
-    ) {
-        super("Both full-text and vector retrieval signals failed.");
-        this.name = "RetrievalSignalsUnavailableError";
-    }
+  constructor(
+    public readonly ftsError: unknown,
+    public readonly vectorError: unknown
+  ) {
+    super("Both full-text and vector retrieval signals failed.");
+    this.name = "RetrievalSignalsUnavailableError";
+  }
 }
 
 function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? error.message : String(error);
 }
 
 type ArticleOutcome = PromiseSettledResult<RetrievedArticle[]>;
 
 function combineSignalOutcomes(
-    ftsOutcome: ArticleOutcome,
-    vectorOutcome: ArticleOutcome,
-    params: { limit: number; vectorWeight: number },
+  ftsOutcome: ArticleOutcome,
+  vectorOutcome: ArticleOutcome,
+  params: { limit: number; vectorWeight: number }
 ): {
-    articles: RetrievedArticle[];
-    method: RetrievalMethod | "none";
-    rawFts: RetrievedArticle[];
-    rawVector: RetrievedArticle[];
-    signals: CandidateRetrievalResult["signals"];
+  articles: RetrievedArticle[];
+  method: RetrievalMethod;
+  rawFts: RetrievedArticle[];
+  rawVector: RetrievedArticle[];
+  signals: CandidateRetrievalResult["signals"];
 } {
-    const rawFts = ftsOutcome.status === "fulfilled" ? ftsOutcome.value : [];
-    const rawVector =
-        vectorOutcome.status === "fulfilled" ? vectorOutcome.value : [];
-    const bothSucceeded =
-        ftsOutcome.status === "fulfilled" && vectorOutcome.status === "fulfilled";
-    const articles = bothSucceeded
-        ? fuseArticleResults(rawVector, rawFts, params)
-        : (ftsOutcome.status === "fulfilled" ? rawFts : rawVector).slice(
-              0,
-              params.limit,
-          );
-    const method: RetrievalMethod | "none" = bothSucceeded
-        ? rawVector.length > 0 && rawFts.length > 0
-            ? "hybrid"
-            : rawVector.length > 0
-              ? "vector"
-              : rawFts.length > 0
-                ? "fts"
-                : "hybrid"
-        : ftsOutcome.status === "fulfilled"
+  const rawFts = ftsOutcome.status === "fulfilled" ? ftsOutcome.value : [];
+  const rawVector = vectorOutcome.status === "fulfilled" ? vectorOutcome.value : [];
+  const bothSucceeded = ftsOutcome.status === "fulfilled" && vectorOutcome.status === "fulfilled";
+  const articles = bothSucceeded
+    ? fuseArticleResults(rawVector, rawFts, params)
+    : (ftsOutcome.status === "fulfilled" ? rawFts : rawVector).slice(0, params.limit);
+  // Both signals succeeding with zero rows is "none", not "hybrid": nothing
+  // was fused because nothing was found, and the client renders a distinct
+  // no-matching-articles state off this value.
+  const method: RetrievalMethod = bothSucceeded
+    ? rawVector.length > 0 && rawFts.length > 0
+      ? "hybrid"
+      : rawVector.length > 0
+        ? "vector"
+        : rawFts.length > 0
           ? "fts"
-          : vectorOutcome.status === "fulfilled"
-            ? "vector"
-            : "none";
-    return {
-        articles,
-        method,
-        rawFts,
-        rawVector,
-        signals: {
-            fts:
-                ftsOutcome.status === "fulfilled"
-                    ? { status: "success", count: rawFts.length }
-                    : {
-                          status: "failed",
-                          count: 0,
-                          error: errorMessage(ftsOutcome.reason),
-                      },
-            vector:
-                vectorOutcome.status === "fulfilled"
-                    ? { status: "success", count: rawVector.length }
-                    : {
-                          status: "failed",
-                          count: 0,
-                          error: errorMessage(vectorOutcome.reason),
-                      },
-        },
-    };
+          : "none"
+    : ftsOutcome.status === "fulfilled"
+      ? "fts"
+      : vectorOutcome.status === "fulfilled"
+        ? "vector"
+        : "none";
+  return {
+    articles,
+    method,
+    rawFts,
+    rawVector,
+    signals: {
+      fts:
+        ftsOutcome.status === "fulfilled"
+          ? { status: "success", count: rawFts.length }
+          : {
+              status: "failed",
+              count: 0,
+              error: errorMessage(ftsOutcome.reason),
+            },
+      vector:
+        vectorOutcome.status === "fulfilled"
+          ? { status: "success", count: rawVector.length }
+          : {
+              status: "failed",
+              count: 0,
+              error: errorMessage(vectorOutcome.reason),
+            },
+    },
+  };
 }
 
 export async function retrieveCandidates(params: {
-    embeddingQuery: string;
-    ftsQuery: string;
-    filters?: RetrievalFilters;
-    limit: number;
-    vectorWeight: number;
-    onlyWithImages: boolean;
-    timeoutMs?: number;
-    signal?: AbortSignal;
-    requestId?: string;
+  embeddingQuery: string;
+  ftsQuery: string;
+  filters?: RetrievalFilters;
+  limit: number;
+  vectorWeight: number;
+  onlyWithImages: boolean;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  requestId?: string;
 }): Promise<CandidateRetrievalResult> {
-    const started = Date.now();
-    const identity = getRagRetrievalConfig();
-    const servedTarget =
-        identity.mode === "versioned" ? "versioned" : "legacy";
-    // Month-stratified vector selection for wide date ranges (>= ~3
-    // months): survey questions need coverage across the range, not the
-    // similarity-densest fortnight. Narrow ranges keep pure similarity.
-    const startDate = params.filters?.startDate ?? null;
-    const endDate = params.filters?.endDate ?? null;
-    const rangeDays =
-        startDate && endDate
-            ? (Date.parse(endDate) - Date.parse(startDate)) / 86_400_000
-            : 0;
-    const searchOptions = {
-        limit: params.limit,
-        category: params.filters?.category ?? null,
-        startDate,
-        endDate,
-        onlyWithImages: params.onlyWithImages,
-        timeoutMs: params.timeoutMs,
-        signal: params.signal,
-        temporalStratify: rangeDays >= 90,
-    };
+  const started = Date.now();
+  const identity = getRagRetrievalConfig();
+  const servedTarget = identity.mode === "versioned" ? "versioned" : "legacy";
+  // Month-stratified vector selection for wide date ranges (>= ~3
+  // months): survey questions need coverage across the range, not the
+  // similarity-densest fortnight. Narrow ranges keep pure similarity.
+  const startDate = params.filters?.startDate ?? null;
+  const endDate = params.filters?.endDate ?? null;
+  const rangeDays =
+    startDate && endDate ? (Date.parse(endDate) - Date.parse(startDate)) / 86_400_000 : 0;
+  const searchOptions = {
+    limit: params.limit,
+    category: params.filters?.category ?? null,
+    startDate,
+    endDate,
+    onlyWithImages: params.onlyWithImages,
+    timeoutMs: params.timeoutMs,
+    signal: params.signal,
+    temporalStratify: rangeDays >= 90,
+  };
 
-    const embeddingPromise = embedQuery(params.embeddingQuery, {
-        signal: params.signal,
-        requestId: params.requestId,
-    });
-    const servedFtsPromise = searchArticlesForRag(params.ftsQuery, {
-        ...searchOptions,
-        category: searchOptions.category ?? undefined,
-        startDate: searchOptions.startDate ?? undefined,
-        endDate: searchOptions.endDate ?? undefined,
-        retrievalTarget: servedTarget,
-    });
-    const servedVectorPromise = embeddingPromise.then((embedding) =>
-        queryArticlesByEmbedding(embedding, {
+  const embeddingPromise = embedQuery(params.embeddingQuery, {
+    signal: params.signal,
+    requestId: params.requestId,
+  });
+  const servedFtsPromise = searchArticlesForRag(params.ftsQuery, {
+    ...searchOptions,
+    category: searchOptions.category ?? undefined,
+    startDate: searchOptions.startDate ?? undefined,
+    endDate: searchOptions.endDate ?? undefined,
+    retrievalTarget: servedTarget,
+  });
+  const servedVectorPromise = embeddingPromise.then((embedding) =>
+    queryArticlesByEmbedding(embedding, {
+      ...searchOptions,
+      retrievalTarget: servedTarget,
+    })
+  );
+  const shadowPromises =
+    identity.mode === "shadow"
+      ? [
+          searchArticlesForRag(params.ftsQuery, {
             ...searchOptions,
-            retrievalTarget: servedTarget,
-        }),
-    );
-    const shadowPromises =
-        identity.mode === "shadow"
-            ? [
-                  searchArticlesForRag(params.ftsQuery, {
-                      ...searchOptions,
-                      category: searchOptions.category ?? undefined,
-                      startDate: searchOptions.startDate ?? undefined,
-                      endDate: searchOptions.endDate ?? undefined,
-                      retrievalTarget: "versioned",
-                  }),
-                  embeddingPromise.then((embedding) =>
-                      queryArticlesByEmbedding(embedding, {
-                          ...searchOptions,
-                          retrievalTarget: "versioned",
-                      }),
-                  ),
-              ]
-            : null;
-    const shadowOutcomesPromise = shadowPromises
-        ? Promise.allSettled(shadowPromises)
-        : Promise.resolve(null);
+            category: searchOptions.category ?? undefined,
+            startDate: searchOptions.startDate ?? undefined,
+            endDate: searchOptions.endDate ?? undefined,
+            retrievalTarget: "versioned",
+          }),
+          embeddingPromise.then((embedding) =>
+            queryArticlesByEmbedding(embedding, {
+              ...searchOptions,
+              retrievalTarget: "versioned",
+            })
+          ),
+        ]
+      : null;
+  const shadowOutcomesPromise = shadowPromises
+    ? Promise.allSettled(shadowPromises)
+    : Promise.resolve(null);
 
-    // Start lexical retrieval immediately. Query embedding and vector SQL form
-    // a separate branch, so an embedding/API failure can never prevent FTS.
-    const [ftsOutcome, vectorOutcome] = await Promise.allSettled([
-        servedFtsPromise,
-        servedVectorPromise,
-    ]);
-    const combined = combineSignalOutcomes(ftsOutcome, vectorOutcome, {
+  // Start lexical retrieval immediately. Query embedding and vector SQL form
+  // a separate branch, so an embedding/API failure can never prevent FTS.
+  const [ftsOutcome, vectorOutcome] = await Promise.allSettled([
+    servedFtsPromise,
+    servedVectorPromise,
+  ]);
+  const combined = combineSignalOutcomes(ftsOutcome, vectorOutcome, {
+    limit: params.limit,
+    vectorWeight: params.vectorWeight,
+  });
+  if (ftsOutcome.status === "rejected") {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        route: "/api/ask",
+        requestId: params.requestId,
+        stage: "retrieve",
+        signal: "fts",
+        msg: "full-text retrieval failed; continuing with vector signal",
+        err: errorMessage(ftsOutcome.reason),
+      })
+    );
+  }
+  if (vectorOutcome.status === "rejected") {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        route: "/api/ask",
+        requestId: params.requestId,
+        stage: "retrieve",
+        signal: "vector",
+        msg: "embedding/vector retrieval failed; continuing with full-text signal",
+        err: errorMessage(vectorOutcome.reason),
+      })
+    );
+  }
+  if (ftsOutcome.status === "rejected" && vectorOutcome.status === "rejected") {
+    await shadowOutcomesPromise;
+    throw new RetrievalSignalsUnavailableError(ftsOutcome.reason, vectorOutcome.reason);
+  }
+
+  // A vector query that SUCCEEDS with zero rows while full-text returned
+  // rows is the signature of a serving filter that matches nothing — the
+  // corpus is plainly searchable, only the vector leg is dark. Nothing
+  // downstream can tell this apart from a genuinely unanswerable question,
+  // so it has to be said out loud here, with the literal filter that ran.
+  if (
+    vectorOutcome.status === "fulfilled" &&
+    combined.rawVector.length === 0 &&
+    combined.rawFts.length > 0
+  ) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        route: "/api/ask",
+        requestId: params.requestId,
+        stage: "retrieve",
+        signal: "vector",
+        msg: "vector signal returned 0 rows while full-text returned rows; run npm run rag:health",
+        servedTable: servedTarget === "versioned" ? "article_chunks" : "articles",
+        vectorFilter: {
+          indexBuildId: identity.activeIndexBuildId,
+          embeddingModel: identity.embeddingModel,
+          embeddingInputVersion: identity.textEmbeddingInputVersion,
+        },
+      })
+    );
+  }
+
+  const shadowOutcomes = await shadowOutcomesPromise;
+  const shadow = shadowOutcomes
+    ? combineSignalOutcomes(shadowOutcomes[0], shadowOutcomes[1], {
         limit: params.limit,
         vectorWeight: params.vectorWeight,
-    });
-    if (ftsOutcome.status === "rejected") {
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                route: "/api/ask",
-                requestId: params.requestId,
-                stage: "retrieve",
-                signal: "fts",
-                msg: "full-text retrieval failed; continuing with vector signal",
-                err: errorMessage(ftsOutcome.reason),
-            }),
-        );
-    }
-    if (vectorOutcome.status === "rejected") {
-        console.warn(
-            JSON.stringify({
-                level: "warn",
-                route: "/api/ask",
-                requestId: params.requestId,
-                stage: "retrieve",
-                signal: "vector",
-                msg: "embedding/vector retrieval failed; continuing with full-text signal",
-                err: errorMessage(vectorOutcome.reason),
-            }),
-        );
-    }
-    if (ftsOutcome.status === "rejected" && vectorOutcome.status === "rejected") {
-        await shadowOutcomesPromise;
-        throw new RetrievalSignalsUnavailableError(
-            ftsOutcome.reason,
-            vectorOutcome.reason,
-        );
-    }
+      })
+    : null;
 
-    const shadowOutcomes = await shadowOutcomesPromise;
-    const shadow = shadowOutcomes
-        ? combineSignalOutcomes(shadowOutcomes[0], shadowOutcomes[1], {
-              limit: params.limit,
-              vectorWeight: params.vectorWeight,
-          })
-        : null;
+  // eslint-disable-next-line no-console -- structured retrieval telemetry
+  console.info(
+    JSON.stringify({
+      level: "info",
+      route: "/api/ask",
+      requestId: params.requestId,
+      stage: "retrieve",
+      msg: "retrieval completed",
+      corpusVersion: identity.corpusVersion,
+      indexBuildId: identity.activeIndexBuildId,
+      pipelineVersion: identity.pipelineVersion,
+      // Read from rag-model-config, i.e. what this deployment is
+      // CONFIGURED to serve. Neither field is evidence about what the
+      // served table actually holds — npm run rag:health checks that.
+      configuredEmbeddingModel: identity.embeddingModel,
+      configuredTextEmbeddingInputVersion: identity.textEmbeddingInputVersion,
+      servedTarget,
+      method: combined.method,
+      ftsCandidates: combined.rawFts.length,
+      vectorCandidates: combined.rawVector.length,
+      fusedCandidates: combined.articles.length,
+      deduplicatedCandidates: Math.max(
+        0,
+        combined.rawFts.length + combined.rawVector.length - combined.articles.length
+      ),
+      shadowMethod: shadow?.method,
+      shadowFtsCandidates: shadow?.rawFts.length,
+      shadowVectorCandidates: shadow?.rawVector.length,
+      shadowCandidates: shadow?.articles.length,
+      shadowErrors: shadow
+        ? [shadow.signals.fts.error, shadow.signals.vector.error].filter(Boolean)
+        : undefined,
+    })
+  );
 
-    // eslint-disable-next-line no-console -- structured retrieval telemetry
-    console.info(
-        JSON.stringify({
-            level: "info",
-            route: "/api/ask",
-            requestId: params.requestId,
-            stage: "retrieve",
-            msg: "retrieval completed",
-            corpusVersion: identity.corpusVersion,
-            indexBuildId: identity.activeIndexBuildId,
-            pipelineVersion: identity.pipelineVersion,
-            embeddingModel: identity.embeddingModel,
-            textEmbeddingInputVersion: identity.textEmbeddingInputVersion,
-            servedTarget,
-            method: combined.method,
-            ftsCandidates: combined.rawFts.length,
-            vectorCandidates: combined.rawVector.length,
-            fusedCandidates: combined.articles.length,
-            deduplicatedCandidates: Math.max(
-                0,
-                combined.rawFts.length +
-                    combined.rawVector.length -
-                    combined.articles.length,
-            ),
-            shadowMethod: shadow?.method,
-            shadowFtsCandidates: shadow?.rawFts.length,
-            shadowVectorCandidates: shadow?.rawVector.length,
-            shadowCandidates: shadow?.articles.length,
-            shadowErrors: shadow
-                ? [shadow.signals.fts.error, shadow.signals.vector.error].filter(
-                      Boolean,
-                  )
-                : undefined,
-        }),
-    );
-
-    return {
-        articles: combined.articles,
-        method: combined.method === "none" ? "hybrid" : combined.method,
-        retrievalTimeMs: Date.now() - started,
-        rawFts: combined.rawFts,
-        rawVector: combined.rawVector,
-        signals: combined.signals,
-        identity,
-        servedTarget,
-        shadow: shadow
-            ? {
-                  articles: shadow.articles,
-                  method: shadow.method,
-                  signals: shadow.signals,
-              }
-            : undefined,
-    };
+  return {
+    articles: combined.articles,
+    method: combined.method,
+    retrievalTimeMs: Date.now() - started,
+    rawFts: combined.rawFts,
+    rawVector: combined.rawVector,
+    signals: combined.signals,
+    identity,
+    servedTarget,
+    shadow: shadow
+      ? {
+          articles: shadow.articles,
+          method: shadow.method,
+          signals: shadow.signals,
+        }
+      : undefined,
+  };
 }
 
 export async function rerankWithCorrectiveRetry(params: {
-    question: string;
-    articles: RetrievedArticle[];
-    mode: "text" | "visual";
-    maxArticles: number;
-    conversationHistory?: ConversationTurn[];
-    filters?: RetrievalFilters;
-    retrievalLimit: number;
-    vectorWeight: number;
-    onlyWithImages: boolean;
-    timeoutMs?: number;
-    signal?: AbortSignal;
-    requestId?: string;
+  question: string;
+  articles: RetrievedArticle[];
+  mode: "text" | "visual";
+  maxArticles: number;
+  conversationHistory?: ConversationTurn[];
+  filters?: RetrievalFilters;
+  retrievalLimit: number;
+  vectorWeight: number;
+  onlyWithImages: boolean;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  requestId?: string;
 }): Promise<RankedArticle[]> {
-    let ranked = await rerankArticles(params.question, params.articles, {
-        maxArticles: params.maxArticles,
-        minScore: params.mode === "visual" ? 3 : 4,
-        mode: params.mode,
-        signal: params.signal,
-        requestId: params.requestId,
-    });
-    if (ranked.length > 0 || params.articles.length === 0 || params.signal?.aborted) {
-        return ranked;
-    }
-
-    console.warn(
-        JSON.stringify({
-            level: "warn",
-            route: "/api/ask",
-            requestId: params.requestId,
-            stage: "crag-retry",
-            msg: "reranker rejected all candidates; trying one broader retrieval",
-        }),
-    );
-    const broader = await reformulateQuery(
-        `Try broader search terms for: ${params.question}`,
-        {
-            signal: params.signal,
-            requestId: params.requestId,
-            conversationHistory: params.conversationHistory,
-        },
-    );
-    const retry = await retrieveCandidates({
-        embeddingQuery: broader.embeddingQuery,
-        ftsQuery: broader.ftsQuery,
-        filters: params.filters,
-        limit: params.retrievalLimit,
-        vectorWeight: params.vectorWeight,
-        onlyWithImages: params.onlyWithImages,
-        timeoutMs: params.timeoutMs,
-        signal: params.signal,
-        requestId: params.requestId,
-    });
-    ranked = await rerankArticles(params.question, retry.articles, {
-        maxArticles: params.maxArticles,
-        minScore: params.mode === "visual" ? 2 : 3,
-        mode: params.mode,
-        signal: params.signal,
-        requestId: params.requestId,
-    });
-    if (ranked.length === 0 && !params.signal?.aborted) {
-        // Total-veto guard, mirroring the route pipeline: an all-below-
-        // threshold verdict over real retrieval candidates is usually a
-        // judging artifact on broad questions, not a no-evidence state.
-        // Score 5 is the reranker's own degraded-mode value and the minimum
-        // the answer generator will engage with.
-        const fallback = retry.articles.length > 0 ? retry.articles : params.articles;
-        if (fallback.length > 0) {
-            console.warn(
-                JSON.stringify({
-                    level: "warn",
-                    route: "/api/ask",
-                    requestId: params.requestId,
-                    stage: "rerank-fallback",
-                    msg: "reranker (and retry) kept nothing; falling back to fused retrieval order",
-                    candidateCount: fallback.length,
-                }),
-            );
-            return fallback
-                .slice(0, params.maxArticles)
-                .map((article) => ({ ...article, relevanceScore: 5 }));
-        }
-    }
+  let ranked = await withStage("rerank", () =>
+    rerankArticles(params.question, params.articles, {
+      maxArticles: params.maxArticles,
+      minScore: params.mode === "visual" ? 3 : 4,
+      mode: params.mode,
+      signal: params.signal,
+      requestId: params.requestId,
+    })
+  );
+  if (ranked.length > 0 || params.articles.length === 0 || params.signal?.aborted) {
     return ranked;
+  }
+
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      route: "/api/ask",
+      requestId: params.requestId,
+      stage: "crag-retry",
+      msg: "reranker rejected all candidates; trying one broader retrieval",
+    })
+  );
+  const broader = await withStage("reformulate-retry", () =>
+    reformulateQuery(`Try broader search terms for: ${params.question}`, {
+      signal: params.signal,
+      requestId: params.requestId,
+      conversationHistory: params.conversationHistory,
+    })
+  );
+  const retry = await withStage("retrieve-retry", () =>
+    retrieveCandidates({
+      embeddingQuery: broader.embeddingQuery,
+      ftsQuery: broader.ftsQuery,
+      filters: params.filters,
+      limit: params.retrievalLimit,
+      vectorWeight: params.vectorWeight,
+      onlyWithImages: params.onlyWithImages,
+      timeoutMs: params.timeoutMs,
+      signal: params.signal,
+      requestId: params.requestId,
+    })
+  );
+  ranked = await withStage("rerank-retry", () =>
+    rerankArticles(params.question, retry.articles, {
+      maxArticles: params.maxArticles,
+      minScore: params.mode === "visual" ? 2 : 3,
+      mode: params.mode,
+      signal: params.signal,
+      requestId: params.requestId,
+    })
+  );
+  if (ranked.length === 0 && !params.signal?.aborted) {
+    // Total-veto guard, mirroring the route pipeline: an all-below-
+    // threshold verdict over real retrieval candidates is usually a
+    // judging artifact on broad questions, not a no-evidence state.
+    // Score 5 is the reranker's own degraded-mode value and the minimum
+    // the answer generator will engage with.
+    const fallback = retry.articles.length > 0 ? retry.articles : params.articles;
+    if (fallback.length > 0) {
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          route: "/api/ask",
+          requestId: params.requestId,
+          stage: "rerank-fallback",
+          msg: "reranker (and retry) kept nothing; falling back to fused retrieval order",
+          candidateCount: fallback.length,
+        })
+      );
+      return fallback
+        .slice(0, params.maxArticles)
+        .map((article) => ({ ...article, relevanceScore: 5 }));
+    }
+  }
+  return ranked;
 }
 
 /** Canonical search service used by agent tools and route-level retrieval. */
 export async function searchAndRankArchive(params: {
-    question: string;
-    filters?: RetrievalFilters;
-    maxArticles?: number;
-    signal?: AbortSignal;
-    requestId?: string;
-    conversationHistory?: ConversationTurn[];
+  question: string;
+  filters?: RetrievalFilters;
+  maxArticles?: number;
+  signal?: AbortSignal;
+  requestId?: string;
+  conversationHistory?: ConversationTurn[];
 }): Promise<{
-    articles: RankedArticle[];
-    candidates: number;
-    method: RetrievalMethod;
-    mode: "text" | "visual";
-    retrievalTimeMs: number;
+  articles: RankedArticle[];
+  candidates: number;
+  method: RetrievalMethod;
+  mode: "text" | "visual";
+  retrievalTimeMs: number;
 }> {
-    const reformulated = await reformulateQuery(params.question, {
-        signal: params.signal,
-        requestId: params.requestId,
-        conversationHistory: params.conversationHistory,
-    });
-    const hasExplicitDates = Boolean(
-        params.filters?.startDate || params.filters?.endDate,
-    );
-    const filters: RetrievalFilters = {
-        ...params.filters,
-        startDate: hasExplicitDates
-            ? params.filters?.startDate
-            : reformulated.startDate,
-        endDate: hasExplicitDates
-            ? params.filters?.endDate
-            : reformulated.endDate,
-    };
-    const visual = reformulated.mode === "visual";
-    const maxArticles = Math.max(1, Math.min(params.maxArticles ?? 10, 20));
-    const retrieval = await retrieveCandidates({
-        embeddingQuery: reformulated.embeddingQuery,
-        ftsQuery: reformulated.ftsQuery,
-        filters,
-        limit: visual ? Math.max(maxArticles * 2, 20) : Math.max(maxArticles * 2, 20),
-        vectorWeight: visual ? 0.7 : 0.6,
-        onlyWithImages: visual,
-        signal: params.signal,
-        requestId: params.requestId,
-    });
-    const articles = await rerankWithCorrectiveRetry({
-        question: params.question,
-        articles: retrieval.articles,
-        mode: reformulated.mode,
-        maxArticles,
-        conversationHistory: params.conversationHistory,
-        filters,
-        retrievalLimit: visual ? 30 : 20,
-        vectorWeight: visual ? 0.7 : 0.6,
-        onlyWithImages: visual,
-        signal: params.signal,
-        requestId: params.requestId,
-    });
-    return {
-        articles,
-        candidates: retrieval.articles.length,
-        method: retrieval.method,
-        mode: reformulated.mode,
-        retrievalTimeMs: retrieval.retrievalTimeMs,
-    };
+  const reformulated = await reformulateQuery(params.question, {
+    signal: params.signal,
+    requestId: params.requestId,
+    conversationHistory: params.conversationHistory,
+  });
+  const hasExplicitDates = Boolean(params.filters?.startDate || params.filters?.endDate);
+  const filters: RetrievalFilters = {
+    ...params.filters,
+    startDate: hasExplicitDates ? params.filters?.startDate : reformulated.startDate,
+    endDate: hasExplicitDates ? params.filters?.endDate : reformulated.endDate,
+  };
+  const visual = reformulated.mode === "visual";
+  const maxArticles = Math.max(1, Math.min(params.maxArticles ?? 10, 20));
+  const retrieval = await retrieveCandidates({
+    embeddingQuery: reformulated.embeddingQuery,
+    ftsQuery: reformulated.ftsQuery,
+    filters,
+    limit: visual ? Math.max(maxArticles * 2, 20) : Math.max(maxArticles * 2, 20),
+    vectorWeight: visual ? 0.7 : 0.6,
+    onlyWithImages: visual,
+    signal: params.signal,
+    requestId: params.requestId,
+  });
+  const articles = await rerankWithCorrectiveRetry({
+    question: params.question,
+    articles: retrieval.articles,
+    mode: reformulated.mode,
+    maxArticles,
+    conversationHistory: params.conversationHistory,
+    filters,
+    retrievalLimit: visual ? 30 : 20,
+    vectorWeight: visual ? 0.7 : 0.6,
+    onlyWithImages: visual,
+    signal: params.signal,
+    requestId: params.requestId,
+  });
+  return {
+    articles,
+    candidates: retrieval.articles.length,
+    method: retrieval.method,
+    mode: reformulated.mode,
+    retrievalTimeMs: retrieval.retrievalTimeMs,
+  };
 }

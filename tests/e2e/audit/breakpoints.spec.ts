@@ -51,10 +51,7 @@ const DEEP_EDITION_ROUTES: AuditRoute[] = DEEP_TEST_EDITIONS.map((date) => ({
   firstPaint: FIRST_PAINT.edition,
 }));
 
-const BREAKPOINT_ROUTES = [
-  ...STATIC_AUDIT_ROUTES,
-  ...DEEP_EDITION_ROUTES,
-];
+const BREAKPOINT_ROUTES = [...STATIC_AUDIT_ROUTES, ...DEEP_EDITION_ROUTES];
 
 const INTERACTIVE_SELECTOR = [
   "a[href]",
@@ -79,9 +76,7 @@ const INTERACTIVE_SELECTOR = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
-async function auditVisiblePointerTargets(
-  page: Page,
-): Promise<TargetAuditEntry[]> {
+async function auditVisiblePointerTargets(page: Page): Promise<TargetAuditEntry[]> {
   return page.locator(INTERACTIVE_SELECTOR).evaluateAll((elements) =>
     elements.flatMap((element): TargetAuditEntry[] => {
       if (!(element instanceof HTMLElement)) return [];
@@ -90,14 +85,12 @@ async function auditVisiblePointerTargets(
       const root = element.getRootNode();
       const shadowHost = root instanceof ShadowRoot ? root.host : null;
       const isInjectedNextDevelopmentTool =
-        element.id === "next-logo" ||
-        Boolean(shadowHost?.closest("nextjs-portal"));
+        element.id === "next-logo" || Boolean(shadowHost?.closest("nextjs-portal"));
       const isRendered =
         rect.width > 0 &&
         rect.height > 0 &&
         rect.right > 0 &&
-        rect.left <
-          Math.max(document.documentElement.scrollWidth, window.innerWidth) &&
+        rect.left < Math.max(document.documentElement.scrollWidth, window.innerWidth) &&
         style.display !== "none" &&
         style.visibility !== "hidden" &&
         style.visibility !== "collapse" &&
@@ -121,25 +114,21 @@ async function auditVisiblePointerTargets(
       const exceptionJustification = exceptionAttributeValue?.trim() ?? "";
       // No structural inference is allowed here. An inline-link exception is
       // valid only when that exact anchor carries a nonempty justification.
-      const isExplicitInlineTextLink =
-        element.tagName === "A" && exceptionJustification.length > 0;
+      const isExplicitInlineTextLink = element.tagName === "A" && exceptionJustification.length > 0;
 
       return [
         {
           cursor: style.cursor,
           descriptor,
-          exceptionAttribute:
-            exceptionAttributeValue === null ? null : exceptionAttribute,
+          exceptionAttribute: exceptionAttributeValue === null ? null : exceptionAttribute,
           exceptionAttributeValue,
-          exceptionJustification: isExplicitInlineTextLink
-            ? exceptionJustification
-            : null,
+          exceptionJustification: isExplicitInlineTextLink ? exceptionJustification : null,
           height: rect.height,
           tag: element.tagName.toLowerCase(),
           width: rect.width,
         },
       ];
-    }),
+    })
   );
 }
 
@@ -149,18 +138,16 @@ async function expectNoHorizontalOverflow(page: Page, label: string) {
     document: document.documentElement.scrollWidth,
     viewport: window.innerWidth,
   }));
-  expect(widths.document, `${label}: document overflow ${JSON.stringify(widths)}`).toBeLessThanOrEqual(
-    widths.viewport,
-  );
+  expect(
+    widths.document,
+    `${label}: document overflow ${JSON.stringify(widths)}`
+  ).toBeLessThanOrEqual(widths.viewport);
   expect(widths.body, `${label}: body overflow ${JSON.stringify(widths)}`).toBeLessThanOrEqual(
-    widths.viewport,
+    widths.viewport
   );
 }
 
-function expectStrictDiagnostics(
-  diagnostics: BrowserDiagnostics,
-  label: string,
-) {
+function expectStrictDiagnostics(diagnostics: BrowserDiagnostics, label: string) {
   expect(
     {
       consoleErrors: diagnostics.consoleErrors,
@@ -170,7 +157,7 @@ function expectStrictDiagnostics(
       pageErrors: diagnostics.pageErrors,
       requestFailures: diagnostics.requestFailures,
     },
-    `${label}: browser diagnostics`,
+    `${label}: browser diagnostics`
   ).toEqual({
     consoleErrors: [],
     consoleWarnings: [],
@@ -191,15 +178,12 @@ test.describe("route-wide breakpoint boundary audit", () => {
           record: null,
           reason: "No deterministic weather record for this audit fixture.",
         },
-      }),
+      })
     );
   });
 
   for (const probe of BREAKPOINT_PROBES) {
-    test(`${probe.name}: ${probe.width}px`, async ({
-      page,
-      diagnostics,
-    }) => {
+    test(`${probe.name}: ${probe.width}px`, async ({ page, diagnostics }) => {
       test.setTimeout(15 * 60 * 1_000);
       await page.setViewportSize({ width: probe.width, height: probe.height });
 
@@ -210,40 +194,31 @@ test.describe("route-wide breakpoint boundary audit", () => {
         const acceptedStatuses = route.acceptedStatuses ?? [200];
         expect(acceptedStatuses, `${label}: HTTP ${status}`).toContain(status);
 
-        await expectVisibleNonEmptyFirstPaint(
-          page,
-          route.firstPaint,
-          `${label} primary content`,
-        );
+        await expectVisibleNonEmptyFirstPaint(page, route.firstPaint, `${label} primary content`);
         await waitForSettledUi(page, 100);
         const main = page.locator("main").first();
         await expect(main, `${label}: main landmark`).toBeVisible();
         expect(
-          await main.evaluate((element) =>
-            (element.textContent ?? "").replace(/\s+/g, " ").trim(),
-          ),
-          `${label}: nonempty main landmark`,
+          await main.evaluate((element) => (element.textContent ?? "").replace(/\s+/g, " ").trim()),
+          `${label}: nonempty main landmark`
         ).not.toBe("");
 
         await expectNoHorizontalOverflow(page, label);
         const targets = await auditVisiblePointerTargets(page);
         const invalidExceptionMarkers = targets.filter(
-          (target) =>
-            target.exceptionAttribute !== null &&
-            target.exceptionJustification === null,
+          (target) => target.exceptionAttribute !== null && target.exceptionJustification === null
         );
         expect(
           invalidExceptionMarkers,
-          `${label}: inline-link exception markers require a nonempty justification on an anchor`,
+          `${label}: inline-link exception markers require a nonempty justification on an anchor`
         ).toEqual([]);
         const undersized = targets.filter(
           (target) =>
-            !target.exceptionJustification &&
-            (target.width < 43.99 || target.height < 43.99),
+            !target.exceptionJustification && (target.width < 43.99 || target.height < 43.99)
         );
         expect(
           undersized,
-          `${label}: every rendered pointer target must be at least 44x44px`,
+          `${label}: every rendered pointer target must be at least 44x44px`
         ).toEqual([]);
 
         const evidenceRoot = `after/breakpoints/${routeSlug(route.name)}/${probe.width}x${probe.height}`;
@@ -252,9 +227,7 @@ test.describe("route-wide breakpoint boundary audit", () => {
             fullPage: false,
           }),
           writeAuditJson(`${evidenceRoot}/pointer-targets.json`, {
-            inlineTextLinkExceptions: targets.filter(
-              (target) => target.exceptionJustification,
-            ),
+            inlineTextLinkExceptions: targets.filter((target) => target.exceptionJustification),
             minimumTargetPx: 44,
             probe,
             route: route.path,
@@ -266,9 +239,7 @@ test.describe("route-wide breakpoint boundary audit", () => {
         if (probe.axe) {
           const axe = await analyzeAccessibility(page);
           const blocking = axe.violations.filter(
-            (violation) =>
-              violation.impact === "serious" ||
-              violation.impact === "critical",
+            (violation) => violation.impact === "serious" || violation.impact === "critical"
           );
           await writeAuditJson(`${evidenceRoot}/axe.json`, {
             checkedAtRepresentativeWidth: true,

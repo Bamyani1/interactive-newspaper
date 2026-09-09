@@ -52,7 +52,7 @@ const ROOT = path.resolve(__dirnameEnv, "../..");
 const EDITIONS_DIR = path.join(ROOT, "public", "editions");
 const WEATHER_INDEX = path.join(
   ROOT,
-  "public/data/weather/ohio/index/delaware-by-date-1950-2000.json",
+  "public/data/weather/ohio/index/delaware-by-date-1950-2000.json"
 );
 const MUSIC_ARCHIVE = path.join(ROOT, "public/top-10-music/chart-1950-2010.json");
 
@@ -84,7 +84,9 @@ if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
   process.exit(1);
 }
 const ACTIVE_EDITIONS_DIR = editionsDirArg
-  ? (path.isAbsolute(editionsDirArg) ? editionsDirArg : path.resolve(ROOT, editionsDirArg))
+  ? path.isAbsolute(editionsDirArg)
+    ? editionsDirArg
+    : path.resolve(ROOT, editionsDirArg)
   : EDITIONS_DIR;
 
 if (!process.env.DATABASE_URL) {
@@ -110,7 +112,10 @@ function sanitize(text) {
 
 /** Strip HTML tags to get plain text for FTS indexing */
 function stripHtml(html) {
-  return sanitize(html).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  return sanitize(html)
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // ─── DB-Level Lock: Export / Restore ────────────────────────────
@@ -127,10 +132,14 @@ async function exportLockedEditions() {
     try {
       const [edition] = await sql`SELECT * FROM editions WHERE date = ${date}`;
       if (!edition) continue;
-      const articles = await sql`SELECT id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model, embedding_input_hash, embedding_input_version FROM articles WHERE edition_date = ${date} ORDER BY position`;
-      const ads = await sql`SELECT edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls FROM ads WHERE edition_date = ${date} ORDER BY position`;
+      const articles =
+        await sql`SELECT id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model, embedding_input_hash, embedding_input_version FROM articles WHERE edition_date = ${date} ORDER BY position`;
+      const ads =
+        await sql`SELECT edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls FROM ads WHERE edition_date = ${date} ORDER BY position`;
       saved[date] = { edition, articles, ads };
-      console.log(`  Saved locked edition ${date} from DB (${articles.length} articles, ${ads.length} ads)`);
+      console.log(
+        `  Saved locked edition ${date} from DB (${articles.length} articles, ${ads.length} ads)`
+      );
     } catch {
       // Tables might not exist on first run
     }
@@ -147,8 +156,9 @@ async function restoreLockedEditions(savedData) {
               ON CONFLICT (date) DO NOTHING`;
 
     if (articles.length > 0) {
-      const articleQueries = articles.map((a) =>
-        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model, embedding_input_hash, embedding_input_version)
+      const articleQueries = articles.map(
+        (a) =>
+          sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model, embedding_input_hash, embedding_input_version)
             VALUES (${a.id}, ${a.edition_date}, ${a.position}, ${a.category}, ${a.headline}, ${a.summary}, ${a.full_text}, ${a.body_plain}, ${a.byline}, ${a.writer_position}, ${a.page}, ${a.is_hero}, ${a.is_featured}, ${JSON.stringify(a.image_urls)}, ${a.image_caption}, ${JSON.stringify(a.image_captions)}, ${a.embedding}, ${a.embedding_model}, ${a.embedding_input_hash}, ${a.embedding_input_version})
             ON CONFLICT (id) DO NOTHING`
       );
@@ -157,14 +167,17 @@ async function restoreLockedEditions(savedData) {
 
     if (ads.length > 0) {
       await sql`DELETE FROM ads WHERE edition_date = ${date}`;
-      const adQueries = ads.map((a) =>
-        sql`INSERT INTO ads (edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls)
+      const adQueries = ads.map(
+        (a) =>
+          sql`INSERT INTO ads (edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls)
             VALUES (${a.edition_date}, ${a.position}, ${a.title}, ${a.body}, ${a.category}, ${a.ad_type}, ${a.display_text}, ${a.phone}, ${a.address}, ${a.price}, ${JSON.stringify(a.image_urls)})`
       );
       await sql.transaction(adQueries);
     }
 
-    console.log(`  Restored locked edition ${date} (${articles.length} articles, ${ads.length} ads)`);
+    console.log(
+      `  Restored locked edition ${date} (${articles.length} articles, ${ads.length} ads)`
+    );
   }
 }
 
@@ -175,25 +188,25 @@ async function truncateSeedTables() {
   // Finalized index builds carry PAID embedding vectors (and identity/asset
   // state that takes a multi-step pipeline to rebuild). A plain --reset was
   // historically cheap — refuse to widen its blast radius silently.
-  const guard = await sql.query(
-    `SELECT id, status FROM rag_index_builds
+  const guard = await sql
+    .query(
+      `SELECT id, status FROM rag_index_builds
      WHERE to_regclass('public.rag_index_builds') IS NOT NULL
        AND status IN ('validated', 'active')
-     ORDER BY created_at DESC LIMIT 3`,
-  ).catch(() => []);
+     ORDER BY created_at DESC LIMIT 3`
+    )
+    .catch(() => []);
   if (guard.length > 0 && !includeRagBuilds) {
     throw new Error(
       `Refusing --reset: this database holds ${guard.length}+ finalized index build(s) ` +
         `(${guard.map((b) => `${b.id}:${b.status}`).join(", ")}) whose embedding vectors cost ` +
-        `real API spend to recreate. Re-run with --include-rag-builds to truncate them anyway.`,
+        `real API spend to recreate. Re-run with --include-rag-builds to truncate them anyway.`
     );
   }
-  const truncated = CANONICAL_TABLES
-    .filter((t) => t.kind === "reseedable" || (includeRuntime && t.kind === "runtime"))
-    .map((t) => t.name);
-  const preserved = CANONICAL_TABLES
-    .filter((t) => !truncated.includes(t.name))
-    .map((t) => t.name);
+  const truncated = CANONICAL_TABLES.filter(
+    (t) => t.kind === "reseedable" || (includeRuntime && t.kind === "runtime")
+  ).map((t) => t.name);
+  const preserved = CANONICAL_TABLES.filter((t) => !truncated.includes(t.name)).map((t) => t.name);
 
   await sql.query(`TRUNCATE ${truncated.join(", ")} RESTART IDENTITY CASCADE`);
 
@@ -285,8 +298,9 @@ async function seedEditions(scopedDate = "") {
     });
 
     if (preparedArticles.length > 0) {
-      const articleQueries = preparedArticles.map((a) =>
-        sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding_input_hash, embedding_input_version)
+      const articleQueries = preparedArticles.map(
+        (a) =>
+          sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding_input_hash, embedding_input_version)
             VALUES (${a.id}, ${a.date}, ${a.position}, ${a.category}, ${a.headline}, ${a.summary}, ${a.fullText}, ${a.bodyPlain}, ${a.byline}, ${a.writerPosition}, ${a.page}, ${a.isHero}, ${a.isFeatured}, ${JSON.stringify(a.imageUrls)}, ${a.imageCaption}, ${JSON.stringify(a.imageCaptions)}, ${a.embeddingInputHash}, ${EMBEDDING_INPUT_VERSION})
             ON CONFLICT (id) DO UPDATE SET
               category = EXCLUDED.category,
@@ -337,12 +351,13 @@ async function seedEditions(scopedDate = "") {
         edition_date: article.date,
         category: article.category,
         summary: article.summary,
-      }),
+      })
     );
     if (chunkRecords.length > 0) {
       await sql.transaction(
-        chunkRecords.map((chunk) =>
-          sql`INSERT INTO article_chunks (id, article_id, chunk_index, chunk_text, embedding_input_hash, embedding_input_version)
+        chunkRecords.map(
+          (chunk) =>
+            sql`INSERT INTO article_chunks (id, article_id, chunk_index, chunk_text, embedding_input_hash, embedding_input_version)
               VALUES (${chunk.id}, ${chunk.articleId}, ${chunk.chunkIndex}, ${chunk.chunkText}, ${chunk.embeddingInputHash}, ${EMBEDDING_INPUT_VERSION})
               ON CONFLICT (id) DO UPDATE SET
                 chunk_index = EXCLUDED.chunk_index,
@@ -358,8 +373,8 @@ async function seedEditions(scopedDate = "") {
                    AND article_chunks.embedding_model = ${EMBEDDING_MODEL}
                   THEN article_chunks.embedding_model ELSE NULL END,
                 embedding_input_hash = EXCLUDED.embedding_input_hash,
-                embedding_input_version = EXCLUDED.embedding_input_version`,
-        ),
+                embedding_input_version = EXCLUDED.embedding_input_version`
+        )
       );
       const chunkIds = chunkRecords.map((chunk) => chunk.id);
       await sql`DELETE FROM article_chunks
@@ -372,14 +387,15 @@ async function seedEditions(scopedDate = "") {
         articleId: article.id,
         imageIndex,
         imageUrl,
-        caption: article.imageCaptions?.[imageIndex] ??
-          (imageIndex === 0 ? article.imageCaption : null),
-      })),
+        caption:
+          article.imageCaptions?.[imageIndex] ?? (imageIndex === 0 ? article.imageCaption : null),
+      }))
     );
     if (imageRecords.length > 0) {
       await sql.transaction(
-        imageRecords.map((image) =>
-          sql`INSERT INTO article_images (id, article_id, image_index, image_url, caption)
+        imageRecords.map(
+          (image) =>
+            sql`INSERT INTO article_images (id, article_id, image_index, image_url, caption)
               VALUES (${image.id}, ${image.articleId}, ${image.imageIndex}, ${image.imageUrl}, ${image.caption})
               ON CONFLICT (id) DO UPDATE SET
                 image_index = EXCLUDED.image_index,
@@ -400,8 +416,8 @@ async function seedEditions(scopedDate = "") {
                 embedding_input_hash = CASE
                   WHEN article_images.image_url = EXCLUDED.image_url
                    AND article_images.caption IS NOT DISTINCT FROM EXCLUDED.caption
-                  THEN article_images.embedding_input_hash ELSE NULL END`,
-        ),
+                  THEN article_images.embedding_input_hash ELSE NULL END`
+        )
       );
       const imageIds = imageRecords.map((image) => image.id);
       await sql`DELETE FROM article_images
@@ -415,15 +431,16 @@ async function seedEditions(scopedDate = "") {
       // Delete existing ads for this edition first (serial PK, no upsert)
       await sql`DELETE FROM ads WHERE edition_date = ${date}`;
 
-      const adQueries = ads.map((ad, i) =>
-        sql`INSERT INTO ads (edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls)
+      const adQueries = ads.map(
+        (ad, i) =>
+          sql`INSERT INTO ads (edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls)
             VALUES (${date}, ${i}, ${sanitize(ad.title)}, ${sanitize(ad.body)}, ${sanitize(ad.category) ?? null}, ${sanitize(ad.adType) ?? null}, ${sanitize(ad.displayText) ?? null}, ${sanitize(ad.phone) ?? null}, ${sanitize(ad.address) ?? null}, ${sanitize(ad.price) ?? null}, ${JSON.stringify(ad.imageUrls ?? [])})`
       );
       await sql.transaction(adQueries);
     }
 
     console.log(
-      `  ${date}: ${articles.length} articles (${droppedInAdapter} filtered), ${ads.length} ads, ${pageCount} pages`,
+      `  ${date}: ${articles.length} articles (${droppedInAdapter} filtered), ${ads.length} ads, ${pageCount} pages`
     );
     seeded.push({
       date,
@@ -458,7 +475,7 @@ async function seedWeather() {
   const startMs = Date.UTC(
     Number(archive.start_date.slice(0, 4)),
     Number(archive.start_date.slice(5, 7)) - 1,
-    Number(archive.start_date.slice(8, 10)),
+    Number(archive.start_date.slice(8, 10))
   );
   const totalDays = archive.tmax_c.length;
   const isEstimated = typeof archive.is_estimated === "string" ? archive.is_estimated : "";
@@ -480,8 +497,9 @@ async function seedWeather() {
   const BATCH_SIZE = 500;
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     const batch = records.slice(i, i + BATCH_SIZE);
-    const queries = batch.map((r) =>
-      sql`INSERT INTO weather (date, scope, tmax_c, tmin_c, precip_mm, source, source_station_id, quality_flag, is_estimated)
+    const queries = batch.map(
+      (r) =>
+        sql`INSERT INTO weather (date, scope, tmax_c, tmin_c, precip_mm, source, source_station_id, quality_flag, is_estimated)
           VALUES (${r.date}, ${"delaware"}, ${r.tmax_c ?? null}, ${r.tmin_c ?? null}, ${null}, ${"NOAA_GHCN_DAILY_ARCHIVE"}, ${null}, ${null}, ${r.is_estimated})
           ON CONFLICT (date, scope) DO UPDATE SET
             tmax_c = EXCLUDED.tmax_c,
@@ -523,7 +541,7 @@ async function seedMusic() {
   const startYear = Number(startYearMatch[1]);
 
   console.log(
-    `Seeding music from packed archive (${archive.months.length} month buckets, starting ${archive.start})...`,
+    `Seeding music from packed archive (${archive.months.length} month buckets, starting ${archive.start})...`
   );
 
   let totalTracks = 0;
@@ -535,8 +553,9 @@ async function seedMusic() {
     const year = startYear + Math.floor(i / 12);
     const month = String((i % 12) + 1).padStart(2, "0");
 
-    const queries = monthTracks.map((tuple, rankIdx) =>
-      sql`INSERT INTO music (year, month, rank, title, artist, youtube_id)
+    const queries = monthTracks.map(
+      (tuple, rankIdx) =>
+        sql`INSERT INTO music (year, month, rank, title, artist, youtube_id)
           VALUES (${year}, ${month}, ${rankIdx + 1}, ${tuple[0]}, ${tuple[1]}, ${tuple[2]})
           ON CONFLICT (year, month, rank) DO UPDATE SET
             title = EXCLUDED.title,
@@ -629,14 +648,16 @@ async function embedArticles(scopedDate = "") {
 
   for (let i = 0; i < unembedded.length; i += BATCH) {
     const batch = unembedded.slice(i, i + BATCH);
-    const inputs = batch.map((chunk) => buildEmbeddingInput({
-      headline: chunk.headline,
-      byline: chunk.byline,
-      body_plain: chunk.chunk_text,
-      edition_date: chunk.edition_date,
-      category: chunk.category,
-      summary: chunk.chunk_index === 0 ? chunk.summary : null,
-    }));
+    const inputs = batch.map((chunk) =>
+      buildEmbeddingInput({
+        headline: chunk.headline,
+        byline: chunk.byline,
+        body_plain: chunk.chunk_text,
+        edition_date: chunk.edition_date,
+        category: chunk.category,
+        summary: chunk.chunk_index === 0 ? chunk.summary : null,
+      })
+    );
 
     try {
       const vectors = await embedDocuments(inputs, { op: "seed.embed-chunks" });
@@ -659,7 +680,7 @@ async function embedArticles(scopedDate = "") {
       // no benefit. See docs/issues/0028.
       if (QuotaExhaustedError && err instanceof QuotaExhaustedError) {
         console.warn(
-          `  Quota exhausted at batch ${Math.floor(i / BATCH) + 1}/${totalBatches}; stopping early. Retry after quota reset.`,
+          `  Quota exhausted at batch ${Math.floor(i / BATCH) + 1}/${totalBatches}; stopping early. Retry after quota reset.`
         );
         quotaExhausted = true;
         break;
@@ -672,7 +693,7 @@ async function embedArticles(scopedDate = "") {
   console.log(`  Embedding complete: ${done} chunks.`);
   if (quotaExhausted) {
     throw new Error(
-      `Embedding stopped early due to Gemini quota exhaustion; ${done} of ${unembedded.length} article(s) embedded. Retry after the daily quota reset.`,
+      `Embedding stopped early due to Gemini quota exhaustion; ${done} of ${unembedded.length} article(s) embedded. Retry after the daily quota reset.`
     );
   }
   if (failedBatches > 0) {
@@ -744,7 +765,9 @@ async function main() {
   const start = Date.now();
 
   console.log(`\nThe Transcript Archive — Database Seed`);
-  console.log(`Mode: ${isReset ? "RESET (truncate + re-seed)" : "UPSERT"}${targetDate ? ` | DATE=${targetDate}` : ""}\n`);
+  console.log(
+    `Mode: ${isReset ? "RESET (truncate + re-seed)" : "UPSERT"}${targetDate ? ` | DATE=${targetDate}` : ""}\n`
+  );
 
   // Data-only preflight: both modes require a fully migrated database.
   await assertMigrationsCurrent(createNeonExecutor(process.env.DATABASE_URL));
@@ -803,11 +826,11 @@ async function main() {
   }
   console.log(`\nDone in ${elapsed}s.`);
   console.log(
-    "\nNote: the running Next.js server caches the editions list (tag \"editions\")\n" +
+    '\nNote: the running Next.js server caches the editions list (tag "editions")\n' +
       "      for up to 1h. To drop the cache immediately:\n" +
       "\n" +
       "        curl -X POST <host>/api/admin/revalidate \\\n" +
-      "          -H \"X-Admin-Token: $ADMIN_REVALIDATE_TOKEN\"\n" +
+      '          -H "X-Admin-Token: $ADMIN_REVALIDATE_TOKEN"\n' +
       "\n" +
       "      Or redeploy. See CLAUDE.md → Environment Variables for the token setup."
   );
