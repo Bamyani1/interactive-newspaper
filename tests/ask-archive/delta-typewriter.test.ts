@@ -73,6 +73,36 @@ describe("DeltaTypewriter", () => {
     expect(emitted.join("").length).toBeGreaterThan(0);
   });
 
+  // The drain handle used to be assigned from push() while drain() cleared
+  // it from the inside. A drain that finished without ever awaiting a tick
+  // — a short delta that parks mid-word, or one the first slice consumes
+  // whole — cleared the handle *before* push()'s assignment landed, so
+  // push() overwrote null with an already-settled promise that nothing
+  // would ever clear again. Every later delta was then dropped, and
+  // settle()'s wait became an infinite microtask loop: 100% of one core,
+  // no paint, no input, "Page Unresponsive".
+  it("keeps draining after a first delta that parks without yielding", async () => {
+    const { tw, emitted } = makeTypewriter();
+    // No whitespace past the first slice and under the boundary-wait cap,
+    // so the first drain parks and returns synchronously.
+    tw.push("The");
+    tw.push(" desk replied at once ");
+    await runTicks();
+    expect(emitted.join("")).toBe("The desk replied at once ");
+  });
+
+  it("keeps draining after a first delta the opening slice consumes whole", async () => {
+    const { tw, emitted } = makeTypewriter();
+    // Three chars ending on whitespace: emitted and emptied in one
+    // iteration, so the drain never reaches its await either.
+    tw.push("ab ");
+    await runTicks(5);
+    expect(emitted.join("")).toBe("ab ");
+    tw.push("cd ");
+    await runTicks();
+    expect(emitted.join("")).toBe("ab cd ");
+  });
+
   it("stops emitting after abort", async () => {
     const { tw, emitted, controller } = makeTypewriter();
     tw.push("some words arrive here ");

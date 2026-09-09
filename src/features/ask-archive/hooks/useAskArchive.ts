@@ -277,18 +277,43 @@ export class DeltaTypewriter {
   push(text: string): void {
     if (!text) return;
     this.queue += text;
-    if (!this.draining) this.draining = this.drain();
+    this.schedule();
   }
 
   /** Resolves once everything pushed so far has been emitted. */
   async settle(): Promise<void> {
     this.finished = true;
-    while (this.draining) await this.draining;
+    // Two waits, never a loop on `draining`: the drain that may be
+    // running now, then one more for text an earlier drain parked on a
+    // word boundary. `while (this.draining) await this.draining` reads
+    // as equivalent and is not — with a stale handle it becomes an
+    // infinite microtask loop, which starves the event loop completely:
+    // no timers, no paint, no input, one core at 100% until the tab is
+    // killed. That was the "Page Unresponsive" freeze.
+    await this.draining;
     if (this.queue.length > 0) {
-      // Drain parked on a word boundary before finished was set.
-      this.draining = this.drain();
-      while (this.draining) await this.draining;
+      this.schedule();
+      await this.draining;
     }
+  }
+
+  /**
+   * Start a drain unless one is already running. A running drain re-reads
+   * `queue` on every iteration, so it picks up whatever was just pushed.
+   *
+   * The handle is cleared by the drain's own `finally`, and `drain`'s
+   * leading yield is what guarantees that clearing happens *after* this
+   * assignment. Without it a drain that finished synchronously — a short
+   * delta that parks mid-word, or one the opening slice consumes whole —
+   * cleared the handle from the inside first and this line resurrected
+   * it with an already-settled promise nothing would ever clear again.
+   * Every later delta was then dropped and `settle` never resolved.
+   */
+  private schedule(): void {
+    if (this.draining) return;
+    this.draining = this.drain().finally(() => {
+      this.draining = null;
+    });
   }
 
   /**
@@ -306,22 +331,24 @@ export class DeltaTypewriter {
   }
 
   private async drain(): Promise<void> {
+    // Yield before touching the queue so this can never settle
+    // synchronously — schedule() depends on that.
+    await Promise.resolve();
     while (this.queue.length > 0) {
       if (this.signal.aborted) {
         this.queue = "";
-        break;
+        return;
       }
       const take = Math.max(
         TYPE_MIN_CHARS_PER_TICK,
         Math.ceil(this.queue.length / TYPE_CATCHUP_TICKS)
       );
       const end = this.sliceEnd(take);
-      if (end === 0) break; // mid-word; wait for the next push
+      if (end === 0) return; // mid-word; wait for the next push
       this.emit(this.queue.slice(0, end));
       this.queue = this.queue.slice(end);
       if (this.queue.length > 0) await typeTick();
     }
-    this.draining = null;
   }
 }
 
