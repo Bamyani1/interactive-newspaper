@@ -30,9 +30,14 @@ const THREADS_STORAGE_KEY = "owu-ask-threads";
 // each thread's lastUpdatedAt (bumped on every turn), not its creation.
 const THREAD_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+/** A sidebar row, not a headline — long enough to be specific. */
+export const MAX_THREAD_TITLE_LENGTH = 120;
+
 interface StoredThread {
   sessionId: string;
   firstQuestion: string;
+  /** Reader-supplied name. Absent means "show the first question". */
+  title?: string;
   turns: Turn[];
   createdAt: number;
   lastUpdatedAt: number;
@@ -147,6 +152,9 @@ function upsertArchive(sessionId: string, turns: Turn[]): StoredThread[] {
   const entry: StoredThread = {
     sessionId,
     firstQuestion: settled[0].question,
+    // A rename survives every later turn — the reader named the thread,
+    // not the question.
+    ...(existing?.title ? { title: existing.title } : {}),
     turns: settled,
     createdAt: existing ? existing.createdAt : now,
     lastUpdatedAt: now,
@@ -164,6 +172,7 @@ function toSummary(entry: StoredThread): ThreadSummary {
   return {
     id: entry.sessionId,
     firstQuestion: entry.firstQuestion,
+    ...(entry.title ? { title: entry.title } : {}),
     turnCount: entry.turns.length,
     lastUpdatedAt: entry.lastUpdatedAt,
   };
@@ -382,6 +391,8 @@ export interface UseAskArchiveReturn {
   editAndResend: (turnId: string, question: string) => void;
   retry: (turnId: string) => void;
   sendFeedback: (turnId: string, vote: "up" | "down") => void;
+  renameThread: (threadId: string, title: string) => void;
+  deleteThread: (threadId: string) => void;
   clearAllThreads: () => void;
   newConversation: () => void;
   switchThread: (threadId: string) => void;
@@ -942,6 +953,56 @@ export function useAskArchive(): UseAskArchiveReturn {
     dispatch({ type: "CLEAR_ALL_THREADS", threads: [], activeThreadId: fresh });
   }, [dispatch, mintFreshSession, deleteServerSession, stop]);
 
+  /**
+   * Name a thread. The rename is the reader's, not the conversation's, so
+   * it deliberately does not touch `lastUpdatedAt` — renaming a thread
+   * must not reorder the sidebar or relabel it "Just now". An empty name
+   * clears the override and the first question takes over again.
+   */
+  const renameThread = useCallback(
+    (threadId: string, title: string) => {
+      const archive = readArchive();
+      const idx = archive.findIndex((thread) => thread.sessionId === threadId);
+      if (idx === -1) return;
+      const trimmed = title.trim().slice(0, MAX_THREAD_TITLE_LENGTH);
+      const { title: _previous, ...rest } = archive[idx];
+      void _previous;
+      const next = [...archive];
+      next[idx] = trimmed ? { ...rest, title: trimmed } : rest;
+      const stored = writeArchive(next) ? next : archive;
+      dispatch({ type: "SET_THREADS", threads: summariesFrom(stored) });
+    },
+    [dispatch]
+  );
+
+  /**
+   * Forget a single thread, locally and server-side.
+   *
+   * Deleting the thread that is on screen cannot go through
+   * `newConversation`, which archives the current turns first — that
+   * would write the thread straight back. It aborts, drops the entry,
+   * and mints a fresh session in one dispatch instead.
+   */
+  const deleteThread = useCallback(
+    (threadId: string) => {
+      interactionRevisionRef.current += 1;
+      const isActive = threadId === sessionIdRef.current;
+      if (isActive) stop();
+      const archive = readArchive();
+      const next = archive.filter((thread) => thread.sessionId !== threadId);
+      const stored = writeArchive(next) ? next : archive;
+      deleteServerSession(threadId);
+      const threads = summariesFrom(stored);
+      if (!isActive) {
+        dispatch({ type: "SET_THREADS", threads });
+        return;
+      }
+      const fresh = mintFreshSession();
+      dispatch({ type: "NEW_CONVERSATION", threads, activeThreadId: fresh });
+    },
+    [dispatch, deleteServerSession, mintFreshSession, stop]
+  );
+
   const newConversation = useCallback(() => {
     interactionRevisionRef.current += 1;
     // Settle the abandoned answer before it is archived, so the stored
@@ -1053,6 +1114,8 @@ export function useAskArchive(): UseAskArchiveReturn {
     editAndResend,
     retry,
     sendFeedback,
+    renameThread,
+    deleteThread,
     clearAllThreads,
     newConversation,
     switchThread,

@@ -10,6 +10,15 @@ interface ClearThreadsDialogProps {
   threadCount: number;
   onCancel: () => void;
   onConfirm: () => void;
+  /**
+   * Copy overrides. Deleting one thread is the same interruption with a
+   * narrower scope, so it reuses this dialog rather than growing a second
+   * one that would have to repeat the focus and dismissal handling.
+   */
+  title?: string;
+  body?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
 }
 
 /**
@@ -25,6 +34,10 @@ export const ClearThreadsDialog: React.FC<ClearThreadsDialogProps> = ({
   threadCount,
   onCancel,
   onConfirm,
+  title,
+  body,
+  confirmLabel,
+  cancelLabel,
 }) => {
   const titleId = useId();
   const descriptionId = useId();
@@ -60,12 +73,12 @@ export const ClearThreadsDialog: React.FC<ClearThreadsDialogProps> = ({
           <TriangleAlert size={20} aria-hidden="true" />
           <div>
             <p className="ask-clear-dialog-kicker">Permanent action</p>
-            <h2 id={titleId}>Clear all threads?</h2>
+            <h2 id={titleId}>{title ?? "Clear all threads?"}</h2>
           </div>
         </div>
         <p id={descriptionId} className="ask-clear-dialog-copy">
-          This will permanently remove {threadCount} saved {threadLabel} and all conversation
-          history. This cannot be undone.
+          {body ??
+            `This will permanently remove ${threadCount} saved ${threadLabel} and all conversation history. This cannot be undone.`}
         </p>
         <div className="ask-clear-dialog-actions">
           <button
@@ -74,14 +87,14 @@ export const ClearThreadsDialog: React.FC<ClearThreadsDialogProps> = ({
             className="ask-clear-dialog-button"
             onClick={onCancel}
           >
-            Keep threads
+            {cancelLabel ?? "Keep threads"}
           </button>
           <button
             type="button"
             className="ask-clear-dialog-button ask-clear-dialog-confirm"
             onClick={onConfirm}
           >
-            Clear all
+            {confirmLabel ?? "Clear all"}
           </button>
         </div>
       </div>

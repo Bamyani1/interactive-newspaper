@@ -137,3 +137,27 @@
 .ask-composer-send-label {
   display: inline-block;
 }
+
+/* The shortcut legend. Muted enough to read as chrome, and gone on
+   coarse pointers, where there is no keyboard to press these on and the
+   line would only cost vertical space above the on-screen keyboard. */
+.ask-composer-hint {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label-sm);
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.ask-composer-hint kbd {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--color-text-secondary);
+}
+
+@media (hover: none) {
+  .ask-composer-hint {
+    display: none;
+  }
+}

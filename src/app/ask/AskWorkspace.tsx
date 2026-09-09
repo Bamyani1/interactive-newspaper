@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useCallback, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useState } from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
 import { useAskArchive } from "@/features/ask-archive/hooks/useAskArchive";
@@ -10,6 +10,9 @@ import { Composer } from "@/features/ask-archive/components/Composer";
 import { AskSidebar } from "@/features/ask-archive/components/AskSidebar";
 import { AskMobileActions } from "@/features/ask-archive/components/AskMobileActions";
 import { ClearThreadsDialog } from "@/features/ask-archive/components/ClearThreadsDialog";
+import { ThreadDrawer } from "@/features/ask-archive/components/ThreadDrawer";
+import { threadLabel } from "@/features/ask-archive/components/ThreadList";
+import type { ThreadSummary } from "@/features/ask-archive/hooks/askReducer";
 
 function DeepLinkBridge({
   isHydrating,
@@ -33,10 +36,7 @@ interface AskWorkspaceProps {
   corpus?: { editionCount: number; articleCount: number };
 }
 
-export default function AskWorkspace({
-  suggestionDate = "2000-01-01",
-  corpus,
-}: AskWorkspaceProps) {
+export default function AskWorkspace({ suggestionDate = "2000-01-01", corpus }: AskWorkspaceProps) {
   const {
     turns,
     isHydrating,
@@ -51,6 +51,8 @@ export default function AskWorkspace({
     editAndResend,
     retry,
     sendFeedback,
+    renameThread,
+    deleteThread,
     clearAllThreads,
     newConversation,
     switchThread,
@@ -97,8 +99,25 @@ export default function AskWorkspace({
   const canMutateConversation = !isHydrating && turns.length > 0 && !isStreaming;
   // Clearing reaches the archive, so it stays available whenever any
   // thread exists — not only while the current one has turns.
+  const [isThreadDrawerOpen, setIsThreadDrawerOpen] = useState(false);
+  const [threadPendingDelete, setThreadPendingDelete] = useState<ThreadSummary | null>(null);
   const canClearAllThreads = !isHydrating && hasThreads && !isStreaming;
   const canExportConversation = canMutateConversation && !isExporting;
+
+  // Cmd/Ctrl+Shift+O starts a new conversation, the shortcut a reader
+  // arriving from any other chat product will already have in their
+  // fingers. Shift is what keeps it clear of the browser's own Cmd+O.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey) return;
+      if (event.key.toLowerCase() !== "o") return;
+      if (!canStartConversation) return;
+      event.preventDefault();
+      newConversation();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canStartConversation, newConversation]);
 
   const handleFollowUp = useCallback(
     (question: string) => {
@@ -129,6 +148,11 @@ export default function AskWorkspace({
     setIsClearWarningOpen(false);
   }, [clearAllThreads]);
 
+  const handleConfirmDeleteThread = useCallback(() => {
+    if (threadPendingDelete) deleteThread(threadPendingDelete.id);
+    setThreadPendingDelete(null);
+  }, [deleteThread, threadPendingDelete]);
+
   return (
     <PageShell variant="default" hasHeader>
       <Suspense fallback={null}>
@@ -149,6 +173,8 @@ export default function AskWorkspace({
             onClearAllThreads={() => setIsClearWarningOpen(true)}
             onExportConversation={handleExport}
             onSwitchThread={switchThread}
+            onRenameThread={renameThread}
+            onRequestDeleteThread={setThreadPendingDelete}
             canNewConversation={canStartConversation}
             canClearAllThreads={canClearAllThreads}
             canExportConversation={canExportConversation}
@@ -156,6 +182,8 @@ export default function AskWorkspace({
 
           <div className="ask-column">
             <AskMobileActions
+              onOpenThreads={() => setIsThreadDrawerOpen(true)}
+              threadCount={visibleThreads.length}
               onNewConversation={newConversation}
               onClearAllThreads={() => setIsClearWarningOpen(true)}
               onExportConversation={handleExport}
@@ -217,6 +245,29 @@ export default function AskWorkspace({
         threadCount={Math.max(visibleThreads.length, 1)}
         onCancel={() => setIsClearWarningOpen(false)}
         onConfirm={handleConfirmClearAll}
+      />
+      <ClearThreadsDialog
+        isOpen={threadPendingDelete !== null}
+        threadCount={1}
+        title="Delete this thread?"
+        body={
+          threadPendingDelete
+            ? `"${threadLabel(threadPendingDelete)}" and its answers will be removed from this browser and forgotten by the server. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete thread"
+        cancelLabel="Keep it"
+        onCancel={() => setThreadPendingDelete(null)}
+        onConfirm={handleConfirmDeleteThread}
+      />
+      <ThreadDrawer
+        isOpen={isThreadDrawerOpen}
+        threads={visibleThreads}
+        activeThreadId={activeThreadId}
+        onClose={() => setIsThreadDrawerOpen(false)}
+        onSwitchThread={switchThread}
+        onRenameThread={renameThread}
+        onRequestDeleteThread={setThreadPendingDelete}
       />
     </PageShell>
   );

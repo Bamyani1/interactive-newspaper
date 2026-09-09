@@ -138,7 +138,15 @@ export const Composer: React.FC<ComposerProps> = ({
         <p className="ask-composer-counter" aria-live="polite">
           {MAX_QUESTION_LENGTH - value.length} characters left
         </p>
-      ) : null}
+      ) : (
+        // The keys are only discoverable if something says them. Hidden
+        // on coarse pointers, where there is no keyboard to press them
+        // on and the line would only cost vertical space.
+        <p className="ask-composer-hint">
+          <kbd>Enter</kbd> sends · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>Esc</kbd> stops
+          · <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> new conversation
+        </p>
+      )}
     </div>
   );
 };

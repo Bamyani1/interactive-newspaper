@@ -177,6 +177,10 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* The list scrolls rather than growing: with a 7-day retention window
+     a busy week otherwise pushes Clear all past the bottom of the page. */
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .ask-sidebar-thread {
@@ -232,6 +236,137 @@
   /* Use the secondary token directly — the 70% color-mix dropped
      contrast under 3:1 (this is small text at 0.58rem). */
   color: var(--color-text-secondary);
+}
+
+/* A thread is one target with two tools beside it. The tools sit outside
+   the open button rather than inside it — a control nested in a button is
+   not reachable — and stay out of the way until the row is hovered or
+   something inside it holds focus. */
+.ask-thread-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.ask-thread-row .ask-sidebar-thread {
+  flex: 1;
+  min-width: 0;
+}
+
+.ask-thread-tools {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.ask-thread-row:hover .ask-thread-tools,
+.ask-thread-row:focus-within .ask-thread-tools {
+  opacity: 1;
+}
+
+/* No hover to reveal them with, and the row is the whole width of the
+   sheet, so on touch they are simply always there. */
+@media (hover: none) {
+  .ask-thread-tools {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-thread-tools {
+    transition: none;
+  }
+}
+
+.ask-thread-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-default);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.ask-thread-tool:hover {
+  color: var(--color-accent-text);
+  background: var(--color-accent-wash);
+}
+
+.ask-thread-rename {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ask-thread-rename-field {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--color-rule);
+  border-left: 2px solid var(--color-accent);
+  border-radius: var(--radius-default);
+  background: var(--color-bg-inset);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--color-text-primary);
+}
+
+/* ── Mobile thread sheet ──
+   Below 1024px the sidebar is gone, so this is the only route to the
+   archive. Anchored to the bottom, where a thumb is. */
+.ask-thread-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 100);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: color-mix(in oklab, var(--color-text-primary) 45%, transparent);
+}
+
+.ask-thread-drawer {
+  width: 100%;
+  max-width: 34rem;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3);
+  border-top: 3px solid var(--color-accent);
+  border-radius: var(--radius-default) var(--radius-default) 0 0;
+  background: var(--color-bg-primary);
+}
+
+.ask-thread-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.ask-thread-drawer-head h2 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.ask-thread-drawer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .ask-sidebar-threads-empty {
