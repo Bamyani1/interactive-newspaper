@@ -23,6 +23,7 @@ interface TranscriptProps {
   onRetry: (turnId: string) => void;
   onRegenerate?: (turnId: string) => void;
   onEditAndResend?: (turnId: string, question: string) => void;
+  onFeedback?: (turnId: string, vote: "up" | "down") => void;
 }
 
 export const Transcript: React.FC<TranscriptProps> = ({
@@ -36,6 +37,7 @@ export const Transcript: React.FC<TranscriptProps> = ({
   onRetry,
   onRegenerate,
   onEditAndResend,
+  onFeedback,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const prevTurnCountRef = useRef(turns.length);
@@ -214,6 +216,7 @@ export const Transcript: React.FC<TranscriptProps> = ({
           onRetry={onRetry}
           onRegenerate={onRegenerate}
           onEditAndResend={onEditAndResend}
+          onFeedback={onFeedback}
         />
       ))}
 

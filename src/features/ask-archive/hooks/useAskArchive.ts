@@ -381,6 +381,7 @@ export interface UseAskArchiveReturn {
   regenerate: (turnId: string) => void;
   editAndResend: (turnId: string, question: string) => void;
   retry: (turnId: string) => void;
+  sendFeedback: (turnId: string, vote: "up" | "down") => void;
   clearAllThreads: () => void;
   newConversation: () => void;
   switchThread: (threadId: string) => void;
@@ -845,6 +846,51 @@ export function useAskArchive(): UseAskArchiveReturn {
     [state.turns, rerunLast, submit]
   );
 
+  /**
+   * Rate an answer. Optimistic: the button fills in on the press and
+   * rolls back to whatever it showed before if the server refuses, so
+   * the control never claims a vote that was not recorded.
+   *
+   * Re-pressing the active vote does nothing. Each press is its own row
+   * server-side and there is no retraction endpoint, so an "unvote"
+   * affordance would be a lie; changing your mind to the other vote is
+   * a new press and is recorded as one.
+   */
+  const sendFeedback = useCallback(
+    (turnId: string, vote: "up" | "down") => {
+      const turn = state.turns.find((t) => t.id === turnId);
+      if (!turn || turn.status !== "done" || !turn.requestId) return;
+      if (turn.feedback === vote) return;
+      const previous = turn.feedback;
+      dispatch({ type: "TURN_FEEDBACK", id: turnId, feedback: vote });
+      void (async () => {
+        try {
+          const res = await fetch("/api/ask/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              requestId: turn.requestId,
+              vote,
+              question: turn.question,
+              answer: turn.answer,
+              confidence: turn.confidence,
+              mode: turn.mode,
+              citations: turn.citations,
+            }),
+          });
+          if (!res.ok) {
+            dispatch({ type: "TURN_FEEDBACK", id: turnId, feedback: previous });
+          }
+        } catch {
+          // Offline or the request was dropped — the vote was never
+          // recorded, so the button must not claim it was.
+          dispatch({ type: "TURN_FEEDBACK", id: turnId, feedback: previous });
+        }
+      })();
+    },
+    [state.turns, dispatch]
+  );
+
   // Mint a fresh sessionId for the next thread. Updates the ref
   // and the localStorage active-session key; never touches the
   // server. Shared by New/Clear/switchThread.
@@ -1006,6 +1052,7 @@ export function useAskArchive(): UseAskArchiveReturn {
     regenerate,
     editAndResend,
     retry,
+    sendFeedback,
     clearAllThreads,
     newConversation,
     switchThread,
