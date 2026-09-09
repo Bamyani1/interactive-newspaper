@@ -278,12 +278,20 @@ export function askReducer(state: AskState, action: AskAction): AskState {
         turns: [...frozen, emptyTurn(action.id, action.question, action.createdAt ?? Date.now())],
       };
     }
+    // Both terminal writes fall back to what the turn already holds
+    // rather than taking the incoming field as-is. A 200 response whose
+    // body is not an answer — a proxy interstitial, a truncated body, a
+    // schema that moved — used to write `undefined` over `answer`,
+    // `citations` and `sourceArticles`. The turn then looked finished
+    // while missing the fields every consumer treats as guaranteed, and
+    // the next archive write threw inside a passive effect, which takes
+    // down the page rather than the turn.
     case "TURN_META":
       return updateStreamingTurn(state, action.id, (t) => ({
         ...t,
-        mode: action.mode,
-        requestId: action.requestId,
-        sourceArticles: action.sourceArticles,
+        mode: action.mode ?? t.mode,
+        requestId: action.requestId ?? t.requestId,
+        sourceArticles: action.sourceArticles ?? t.sourceArticles,
         meta: { ...(t.meta ?? ({} as AskResponse["meta"])), ...action.meta } as AskResponse["meta"],
       }));
     case "TURN_STAGE":
@@ -303,12 +311,12 @@ export function askReducer(state: AskState, action: AskAction): AskState {
       return updateStreamingTurn(state, action.id, (t) => ({
         ...t,
         status: "done",
-        answer: action.answer,
-        citations: action.citations,
-        confidence: action.confidence,
-        meta: action.meta,
+        answer: action.answer ?? t.answer,
+        citations: action.citations ?? t.citations,
+        confidence: action.confidence ?? t.confidence,
+        meta: action.meta ?? t.meta,
         sourceArticles: action.sourceArticles ?? t.sourceArticles,
-        followUpQuestions: action.followUpQuestions,
+        followUpQuestions: action.followUpQuestions ?? t.followUpQuestions,
         stage: undefined,
       }));
     case "TURN_ERROR":

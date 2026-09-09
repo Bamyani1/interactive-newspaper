@@ -65,6 +65,40 @@ function settleForStorage(turns: Turn[]): Turn[] {
   return changed ? settled : turns;
 }
 
+/**
+ * Fill in a stored turn that is missing fields the rest of the code
+ * treats as guaranteed.
+ *
+ * An earlier build could write a turn with no `answer` when the server
+ * answered 200 with a body that was not an answer. Reading one back
+ * threw inside the archive effect, which takes down the whole page and
+ * keeps doing so on every load, because the bad value is in storage.
+ * Repairing on read costs that one turn's text and nothing else.
+ */
+function repairStoredTurn(turn: Turn): Turn {
+  if (
+    typeof turn?.answer === "string" &&
+    typeof turn.question === "string" &&
+    Array.isArray(turn.sourceArticles) &&
+    Array.isArray(turn.citations)
+  ) {
+    return turn;
+  }
+  return {
+    ...turn,
+    question: typeof turn?.question === "string" ? turn.question : "",
+    answer: typeof turn?.answer === "string" ? turn.answer : "",
+    status: turn?.status ?? "stopped",
+    sourceArticles: Array.isArray(turn?.sourceArticles) ? turn.sourceArticles : [],
+    citations: Array.isArray(turn?.citations) ? turn.citations : [],
+    confidence: turn?.confidence ?? "low",
+    requestId: typeof turn?.requestId === "string" ? turn.requestId : "",
+    mode: turn?.mode ?? "text",
+    meta: turn?.meta ?? null,
+    createdAt: typeof turn?.createdAt === "number" ? turn.createdAt : Date.now(),
+  };
+}
+
 function readArchive(): StoredThread[] {
   if (typeof window === "undefined") return [];
   try {
@@ -84,7 +118,9 @@ function readArchive(): StoredThread[] {
     // load for as long as that thread stays inside the retention window.
     let healed = false;
     const settled = fresh.map((thread) => {
-      const turns = settleForStorage(thread.turns);
+      const repaired = thread.turns.filter(Boolean).map(repairStoredTurn);
+      const anyRepaired = repaired.some((turn, i) => turn !== thread.turns[i]);
+      const turns = settleForStorage(anyRepaired ? repaired : thread.turns);
       if (turns === thread.turns) return thread;
       healed = true;
       return { ...thread, turns };
@@ -605,7 +641,20 @@ export function useAskArchive(): UseAskArchiveReturn {
         const contentType = res.headers.get("content-type") ?? "";
         if (!contentType.includes("text/event-stream") || !res.body) {
           // Non-streaming fallback — parse JSON and mark turn done.
-          const data = (await res.json()) as AskResponse;
+          const data = (await res.json().catch(() => null)) as AskResponse | null;
+          // A 200 is not a promise that the body is an answer: a proxy
+          // interstitial, a truncated body or a moved schema all arrive
+          // this way. Saying so is better than freezing a turn that
+          // looks finished and has nothing in it.
+          if (typeof data?.answer !== "string") {
+            dispatch({
+              type: "TURN_ERROR",
+              id: turnId,
+              kind: "server",
+              message: "The archive replied with something that wasn't an answer.",
+            });
+            return;
+          }
           dispatch({
             type: "TURN_META",
             id: turnId,
