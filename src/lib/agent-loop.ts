@@ -20,7 +20,6 @@ import { getGeminiClient } from "@/src/lib/gemini-client";
 import type { AskAgentProgressEvent } from "@/src/lib/ask-stream-events";
 import {
   computeCostUsd,
-  executeTrackedGenerationCall,
   recordUsage,
   releaseEvaluationGoogleCall,
   reserveEvaluationGoogleCall,
@@ -493,37 +492,6 @@ interface ModelTurn {
 }
 
 /**
- * A model turn whose text arrives in one piece. Used for the rounds after
- * the first, which the model spends deciding which archive lookups to run.
- */
-async function generateTurn(params: {
-  request: GenerateContentParameters;
-  op: string;
-  requestId?: string;
-  signal?: AbortSignal;
-}): Promise<ModelTurn> {
-  const client = getGeminiClient();
-  const response = await retryOnQuota(
-    params.op,
-    () =>
-      executeTrackedGenerationCall({
-        model: AGENT_MODEL,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        requestId: params.requestId,
-        op: params.op,
-        call: () => client.models.generateContent(params.request),
-      }),
-    { signal: params.signal, requestId: params.requestId }
-  );
-  return {
-    parts: response.candidates?.[0]?.content?.parts ?? [],
-    functionCalls: response.functionCalls ?? [],
-    text: textFromParts(response.candidates?.[0]?.content?.parts),
-    finishReason: response.candidates?.[0]?.finishReason,
-  };
-}
-
-/**
  * A model turn whose text is forwarded as it arrives, so a complex question
  * shows prose instead of "Researching…" for the whole synthesis wait.
  *
@@ -682,18 +650,19 @@ export async function runAgentLoop(
             },
       };
       const turnOpts = { op: `agent.round${round}`, requestId, signal };
-      // The first round is streamed because it is the round that can answer
-      // without any tools at all, and that answer is the reader's whole
-      // wait. Later rounds only ever follow a tool result, so they keep the
-      // simpler single-shot call.
-      const response =
-        round === 0
-          ? await generateStreamedTurn({
-              ...turnOpts,
-              request: roundRequest,
-              onDelta: (text) => onProgress?.({ type: "delta", text }),
-            })
-          : await generateTurn({ ...turnOpts, request: roundRequest });
+      // Every round streams, because any round can be the one that writes
+      // the answer — the common shape for a complex question is round 0
+      // choosing lookups and round 1 answering from them. Streaming only
+      // the first round and the forced synthesis left that dominant path
+      // silent for the whole generation, which is the wait the reader
+      // actually feels. generateStreamedTurn withholds deltas from any
+      // turn that produces a function call, so a planning round still
+      // sends nothing.
+      const response = await generateStreamedTurn({
+        ...turnOpts,
+        request: roundRequest,
+        onDelta: (text) => onProgress?.({ type: "delta", text }),
+      });
       generationTimeMs += Date.now() - modelStart;
 
       const functionCalls = response.functionCalls;
