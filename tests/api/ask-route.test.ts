@@ -123,7 +123,7 @@ import {
   formatHistoryForPrompt,
 } from "@/src/lib/conversation-store";
 import { clearAnswerCache } from "@/src/lib/answer-cache";
-import { candidateLimitFor } from "@/src/lib/retrieval";
+import { answerSourceLimitFor, candidateLimitFor } from "@/src/lib/retrieval";
 
 function makeRequest(body: Record<string, unknown>, opts: { stream?: boolean } = {}): NextRequest {
   const url = opts.stream
@@ -622,7 +622,9 @@ describe("POST /api/ask", () => {
       "Test?",
       retrieved,
       expect.objectContaining({
-        maxArticles: 6,
+        // Read from the constant: the assertion is that the route hands the
+        // reranker its configured keep-count, not what that count is today.
+        maxArticles: answerSourceLimitFor("text"),
         minScore: 4,
         signal: expect.any(AbortSignal),
       })

@@ -68,6 +68,7 @@ import {
   rerankWithCorrectiveRetry,
   retrieveCandidates,
   candidateLimitFor,
+  answerSourceLimitFor,
   RetrievalSignalsUnavailableError,
   RetrievalStageError,
 } from "@/src/lib/retrieval";
@@ -890,7 +891,7 @@ async function handleStreamingAsk(params: {
         // sources and declines as distractors accumulate; also trims ~40% off
         // the generation prompt. Visual mode keeps a wider pool for image
         // selection (accuracy band-gated by the holdout eval).
-        const keepTopK = mode === "visual" ? 15 : 6;
+        const keepTopK = answerSourceLimitFor(mode);
         logRerankSignals(requestId, computeRerankSignals(articles), mode, "streaming");
 
         let rankedArticles: RankedArticle[];
@@ -1489,7 +1490,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Visual mode uses a lower threshold (3 = tangentially related) because
     // the user's goal is seeing photos, not precise answers — "somewhat related"
     // photos are still valuable. Text mode stays stricter at 4.
-    const keepTopK = mode === "visual" ? 15 : 6;
+    const keepTopK = answerSourceLimitFor(mode);
     logRerankSignals(requestId, computeRerankSignals(articles), mode, "default");
 
     const rankedArticles = await rerankWithCragRetry({
