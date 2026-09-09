@@ -53,12 +53,14 @@ describe("RAG coverage semantics", () => {
     expect(answer).not.toContain("definitely never happened");
   });
 
-  it("preserves a cited positive answer and adds scope without changing confidence", () => {
+  // Scope reaches the reader as meta.coverage, which the transcript renders
+  // above the answer. Appending it as prose put a paragraph of metadata in
+  // the answer's own voice under every reply, which read as filler.
+  it("returns a cited positive answer verbatim, with no scope paragraph", () => {
     const original = "The cited article documented the event [Source 1].";
     const answer = applyCoverageAnswerPolicy(original, 1, coverage({ intent: "exhaustive" }));
-    expect(answer).toContain(original);
-    expect(answer).toContain("Coverage note:");
-    expect(answer).toContain("claims above rely on the cited archive evidence");
+    expect(answer).toBe(original);
+    expect(answer).not.toContain("Coverage note:");
   });
 
   it("does nothing for an ordinary question without coverage metadata", () => {

@@ -8,6 +8,7 @@ import { Markdown } from "./Markdown";
 import { SourceList } from "./SourceList";
 import { FollowUpQuestions } from "./FollowUpQuestions";
 import { LowConfidenceCaveat } from "./LowConfidenceCaveat";
+import { CoverageNote } from "./CoverageNote";
 import { ErrorInline } from "./ErrorInline";
 import {
   dedupSourceImages,
@@ -249,6 +250,10 @@ export const Turn: React.FC<TurnProps> = ({
       </div>
 
       <div className="ask-turn-assistant" aria-live="polite" aria-atomic="false">
+        {/* Above the answer, and available from the metadata frame — so a
+            thin answer arrives already framed by how thin the archive is
+            for that question, instead of being explained afterwards. */}
+        {isError ? null : <CoverageNote coverage={turn.meta?.coverage} />}
         {answerBlock}
         {isError ? (
           <>
