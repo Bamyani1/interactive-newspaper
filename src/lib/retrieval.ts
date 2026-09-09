@@ -525,3 +525,34 @@ export function candidateLimitFor(mode: "text" | "visual"): number {
 export function agentCandidateLimitFor(mode: "text" | "visual"): number {
   return mode === "visual" ? 30 : 24;
 }
+
+/**
+ * How many ranked sources the answer generator is given — and therefore
+ * the most a reader can ever be shown for one question.
+ *
+ * Distinct from the candidate pool above: that is how much the judge gets
+ * to choose from, this is how much survives into the answer.
+ *
+ * Text was 6, on the finding that answer F1 peaks near 3-6 kept sources
+ * and declines as distractors accumulate. That finding was made when the
+ * judge chose from 20 candidates and silently discarded one verdict in
+ * six, so ranks 7-12 really were mostly distractors. With a 40-candidate
+ * pool and the judge's verdicts no longer being thrown away, they are
+ * not. Measured against the frozen golden catalog:
+ *
+ *   6  sources: 60.9% source recall, 5/6 questions surfacing a known
+ *               good source, 3.09 citations, 3 high-confidence answers
+ *   12 sources: 78.3% recall, 6/6 questions, 4.18 citations, 3 high
+ *   18 sources: 82.6% recall, 6/6 questions, 4.09 citations, 1 high
+ *
+ * 18 is where the original warning reasserts itself: recall still creeps
+ * up, but confidence collapses as the tail dilutes the evidence. 12 takes
+ * the recall and keeps the grounding, for +1.9s and no answer bloat
+ * (mean answer 1,330 -> 1,394 chars).
+ *
+ * Visual stays at 15: that band is gated by the holdout eval, and the
+ * gallery was never the complaint.
+ */
+export function answerSourceLimitFor(mode: "text" | "visual"): number {
+  return mode === "visual" ? 15 : 12;
+}
