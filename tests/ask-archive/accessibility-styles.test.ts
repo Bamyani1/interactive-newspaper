@@ -86,6 +86,18 @@ describe("Ask accessibility style contracts", () => {
     expect(reducedMotion).toContain("opacity: 1;");
   });
 
+  it("keeps the hydrating indicator out of flow with its height reserved", () => {
+    // In flow, removing the indicator when the session restore resolves
+    // reflowed the whole transcript (0.036 CLS on mobile against a 0.01
+    // budget). Out of flow it reserves nothing, so the transcript has to
+    // reserve a line for it or it paints over the landing's kicker. Both
+    // halves are load-bearing: neither can be dropped on its own.
+    expect(rule(transcript, ".ask-hydrating-indicator")).toContain("position: absolute;");
+    expect(rule(transcript, ".ask-transcript:has(> .ask-landing)")).toContain(
+      "padding-block-start: calc(var(--space-2) + var(--text-xs) * var(--leading-base));"
+    );
+  });
+
   it("does not dilute source date or source number contrast with opacity", () => {
     expect(rule(sources, ".ask-source-card-date")).not.toContain("opacity:");
     expect(rule(sources, ".ask-source-card-num")).not.toContain("opacity:");

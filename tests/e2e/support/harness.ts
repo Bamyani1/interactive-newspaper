@@ -95,6 +95,18 @@ export function isIgnorableOptimizedImageAbort(input: {
   return isImageOptimizerRequest && input.errorText.includes("ERR_ABORTED");
 }
 
+const fulfilledMockRequests = new WeakSet<Request>();
+
+/**
+ * Record a request a route mock actually fulfilled. Only such requests are
+ * eligible for the abort exemption below, so every mock that answers the Ask
+ * endpoint itself — rather than through `installApiMocks` — must call this
+ * after its own `route.fulfill()`.
+ */
+export function recordFulfilledMockRequest(request: Request): void {
+  fulfilledMockRequests.add(request);
+}
+
 /**
  * Playwright fulfils the deterministic Ask stream in a single shot, so the
  * whole SSE body is already buffered before the workspace asks for it. The
@@ -103,15 +115,22 @@ export function isIgnorableOptimizedImageAbort(input: {
  * during that pause, reporting `net::ERR_ABORTED` even though the reader
  * still receives its final `done` and the turn completes normally. A live SSE
  * connection just applies backpressure instead, so this is an artifact of
- * route interception, not app behaviour. Scoped to POSTs at the Ask endpoint;
- * a genuine duplicate submission is caught by the request counts in
- * `ask-workspace.spec.ts`, not here.
+ * route interception, not app behaviour.
+ *
+ * Only a POST the mock actually answered qualifies (`fulfilledByMock`, from
+ * `recordFulfilledMockRequest`). An aborted Ask POST that was never fulfilled
+ * is the client cancelling its own request — a double submit or a switch
+ * mid-stream — and stays fatal, which is the failure this predicate must
+ * never hide. Request counts in `ask-workspace.spec.ts` still cover the case
+ * where a duplicate submission is fulfilled before it is cancelled.
  */
 export function isIgnorableMockedAskStreamAbort(input: {
   method: string;
   url: string;
   errorText: string;
+  fulfilledByMock: boolean;
 }): boolean {
+  if (!input.fulfilledByMock) return false;
   const path = input.url.split("?")[0];
   return (
     input.method.toUpperCase() === "POST" &&
@@ -184,6 +203,7 @@ export function observeBrowserDiagnostics(page: Page, diagnostics: BrowserDiagno
         method: request.method(),
         url: request.url(),
         errorText,
+        fulfilledByMock: fulfilledMockRequests.has(request),
       })
     ) {
       return;
@@ -270,6 +290,7 @@ export async function installApiMocks(page: Page, mocks: ApiMock[]): Promise<voi
           headers,
           json: mock.json,
         });
+        recordFulfilledMockRequest(route.request());
         return;
       }
 
@@ -279,6 +300,7 @@ export async function installApiMocks(page: Page, mocks: ApiMock[]): Promise<voi
         contentType: mock.contentType ?? "text/plain; charset=utf-8",
         body: mock.text ?? "",
       });
+      recordFulfilledMockRequest(route.request());
     });
   }
 }
@@ -410,12 +432,15 @@ export const FIREFOX_FRAME_ANCESTORS_COMPATIBILITY_WARNING =
   'warning: [JavaScript Warning: "Content-Security-Policy: Ignoring ‘x-frame-options’ because of ‘frame-ancestors’ directive."]';
 
 /**
- * Framer Motion 12 emits this development-only warning while the first
- * document boots whenever the browser explicitly prefers reduced motion, even
- * when MotionConfig correctly uses `reducedMotion="user"`. The observer uses
- * this predicate only once during the initial load's tightly bounded boot
- * window. The final diagnostics gate remains strict so an application cannot
- * impersonate it after the UI settles.
+ * Framer Motion 12 emits this development-only warning whenever a motion
+ * subtree mounts under the reduced-motion setting the audit context itself
+ * forces, even when MotionConfig correctly uses `reducedMotion="user"` — once
+ * per full document load and again after every client-side route change. The
+ * observer therefore consumes it whenever it appears rather than inside any
+ * boot window. Impersonation is ruled out by the predicate instead: the text
+ * must be exact, the source a local dev chunk, and the server in development
+ * mode. `expectNoUnexpectedDiagnostics` never applies this allowance, so a
+ * warning that reaches the gate stays fatal.
  */
 export function isExpectedFramerMotionReducedMotionDevWarning(warning: string): boolean {
   if (process.env.PLAYWRIGHT_SERVER_MODE === "production") return false;
