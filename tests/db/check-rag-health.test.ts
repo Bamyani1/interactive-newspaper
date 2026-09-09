@@ -39,6 +39,19 @@ function config(overrides: Record<string, unknown> = {}) {
 
 const deps = { assertMigrationsCurrent };
 
+/** One assertConfiguredIndexBuildReady predicate, as the .mjs check reports it. */
+interface Predicate {
+  ok: boolean;
+  expected: unknown;
+  actual: unknown;
+}
+
+// `build` is a union (legacy / missing / present), so narrow at the read site.
+function predicates(report: { build: unknown }): Array<[string, Predicate]> {
+  const { row } = report.build as { row?: Record<string, Predicate> };
+  return Object.entries(row ?? {});
+}
+
 async function insertBuild(
   db: TestDb,
   id: string,
@@ -137,7 +150,7 @@ describe("check-rag-health", () => {
       "status",
       "text_embedding_input_version",
     ]);
-    expect(Object.values(report.build.row).every((check) => check.ok)).toBe(true);
+    expect(predicates(report).every(([, check]) => check.ok)).toBe(true);
   });
 
   it("fails legacy mode whose serving filter reaches nothing", async () => {
@@ -172,7 +185,7 @@ describe("check-rag-health", () => {
     });
     // Only that one predicate failed; the rest still report ok.
     expect(
-      Object.entries(report.build.row)
+      predicates(report)
         .filter(([, check]) => !check.ok)
         .map(([name]) => name)
     ).toEqual(["corpus_version"]);
