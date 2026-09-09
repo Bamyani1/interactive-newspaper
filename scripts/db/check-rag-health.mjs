@@ -20,9 +20,13 @@
  * Writes nothing. Exported functions take an injectable executor so tests
  * drive them against PGlite; main() wires the real Neon executor.
  *
- * Usage (tsx required):
- *   DATABASE_URL=... npx tsx scripts/db/check-rag-health.mjs
- *   DATABASE_URL=... npx tsx scripts/db/check-rag-health.mjs --json
+ * Usage:
+ *   npm run rag:health
+ *   npm run rag:health -- --json
+ *
+ * Reads .env.local like the rest of scripts/db/; an exported DATABASE_URL
+ * or RAG_RETRIEVAL_MODE still wins, so a one-off check against another
+ * deployment is a prefix away.
  *
  * Exit: 0 healthy, 1 mismatch, 2 usage/connection error.
  */
@@ -309,6 +313,15 @@ export function formatReport(report) {
 }
 
 async function main() {
+  // Same loader every other script in scripts/db/ uses. Without it the
+  // check could only run with DATABASE_URL exported by hand, which meant
+  // the one command documented for diagnosing a silent retrieval failure
+  // failed on its own first line.
+  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+  const localEnvModule = await import("../lib/local-env.ts");
+  const { loadLocalEnv } = localEnvModule.default ?? localEnvModule;
+  loadLocalEnv(path.resolve(scriptDir, "../../.env.local"));
+
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) {
     console.error("ERROR: DATABASE_URL is required.");
