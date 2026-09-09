@@ -26,15 +26,19 @@ const EMBEDDING_MODEL = RAG_EMBEDDING_MODEL;
 const EMBEDDING_DIMS = 768;
 const EMBEDDING_INPUT_VERSION = RAG_TEXT_EMBEDDING_INPUT_VERSION;
 const IMAGE_EMBEDDING_INPUT_VERSION = RAG_IMAGE_EMBEDDING_INPUT_VERSION;
-const MAX_BATCH_SIZE = 100; // API limit per request
+/**
+ * Documents embedded in parallel. This model takes exactly one content per
+ * request, so throughput comes from concurrency rather than batch size.
+ * Matches the value the index build settled on.
+ */
+const EMBED_CONCURRENCY = 6;
 // Query embed budget: 10s. Previously 5s, but under Gemini load (or
 // adjacent rapid calls from the rest of the /api/ask pipeline) the
 // p95 query-embed latency spikes to 5-8s, which blew through the old
 // budget and raised spurious 502s. 10s is still well inside the 30s
-// global deadline and consistent with the 30s document-batch budget
-// (where batches are up to 100 items).
+// global deadline and consistent with the 30s per-document budget.
 const EMBED_TIMEOUT_MS = 10_000;
-const EMBED_DOCUMENTS_TIMEOUT_MS = 30_000; // per-batch budget for document embedding
+const EMBED_DOCUMENTS_TIMEOUT_MS = 30_000; // per-document budget
 const MAX_EMBEDDING_CHARS = 30_000; // ~7,500 tokens; conservative buffer under 8,192 token API limit
 
 /**
@@ -190,55 +194,64 @@ export async function embedDocuments(
   const textOnly = textIndices.map((i) => inputs[i]);
   const withImages = imageIndices.map((i) => inputs[i]);
 
-  // Batch text-only embeddings
-  const textEmbeddings: number[][] = [];
-  for (let i = 0; i < textOnly.length; i += MAX_BATCH_SIZE) {
-    const batch = textOnly.slice(i, i + MAX_BATCH_SIZE);
-
+  // One request per document. Vertex refuses a multi-content embedContent
+  // for this model — "The embedContent API for this model only supports
+  // one content at a time" — so a batch of N failed wholesale rather than
+  // degrading. The index build had already discovered this and wrapped
+  // this function in a per-item adapter of its own; db:seed and db:embed
+  // had not, and called it with 50 inputs at a time.
+  //
+  // Concurrency replaces batching: the previous code paused 200ms between
+  // batches, so serialising N calls would have been far slower than the
+  // batching it replaces.
+  const textEmbeddings: number[][] = new Array<number[]>(textOnly.length);
+  let nextTextIndex = 0;
+  const embedOneText = async (index: number): Promise<void> => {
+    const input = textOnly[index];
     const response = await retryOnQuota(
-      "embedDocuments.textBatch",
+      "embedDocuments.text",
       () =>
-      executeTrackedEmbeddingCall({
-        model: EMBEDDING_MODEL,
-        requestId: opts.requestId,
-        op: opts.op ?? "embed.documents",
-        call: () =>
-          embedWithTimeout(
-            "embedDocuments.textBatch",
-            (signal) =>
-              client.models.embedContent({
-                model: EMBEDDING_MODEL,
-                contents: batch.map((inp) => ({ parts: [{ text: inp.text }] })),
-                config: {
-                  outputDimensionality: EMBEDDING_DIMS,
-                  abortSignal: signal,
-                },
-              }),
-            EMBED_DOCUMENTS_TIMEOUT_MS
-          ),
+        executeTrackedEmbeddingCall({
+          model: EMBEDDING_MODEL,
+          requestId: opts.requestId,
+          op: opts.op ?? "embed.documents",
+          call: () =>
+            embedWithTimeout(
+              "embedDocuments.text",
+              (signal) =>
+                client.models.embedContent({
+                  model: EMBEDDING_MODEL,
+                  contents: [{ parts: [{ text: input.text }] }],
+                  config: {
+                    outputDimensionality: EMBEDDING_DIMS,
+                    abortSignal: signal,
+                  },
+                }),
+              EMBED_DOCUMENTS_TIMEOUT_MS
+            ),
         }),
       { delaysMs: QUOTA_RETRY_DELAYS_MS, requestId: opts.requestId }
     );
 
-    if (!response.embeddings || response.embeddings.length !== batch.length) {
+    const values = response.embeddings?.[0]?.values;
+    if (!values || values.length !== EMBEDDING_DIMS) {
       throw new Error(
-        `Embedding response mismatch: expected ${batch.length}, got ${response.embeddings?.length ?? 0}`
+        `Invalid embedding dimensions: expected ${EMBEDDING_DIMS}, got ${values?.length ?? 0}`
       );
     }
+    textEmbeddings[index] = values;
+  };
 
-    for (const emb of response.embeddings) {
-      if (!emb.values || emb.values.length !== EMBEDDING_DIMS) {
-        throw new Error(
-          `Invalid embedding dimensions: expected ${EMBEDDING_DIMS}, got ${emb.values?.length ?? 0}`
-        );
+  await Promise.all(
+    Array.from({ length: Math.min(EMBED_CONCURRENCY, textOnly.length) }, async () => {
+      for (;;) {
+        const index = nextTextIndex;
+        nextTextIndex += 1;
+        if (index >= textOnly.length) return;
+        await embedOneText(index);
       }
-      textEmbeddings.push(emb.values);
-    }
-
-    if (i + MAX_BATCH_SIZE < textOnly.length) {
-      await sleep(200);
-    }
-  }
+    })
+  );
 
   // Process multimodal embeddings individually. If any image fails, the
   // throw propagates out of this loop and out of embedDocuments — callers
