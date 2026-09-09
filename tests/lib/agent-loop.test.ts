@@ -543,7 +543,9 @@ describe("agent-loop", () => {
         onProgress: (e) => events.push(e),
       });
 
-      expect(events).toHaveLength(2);
+      // The round that answers streams like any other, so its text follows
+      // the tool rows as a delta rather than arriving only in the result.
+      expect(events.map((e) => e.type)).toEqual(["tool_call", "tool_result", "delta"]);
       expect(events[0].type).toBe("tool_call");
       expect(events[0].tool).toBe("search_archive");
       expect(events[1].type).toBe("tool_result");
@@ -602,9 +604,11 @@ describe("agent-loop", () => {
       // Citations and grounding still run on the complete text, so the
       // authoritative answer arrives in the result, not in the deltas.
       expect(result.citations.map((c) => c.articleId)).toEqual(["1968-01-31-28"]);
-      // Round 0 and the synthesis stream; the two middle tool rounds do not.
-      expect(mockGenerateContentStreamFn).toHaveBeenCalledTimes(2);
-      expect(mockGenerateContentFn).toHaveBeenCalledTimes(2);
+      // Every round streams. The tool-calling rounds emit no deltas — the
+      // guard is the function call they produce, not the transport — so
+      // the reader still sees prose only from the round that writes it.
+      expect(mockGenerateContentStreamFn).toHaveBeenCalledTimes(4);
+      expect(mockGenerateContentFn).not.toHaveBeenCalled();
     });
 
     it("streams no answer text for a round that calls tools", async () => {
@@ -620,9 +624,13 @@ describe("agent-loop", () => {
       const events: AgentProgressEvent[] = [];
       await runAgentLoop("test", { onProgress: (e) => events.push(e) });
 
-      // Only tool_call / tool_result: a round choosing lookups is not
-      // writing the answer, so its planning text is never sent as prose.
-      expect(events.map((e) => e.type)).toEqual(["tool_call", "tool_result"]);
+      // The lookup round streams like every other round but produces a
+      // function call, so its planning text is withheld: no delta reaches
+      // the reader before the tool rows. The delta that follows is the
+      // next round writing the answer, which is what deltas are for.
+      const types = events.map((e) => e.type);
+      expect(types.indexOf("delta")).toBeGreaterThan(types.indexOf("tool_result"));
+      expect(types.slice(0, 2)).toEqual(["tool_call", "tool_result"]);
     });
 
     it("returns articleMeta accumulated from tool calls", async () => {
