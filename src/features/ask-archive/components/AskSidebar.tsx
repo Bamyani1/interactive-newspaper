@@ -3,6 +3,7 @@
 import React from "react";
 import { Plus, Eraser, Download } from "lucide-react";
 import type { ThreadSummary } from "../hooks/askReducer";
+import { ThreadList } from "./ThreadList";
 
 interface AskSidebarProps {
   threads: ThreadSummary[];
@@ -11,20 +12,11 @@ interface AskSidebarProps {
   onClearAllThreads: () => void;
   onExportConversation: () => void;
   onSwitchThread: (threadId: string) => void;
+  onRenameThread: (threadId: string, title: string) => void;
+  onRequestDeleteThread: (thread: ThreadSummary) => void;
   canNewConversation: boolean;
   canClearAllThreads: boolean;
   canExportConversation: boolean;
-}
-
-function formatRelativeTime(ts: number): string {
-  const delta = Date.now() - ts;
-  const mins = Math.round(delta / 60_000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return `${days}d ago`;
 }
 
 export const AskSidebar: React.FC<AskSidebarProps> = ({
@@ -34,6 +26,8 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
   onClearAllThreads,
   onExportConversation,
   onSwitchThread,
+  onRenameThread,
+  onRequestDeleteThread,
   canNewConversation,
   canClearAllThreads,
   canExportConversation,
@@ -85,34 +79,13 @@ export const AskSidebar: React.FC<AskSidebarProps> = ({
           <span>{threads.length}</span>
         </header>
         <div className="ask-sidebar-threads">
-          {threads.length === 0 ? (
-            <p className="ask-sidebar-threads-empty">
-              No conversation yet. Ask a question to begin.
-            </p>
-          ) : (
-            threads.map((thread) => {
-              const isActive = thread.id === activeThreadId;
-              return (
-                <button
-                  key={thread.id}
-                  type="button"
-                  className="ask-sidebar-thread"
-                  data-active={isActive ? "true" : undefined}
-                  onClick={() => onSwitchThread(thread.id)}
-                  aria-current={isActive ? "true" : undefined}
-                  aria-label={`Open thread: ${thread.firstQuestion}`}
-                >
-                  <span className="ask-sidebar-thread-title">{thread.firstQuestion}</span>
-                  <span className="ask-sidebar-thread-meta">
-                    {thread.turnCount === 1 ? "1 turn" : `${thread.turnCount} turns`}
-                    {" · "}
-                    {formatRelativeTime(thread.lastUpdatedAt)}
-                    {isActive ? " · active" : null}
-                  </span>
-                </button>
-              );
-            })
-          )}
+          <ThreadList
+            threads={threads}
+            activeThreadId={activeThreadId}
+            onSwitchThread={onSwitchThread}
+            onRenameThread={onRenameThread}
+            onRequestDelete={onRequestDeleteThread}
+          />
         </div>
       </section>
 

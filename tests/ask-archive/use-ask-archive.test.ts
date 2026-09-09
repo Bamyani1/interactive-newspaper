@@ -1392,3 +1392,152 @@ describe("answer rating", () => {
     expect(feedbackCalls[1].vote).toBe("down");
   });
 });
+
+describe("thread rename and delete", () => {
+  function storedTurn(question: string) {
+    return {
+      id: "t1",
+      question,
+      answer: "An answer.",
+      status: "done",
+      sourceArticles: [],
+      citations: [],
+      meta: null,
+      confidence: "medium",
+      requestId: "req-1",
+      mode: "text",
+      createdAt: Date.now(),
+    };
+  }
+
+  function seedArchive(activeSessionId: string) {
+    window.localStorage.setItem("owu-ask-session-id", activeSessionId);
+    window.localStorage.setItem(
+      "owu-ask-threads",
+      JSON.stringify([
+        {
+          sessionId: "sess-a",
+          firstQuestion: "Who edited the paper in 1962?",
+          turns: [storedTurn("Who edited the paper in 1962?")],
+          createdAt: Date.now() - 120_000,
+          lastUpdatedAt: Date.now() - 120_000,
+        },
+        {
+          sessionId: "sess-b",
+          firstQuestion: "What did the trustees decide?",
+          turns: [storedTurn("What did the trustees decide?")],
+          createdAt: Date.now() - 60_000,
+          lastUpdatedAt: Date.now() - 60_000,
+        },
+      ])
+    );
+  }
+
+  function readStored() {
+    return JSON.parse(window.localStorage.getItem("owu-ask-threads") ?? "[]") as Array<{
+      sessionId: string;
+      title?: string;
+      lastUpdatedAt: number;
+    }>;
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/ask/session")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ turns: [], expired: false }), { status: 200 })
+          );
+        }
+        return Promise.resolve(new Response("{}", { status: 200 }));
+      })
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function mounted(activeSessionId: string) {
+    seedArchive(activeSessionId);
+    const view = renderHook(() => useAskArchive());
+    await waitFor(() => expect(view.result.current.isHydrating).toBe(false));
+    return view;
+  }
+
+  it("stores a thread name without reordering the sidebar", async () => {
+    const view = await mounted("sess-b");
+    const before = readStored().find((t) => t.sessionId === "sess-a")!.lastUpdatedAt;
+
+    act(() => {
+      view.result.current.renameThread("sess-a", "  Sixties editors  ");
+    });
+
+    const after = readStored().find((t) => t.sessionId === "sess-a")!;
+    expect(after.title).toBe("Sixties editors");
+    // Naming a thread is not a change to the conversation, so the sort
+    // key must not move — the list reordered itself under the reader.
+    expect(after.lastUpdatedAt).toBe(before);
+    expect(view.result.current.threads.find((t) => t.id === "sess-a")?.title).toBe(
+      "Sixties editors"
+    );
+  });
+
+  it("clears the name when it is renamed to nothing", async () => {
+    const view = await mounted("sess-b");
+    act(() => {
+      view.result.current.renameThread("sess-a", "Named");
+    });
+    act(() => {
+      view.result.current.renameThread("sess-a", "   ");
+    });
+
+    expect(readStored().find((t) => t.sessionId === "sess-a")).not.toHaveProperty("title");
+    expect(view.result.current.threads.find((t) => t.id === "sess-a")?.title).toBeUndefined();
+  });
+
+  it("forgets an inactive thread and leaves the reader where they were", async () => {
+    const view = await mounted("sess-b");
+    const activeBefore = view.result.current.activeThreadId;
+
+    act(() => {
+      view.result.current.deleteThread("sess-a");
+    });
+
+    expect(readStored().map((t) => t.sessionId)).toEqual(["sess-b"]);
+    expect(view.result.current.activeThreadId).toBe(activeBefore);
+  });
+
+  it("deleting the open thread mints a fresh one instead of re-archiving it", async () => {
+    const view = await mounted("sess-a");
+    await waitFor(() => expect(view.result.current.turns.length).toBeGreaterThan(0));
+
+    act(() => {
+      view.result.current.deleteThread("sess-a");
+    });
+
+    // Routing this through newConversation would archive the current
+    // turns first and write the thread straight back.
+    expect(readStored().map((t) => t.sessionId)).toEqual(["sess-b"]);
+    expect(view.result.current.turns).toEqual([]);
+    expect(view.result.current.activeThreadId).not.toBe("sess-a");
+    expect(view.result.current.activeThreadId).toBeTruthy();
+  });
+
+  it("keeps a thread name across a later turn", async () => {
+    const view = await mounted("sess-b");
+    act(() => {
+      view.result.current.renameThread("sess-b", "Trustees");
+    });
+    act(() => {
+      view.result.current.submit("and what happened next?");
+    });
+
+    await waitFor(() =>
+      expect(readStored().find((t) => t.sessionId === "sess-b")?.title).toBe("Trustees")
+    );
+  });
+});

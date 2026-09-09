@@ -67,8 +67,10 @@ export type EmptyReason = "cleared" | "new" | null;
 export interface ThreadSummary {
   /** Matches the thread's sessionId (the two are the same identifier). */
   id: string;
-  /** First user question — used as the thread title in the sidebar. */
+  /** First user question — the sidebar's title when the reader hasn't set one. */
   firstQuestion: string;
+  /** A name the reader gave this thread. Falls back to `firstQuestion`. */
+  title?: string;
   /** Number of Q/A pairs in the thread. */
   turnCount: number;
   /** Last time any turn in the thread was mutated (ms since epoch). */
