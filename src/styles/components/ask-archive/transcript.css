@@ -279,6 +279,14 @@
   }
 }
 
+/* A recorded vote stays lit whether or not the row is hovered — it is
+   the reader's own state, not an affordance waiting to be discovered. */
+.ask-turn-action[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--color-accent-text);
+  background: var(--color-accent-wash);
+}
+
 .ask-turn-edit {
   display: flex;
   flex-direction: column;

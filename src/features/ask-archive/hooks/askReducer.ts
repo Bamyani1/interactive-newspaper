@@ -42,6 +42,12 @@ export interface Turn {
   errorKind?: AskErrorKind;
   errorMessage?: string;
   retryAfterSec?: number;
+  /**
+   * The reader's rating of this answer. Optimistic — set the moment the
+   * button is pressed and rolled back if the POST is refused, so the
+   * control never lies about what the server accepted.
+   */
+  feedback?: "up" | "down";
 }
 
 /**
@@ -133,6 +139,8 @@ export type AskAction =
       retryAfterSec?: number;
     }
   | { type: "TURN_STOPPED"; id: string }
+  /** Undefined clears the vote — both the toggle-off and the rollback. */
+  | { type: "TURN_FEEDBACK"; id: string; feedback?: "up" | "down" }
   | { type: "TURN_RESTART"; id: string; question: string }
   // Both carry the freshly minted thread pointer so it lands in the same
   // dispatch that empties the transcript, rather than depending on a
@@ -330,6 +338,13 @@ export function askReducer(state: AskState, action: AskAction): AskState {
         status: "stopped",
         stage: undefined,
       }));
+    case "TURN_FEEDBACK":
+      // Deliberately not gated on "streaming": a vote only ever lands on
+      // a turn that has already settled, and it is the reader's input
+      // rather than a frame from a stream that may have been abandoned.
+      return updateTurn(state, action.id, (t) =>
+        t.feedback === action.feedback ? t : { ...t, feedback: action.feedback }
+      );
     case "CLEAR_ALL_THREADS":
       // Stay inside the chat chrome; the Transcript renders the
       // "ALL THREADS CLEARED — ASK A NEW QUESTION BELOW." pill.

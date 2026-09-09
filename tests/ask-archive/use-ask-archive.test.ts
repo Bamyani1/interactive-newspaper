@@ -1280,3 +1280,115 @@ describe("useAskArchive turn lifecycle", () => {
     expect(recorded[0].signal?.aborted).toBe(true);
   });
 });
+
+describe("answer rating", () => {
+  const feedbackCalls: Array<Record<string, unknown>> = [];
+
+  function routeAll(sse: ControlledSse, feedbackOk: boolean) {
+    feedbackCalls.length = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/api/ask/feedback")) {
+          feedbackCalls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+          return Promise.resolve(
+            new Response(JSON.stringify({ ok: feedbackOk }), { status: feedbackOk ? 201 : 500 })
+          );
+        }
+        if (url.includes("/api/ask/session")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ turns: [], expired: false }), { status: 200 })
+          );
+        }
+        return Promise.resolve(sse.response);
+      })
+    );
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function answeredTurn(feedbackOk: boolean) {
+    const sse = makeSseResponse();
+    routeAll(sse, feedbackOk);
+    const view = renderHook(() => useAskArchive());
+    await waitFor(() => expect(view.result.current.isHydrating).toBe(false));
+    await act(async () => {
+      view.result.current.submit("did the library ever burn down?");
+    });
+    await act(async () => {
+      sse.emit({
+        type: "metadata",
+        question: "did the library ever burn down?",
+        mode: "text",
+        requestId: "req-42",
+        sourceArticles: [],
+        meta: {},
+      });
+      sse.emit({
+        type: "done",
+        answer: "It did not.",
+        citations: [],
+        confidence: "high",
+        meta: {},
+      });
+      sse.close();
+    });
+    await waitFor(() => expect(view.result.current.turns[0].status).toBe("done"));
+    return view;
+  }
+
+  it("records the vote and sends the answer it belongs to", async () => {
+    const view = await answeredTurn(true);
+    const turnId = view.result.current.turns[0].id;
+
+    await act(async () => {
+      view.result.current.sendFeedback(turnId, "up");
+    });
+
+    await waitFor(() => expect(feedbackCalls).toHaveLength(1));
+    expect(feedbackCalls[0].vote).toBe("up");
+    expect(feedbackCalls[0].requestId).toBe("req-42");
+    expect(feedbackCalls[0].answer).toBe("It did not.");
+    expect(view.result.current.turns[0].feedback).toBe("up");
+  });
+
+  it("rolls the button back when the server refuses the vote", async () => {
+    const view = await answeredTurn(false);
+    const turnId = view.result.current.turns[0].id;
+
+    await act(async () => {
+      view.result.current.sendFeedback(turnId, "down");
+    });
+
+    await waitFor(() => expect(view.result.current.turns[0].feedback).toBeUndefined());
+  });
+
+  it("does not re-send a vote that is already recorded", async () => {
+    const view = await answeredTurn(true);
+    const turnId = view.result.current.turns[0].id;
+
+    await act(async () => {
+      view.result.current.sendFeedback(turnId, "up");
+    });
+    await waitFor(() => expect(feedbackCalls).toHaveLength(1));
+
+    await act(async () => {
+      view.result.current.sendFeedback(turnId, "up");
+    });
+    expect(feedbackCalls).toHaveLength(1);
+
+    // Changing your mind is a new press, and is recorded as one.
+    await act(async () => {
+      view.result.current.sendFeedback(turnId, "down");
+    });
+    await waitFor(() => expect(feedbackCalls).toHaveLength(2));
+    expect(feedbackCalls[1].vote).toBe("down");
+  });
+});

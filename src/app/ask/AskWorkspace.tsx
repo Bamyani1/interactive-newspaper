@@ -50,6 +50,7 @@ export default function AskWorkspace({
     regenerate,
     editAndResend,
     retry,
+    sendFeedback,
     clearAllThreads,
     newConversation,
     switchThread,
@@ -188,6 +189,7 @@ export default function AskWorkspace({
               onRetry={retry}
               onRegenerate={regenerate}
               onEditAndResend={editAndResend}
+              onFeedback={sendFeedback}
             />
             {/*
               The composer stays enabled while an answer streams so the

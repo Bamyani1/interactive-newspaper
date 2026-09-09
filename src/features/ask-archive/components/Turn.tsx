@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, RotateCcw } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { Button } from "@/src/components/ui/primitives";
 import type { Turn as TurnData } from "../hooks/askReducer";
 import { Markdown } from "./Markdown";
@@ -18,6 +18,8 @@ import { trimIncompleteMarkdown } from "../lib/trim-incomplete-markdown";
 import { AnswerImageContext, type AnswerImageContextValue } from "./AnswerImageContext";
 import { PhotosPanel } from "./PhotosPanel";
 import { Lightbox } from "@/src/components/ui/lightbox";
+import { TurnActions } from "./TurnActions";
+import { flattenCitations } from "../lib/citations";
 
 interface TurnProps {
   turn: TurnData;
@@ -28,6 +30,8 @@ interface TurnProps {
   onRegenerate?: (turnId: string) => void;
   /** Reword the question and answer that instead. Latest turn only. */
   onEditAndResend?: (turnId: string, question: string) => void;
+  /** Rate the answer. Offered on any settled turn that reached the server. */
+  onFeedback?: (turnId: string, vote: "up" | "down") => void;
   exportMode?: boolean;
 }
 
@@ -48,6 +52,7 @@ export const Turn: React.FC<TurnProps> = ({
   onRetry,
   onRegenerate,
   onEditAndResend,
+  onFeedback,
   exportMode = false,
 }) => {
   const articleIdIndex = useMemo(
@@ -142,6 +147,14 @@ export const Turn: React.FC<TurnProps> = ({
     onEditAndResend?.(turn.id, trimmed);
   }, [draft, onEditAndResend, turn.id, turn.question]);
 
+  // What the clipboard gets: the answer as written, with citations
+  // flattened to [N] so a pasted answer keeps its evidence instead of
+  // anchors that lead nowhere outside the page.
+  const copyText = useMemo(
+    () => (hasText ? flattenCitations(turn.answer, articleIdIndex).trim() : ""),
+    [hasText, turn.answer, articleIdIndex]
+  );
+
   // Hoisted so an error turn shows the same prose an ordinary turn does.
   // A mid-stream failure used to replace everything the reader had already
   // read with a bare error row, which looked like the answer was retracted.
@@ -160,20 +173,22 @@ export const Turn: React.FC<TurnProps> = ({
 
   // Also outside the success branch: a failed or interrupted answer is
   // exactly the one a reader most wants to run again.
-  const actionsRow =
-    canRerun && onRegenerate && !isEditing ? (
-      <div className="ask-turn-actions">
-        <Button
-          variant="icon"
-          className="ask-turn-action"
-          onClick={() => onRegenerate(turn.id)}
-          aria-label="Regenerate answer"
-          title="Regenerate answer"
-        >
-          <RotateCcw size={14} aria-hidden="true" />
-        </Button>
-      </div>
-    ) : null;
+  // Rating needs a requestId to join against server-side — a turn that
+  // was stopped or failed before the metadata frame has none, so it is
+  // read-only. Copy and Regenerate stay available on those.
+  const canRate =
+    turn.status === "done" && turn.requestId.length > 0 && !exportMode && Boolean(onFeedback);
+  const canRegenerate = canRerun && Boolean(onRegenerate);
+  const showActions = !exportMode && !isEditing && !isStreaming && (hasText || canRegenerate);
+
+  const actionsRow = showActions ? (
+    <TurnActions
+      copyText={copyText}
+      feedback={turn.feedback}
+      onRegenerate={canRegenerate ? () => onRegenerate?.(turn.id) : undefined}
+      onFeedback={canRate ? (vote) => onFeedback?.(turn.id, vote) : undefined}
+    />
+  ) : null;
 
   return (
     <article className="ask-turn">
