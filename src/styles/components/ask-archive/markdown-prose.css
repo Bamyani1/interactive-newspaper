@@ -254,12 +254,12 @@
   cursor: default;
 }
 
-/* The <img> still has to be in the tree to load at all, so it sits
-   inside the placeholder at zero height rather than being unmounted. */
+/* The <img> is deliberately NOT sized or hidden here. It has no
+   intrinsic size until its bytes arrive, so it already occupies nothing
+   inside the placeholder — and forcing it to 0x0 stopped `loading=lazy`
+   from ever fetching it, which deadlocked the figure: the caption waited
+   on a load that the CSS had just made impossible. */
 .ask-answer-figure[data-loading="true"] .ask-answer-image {
-  width: 0;
-  height: 0;
-  opacity: 0;
   border: 0;
 }
 
