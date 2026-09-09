@@ -219,6 +219,28 @@ describe("generateAnswer", () => {
     expect(generateContentMock).not.toHaveBeenCalled();
   });
 
+  it("caps confidence at low when nothing judged the sources", async () => {
+    // A dead reranker fails open at score 5, which used to read as "medium"
+    // confidence: the answer looked vetted when no judge had seen it.
+    generateContentMock.mockResolvedValue(jsonResponse("Answer [Source 1]."));
+    const result = await generateAnswer("question", [
+      makeArticle({ relevanceScore: 10, rerankDegraded: true }),
+      makeArticle({ id: "1960-01-07-1", relevanceScore: 10, rerankDegraded: true }),
+    ]);
+    expect(result.confidence).toBe("low");
+  });
+
+  it("keeps high confidence when the same scores were genuinely judged", async () => {
+    generateContentMock.mockResolvedValue(
+      jsonResponse("Answer [Source 1]. More [Source 2].", ["Next?"])
+    );
+    const result = await generateAnswer("question", [
+      makeArticle({ relevanceScore: 10 }),
+      makeArticle({ id: "1960-01-07-1", relevanceScore: 10 }),
+    ]);
+    expect(result.confidence).toBe("high");
+  });
+
   it("generates when articles carry the rerank-fallback score of 5", async () => {
     // 5 is both the reranker's degraded-mode score and the score the
     // route's total-veto fallback assigns; the tangential gate must let it
@@ -276,14 +298,52 @@ describe("generateAnswer", () => {
     );
   });
 
-  it("returns explicit timeout and generic error responses", async () => {
+  it("reports a timeout and a generic failure as errors, not as answers", async () => {
+    // These canned sentences used to be returned as ordinary answers and
+    // then persisted as conversation history, so the next turn's prompt
+    // contained the model apologising for a failure it never made.
     const abortError = new Error("aborted");
     abortError.name = "AbortError";
     generateContentMock.mockRejectedValueOnce(abortError);
-    expect((await generateAnswer("q", [makeArticle()])).answer).toContain("took too long");
+    const timedOut = await generateAnswer("q", [makeArticle()]);
+    expect(timedOut.answer).toContain("took too long");
+    expect(timedOut.outcome).toBe("error");
+    expect(timedOut.errorKind).toBe("timeout");
 
     generateContentMock.mockRejectedValueOnce(new Error("server error"));
-    expect((await generateAnswer("q", [makeArticle()])).answer).toContain("encountered an error");
+    const failed = await generateAnswer("q", [makeArticle()]);
+    expect(failed.answer).toContain("encountered an error");
+    expect(failed.outcome).toBe("error");
+    expect(failed.errorKind).toBe("server");
+  });
+
+  it("reports a cited answer and an honest refusal as real outcomes", async () => {
+    generateContentMock.mockResolvedValueOnce(jsonResponse("Answer [Source 1]."));
+    expect((await generateAnswer("q", [makeArticle()])).outcome).toBe("answered");
+
+    // No sources at all: a real reply the reader can act on, and real
+    // follow-up context, so it stays an answer rather than an error.
+    expect((await generateAnswer("q", [])).outcome).toBe("no_evidence");
+
+    expect((await generateAnswer("q", [makeArticle({ relevanceScore: 4 })])).outcome).toBe(
+      "no_evidence"
+    );
+  });
+
+  it("throws a typed quota error after the bounded retry instead of apologising", async () => {
+    vi.useFakeTimers();
+    try {
+      generateContentMock.mockRejectedValue(Object.assign(new Error("429"), { code: 429 }));
+
+      const promise = generateAnswer("q", [makeArticle()]);
+      promise.catch(() => {});
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      await expect(promise).rejects.toMatchObject({ name: "QuotaExhaustedError" });
+      expect(generateContentMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -338,6 +398,52 @@ describe("generateAnswerStream", () => {
         answer: "The 1968 protest drew hundreds [Source 1].\nA second march followed.",
       })
     );
+  });
+
+  it("reports the outcome on the done event", async () => {
+    generateContentStreamMock.mockResolvedValue(
+      (async function* () {
+        yield { text: '{"answer":"Answer [Source 1].","follow_ups":[]}', usageMetadata: {} };
+      })()
+    );
+
+    const events = [];
+    for await (const event of generateAnswerStream("q", [makeArticle()])) {
+      events.push(event);
+    }
+    expect(events[events.length - 1]).toEqual(
+      expect.objectContaining({ type: "done", outcome: "answered" })
+    );
+  });
+
+  it("reports a stream failure as an error outcome, not a canned answer", async () => {
+    generateContentStreamMock.mockRejectedValueOnce(new Error("stream exploded"));
+
+    const events = [];
+    for await (const event of generateAnswerStream("q", [makeArticle()])) {
+      events.push(event);
+    }
+    expect(events[events.length - 1]).toEqual(
+      expect.objectContaining({ type: "done", outcome: "error", errorKind: "server" })
+    );
+  });
+
+  it("throws a typed quota error from the stream after the bounded retry", async () => {
+    vi.useFakeTimers();
+    try {
+      generateContentStreamMock.mockRejectedValue(Object.assign(new Error("429"), { code: 429 }));
+
+      const drain = (async () => {
+        for await (const event of generateAnswerStream("q", [makeArticle()])) void event;
+      })();
+      drain.catch(() => {});
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      await expect(drain).rejects.toMatchObject({ name: "QuotaExhaustedError" });
+      expect(generateContentStreamMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("emits no deltas for a legacy plain-text response", async () => {

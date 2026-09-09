@@ -8,15 +8,35 @@
  */
 
 import { FunctionCallingConfigMode } from "@google/genai";
-import type { Content, FunctionDeclaration, Part } from "@google/genai";
+import type {
+  Content,
+  FunctionCall,
+  FunctionDeclaration,
+  GenerateContentParameters,
+  GenerateContentResponseUsageMetadata,
+  Part,
+} from "@google/genai";
 import { getGeminiClient } from "@/src/lib/gemini-client";
 import type { AskAgentProgressEvent } from "@/src/lib/ask-stream-events";
-import { executeTrackedGenerationCall } from "@/src/lib/cost-tracker";
+import {
+  computeCostUsd,
+  executeTrackedGenerationCall,
+  recordUsage,
+  releaseEvaluationGoogleCall,
+  reserveEvaluationGoogleCall,
+  settleEvaluationGoogleCall,
+} from "@/src/lib/cost-tracker";
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import { AGENT_TOOL_DECLARATIONS, executeTool } from "@/src/lib/agent-tools";
 import type { RetrievalFilters } from "@/src/lib/retrieval";
 import type { RetrievalMethod } from "@/src/lib/db";
-import type { Citation } from "@/src/types";
+import type { AnswerOutcome, AskErrorKind, Citation } from "@/src/types";
+import {
+  isQuotaFailure,
+  kindForQuota,
+  retryAfterSecFromQuotaError,
+  retryOnQuota,
+} from "@/src/lib/gemini-quota";
 import { groundAgentAnswer } from "@/src/lib/answer-grounding";
 import {
   applyCoverageAnswerPolicy,
@@ -94,6 +114,20 @@ export interface AgentResult {
   answer: string;
   citations: Citation[];
   /**
+   * Whether `answer` is a reply at all. `error` means it is a canned
+   * apology — the route reports it and does not persist it as history.
+   */
+  outcome: AnswerOutcome;
+  /** Only with `outcome: "error"`; picks the recovery the reader is offered. */
+  errorKind?: AskErrorKind;
+  retryAfterSec?: number;
+  /**
+   * An archive lookup timed out mid-research, so this answer stands on
+   * whatever evidence arrived before it did. Caps confidence at "low":
+   * the same honesty rule as the reranker's `rerankDegraded`.
+   */
+  degraded?: true;
+  /**
    * Ordered union of the articles this turn should surface as sources:
    * every article cited in prose, then any article that owns an image the
    * model embedded inline without citing it. The route both renders and
@@ -118,7 +152,12 @@ export type AgentProgressEvent = AskAgentProgressEvent;
 
 // ─── Source Article Ids ─────────────────────────────────────────
 
-const IMAGE_EMBED_RE = /!\[[^\]]*\]\(([^)\s]+)\)/g;
+// Also matches the `![](url "title")` form, which is valid CommonMark and
+// which the client renders: without the optional title group the whole
+// embed failed to match, so its owner was dropped from the sources. A URL
+// containing a raw space stays a documented non-goal — CommonMark requires
+// angle brackets for that, and mdSafeUrl escapes spaces upstream anyway.
+const IMAGE_EMBED_RE = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g;
 
 /**
  * Space and %20 flip between `mdSafeUrl`, the model, and its parser, so a
@@ -217,8 +256,11 @@ export function scoreConfidence(
     articleLookup?: Map<string, ArticleMeta>;
     toolErrorCount?: number;
     successfulSearchCount?: number;
+    /** A lookup timed out, so the evidence set is knowingly incomplete. */
+    degraded?: boolean;
   } = {}
 ): "low" | "medium" | "high" {
+  if (evidence.degraded) return "low";
   if (toolCallCount === 0) return "low";
   if (/don[''\u2019]t have enough information/i.test(answer)) return "low";
   if (citations.length === 0) return "low";
@@ -440,6 +482,116 @@ function combinedRetrievalMethod(methods: Set<RetrievalMethod>): RetrievalMethod
   return [...methods][0];
 }
 
+// ─── Model Turns ────────────────────────────────────────────────
+
+/** One model turn, in the shape the loop consumes regardless of transport. */
+interface ModelTurn {
+  parts: Part[];
+  functionCalls: FunctionCall[];
+  text: string;
+  finishReason?: string;
+}
+
+/**
+ * A model turn whose text arrives in one piece. Used for the rounds after
+ * the first, which the model spends deciding which archive lookups to run.
+ */
+async function generateTurn(params: {
+  request: GenerateContentParameters;
+  op: string;
+  requestId?: string;
+  signal?: AbortSignal;
+}): Promise<ModelTurn> {
+  const client = getGeminiClient();
+  const response = await retryOnQuota(
+    params.op,
+    () =>
+      executeTrackedGenerationCall({
+        model: AGENT_MODEL,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        requestId: params.requestId,
+        op: params.op,
+        call: () => client.models.generateContent(params.request),
+      }),
+    { signal: params.signal, requestId: params.requestId }
+  );
+  return {
+    parts: response.candidates?.[0]?.content?.parts ?? [],
+    functionCalls: response.functionCalls ?? [],
+    text: textFromParts(response.candidates?.[0]?.content?.parts),
+    finishReason: response.candidates?.[0]?.finishReason,
+  };
+}
+
+/**
+ * A model turn whose text is forwarded as it arrives, so a complex question
+ * shows prose instead of "Researching…" for the whole synthesis wait.
+ *
+ * Deltas are held back for as long as the turn has produced a function
+ * call: a round that is choosing archive lookups is not writing the answer,
+ * and streaming its planning text as prose would be a lie. Only the initial
+ * await is retried on quota — a 429 rejects before the first chunk, so no
+ * text can be emitted twice.
+ */
+async function generateStreamedTurn(params: {
+  request: GenerateContentParameters;
+  op: string;
+  requestId?: string;
+  signal?: AbortSignal;
+  onDelta?: (text: string) => void;
+}): Promise<ModelTurn> {
+  const client = getGeminiClient();
+  const parts: Part[] = [];
+  const functionCalls: FunctionCall[] = [];
+  let text = "";
+  let finishReason: string | undefined;
+  let usage: GenerateContentResponseUsageMetadata | undefined;
+  const reservation = reserveEvaluationGoogleCall({
+    model: AGENT_MODEL,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+    requestId: params.requestId,
+    op: params.op,
+  });
+  let settled = false;
+
+  try {
+    const stream = await retryOnQuota(
+      params.op,
+      () => client.models.generateContentStream(params.request),
+      { signal: params.signal, requestId: params.requestId }
+    );
+
+    for await (const chunk of stream) {
+      if (chunk.usageMetadata) usage = chunk.usageMetadata;
+      const chunkFinish = chunk.candidates?.[0]?.finishReason;
+      if (chunkFinish) finishReason = chunkFinish;
+      if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+        functionCalls.push(...chunk.functionCalls);
+      }
+      for (const part of chunk.candidates?.[0]?.content?.parts ?? []) parts.push(part);
+      const chunkText = typeof chunk.text === "string" ? chunk.text : "";
+      if (!chunkText) continue;
+      text += chunkText;
+      if (functionCalls.length === 0) params.onDelta?.(chunkText);
+    }
+
+    if (reservation) {
+      settleEvaluationGoogleCall(reservation, computeCostUsd(AGENT_MODEL, usage));
+      settled = true;
+    }
+    void recordUsage(AGENT_MODEL, usage, {
+      requestId: params.requestId,
+      op: params.op,
+      evaluationCostAlreadyRecorded: Boolean(reservation),
+    });
+  } catch (err) {
+    if (!settled) releaseEvaluationGoogleCall(reservation);
+    throw err;
+  }
+
+  return { parts, functionCalls, text: text.trim(), finishReason };
+}
+
 // ─── Main Loop ──────────────────────────────────────────────────
 
 export async function runAgentLoop(
@@ -455,7 +607,6 @@ export async function runAgentLoop(
 ): Promise<AgentResult> {
   const { signal, requestId, conversationContext, filters, coverage, onProgress } = opts;
 
-  const client = getGeminiClient();
   const articleLookup = new Map<string, ArticleMeta>();
 
   const historyBlock = conversationContext
@@ -478,34 +629,46 @@ export async function runAgentLoop(
   let toolErrorCount = 0;
   let successfulSearchCount = 0;
   let finalAnswerProduced = false;
+  let toolTimedOut = false;
+  let quotaStop: { retryAfterSec: number } | undefined;
   const retrievalMethods = new Set<RetrievalMethod>();
 
-  try {
-    while (round < MAX_TOOL_ROUNDS) {
-      if (signal?.aborted) {
-        return {
-          answer:
-            "The request timed out before a complete answer could be generated. Please try a simpler question.",
-          citations: [],
-          sourceArticleIds: [],
-          confidence: "low",
+  /** Shared tail for every return: the counters are identical either way. */
+  const resultBase = () => ({
           toolCallCount,
           rounds: round,
           articleMeta: articleLookup,
           retrievalTimeMs,
           generationTimeMs,
           retrievalMethod: combinedRetrievalMethod(retrievalMethods),
-        };
+  });
+
+  const failed = (
+    answer: string,
+    errorKind: AskErrorKind,
+    retryAfterSec?: number
+  ): AgentResult => ({
+    answer,
+    citations: [],
+    sourceArticleIds: [],
+    confidence: "low",
+    outcome: "error",
+    errorKind,
+    ...(retryAfterSec !== undefined ? { retryAfterSec } : {}),
+    ...resultBase(),
+  });
+
+  const TIMED_OUT_ANSWER =
+    "The request timed out before a complete answer could be generated. Please try a simpler question.";
+
+  try {
+    while (round < MAX_TOOL_ROUNDS) {
+      if (signal?.aborted) {
+        return failed(TIMED_OUT_ANSWER, "timeout");
       }
 
       const modelStart = Date.now();
-      const response = await executeTrackedGenerationCall({
-        model: AGENT_MODEL,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        requestId,
-        op: `agent.round${round}`,
-        call: () =>
-          client.models.generateContent({
+      const roundRequest: GenerateContentParameters = {
             model: AGENT_MODEL,
             contents,
             config: {
@@ -517,8 +680,20 @@ export async function runAgentLoop(
               },
               abortSignal: signal,
             },
-          }),
-      });
+      };
+      const turnOpts = { op: `agent.round${round}`, requestId, signal };
+      // The first round is streamed because it is the round that can answer
+      // without any tools at all, and that answer is the reader's whole
+      // wait. Later rounds only ever follow a tool result, so they keep the
+      // simpler single-shot call.
+      const response =
+        round === 0
+          ? await generateStreamedTurn({
+              ...turnOpts,
+              request: roundRequest,
+              onDelta: (text) => onProgress?.({ type: "delta", text }),
+            })
+          : await generateTurn({ ...turnOpts, request: roundRequest });
       generationTimeMs += Date.now() - modelStart;
 
       const functionCalls = response.functionCalls;
@@ -547,8 +722,20 @@ export async function runAgentLoop(
               logWarn(requestId, `tool ${call.name} returned error`, {
                 tool: call.name,
                 round,
+                kind: toolResult.kind,
                 error: toolResult.error,
               });
+              // A spent quota is terminal — every later call fails the same
+              // way — while a timeout leaves the evidence set knowingly
+              // incomplete, so the answer is capped rather than abandoned.
+              if (toolResult.kind === "quota") {
+                quotaStop = {
+                  retryAfterSec:
+                    typeof toolResult.retryAfterSec === "number" ? toolResult.retryAfterSec : 30,
+                };
+              } else if (toolResult.kind === "timeout") {
+                toolTimedOut = true;
+              }
             }
             if (call.name === "search_archive" && Array.isArray(toolResult.results)) {
               successfulSearchCount += 1;
@@ -584,15 +771,25 @@ export async function runAgentLoop(
 
         toolCallCount += functionCalls.length;
 
-        // Capture any text the model produced alongside function calls
-        const responseText = textFromParts(response.candidates?.[0]?.content?.parts);
-        if (responseText) {
-          answerText = responseText;
+        if (quotaStop) {
+          logWarn(requestId, "archive lookup hit the model quota; stopping the loop", {
+            round,
+            retryAfterSec: quotaStop.retryAfterSec,
+          });
+          return failed(
+            "The archive research ran into the daily AI limit. Please try again later.",
+            kindForQuota(quotaStop.retryAfterSec),
+            quotaStop.retryAfterSec
+          );
         }
 
-        const modelParts = response.candidates?.[0]?.content?.parts;
-        if (modelParts) {
-          contents.push({ role: "model", parts: modelParts });
+        // Capture any text the model produced alongside function calls
+        if (response.text) {
+          answerText = response.text;
+        }
+
+        if (response.parts.length > 0) {
+          contents.push({ role: "model", parts: response.parts });
         }
 
         contents.push({
@@ -608,7 +805,7 @@ export async function runAgentLoop(
 
         round++;
       } else {
-        answerText = textFromParts(response.candidates?.[0]?.content?.parts);
+        answerText = response.text;
         finalAnswerProduced = true;
         break;
       }
@@ -619,13 +816,16 @@ export async function runAgentLoop(
       // answer. Make one final no-tools call so the model must synthesize
       // from evidence already present in the conversation.
       const finalStart = Date.now();
-      const finalResponse = await executeTrackedGenerationCall({
-        model: AGENT_MODEL,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        requestId,
+      // Streamed: this is the call the reader is waiting on, and it can take
+      // most of the request budget. Citations and grounding still run on the
+      // complete text afterwards, and the route's done event carries the
+      // grounded answer, which the client swaps in for the streamed text.
+      const finalResponse = await generateStreamedTurn({
         op: "agent.finalize",
-        call: () =>
-          client.models.generateContent({
+        requestId,
+        signal,
+        onDelta: (text) => onProgress?.({ type: "delta", text }),
+        request: {
             model: AGENT_MODEL,
             // Start a fresh synthesis turn. Replaying prior model
             // function-call parts conditions Flash-Lite to emit another
@@ -659,17 +859,16 @@ export async function runAgentLoop(
               },
               abortSignal: signal,
             },
-          }),
+        },
       });
       generationTimeMs += Date.now() - finalStart;
-      answerText = textFromParts(finalResponse.candidates?.[0]?.content?.parts);
+      answerText = finalResponse.text;
       finalAnswerProduced = Boolean(answerText);
       if (!finalAnswerProduced) {
-        const parts = finalResponse.candidates?.[0]?.content?.parts ?? [];
         logWarn(requestId, "forced synthesis returned no text", {
-          finishReason: finalResponse.candidates?.[0]?.finishReason,
-          functionCalls: finalResponse.functionCalls?.map((call) => call.name),
-          partKinds: parts.map((part) =>
+          finishReason: finalResponse.finishReason,
+          functionCalls: finalResponse.functionCalls.map((call) => call.name),
+          partKinds: finalResponse.parts.map((part) =>
             part.functionCall ? "functionCall" : typeof part.text === "string" ? "text" : "other"
           ),
         });
@@ -698,6 +897,7 @@ export async function runAgentLoop(
       articleLookup,
       toolErrorCount,
       successfulSearchCount,
+      degraded: toolTimedOut,
     });
 
     return {
@@ -705,43 +905,33 @@ export async function runAgentLoop(
       citations,
       sourceArticleIds: buildAgentSourceArticleIds(answerText, citations, articleLookup),
       confidence,
-      toolCallCount,
-      rounds: round,
-      articleMeta: articleLookup,
-      retrievalTimeMs,
-      generationTimeMs,
-      retrievalMethod: combinedRetrievalMethod(retrievalMethods),
+      outcome: citations.length > 0 ? "answered" : "no_evidence",
+      ...(toolTimedOut ? { degraded: true as const } : {}),
+      ...resultBase(),
     };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       logWarn(requestId, "agent loop aborted by signal", { rounds: round, toolCallCount });
-      return {
-        answer:
-          "The request timed out before a complete answer could be generated. Please try a simpler question.",
-        citations: [],
-        sourceArticleIds: [],
-        confidence: "low",
-        toolCallCount,
-        rounds: round,
-        articleMeta: articleLookup,
-        retrievalTimeMs,
-        generationTimeMs,
-        retrievalMethod: combinedRetrievalMethod(retrievalMethods),
-      };
+      return failed(TIMED_OUT_ANSWER, "timeout");
+    }
+
+    // A generation call can exhaust the quota just as a tool can, and the
+    // reader needs the same wait-and-retry either way rather than being told
+    // to report a bug.
+    if (isQuotaFailure(err)) {
+      const retryAfterSec = retryAfterSecFromQuotaError(err);
+      logWarn(requestId, "agent generation hit the model quota", { rounds: round, retryAfterSec });
+      return failed(
+        "The archive research ran into the daily AI limit. Please try again later.",
+        kindForQuota(retryAfterSec),
+        retryAfterSec
+      );
     }
 
     logError(requestId, "agent loop failed", err);
-    return {
-      answer: "I encountered an error while researching your question. Please try again.",
-      citations: [],
-      sourceArticleIds: [],
-      confidence: "low",
-      toolCallCount,
-      rounds: round,
-      articleMeta: articleLookup,
-      retrievalTimeMs,
-      generationTimeMs,
-      retrievalMethod: combinedRetrievalMethod(retrievalMethods),
-    };
+    return failed(
+      "I encountered an error while researching your question. Please try again.",
+      "server"
+    );
   }
 }

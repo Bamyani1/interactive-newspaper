@@ -497,19 +497,54 @@ describe("embedQuery", () => {
     expect(mockEmbedContent).toHaveBeenCalledTimes(1);
   });
 
+  // A live query embed now backs off twice before giving up, so these
+  // rejections are driven through fake timers the same way the
+  // embedDocuments retry tests are. The assertions are unchanged.
+  async function drainWithBackoff<T>(run: () => Promise<T>): Promise<unknown> {
+    vi.useFakeTimers();
+    try {
+      const promise = run();
+      promise.catch(() => {});
+      await vi.advanceTimersByTimeAsync(3_000);
+      return await promise.then(
+        () => {
+          throw new Error("expected a rejection");
+        },
+        (err: unknown) => err
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
   it("converts 429 Gemini errors into QuotaExhaustedError at the embedQuery call site", async () => {
     const quotaErr = Object.assign(new Error("rate limit hit"), { code: 429 });
-    mockEmbedContent.mockRejectedValueOnce(quotaErr);
+    mockEmbedContent.mockRejectedValue(quotaErr);
 
+    const err = await drainWithBackoff(() => embedQuery("step5 quota test query"));
+    expect(err).toBeInstanceOf(QuotaExhaustedError);
+    if (err instanceof QuotaExhaustedError) {
+      expect(err.op).toBe("embedQuery");
+      expect(err.cause).toBe(quotaErr);
+    }
+    // One attempt plus the two live backoff retries.
+    expect(mockEmbedContent).toHaveBeenCalledTimes(3);
+  });
+
+  it("recovers when a transient query-embed quota trip clears", async () => {
+    mockEmbedContent
+      .mockRejectedValueOnce(Object.assign(new Error("rate limit hit"), { code: 429 }))
+      .mockResolvedValueOnce({ embeddings: [{ values: makeFakeVector(3) }] });
+
+    vi.useFakeTimers();
     try {
-      await embedQuery("step5 quota test query");
-      throw new Error("expected QuotaExhaustedError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(QuotaExhaustedError);
-      if (err instanceof QuotaExhaustedError) {
-        expect(err.op).toBe("embedQuery");
-        expect(err.cause).toBe(quotaErr);
-      }
+      const promise = embedQuery("step5 transient quota query");
+      promise.catch(() => {});
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(promise).resolves.toHaveLength(768);
+      expect(mockEmbedContent).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
     }
   });
 
@@ -517,11 +552,11 @@ describe("embedQuery", () => {
     const quotaErr = Object.assign(new Error("quota"), {
       error: { code: 429, status: "RESOURCE_EXHAUSTED" },
     });
-    mockEmbedContent.mockRejectedValueOnce(quotaErr);
+    mockEmbedContent.mockRejectedValue(quotaErr);
 
-    await expect(embedQuery("step5 nested-quota test query")).rejects.toBeInstanceOf(
-      QuotaExhaustedError
-    );
+    await expect(
+      drainWithBackoff(() => embedQuery("step5 nested-quota test query"))
+    ).resolves.toBeInstanceOf(QuotaExhaustedError);
   });
 
   it("does NOT convert a generic 500 error into QuotaExhaustedError", async () => {

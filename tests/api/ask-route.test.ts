@@ -206,6 +206,7 @@ beforeEach(() => {
     ],
     confidence: "high",
     followUps: [],
+    outcome: "answered",
   });
   (generateAnswerStream as ReturnType<typeof vi.fn>).mockReset().mockImplementation(() =>
     (async function* () {
@@ -216,6 +217,7 @@ beforeEach(() => {
         citations: [],
         confidence: "medium",
         followUps: [],
+        outcome: "no_evidence",
       };
     })()
   );
@@ -1492,6 +1494,68 @@ describe("Complexity routing", () => {
     );
   });
 
+  it("persists only the sources the live turn rendered", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+    });
+    // b-2 owns the embedded image but has neither a citation nor metadata to
+    // read a headline and date from, so the live turn drops it from
+    // sourceArticles. Persisting the unfiltered id list meant a restored turn
+    // rebuilt a source the reader never saw.
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: 'Prose [1965-03-15-1]. ![](https://cdn/b.jpg "A caption")',
+      citations: [{ articleId: "1965-03-15-1", headline: "Cited", editionDate: "1965-03-15" }],
+      sourceArticleIds: ["1965-03-15-1", "1965-03-15-2"],
+      confidence: "high",
+      outcome: "answered",
+      toolCallCount: 1,
+      rounds: 1,
+      articleMeta: new Map([
+        [
+          "1965-03-15-1",
+          {
+            headline: "Cited",
+            editionDate: "1965-03-15",
+            category: "News",
+            summary: "",
+            byline: null,
+            bodySnippet: "",
+            imageUrls: [],
+            imageCaptions: [],
+          },
+        ],
+        [
+          "1965-03-15-2",
+          {
+            headline: "",
+            editionDate: "",
+            category: "",
+            summary: "",
+            byline: null,
+            bodySnippet: "",
+            imageUrls: ["https://cdn/b.jpg"],
+            imageCaptions: [],
+          },
+        ],
+      ]),
+    });
+
+    const response = await POST(makeRequest({ question: "complex question" }));
+    const body = await response.json();
+
+    expect(body.sourceArticles.map((a: { id: string }) => a.id)).toEqual(["1965-03-15-1"]);
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "complex question",
+      expect.any(String),
+      ["1965-03-15-1"],
+      expect.anything()
+    );
+  });
+
   it("uses pipeline when complexity=simple", async () => {
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "homecoming 1965",
@@ -1717,6 +1781,53 @@ describe("Streaming + agent", () => {
     expect(doneEvent?.answer).toBe("Agent streaming answer.");
     expect((doneEvent?.meta as Record<string, unknown>)?.complexity).toBe("complex");
     expect((doneEvent?.meta as Record<string, unknown>)?.agentSteps).toBe(1);
+  });
+
+  it("forwards agent deltas and announces generate before the first one", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+      coverageIntent: "none",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockImplementation(
+      async (
+        _question: string,
+        opts: { onProgress?: (event: Record<string, unknown>) => void }
+      ) => {
+        opts.onProgress?.({ type: "tool_call", tool: "search_archive", round: 0 });
+        opts.onProgress?.({ type: "tool_result", tool: "search_archive", round: 0 });
+        opts.onProgress?.({ type: "delta", text: "Students " });
+        opts.onProgress?.({ type: "delta", text: "marched." });
+        return {
+          answer: "Students marched.",
+          citations: [],
+          sourceArticleIds: [],
+          confidence: "medium",
+          outcome: "no_evidence",
+          toolCallCount: 1,
+          rounds: 1,
+          articleMeta: new Map(),
+        };
+      }
+    );
+
+    const response = await POST(makeRequest({ question: "complex q" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    const types = events.map((e) => e.type);
+    expect(events.filter((e) => e.type === "delta").map((e) => e.text)).toEqual([
+      "Students ",
+      "marched.",
+    ]);
+    // Exactly one generate stage, and it lands before the first delta so the
+    // pill does not sit on "Researching" while prose is already arriving.
+    const generateStages = events.filter((e) => e.type === "stage" && e.name === "generate");
+    expect(generateStages).toHaveLength(1);
+    expect(types.indexOf("delta")).toBeGreaterThan(
+      types.findIndex((t, i) => t === "stage" && events[i].name === "generate")
+    );
   });
 
   it("stores conversation turn in streaming agent path", async () => {
@@ -2234,5 +2345,258 @@ describe("typed AskError response body", () => {
     expect(response.status).toBe(500);
     expect(body.kind).toBe("server");
     expect(body.stage).toBe("rerank");
+  });
+});
+
+describe("canned error answers are never stored as history", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+  });
+
+  it("returns 504 and stores nothing when generation times out", async () => {
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "The answer took too long to generate. Please try a simpler question.",
+      citations: [],
+      confidence: "low",
+      followUps: [],
+      outcome: "error",
+      errorKind: "timeout",
+    });
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(504);
+    expect(body.kind).toBe("timeout");
+    expect(body.stage).toBe("generate");
+    expect(addConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 and stores nothing when generation fails", async () => {
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "I encountered an error while generating an answer. Please try again.",
+      citations: [],
+      confidence: "low",
+      followUps: [],
+      outcome: "error",
+      errorKind: "server",
+    });
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.kind).toBe("server");
+    expect(addConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("still stores an honest no-evidence answer as real follow-up context", async () => {
+    (generateAnswer as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "I don't have enough information in the archive to answer this question.",
+      citations: [],
+      confidence: "low",
+      followUps: [],
+      outcome: "no_evidence",
+    });
+
+    const response = await POST(makeRequest({ question: "obscure q" }));
+
+    expect(response.status).toBe(200);
+    expect(addConversationTurn).toHaveBeenCalledWith(
+      "test-session-id",
+      "obscure q",
+      "I don't have enough information in the archive to answer this question.",
+      [],
+      expect.any(Array)
+    );
+  });
+
+  it("emits an SSE error instead of a done frame when streaming generation fails", async () => {
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield {
+          type: "done",
+          answer: "I encountered an error while generating an answer. Please try again.",
+          citations: [],
+          confidence: "low",
+          followUps: [],
+          outcome: "error",
+          errorKind: "server",
+        };
+      })()
+    );
+
+    const response = await POST(makeRequest({ question: "q" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    expect(events.find((e) => e.type === "done")).toBeUndefined();
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent?.kind).toBe("server");
+    expect(errorEvent?.stage).toBe("generate");
+    expect(addConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 and stores nothing when agent research hits the quota", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+      coverageIntent: "none",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer: "The archive research ran into the daily AI limit. Please try again later.",
+      citations: [],
+      sourceArticleIds: [],
+      confidence: "low",
+      outcome: "error",
+      errorKind: "rate_limit",
+      retryAfterSec: 24,
+      toolCallCount: 1,
+      rounds: 0,
+      articleMeta: new Map(),
+    });
+
+    const response = await POST(makeRequest({ question: "complex q" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body.kind).toBe("rate_limit");
+    expect(body.retryAfterSec).toBe(24);
+    expect(response.headers.get("Retry-After")).toBe("24");
+    expect(addConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("emits an SSE error and stores nothing when streaming agent research fails", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "test",
+      ftsQuery: "test",
+      mode: "text",
+      complexity: "complex",
+      coverageIntent: "none",
+    });
+    (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
+      answer:
+        "The request timed out before a complete answer could be generated. Please try a simpler question.",
+      citations: [],
+      sourceArticleIds: [],
+      confidence: "low",
+      outcome: "error",
+      errorKind: "timeout",
+      toolCallCount: 0,
+      rounds: 0,
+      articleMeta: new Map(),
+    });
+
+    const response = await POST(makeRequest({ question: "complex q" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    expect(events.find((e) => e.type === "done")).toBeUndefined();
+    const errorEvent = events.find((e) => e.type === "error");
+    expect(errorEvent?.kind).toBe("timeout");
+    expect(errorEvent?.stage).toBe("agent");
+    expect(addConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("streams a no-evidence answer through to done and stores it", async () => {
+    (generateAnswerStream as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      (async function* () {
+        yield {
+          type: "done",
+          answer: "I don't have enough information in the archive to answer this question.",
+          citations: [],
+          confidence: "low",
+          followUps: [],
+          outcome: "no_evidence",
+        };
+      })()
+    );
+
+    const response = await POST(makeRequest({ question: "obscure q" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    expect(events.find((e) => e.type === "done")?.outcome).toBe("no_evidence");
+    expect(addConversationTurn).toHaveBeenCalled();
+  });
+});
+
+describe("honest degradation metadata", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearAskDedupForTests();
+    clearAnswerCache();
+  });
+
+  it("reports a degraded reformulation instead of leaving it indistinguishable", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "What happened at OWU?",
+      ftsQuery: "happened owu",
+      mode: "text",
+      complexity: "simple",
+      coverageIntent: "none",
+      reformulationDegraded: true,
+    });
+
+    const response = await POST(makeRequest({ question: "What happened at OWU?" }));
+    const body = await response.json();
+
+    expect(body.meta.reformulationDegraded).toBe(true);
+    // A no-op reformulation leaves reformulatedQuery undefined too, which is
+    // exactly the ambiguity the flag resolves.
+    expect(body.meta.reformulatedQuery).toBeUndefined();
+  });
+
+  it("omits the degradation flags on a healthy pipeline", async () => {
+    const response = await POST(makeRequest({ question: "healthy question" }));
+    const body = await response.json();
+
+    expect(body.meta.reformulationDegraded).toBeUndefined();
+    expect(body.meta.rerankDegraded).toBeUndefined();
+  });
+
+  it("reports a degraded reformulation on the streaming metadata and done events", async () => {
+    (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+      embeddingQuery: "streamed question",
+      ftsQuery: "streamed question",
+      mode: "text",
+      complexity: "simple",
+      coverageIntent: "none",
+      reformulationDegraded: true,
+    });
+
+    const response = await POST(makeRequest({ question: "streamed question" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    const metadata = events.find((e) => e.type === "metadata");
+    const done = events.find((e) => e.type === "done");
+    expect((metadata?.meta as Record<string, unknown>)?.reformulationDegraded).toBe(true);
+    expect((done?.meta as Record<string, unknown>)?.reformulationDegraded).toBe(true);
+  });
+
+  it("reports a dead reranker so a fail-open answer cannot look vetted", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 5, rerankDegraded: true },
+    ]);
+
+    const response = await POST(makeRequest({ question: "q" }));
+    const body = await response.json();
+
+    expect(body.meta.rerankDegraded).toBe(true);
+  });
+
+  it("reports a dead reranker on the streaming metadata and done events", async () => {
+    (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...mockArticle, relevanceScore: 5, rerankDegraded: true },
+    ]);
+
+    const response = await POST(makeRequest({ question: "q" }, { stream: true }));
+    const events = await readSseEvents(response);
+
+    const metadata = events.find((e) => e.type === "metadata");
+    const done = events.find((e) => e.type === "done");
+    expect((metadata?.meta as Record<string, unknown>)?.rerankDegraded).toBe(true);
+    expect((done?.meta as Record<string, unknown>)?.rerankDegraded).toBe(true);
   });
 });

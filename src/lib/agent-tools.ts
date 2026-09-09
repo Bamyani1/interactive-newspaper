@@ -1,7 +1,20 @@
 import { Type } from "@google/genai";
-import { fetchArticleForRag, queryEditions } from "@/src/lib/db";
+import { DbTimeoutError, fetchArticleForRag, queryEditions } from "@/src/lib/db";
+import { isQuotaFailure, retryAfterSecFromQuotaError } from "@/src/lib/gemini-quota";
 import { searchAndRankArchive } from "@/src/lib/retrieval";
 import type { RetrievalFilters } from "@/src/lib/retrieval";
+
+/**
+ * Why a tool failed, for the loop rather than for the model.
+ *
+ * Flattening every failure into `{ error }` erased the difference between
+ * "you asked for something impossible", "the archive is out of quota" and
+ * "the lookup timed out" — the loop then kept researching through all
+ * three and answered from partial evidence at normal confidence. The
+ * error *text* shown to the model is unchanged; this is the channel the
+ * loop reads.
+ */
+export type ToolErrorKind = "invalid_arguments" | "quota" | "timeout" | "failed";
 
 const CATEGORIES = ["Campus News", "News", "Sports", "Arts & Entertainment", "Opinion"] as const;
 
@@ -247,9 +260,20 @@ export async function executeTool(
         return { error: `Unknown tool: ${name}` };
     }
   } catch (error) {
+    const kind = toolErrorKind(error);
     return {
       error: error instanceof Error ? error.message : String(error),
-      ...(error instanceof ToolArgumentError ? { kind: "invalid_arguments" } : {}),
+      kind,
+      // The wait the provider itself asked for, so the route can put a real
+      // Retry-After in front of the reader instead of a guess.
+      ...(kind === "quota" ? { retryAfterSec: retryAfterSecFromQuotaError(error) } : {}),
     };
   }
+}
+
+function toolErrorKind(error: unknown): ToolErrorKind {
+  if (error instanceof ToolArgumentError) return "invalid_arguments";
+  if (isQuotaFailure(error)) return "quota";
+  if (error instanceof DbTimeoutError) return "timeout";
+  return "failed";
 }

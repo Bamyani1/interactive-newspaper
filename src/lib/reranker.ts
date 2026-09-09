@@ -5,11 +5,16 @@
  * user's question on a 0-10 scale. Filters out low-relevance articles
  * and caps the number sent to the answer generator.
  *
- * Graceful fallback: returns the original articles on any error or timeout.
+ * Graceful fallback: returns the original articles on any error or timeout,
+ * flagged `rerankDegraded` so confidence downstream knows nothing judged
+ * them. A spent model quota is the exception — it throws, because the
+ * answer generator would fail on the same quota a moment later.
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
 import { executeTrackedGenerationCall } from "@/src/lib/cost-tracker";
+import { QuotaExhaustedError } from "@/src/lib/embeddings";
+import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import type { RetrievedArticle } from "@/src/lib/db";
 
@@ -23,6 +28,15 @@ const DEFAULT_MAX_ARTICLES = 5;
 
 export interface RankedArticle extends RetrievedArticle {
   relevanceScore: number;
+  /**
+   * No judge scored this article: the reranker failed open and assigned a
+   * flat score. That score is DEFAULT_MIN_SCORE, which a real judge can
+   * also assign, so the score alone cannot distinguish "judged as merely
+   * relevant" from "never judged" — and downstream that difference is the
+   * difference between an honest confidence and a fabricated one. Absent
+   * on every genuinely judged article.
+   */
+  rerankDegraded?: true;
 }
 
 interface RerankOptions {
@@ -188,36 +202,42 @@ export async function rerankArticles(
 
     const userPrompt = `SEARCH MODE: ${options.mode ?? "text"}\nUSER QUESTION (JSON string): ${JSON.stringify(question)}\n\nArticles:\n${articleSummaries}`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), RERANKER_TIMEOUT_MS);
+    const response = await retryOnQuota(
+      "rerank",
+      () => {
+        // Fresh timeout per attempt: a retried call needs its own budget,
+        // not the remains of the attempt that hit the quota.
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), RERANKER_TIMEOUT_MS);
 
-    const combinedSignal = options.signal
-      ? AbortSignal.any([options.signal, controller.signal])
-      : controller.signal;
+        const combinedSignal = options.signal
+          ? AbortSignal.any([options.signal, controller.signal])
+          : controller.signal;
 
-    const response = await executeTrackedGenerationCall({
-      model: RERANKER_MODEL,
-      maxOutputTokens: RERANKER_MAX_TOKENS,
-      requestId: options.requestId,
-      op: "rerank",
-      call: () =>
-        client.models.generateContent({
+        return executeTrackedGenerationCall({
           model: RERANKER_MODEL,
-          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-          config: {
-            systemInstruction: RERANKER_PROMPT,
-            maxOutputTokens: RERANKER_MAX_TOKENS,
-            thinkingConfig: {
-              thinkingLevel: RAG_MODEL_CONFIG.rerank.thinkingLevel,
-            },
-            responseMimeType: "application/json",
-            responseJsonSchema: RERANKER_SCHEMA,
-            abortSignal: combinedSignal,
-          },
-        }),
-    });
-
-    clearTimeout(timeout);
+          maxOutputTokens: RERANKER_MAX_TOKENS,
+          requestId: options.requestId,
+          op: "rerank",
+          call: () =>
+            client.models.generateContent({
+              model: RERANKER_MODEL,
+              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+              config: {
+                systemInstruction: RERANKER_PROMPT,
+                maxOutputTokens: RERANKER_MAX_TOKENS,
+                thinkingConfig: {
+                  thinkingLevel: RAG_MODEL_CONFIG.rerank.thinkingLevel,
+                },
+                responseMimeType: "application/json",
+                responseJsonSchema: RERANKER_SCHEMA,
+                abortSignal: combinedSignal,
+              },
+            }),
+        }).finally(() => clearTimeout(timeout));
+      },
+      { signal: options.signal, requestId: options.requestId }
+    );
 
     const text = response.text?.trim() ?? "";
     const scores = parseScores(text, articles.length);
@@ -232,7 +252,7 @@ export async function rerankArticles(
           msg: "failed to parse reranker scores, returning original articles",
         })
       );
-      return articles.slice(0, maxArticles).map((a) => ({ ...a, relevanceScore: 5 }));
+      return failOpen(articles, maxArticles);
     }
 
     // Attach scores, filter, sort, and cap
@@ -242,6 +262,7 @@ export async function rerankArticles(
       .sort((a, b) => b.relevanceScore - a.relevanceScore)
       .slice(0, maxArticles);
   } catch (err) {
+    const quota = isQuotaError(err);
     const isTimeout = err instanceof Error && err.name === "AbortError";
     console.warn(
       JSON.stringify({
@@ -249,14 +270,31 @@ export async function rerankArticles(
         route: "/api/ask",
         requestId: options.requestId,
         stage: "rerank",
-        msg: isTimeout
-          ? "reranker timed out, returning original articles"
-          : "reranker failed, returning original articles",
+        quota,
+        msg: quota
+          ? "reranker hit the model quota"
+          : isTimeout
+            ? "reranker timed out, returning unvetted articles"
+            : "reranker failed, returning unvetted articles",
         err: err instanceof Error ? err.message : String(err),
       })
     );
-    return articles.slice(0, maxArticles).map((a) => ({ ...a, relevanceScore: 5 }));
+    // A spent quota fails the request rather than degrading it: the answer
+    // generator is about to 429 as well, so an unvetted candidate set would
+    // only buy a worse answer.
+    if (quota) throw new QuotaExhaustedError("rerank", err);
+    return failOpen(articles, maxArticles);
   }
+}
+
+/**
+ * Keep the fused retrieval order at the neutral score, flagged as unvetted
+ * so confidence downstream cannot mistake it for a judgement.
+ */
+function failOpen(articles: RetrievedArticle[], maxArticles: number): RankedArticle[] {
+  return articles
+    .slice(0, maxArticles)
+    .map((a) => ({ ...a, relevanceScore: DEFAULT_MIN_SCORE, rerankDegraded: true as const }));
 }
 
 export function parseScores(text: string, expectedCount: number): number[] | null {

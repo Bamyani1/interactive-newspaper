@@ -24,7 +24,13 @@ import {
 import { runAgentLoop } from "@/src/lib/agent-loop";
 import type { AgentResult } from "@/src/lib/agent-loop";
 import type { RankedArticle } from "@/src/lib/reranker";
-import type { AskResponse, AskErrorKind, Citation, CitationSnapshot } from "@/src/types";
+import type {
+  AnswerOutcome,
+  AskResponse,
+  AskErrorKind,
+  Citation,
+  CitationSnapshot,
+} from "@/src/types";
 import {
   encodeAskStreamEvent,
   type AskAnswerOutcome,
@@ -491,14 +497,23 @@ function resolveRetrievalFilters(
  * Whether an answer stands on evidence, so the client can tell "the
  * archive does not cover this" from a grounded reply.
  *
- * Provisional: derived from whether anything survived grounding, because
- * the generator does not yet report its own outcome. It therefore still
- * labels a generation failure that returned canned prose as
- * `no_evidence`. Withholding those is a separate change; this at least
- * stops an honest refusal from looking like a cited answer.
+ * Only for producers that do not report an outcome of their own; the
+ * pipeline generator and the agent loop both do, and an `error` outcome
+ * from either never reaches a `done` event.
  */
 function answerOutcome(citations: Citation[]): AskAnswerOutcome {
   return citations.length > 0 ? "answered" : "no_evidence";
+}
+
+/**
+ * HTTP status for a producer that reported `outcome: "error"`. A quota is
+ * worth waiting out, a timeout is worth retrying now, and anything else is
+ * a bug — which is exactly the split `kind` already encodes.
+ */
+function answerErrorStatus(kind: AskErrorKind | undefined): number {
+  if (kind === "timeout") return 504;
+  if (kind === "rate_limit" || kind === "budget") return 429;
+  return 500;
 }
 
 /**
@@ -590,6 +605,7 @@ async function handleStreamingAsk(params: {
         let coverageIntent: CoverageIntent | undefined;
         let inferredStartDate: string | undefined;
         let inferredEndDate: string | undefined;
+        let reformulationDegraded: boolean | undefined;
         try {
           const reformulated = await reformulateQuery(question, {
             signal: globalController.signal,
@@ -603,6 +619,7 @@ async function handleStreamingAsk(params: {
           coverageIntent = reformulated.coverageIntent;
           inferredStartDate = reformulated.startDate;
           inferredEndDate = reformulated.endDate;
+          reformulationDegraded = reformulated.reformulationDegraded;
         } catch (err) {
           console.error(
             JSON.stringify({
@@ -673,6 +690,7 @@ async function handleStreamingAsk(params: {
             sourceArticles: [],
             meta: {
               reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+              ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
               ...coverageMetadata(coverage),
             },
           });
@@ -682,6 +700,11 @@ async function handleStreamingAsk(params: {
               ? formatHistoryForPrompt(conversationHistory)
               : undefined;
 
+          // The agent streams its answer text like the pipeline does, so the
+          // stage pill has to move off "Researching" the same way — once,
+          // just before the first token.
+          let announcedGenerate = false;
+
           try {
             const agentResult = await runAgentLoop(question, {
               signal: globalController.signal,
@@ -689,21 +712,46 @@ async function handleStreamingAsk(params: {
               conversationContext,
               filters,
               coverage,
-              onProgress: (event) => send(event),
+              onProgress: (event) => {
+                if (event.type === "delta" && !announcedGenerate) {
+                  announcedGenerate = true;
+                  send({ type: "stage", name: "generate", elapsedMs: stageElapsed() });
+                }
+                send(event);
+              },
             });
 
+            // A research failure is not a turn. Report it and store nothing,
+            // or the apology comes back as history in the next prompt.
+            if (agentResult.outcome === "error") {
+              send({
+                type: "error",
+                kind: agentResult.errorKind ?? "server",
+                stage: "agent",
+                message: agentResult.answer,
+                requestId,
+                retryAfterSec: agentResult.retryAfterSec,
+              });
+              return;
+            }
+
+            const agentSourceArticles = buildAgentSourceArticles(agentResult);
+
+            // Persist what the turn actually rendered, not the raw id list:
+            // buildAgentSourceArticles drops an id with no headline or date,
+            // and a restored turn rebuilds its sources from what is stored,
+            // so the unfiltered list resurrected a source the reader never
+            // saw.
             await persistTurnBounded(
               sessionId,
               question,
               agentResult.answer,
-              agentResult.sourceArticleIds,
+              agentSourceArticles.map((article) => article.id),
               buildCitationSnapshots(
                 agentResult.citations,
                 agentSnapshotSources(agentResult.articleMeta)
               )
             );
-
-            const agentSourceArticles = buildAgentSourceArticles(agentResult);
 
             const totalTimeMs = Date.now() - totalStart;
 
@@ -712,7 +760,7 @@ async function handleStreamingAsk(params: {
               answer: agentResult.answer,
               citations: agentResult.citations,
               confidence: agentResult.confidence,
-              outcome: answerOutcome(agentResult.citations),
+              outcome: agentResult.outcome ?? answerOutcome(agentResult.citations),
               sessionId,
               requestId,
               sourceArticles: agentSourceArticles,
@@ -723,6 +771,7 @@ async function handleStreamingAsk(params: {
                 articlesSearched: agentResult.articleMeta.size,
                 method: agentResult.retrievalMethod ?? "none",
                 reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+                ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
                 complexity,
                 agentSteps: agentResult.rounds,
                 agentToolCalls: agentResult.toolCallCount,
@@ -867,6 +916,10 @@ async function handleStreamingAsk(params: {
         }
         send({ type: "stage", name: "rerank", elapsedMs: stageElapsed() });
 
+        // No judge ever scored these candidates, so the reader is told the
+        // sources are unvetted and the generator caps confidence at low.
+        const rerankDegraded = rankedArticles.some((a) => a.rerankDegraded === true);
+
         // Emit metadata BEFORE generation so client can render the
         // citation sidebar immediately, before the answer tokens start
         // streaming in.
@@ -896,6 +949,8 @@ async function handleStreamingAsk(params: {
             articlesSearched: articles.length,
             method,
             reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+            ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
+            ...(rerankDegraded ? { rerankDegraded: true } : {}),
             ...retrievalIdentityMetadata(retrievalIdentity),
           },
         });
@@ -910,6 +965,9 @@ async function handleStreamingAsk(params: {
         let finalCitations: Citation[] = [];
         let finalConfidence: "low" | "medium" | "high" = "low";
         let finalFollowUps: string[] = [];
+        let finalOutcome: AnswerOutcome = "no_evidence";
+        let finalErrorKind: AskErrorKind | undefined;
+        let finalRetryAfterSec: number | undefined;
 
         try {
           for await (const event of generateAnswerStream(question, rankedArticles, {
@@ -928,6 +986,9 @@ async function handleStreamingAsk(params: {
               finalCitations = event.citations;
               finalConfidence = event.confidence;
               finalFollowUps = event.followUps;
+              finalOutcome = event.outcome;
+              finalErrorKind = event.errorKind;
+              finalRetryAfterSec = event.retryAfterSec;
             }
           }
         } catch (err) {
@@ -954,6 +1015,22 @@ async function handleStreamingAsk(params: {
         const generationTimeMs = Date.now() - generationStart;
         const totalTimeMs = Date.now() - totalStart;
 
+        // A canned apology is not an answer. Report it as an error and, above
+        // all, do not persist it: stored, it came back as conversation history
+        // and the next prompt showed the model apologising for a failure it
+        // never made.
+        if (finalOutcome === "error") {
+          send({
+            type: "error",
+            kind: finalErrorKind ?? "server",
+            stage: "generate",
+            message: finalAnswer || "An error occurred during answer generation. Please try again.",
+            requestId,
+            retryAfterSec: finalRetryAfterSec,
+          });
+          return;
+        }
+
         await persistTurnBounded(
           sessionId,
           question,
@@ -967,7 +1044,7 @@ async function handleStreamingAsk(params: {
           answer: finalAnswer,
           citations: finalCitations,
           confidence: finalConfidence,
-          outcome: answerOutcome(finalCitations),
+          outcome: finalOutcome,
           sessionId,
           requestId,
           followUpQuestions: finalFollowUps,
@@ -978,6 +1055,8 @@ async function handleStreamingAsk(params: {
             articlesSearched: articles.length,
             method,
             reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+            ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
+            ...(rerankDegraded ? { rerankDegraded: true } : {}),
             complexity,
             ...retrievalIdentityMetadata(retrievalIdentity),
             ...coverageMetadata(coverage),
@@ -1194,7 +1273,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         conversationHistory,
       })
     );
-    const { embeddingQuery, ftsQuery, mode, complexity, coverageIntent } = reformulated;
+    const { embeddingQuery, ftsQuery, mode, complexity, coverageIntent, reformulationDegraded } =
+      reformulated;
     const filters = resolveRetrievalFilters(body.filters, reformulated);
     // Coverage is supplementary caveat metadata — a failed stats query
     // degrades to "no coverage" rather than failing the whole request.
@@ -1229,15 +1309,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         })
       );
 
+      // A research failure is not a turn. Report it typed and store nothing.
+      if (agentResult.outcome === "error") {
+        return askErrorJson({
+          status: answerErrorStatus(agentResult.errorKind),
+          kind: agentResult.errorKind ?? "server",
+          message: agentResult.answer,
+          retryAfterSec: agentResult.retryAfterSec,
+          stage: "agent",
+          requestId,
+        });
+      }
+
+      const agentSourceArticles = buildAgentSourceArticles(agentResult);
+
+      // Persist what the turn actually rendered — see the streaming branch.
       await persistTurnBounded(
         sessionId,
         question,
         agentResult.answer,
-        agentResult.sourceArticleIds,
+        agentSourceArticles.map((article) => article.id),
         buildCitationSnapshots(agentResult.citations, agentSnapshotSources(agentResult.articleMeta))
       );
-
-      const agentSourceArticles = buildAgentSourceArticles(agentResult);
 
       const response: AskResponse = {
         question,
@@ -1255,6 +1348,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           articlesSearched: agentResult.articleMeta.size,
           method: agentResult.retrievalMethod ?? "none",
           reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+          ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
           complexity,
           agentSteps: agentResult.rounds,
           agentToolCalls: agentResult.toolCallCount,
@@ -1347,19 +1441,38 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       signal: globalController.signal,
       requestId,
     });
+    // No judge ever scored these candidates, so the reader is told the
+    // sources are unvetted and the generator caps confidence at low.
+    const rerankDegraded = rankedArticles.some((a) => a.rerankDegraded === true);
 
     // ── Step 4: Generate answer (using ORIGINAL question, not reformulated) ──
     const generationStart = Date.now();
-    const { answer, citations, confidence, followUps } = await wrapStage("generate", () =>
+    const { answer, citations, confidence, followUps, outcome, errorKind, retryAfterSec } =
+      await wrapStage("generate", () =>
       generateAnswer(question, rankedArticles, {
         signal: globalController.signal,
         requestId,
         conversationContext:
-          conversationHistory.length > 0 ? formatHistoryForPrompt(conversationHistory) : undefined,
+            conversationHistory.length > 0
+              ? formatHistoryForPrompt(conversationHistory)
+              : undefined,
         coverage,
       })
     );
     const generationTimeMs = Date.now() - generationStart;
+
+    // A canned apology is not an answer: return it typed, and never store it
+    // as history for the next turn's prompt to read back.
+    if (outcome === "error") {
+      return askErrorJson({
+        status: answerErrorStatus(errorKind),
+        kind: errorKind ?? "server",
+        message: answer || "An error occurred during answer generation. Please try again.",
+        retryAfterSec,
+        stage: "generate",
+        requestId,
+      });
+    }
 
     // ── Store conversation turn ──
     await persistTurnBounded(
@@ -1401,6 +1514,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         articlesSearched: articles.length,
         method,
         reformulatedQuery: embeddingQuery !== question ? embeddingQuery : undefined,
+        ...(reformulationDegraded ? { reformulationDegraded: true } : {}),
+        ...(rerankDegraded ? { rerankDegraded: true } : {}),
         complexity,
         ...retrievalIdentityMetadata(retrievalIdentity),
         ...coverageMetadata(coverage),

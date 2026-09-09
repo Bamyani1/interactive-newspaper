@@ -235,4 +235,41 @@ describe("rerankArticles", () => {
     expect(result.map((item) => item.id)).toEqual(["a", "b"]);
     expect(result.every((item) => item.relevanceScore === 5)).toBe(true);
   });
+
+  it.each([
+    [new Error("API error"), "api error"],
+    [null, "malformed response"],
+  ])("marks the fail-open score as unvetted on %s", async (error, _label) => {
+    // Score 5 is also what a real judge can assign and what the route's
+    // total-veto guard uses, so the score alone cannot say "nobody judged
+    // this" — and an unjudged answer was reporting medium confidence.
+    if (error) generateContentMock.mockRejectedValue(error);
+    else generateContentMock.mockResolvedValue({ text: "not-json" });
+    const result = await rerankArticles("test", [makeArticle({ id: "a" })]);
+    expect(result[0].rerankDegraded).toBe(true);
+  });
+
+  it("does not mark genuinely judged articles as unvetted", async () => {
+    generateContentMock.mockResolvedValue({ text: '{"scores":[5]}' });
+    const result = await rerankArticles("test", [makeArticle({ id: "a" })]);
+    expect(result[0].relevanceScore).toBe(5);
+    expect(result[0].rerankDegraded).toBeUndefined();
+  });
+
+  it("retries a quota failure and then refuses instead of failing open", async () => {
+    vi.useFakeTimers();
+    try {
+      generateContentMock.mockRejectedValue(Object.assign(new Error("429"), { code: 429 }));
+
+      const promise = rerankArticles("test", [makeArticle()]);
+      promise.catch(() => {});
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      await expect(promise).rejects.toMatchObject({ name: "QuotaExhaustedError" });
+      // One attempt plus the two live backoff retries.
+      expect(generateContentMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
