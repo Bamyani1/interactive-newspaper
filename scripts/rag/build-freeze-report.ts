@@ -67,21 +67,15 @@ function round(value: number, digits = 4): number {
   return Math.round(value * factor) / factor;
 }
 
-function countColumns(
-  schema: CorpusSnapshot["schema"],
-  table: string,
-): Set<string> {
+function countColumns(schema: CorpusSnapshot["schema"], table: string): Set<string> {
   return new Set(
     schema
       .filter((column) => column.table_name === table)
-      .map((column) => String(column.column_name ?? "")),
+      .map((column) => String(column.column_name ?? ""))
   );
 }
 
-export function buildDataLineageCatalog(
-  corpus: CorpusSnapshot,
-  source: SourceInventory,
-) {
+export function buildDataLineageCatalog(corpus: CorpusSnapshot, source: SourceInventory) {
   const immutable = {
     schemaVersion: 1,
     corpusVersion: corpus.corpusVersion,
@@ -90,9 +84,14 @@ export function buildDataLineageCatalog(
       {
         id: "contentdm_issue_metadata",
         authority: "OCLC CONTENTdm p15963coll9 metadata and IIIF manifests",
-        transformations: ["exact source filter", "record classification", "active-date manifest inventory"],
+        transformations: [
+          "exact source filter",
+          "record classification",
+          "active-date manifest inventory",
+        ],
         fieldConsumers: ["source discovery", "expected page count", "source pointer provenance"],
-        revisionRule: "identify by collection, pointer, and manifest SHA-256; never choose date collisions automatically",
+        revisionRule:
+          "identify by collection, pointer, and manifest SHA-256; never choose date collisions automatically",
         retention: "durable public provenance metadata",
         privacyClass: "public",
       },
@@ -101,7 +100,8 @@ export function buildDataLineageCatalog(
         authority: "published OCR archive edition records",
         transformations: ["OCR assembly", "legacy database publication"],
         fieldConsumers: ["archive browsing", "RAG date filters", "agent list_editions"],
-        revisionRule: "legacy rows are mutable; future publication must pin an immutable content revision",
+        revisionRule:
+          "legacy rows are mutable; future publication must pin an immutable content revision",
         retention: "durable public archive record",
         privacyClass: "public",
         ragUsage: "direct",
@@ -109,9 +109,22 @@ export function buildDataLineageCatalog(
       {
         id: "articles",
         authority: "published OCR article records",
-        transformations: ["page structuring", "continuation merge", "schema adapter", "legacy article embedding"],
-        fieldConsumers: ["FTS", "vector retrieval", "reranking", "answers", "citations", "article hydration"],
-        revisionRule: "legacy IDs are date/position based; future identities must be stable and revision-pinned",
+        transformations: [
+          "page structuring",
+          "continuation merge",
+          "schema adapter",
+          "legacy article embedding",
+        ],
+        fieldConsumers: [
+          "FTS",
+          "vector retrieval",
+          "reranking",
+          "answers",
+          "citations",
+          "article hydration",
+        ],
+        revisionRule:
+          "legacy IDs are date/position based; future identities must be stable and revision-pinned",
         retention: "durable public archive record",
         privacyClass: "public",
         ragUsage: "direct",
@@ -131,7 +144,8 @@ export function buildDataLineageCatalog(
         authority: "article image URL and caption arrays plus R2 derivatives",
         transformations: ["visual-region crop", "WebP derivative", "article association"],
         fieldConsumers: ["edition display", "visual retrieval filter", "answer image rendering"],
-        revisionRule: "legacy date paths remain readable; future assets are content-addressed and revision-pinned",
+        revisionRule:
+          "legacy date paths remain readable; future assets are content-addressed and revision-pinned",
         retention: "durable derivative; original source page remains re-downloadable",
         privacyClass: "public",
         ragUsage: "direct_legacy_metadata",
@@ -194,14 +208,9 @@ export function buildDataLineageCatalog(
   };
 }
 
-export function buildFreezeReport(
-  corpus: CorpusSnapshot,
-  source: SourceInventory,
-) {
+export function buildFreezeReport(corpus: CorpusSnapshot, source: SourceInventory) {
   if (source.corpusVersion !== corpus.corpusVersion) {
-    throw new Error(
-      `Corpus/source mismatch: ${corpus.corpusVersion} != ${source.corpusVersion}.`,
-    );
+    throw new Error(`Corpus/source mismatch: ${corpus.corpusVersion} != ${source.corpusVersion}.`);
   }
 
   const activeSourceByDate = new Map<string, SourceRecord[]>();
@@ -217,16 +226,16 @@ export function buildFreezeReport(
     const sourceRecord = sourceRecords.length === 1 ? sourceRecords[0] : null;
     const expectedPages = sourceRecord?.manifest?.canvasCount ?? null;
     const legacyDerivedPageCount = edition.pageCount;
-    const ratio = expectedPages && expectedPages > 0
-      ? legacyDerivedPageCount / expectedPages
-      : null;
-    const state = expectedPages === null
-      ? "unknown"
-      : legacyDerivedPageCount === expectedPages
-        ? "equal"
-        : legacyDerivedPageCount < expectedPages
-          ? "legacy_undercount"
-          : "legacy_overcount";
+    const ratio =
+      expectedPages && expectedPages > 0 ? legacyDerivedPageCount / expectedPages : null;
+    const state =
+      expectedPages === null
+        ? "unknown"
+        : legacyDerivedPageCount === expectedPages
+          ? "equal"
+          : legacyDerivedPageCount < expectedPages
+            ? "legacy_undercount"
+            : "legacy_overcount";
     return {
       date: edition.date,
       sourceRecordId: sourceRecord?.sourceRecordId ?? null,
@@ -241,7 +250,7 @@ export function buildFreezeReport(
       adCount: edition.ads?.length ?? 0,
       imageReferenceCount: edition.articles.reduce(
         (sum, article) => sum + (article.imageUrls?.length ?? 0),
-        0,
+        0
       ),
       caveat:
         "Legacy page_count is derived from article source pages; it is not an authoritative processed-page ledger.",
@@ -257,25 +266,20 @@ export function buildFreezeReport(
   ]);
   const coverageByDecade = [...decades].sort().map((decade) => {
     const prefix = decade.slice(0, 3);
-    const sourceRecords = source.records.filter(
-      (record) => record.date?.startsWith(prefix),
-    );
-    const activeEditions = corpus.editions.filter((edition) =>
-      edition.date.startsWith(prefix),
-    );
+    const sourceRecords = source.records.filter((record) => record.date?.startsWith(prefix));
+    const activeEditions = corpus.editions.filter((edition) => edition.date.startsWith(prefix));
     return {
       decade,
       discoveredRootRecords: sourceRecords.length,
-      issueCandidates: sourceRecords.filter(
-        (record) => record.classification === "issue_candidate",
-      ).length,
-      ambiguousRecords: sourceRecords.filter(
-        (record) => record.classification.startsWith("ambiguous"),
+      issueCandidates: sourceRecords.filter((record) => record.classification === "issue_candidate")
+        .length,
+      ambiguousRecords: sourceRecords.filter((record) =>
+        record.classification.startsWith("ambiguous")
       ).length,
       databaseActiveEditions: activeEditions.length,
       ragIndexedEditions: activeEditions.filter((edition) => edition.articles.length > 0).length,
       editionsWithImageReferences: activeEditions.filter((edition) =>
-        edition.articles.some((article) => (article.imageUrls?.length ?? 0) > 0),
+        edition.articles.some((article) => (article.imageUrls?.length ?? 0) > 0)
       ).length,
     };
   });
@@ -283,10 +287,10 @@ export function buildFreezeReport(
   const articleColumns = countColumns(corpus.schema, "articles");
   const exactPages = pageCoverage.filter((item) => item.comparisonState === "equal").length;
   const underPages = pageCoverage.filter(
-    (item) => item.comparisonState === "legacy_undercount",
+    (item) => item.comparisonState === "legacy_undercount"
   ).length;
   const overPages = pageCoverage.filter(
-    (item) => item.comparisonState === "legacy_overcount",
+    (item) => item.comparisonState === "legacy_overcount"
   ).length;
   const belowThreshold = pageCoverage.filter((item) => item.belowSeventyPercentProxy);
   const reportCore = {
@@ -305,8 +309,7 @@ export function buildFreezeReport(
     },
     retrievalBaseline: {
       configuredEmbeddingModel: corpus.embeddingCoverage.currentModel,
-      vectorsUsableByConfiguredModel:
-        corpus.embeddingCoverage.articleCurrentModelEmbeddings,
+      vectorsUsableByConfiguredModel: corpus.embeddingCoverage.articleCurrentModelEmbeddings,
       storedArticleEmbeddingModels: corpus.embeddingCoverage.articleModels,
       effectiveState:
         corpus.embeddingCoverage.articleCurrentModelEmbeddings === 0
@@ -334,7 +337,7 @@ export function buildFreezeReport(
       unusedByCurrentRag: ["article_entities", "entities", "music", "weather"],
       operationalOnly: ["ai_spend_counter", "api_rate_bucket", "ask_feedback", "ask_session_turns"],
       candidateTablesAbsent: ["article_chunks", "article_images"].filter(
-        (table) => !corpus.tableNames.includes(table),
+        (table) => !corpus.tableNames.includes(table)
       ),
     },
     gates: {
@@ -360,7 +363,7 @@ function writeImmutable(
   filePath: string,
   contents: string,
   expectedHash: string,
-  hashField: "freezeReportSha256" | "lineageSha256",
+  hashField: "freezeReportSha256" | "lineageSha256"
 ): "created" | "reused" {
   mkdirSync(path.dirname(filePath), { recursive: true });
   if (existsSync(filePath)) {
@@ -384,9 +387,9 @@ function parseArgs(argv: string[]) {
   for (let index = 0; index < argv.length; index++) {
     const value = argv[index];
     const next = argv[index + 1];
-    if (value === "--corpus" && next) options.corpus = path.resolve(next), index++;
-    else if (value === "--source" && next) options.source = path.resolve(next), index++;
-    else if (value === "--output-dir" && next) options.outputDir = path.resolve(next), index++;
+    if (value === "--corpus" && next) ((options.corpus = path.resolve(next)), index++);
+    else if (value === "--source" && next) ((options.source = path.resolve(next)), index++);
+    else if (value === "--output-dir" && next) ((options.outputDir = path.resolve(next)), index++);
     else throw new Error(`Unknown or incomplete argument: ${value}`);
   }
   if (!options.corpus || !options.source) {
@@ -450,19 +453,19 @@ async function main(): Promise<void> {
       reportJsonPath,
       `${JSON.stringify({ ...report, generatedAt: new Date().toISOString() }, null, 2)}\n`,
       report.freezeReportSha256,
-      "freezeReportSha256",
+      "freezeReportSha256"
     ),
     reportMarkdown: writeImmutable(
       reportMdPath,
       markdownReport(report),
       report.freezeReportSha256,
-      "freezeReportSha256",
+      "freezeReportSha256"
     ),
     lineage: writeImmutable(
       lineagePath,
       `${JSON.stringify({ ...lineage, generatedAt: new Date().toISOString() }, null, 2)}\n`,
       lineage.lineageSha256,
-      "lineageSha256",
+      "lineageSha256"
     ),
   };
   console.log(JSON.stringify({ reportJsonPath, reportMdPath, lineagePath, dispositions }, null, 2));

@@ -37,17 +37,16 @@ function parseYear(value: string): number | null {
 
 function loadArchive(): Promise<NormalizedArchive | null> {
   if (!archivePromise) {
-    archivePromise = fetch(ARCHIVE_URL)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Monthly chart archive error: ${response.status}`);
-        }
-        const raw = (await response.json()) as PackedArchive;
-        const startYear = parseYear(raw.start);
-        const endYear = parseYear(raw.end);
-        if (startYear == null || endYear == null) return null;
-        return { ...raw, startYear, endYear };
-      });
+    archivePromise = fetch(ARCHIVE_URL).then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Monthly chart archive error: ${response.status}`);
+      }
+      const raw = (await response.json()) as PackedArchive;
+      const startYear = parseYear(raw.start);
+      const endYear = parseYear(raw.end);
+      if (startYear == null || endYear == null) return null;
+      return { ...raw, startYear, endYear };
+    });
   }
   return archivePromise;
 }

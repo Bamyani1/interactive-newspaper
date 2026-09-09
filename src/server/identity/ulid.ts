@@ -24,31 +24,29 @@ export const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
  * node:crypto.
  */
 export function ulid(timestamp: number = Date.now()): string {
-    if (!Number.isInteger(timestamp) || timestamp < 0 || timestamp > MAX_TIMESTAMP) {
-        throw new Error(
-            `ULID timestamp must be an integer in [0, ${MAX_TIMESTAMP}], got ${timestamp}`,
-        );
-    }
+  if (!Number.isInteger(timestamp) || timestamp < 0 || timestamp > MAX_TIMESTAMP) {
+    throw new Error(`ULID timestamp must be an integer in [0, ${MAX_TIMESTAMP}], got ${timestamp}`);
+  }
 
-    let time = timestamp;
-    let timePart = "";
-    for (let i = 0; i < TIME_LENGTH; i += 1) {
-        timePart = ENCODING[time % 32] + timePart;
-        time = Math.floor(time / 32);
-    }
+  let time = timestamp;
+  let timePart = "";
+  for (let i = 0; i < TIME_LENGTH; i += 1) {
+    timePart = ENCODING[time % 32] + timePart;
+    time = Math.floor(time / 32);
+  }
 
-    const bytes = randomBytes(RANDOM_BYTES);
-    let randomPart = "";
-    let buffer = 0;
-    let bitsInBuffer = 0;
-    for (const byte of bytes) {
-        buffer = (buffer << 8) | byte;
-        bitsInBuffer += 8;
-        while (bitsInBuffer >= 5) {
-            randomPart += ENCODING[(buffer >>> (bitsInBuffer - 5)) & 31];
-            bitsInBuffer -= 5;
-        }
+  const bytes = randomBytes(RANDOM_BYTES);
+  let randomPart = "";
+  let buffer = 0;
+  let bitsInBuffer = 0;
+  for (const byte of bytes) {
+    buffer = (buffer << 8) | byte;
+    bitsInBuffer += 8;
+    while (bitsInBuffer >= 5) {
+      randomPart += ENCODING[(buffer >>> (bitsInBuffer - 5)) & 31];
+      bitsInBuffer -= 5;
     }
+  }
 
-    return timePart + randomPart;
+  return timePart + randomPart;
 }

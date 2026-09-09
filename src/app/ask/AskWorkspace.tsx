@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useCallback, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useState } from "react";
 import { PageShell } from "@/shared";
 import { TimeControls } from "@/features/time-controls";
 import { useAskArchive } from "@/features/ask-archive/hooks/useAskArchive";
@@ -9,132 +9,266 @@ import { Transcript } from "@/features/ask-archive/components/Transcript";
 import { Composer } from "@/features/ask-archive/components/Composer";
 import { AskSidebar } from "@/features/ask-archive/components/AskSidebar";
 import { AskMobileActions } from "@/features/ask-archive/components/AskMobileActions";
+import { ClearThreadsDialog } from "@/features/ask-archive/components/ClearThreadsDialog";
+import { ThreadDrawer } from "@/features/ask-archive/components/ThreadDrawer";
+import { threadLabel } from "@/features/ask-archive/components/ThreadList";
+import type { ThreadSummary } from "@/features/ask-archive/hooks/askReducer";
 
 function DeepLinkBridge({
-    isHydrating,
-    turnCount,
-    submit,
+  isHydrating,
+  turnCount,
+  submit,
+  startNewConversation,
 }: {
-    isHydrating: boolean;
-    turnCount: number;
-    submit: (question: string) => void;
+  isHydrating: boolean;
+  turnCount: number;
+  submit: (question: string) => void;
+  startNewConversation: () => void;
 }) {
-    useDeepLinkSubmit({ isHydrating, turnCount, submit });
-    return null;
+  useDeepLinkSubmit({ isHydrating, turnCount, submit, startNewConversation });
+  return null;
 }
 
 interface AskWorkspaceProps {
-    /** Request-time UTC date shared by SSR and hydration for daily prompts. */
-    suggestionDate?: string;
+  /** Request-time UTC date shared by SSR and hydration for daily prompts. */
+  suggestionDate?: string;
+  /** Real corpus size, counted server-side. See page.tsx for the fallback. */
+  corpus?: { editionCount: number; articleCount: number };
 }
 
-export default function AskWorkspace({
-    suggestionDate = "2000-01-01",
-}: AskWorkspaceProps) {
-    const {
-        turns,
-        isHydrating,
-        expiredBanner,
-        sessionGen,
-        emptyReason,
-        threads,
-        activeThreadId,
-        submit,
-        retry,
-        clearConversation,
-        newConversation,
-        switchThread,
-    } = useAskArchive();
+export default function AskWorkspace({ suggestionDate = "2000-01-01", corpus }: AskWorkspaceProps) {
+  const {
+    turns,
+    isHydrating,
+    expiredBanner,
+    sessionGen,
+    emptyReason,
+    threads,
+    activeThreadId,
+    submit,
+    stop,
+    regenerate,
+    editAndResend,
+    retry,
+    sendFeedback,
+    renameThread,
+    deleteThread,
+    clearAllThreads,
+    newConversation,
+    switchThread,
+  } = useAskArchive();
 
-    const [isExporting, setIsExporting] = useState(false);
-    const lastTurn = turns[turns.length - 1];
-    const isStreaming = lastTurn?.status === "streaming";
-    const focusSignal = `${sessionGen}:${
-        lastTurn?.status === "done" || lastTurn?.status === "error"
-            ? `${lastTurn.id}:${lastTurn.status}`
-            : "idle"
-    }`;
+  const [isExporting, setIsExporting] = useState(false);
+  // A failed export used to log to the console and stop. The reader saw
+  // the button flicker and no file appear, with nothing to explain it.
+  const [exportError, setExportError] = useState(false);
+  const [isClearWarningOpen, setIsClearWarningOpen] = useState(false);
+  const lastTurn = turns[turns.length - 1];
+  const isStreaming = lastTurn?.status === "streaming";
+  // `threads` only gains the current thread once it is archived, so the
+  // live one is prepended for display; otherwise a user mid-first-thread
+  // would see an empty sidebar and a dialog claiming nothing to clear.
+  const activeThreadIsArchived = threads.some((thread) => thread.id === activeThreadId);
+  const visibleThreads =
+    turns.length > 0 && activeThreadId && !activeThreadIsArchived
+      ? [
+          {
+            id: activeThreadId,
+            firstQuestion: turns[0].question,
+            turnCount: turns.length,
+            lastUpdatedAt: lastTurn?.createdAt ?? Date.now(),
+          },
+          ...threads,
+        ]
+      : threads;
+  const hasThreads = visibleThreads.length > 0 || turns.length > 0;
+  // Refocus once the last turn reaches any terminal status. Testing for
+  // "not streaming" rather than listing statuses means a stopped turn
+  // hands the caret back too — the reader pressed Escape to type
+  // something else.
+  //
+  // Deliberately not keyed on sessionGen: that bumps on every thread
+  // switch, new conversation and clear, so merely opening a thread to read
+  // it grabbed the caret — and on a phone raised the keyboard over the
+  // conversation the reader had just opened.
+  const focusSignal =
+    lastTurn && lastTurn.status !== "streaming" ? `${lastTurn.id}:${lastTurn.status}` : "idle";
 
-    const canStartConversation =
-        !isHydrating &&
-        (turns.length > 0 || sessionGen > 0 || threads.length > 0);
-    const canMutateConversation =
-        !isHydrating && turns.length > 0 && !isStreaming;
-    const canExportConversation = canMutateConversation && !isExporting;
+  const canStartConversation =
+    !isHydrating && (turns.length > 0 || sessionGen > 0 || threads.length > 0);
+  const canMutateConversation = !isHydrating && turns.length > 0 && !isStreaming;
+  // Clearing reaches the archive, so it stays available whenever any
+  // thread exists — not only while the current one has turns.
+  const [isThreadDrawerOpen, setIsThreadDrawerOpen] = useState(false);
+  const [threadPendingDelete, setThreadPendingDelete] = useState<ThreadSummary | null>(null);
+  const canClearAllThreads = !isHydrating && hasThreads && !isStreaming;
+  const canExportConversation = canMutateConversation && !isExporting;
 
-    const handleFollowUp = useCallback(
-        (question: string) => {
-            submit(question);
-        },
-        [submit],
-    );
+  // Cmd/Ctrl+Shift+O starts a new conversation, the shortcut a reader
+  // arriving from any other chat product will already have in their
+  // fingers. Shift is what keeps it clear of the browser's own Cmd+O.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey) return;
+      if (event.key.toLowerCase() !== "o") return;
+      if (!canStartConversation) return;
+      event.preventDefault();
+      newConversation();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canStartConversation, newConversation]);
 
-    const handleExport = useCallback(async () => {
-        if (turns.length === 0 || isExporting) return;
+  const handleFollowUp = useCallback(
+    (question: string) => {
+      submit(question);
+    },
+    [submit]
+  );
 
-        setIsExporting(true);
-        try {
-            const { exportConversationPdf } = await import(
-                "@/features/ask-archive/lib/export-conversation-pdf"
-            );
-            await exportConversationPdf(turns);
-        } catch (error) {
-            console.error("Failed to export conversation PDF", error);
-        } finally {
-            setIsExporting(false);
+  const handleExport = useCallback(async () => {
+    if (turns.length === 0 || isExporting) return;
+
+    setIsExporting(true);
+    setExportError(false);
+    try {
+      const { exportConversationPdf } =
+        await import("@/features/ask-archive/lib/export-conversation-pdf");
+      await exportConversationPdf(turns);
+    } catch (error) {
+      console.error("Failed to export conversation PDF", error);
+      setExportError(true);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [isExporting, turns]);
+
+  const handleConfirmClearAll = useCallback(() => {
+    clearAllThreads();
+    setIsClearWarningOpen(false);
+  }, [clearAllThreads]);
+
+  const handleConfirmDeleteThread = useCallback(() => {
+    if (threadPendingDelete) deleteThread(threadPendingDelete.id);
+    setThreadPendingDelete(null);
+  }, [deleteThread, threadPendingDelete]);
+
+  return (
+    <PageShell variant="default" hasHeader>
+      <Suspense fallback={null}>
+        <DeepLinkBridge
+          isHydrating={isHydrating}
+          turnCount={turns.length}
+          submit={submit}
+          startNewConversation={newConversation}
+        />
+      </Suspense>
+      <TimeControls />
+      <main id="main-content" tabIndex={-1} className="ask-main">
+        <div className="ask-page">
+          <AskSidebar
+            threads={visibleThreads}
+            activeThreadId={activeThreadId}
+            onNewConversation={newConversation}
+            onClearAllThreads={() => setIsClearWarningOpen(true)}
+            onExportConversation={handleExport}
+            onSwitchThread={switchThread}
+            onRenameThread={renameThread}
+            onRequestDeleteThread={setThreadPendingDelete}
+            canNewConversation={canStartConversation}
+            canClearAllThreads={canClearAllThreads}
+            canExportConversation={canExportConversation}
+          />
+
+          <div className="ask-column">
+            <AskMobileActions
+              onOpenThreads={() => setIsThreadDrawerOpen(true)}
+              threadCount={visibleThreads.length}
+              onNewConversation={newConversation}
+              onClearAllThreads={() => setIsClearWarningOpen(true)}
+              onExportConversation={handleExport}
+              canNewConversation={canStartConversation}
+              canClearAllThreads={canClearAllThreads}
+              canExportConversation={canExportConversation}
+            />
+            {/*
+              Keyed on sessionGen so switching thread, starting a new
+              conversation, or clearing gives the scroller a clean slate.
+              Its scroll position, its "is the reader following the
+              stream" flag and its previous-turn-count all live in refs,
+              and carrying them into another thread landed the reader
+              part-way down a conversation they had just opened, chasing
+              text that was not growing.
+
+              Not keyed on activeThreadId: that pointer moves from null
+              to a real id on every page load, which would remount the
+              transcript mid-hydration and throw away the restored
+              scroll position on every visit.
+            */}
+            <Transcript
+              key={sessionGen}
+              turns={turns}
+              isHydrating={isHydrating}
+              expiredBanner={expiredBanner}
+              emptyReason={emptyReason}
+              suggestionDate={suggestionDate}
+              corpus={corpus}
+              onFollowUp={handleFollowUp}
+              onRetry={retry}
+              onRegenerate={regenerate}
+              onEditAndResend={editAndResend}
+              onFeedback={sendFeedback}
+            />
+            {/*
+              The composer stays enabled while an answer streams so the
+              reader can reach Stop and draft their next question. Only
+              hydration disables it, because there is genuinely nothing
+              to send to yet.
+            */}
+            {exportError ? (
+              <p className="ask-export-error" role="alert">
+                The PDF could not be created. Try again, or export a shorter conversation.
+              </p>
+            ) : null}
+            <Composer
+              disabled={isHydrating}
+              isStreaming={isStreaming}
+              onSubmit={submit}
+              onStop={stop}
+              focusSignal={focusSignal}
+            />
+          </div>
+        </div>
+      </main>
+      <ClearThreadsDialog
+        isOpen={isClearWarningOpen}
+        threadCount={Math.max(visibleThreads.length, 1)}
+        onCancel={() => setIsClearWarningOpen(false)}
+        onConfirm={handleConfirmClearAll}
+      />
+      <ClearThreadsDialog
+        isOpen={threadPendingDelete !== null}
+        threadCount={1}
+        title="Delete this thread?"
+        body={
+          threadPendingDelete
+            ? `"${threadLabel(threadPendingDelete)}" and its answers will be removed from this browser and forgotten by the server. This cannot be undone.`
+            : ""
         }
-    }, [isExporting, turns]);
-
-    return (
-        <PageShell variant="default" hasHeader>
-            <Suspense fallback={null}>
-                <DeepLinkBridge
-                    isHydrating={isHydrating}
-                    turnCount={turns.length}
-                    submit={submit}
-                />
-            </Suspense>
-            <TimeControls />
-            <main id="main-content" tabIndex={-1} className="ask-main">
-                <div className="ask-page">
-                    <AskSidebar
-                        threads={threads}
-                        activeThreadId={activeThreadId}
-                        onNewConversation={newConversation}
-                        onClearConversation={clearConversation}
-                        onExportConversation={handleExport}
-                        onSwitchThread={switchThread}
-                        canNewConversation={canStartConversation}
-                        canClearConversation={canMutateConversation}
-                        canExportConversation={canExportConversation}
-                    />
-
-                    <div className="ask-column">
-                        <AskMobileActions
-                            onNewConversation={newConversation}
-                            onClearConversation={clearConversation}
-                            onExportConversation={handleExport}
-                            canNewConversation={canStartConversation}
-                            canClearConversation={canMutateConversation}
-                            canExportConversation={canExportConversation}
-                        />
-                        <Transcript
-                            turns={turns}
-                            isHydrating={isHydrating}
-                            expiredBanner={expiredBanner}
-                            emptyReason={emptyReason}
-                            suggestionDate={suggestionDate}
-                            onFollowUp={handleFollowUp}
-                            onRetry={retry}
-                        />
-                        <Composer
-                            disabled={isHydrating || isStreaming}
-                            onSubmit={submit}
-                            focusSignal={focusSignal}
-                        />
-                    </div>
-                </div>
-            </main>
-        </PageShell>
-    );
+        confirmLabel="Delete thread"
+        cancelLabel="Keep it"
+        onCancel={() => setThreadPendingDelete(null)}
+        onConfirm={handleConfirmDeleteThread}
+      />
+      <ThreadDrawer
+        isOpen={isThreadDrawerOpen}
+        threads={visibleThreads}
+        activeThreadId={activeThreadId}
+        onClose={() => setIsThreadDrawerOpen(false)}
+        onSwitchThread={switchThread}
+        onRenameThread={renameThread}
+        onRequestDeleteThread={setThreadPendingDelete}
+      />
+    </PageShell>
+  );
 }

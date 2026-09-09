@@ -283,7 +283,9 @@
   cursor: pointer;
   text-decoration: none;
   border-radius: var(--radius-sm);
-  transition: color 0.12s ease, background 0.12s ease;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
 }
 
 .ask-citation-link:hover {

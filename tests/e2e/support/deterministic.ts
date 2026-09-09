@@ -34,11 +34,7 @@ export const EMPTY_SEARCH_RESULTS = {
 };
 
 export const DETERMINISTIC_EDITIONS = {
-  editions: [
-    { date: "1960-01-13" },
-    { date: "1994-01-19" },
-    { date: "2006-04-20" },
-  ],
+  editions: [{ date: "1960-01-13" }, { date: "1994-01-19" }, { date: "2006-04-20" }],
   pagination: {
     total: 3,
     limit: 500,
@@ -60,8 +56,7 @@ export const DETERMINISTIC_ASK_ANSWER =
   "This answer came from the local Playwright fixture; no live AI request was made.";
 
 export const RETURNING_ASK_QUESTION = "Who edited the paper in 1960?";
-export const RETURNING_ASK_ANSWER =
-  "The restored local fixture preserves this prior conversation.";
+export const RETURNING_ASK_ANSWER = "The restored local fixture preserves this prior conversation.";
 
 const RETURNING_ASK_TIMESTAMP = Date.parse("2006-04-20T15:00:00.000Z");
 export const RETURNING_ASK_TURN = {
@@ -109,8 +104,7 @@ export const RETURNING_ASK_STORAGE_SEED: BrowserStorageSeed = {
 
 export const SECOND_ASK_SESSION_ID = "playwright-audit-second-thread";
 export const SECOND_ASK_QUESTION = "How did students mark the anniversary?";
-export const SECOND_ASK_ANSWER =
-  "The second archived fixture keeps a separate local thread.";
+export const SECOND_ASK_ANSWER = "The second archived fixture keeps a separate local thread.";
 
 const SECOND_ASK_TIMESTAMP = Date.parse("2006-04-20T14:00:00.000Z");
 export const SECOND_ASK_TURN = {
@@ -151,10 +145,8 @@ export const THREAD_SWITCH_STORAGE_SEED: BrowserStorageSeed = {
 };
 
 export const DELAYED_ASK_QUESTION = "Trace the archive research stages";
-export const DELAYED_ASK_PARTIAL_ANSWER =
-  "The deterministic stream has started";
-export const DELAYED_ASK_ANSWER =
-  "The deterministic stream has started and completed locally.";
+export const DELAYED_ASK_PARTIAL_ANSWER = "The deterministic stream has started";
+export const DELAYED_ASK_ANSWER = "The deterministic stream has started and completed locally.";
 
 export const DELAYED_ASK_STREAM_EVENTS = [
   { type: "stage", name: "reformulate", elapsedMs: 5 },
@@ -182,8 +174,7 @@ export const DELAYED_ASK_STREAM_EVENTS = [
   },
 ];
 
-export const VISUAL_ASK_QUESTION =
-  "Show photographs connected to the student newspaper.";
+export const VISUAL_ASK_QUESTION = "Show photographs connected to the student newspaper.";
 export const VISUAL_ASK_ANSWER =
   "The local visual fixture links the archive photographs to two source articles.";
 export const VISUAL_ASK_SOURCE_HEADLINE = "Editors Gather in the Newsroom";

@@ -7,40 +7,31 @@ type SourceArticle = AskResponse["sourceArticles"][number];
 interface SourceCardProps {
   source: SourceArticle;
   index: number;
+  /**
+   * The turn this card belongs to. Required, and part of the element id:
+   * `ask-source-3` alone repeated across every turn in the transcript, so
+   * a citation in the fourth answer scrolled to the first answer's third
+   * source. `getElementById` returns the first match in the document.
+   */
+  turnId: string;
   onOpen?: () => void;
 }
 
-export const SourceCard: React.FC<SourceCardProps> = ({
-  source,
-  index,
-  onOpen,
-}) => {
+export const SourceCard: React.FC<SourceCardProps> = ({ source, index, turnId, onOpen }) => {
   const hasImage = source.imageUrls.length > 0;
 
   return (
-    <article
-      className="ask-source-card"
-      id={`ask-source-${index + 1}`}
-      role={onOpen ? "button" : undefined}
-      tabIndex={onOpen ? 0 : undefined}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (!onOpen) return;
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-    >
+    // Not itself a button. `role="button"` on an article flattens
+    // everything inside it into one accessible name — the index, the
+    // headline, the byline, the snippet and the photo count read as a
+    // single unbroken label, and the heading stops being a heading. The
+    // "Read" affordance below is a real button instead.
+    <article className="ask-source-card" id={`ask-source-${turnId}-${index + 1}`}>
       <div className="ask-source-card-inner">
         <div className="ask-source-card-text">
           <div className="ask-source-card-meta">
-            <span className="ask-source-card-category">
-              {source.category}
-            </span>
-            <span className="ask-source-card-date">
-              {source.editionDate}
-            </span>
+            <span className="ask-source-card-category">{source.category}</span>
+            <span className="ask-source-card-date">{source.editionDate}</span>
           </div>
 
           <h4 className="ask-source-card-headline">
@@ -48,18 +39,21 @@ export const SourceCard: React.FC<SourceCardProps> = ({
             {source.headline || "Untitled"}
           </h4>
 
-          {source.byline ? (
-            <p className="ask-source-card-byline">{source.byline}</p>
-          ) : null}
+          {source.byline ? <p className="ask-source-card-byline">{source.byline}</p> : null}
 
           {source.bodySnippet ? (
             <p className="ask-source-card-snippet">{source.bodySnippet}</p>
           ) : null}
 
           {onOpen ? (
-            <span className="ask-source-card-hint" aria-hidden="true">
+            <button
+              type="button"
+              className="ask-source-card-hint"
+              onClick={onOpen}
+              aria-label={`Read: ${source.headline || "Untitled"}`}
+            >
               Read →
-            </span>
+            </button>
           ) : null}
         </div>
 

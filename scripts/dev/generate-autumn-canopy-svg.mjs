@@ -42,30 +42,142 @@ const MAX_CLUSTERS_PER_COLOR = 80;
 // Intentional hue overlaps create layered depth — a pixel may match multiple colors
 const COLOR_DEFS = [
   // Reds — widened hue + capture ranges for more red
-  { id: "crimson",   hueRange: [345, 15],  satMin: 15,  lRange: [10, 75],  fill: "#e01818", glow: "#ff2020", stroke: "#801515" },
-  { id: "scarlet",   hueRange: [15, 22],   satMin: 10,  lRange: [15, 75],  fill: "#e83010", glow: "#ff4820", stroke: "#902818" },
+  {
+    id: "crimson",
+    hueRange: [345, 15],
+    satMin: 15,
+    lRange: [10, 75],
+    fill: "#e01818",
+    glow: "#ff2020",
+    stroke: "#801515",
+  },
+  {
+    id: "scarlet",
+    hueRange: [15, 22],
+    satMin: 10,
+    lRange: [15, 75],
+    fill: "#e83010",
+    glow: "#ff4820",
+    stroke: "#902818",
+  },
 
   // Oranges — split into rust (dark) + orange (mid) + tangerine (bright)
-  { id: "rust",      hueRange: [10, 20],   satMin: 20,  lRange: [10, 55],  fill: "#c03010", glow: "#f05020", stroke: "#703018" },
-  { id: "orange",    hueRange: [20, 30],   satMin: 20,  lRange: [12, 85],  fill: "#f06000", glow: "#ff8020", stroke: "#904818" },
-  { id: "tangerine", hueRange: [30, 38],   satMin: 20,  lRange: [25, 85],  fill: "#f08010", glow: "#ffa020", stroke: "#906020" },
+  {
+    id: "rust",
+    hueRange: [10, 20],
+    satMin: 20,
+    lRange: [10, 55],
+    fill: "#c03010",
+    glow: "#f05020",
+    stroke: "#703018",
+  },
+  {
+    id: "orange",
+    hueRange: [20, 30],
+    satMin: 20,
+    lRange: [12, 85],
+    fill: "#f06000",
+    glow: "#ff8020",
+    stroke: "#904818",
+  },
+  {
+    id: "tangerine",
+    hueRange: [30, 38],
+    satMin: 20,
+    lRange: [25, 85],
+    fill: "#f08010",
+    glow: "#ffa020",
+    stroke: "#906020",
+  },
 
   // Ambers/Golds — split into 3, satMin lowered from 35→15
-  { id: "amber",     hueRange: [28, 40],   satMin: 15,  lRange: [15, 75],  fill: "#e09010", glow: "#ffc020", stroke: "#886018" },
-  { id: "gold",      hueRange: [40, 52],   satMin: 15,  lRange: [20, 85],  fill: "#e8b810", glow: "#ffe030", stroke: "#907020" },
-  { id: "honey",     hueRange: [52, 62],   satMin: 15,  lRange: [20, 80],  fill: "#d0b020", glow: "#f0e030", stroke: "#807020" },
+  {
+    id: "amber",
+    hueRange: [28, 40],
+    satMin: 15,
+    lRange: [15, 75],
+    fill: "#e09010",
+    glow: "#ffc020",
+    stroke: "#886018",
+  },
+  {
+    id: "gold",
+    hueRange: [40, 52],
+    satMin: 15,
+    lRange: [20, 85],
+    fill: "#e8b810",
+    glow: "#ffe030",
+    stroke: "#907020",
+  },
+  {
+    id: "honey",
+    hueRange: [52, 62],
+    satMin: 15,
+    lRange: [20, 80],
+    fill: "#d0b020",
+    glow: "#f0e030",
+    stroke: "#807020",
+  },
 
   // Greens — widened capture for more green
-  { id: "lime",      hueRange: [62, 90],   satMin: 6,   lRange: [10, 75],  fill: "#60b818", glow: "#90e830", stroke: "#506818" },
-  { id: "forest",    hueRange: [90, 170],  satMin: 5,   lRange: [3, 60],   fill: "#208820", glow: "#30c830", stroke: "#204018" },
+  {
+    id: "lime",
+    hueRange: [62, 90],
+    satMin: 6,
+    lRange: [10, 75],
+    fill: "#60b818",
+    glow: "#90e830",
+    stroke: "#506818",
+  },
+  {
+    id: "forest",
+    hueRange: [90, 170],
+    satMin: 5,
+    lRange: [3, 60],
+    fill: "#208820",
+    glow: "#30c830",
+    stroke: "#204018",
+  },
 
   // Darks — bark + warm brown shadow
-  { id: "bark",      hueRange: null,        satMin: 0,   lRange: [0, 18],   fill: "#1a1008", glow: "#604830", stroke: "#0d0804" },
-  { id: "shadow",    hueRange: [15, 45],    satMin: 5,   lRange: [5, 15],   fill: "#201008", glow: "#503820", stroke: "#100804" },
+  {
+    id: "bark",
+    hueRange: null,
+    satMin: 0,
+    lRange: [0, 18],
+    fill: "#1a1008",
+    glow: "#604830",
+    stroke: "#0d0804",
+  },
+  {
+    id: "shadow",
+    hueRange: [15, 45],
+    satMin: 5,
+    lRange: [5, 15],
+    fill: "#201008",
+    glow: "#503820",
+    stroke: "#100804",
+  },
 
   // Lights — highlight floor lowered 82→75, new sunlit for warm brights
-  { id: "highlight", hueRange: null,        satMin: 0,   lRange: [75, 100], fill: "#fff0c0", glow: "#fffef0", stroke: "#b0a888" },
-  { id: "sunlit",    hueRange: [30, 55],    satMin: 10,  lRange: [65, 90],  fill: "#f8e070", glow: "#fff090", stroke: "#a89860" },
+  {
+    id: "highlight",
+    hueRange: null,
+    satMin: 0,
+    lRange: [75, 100],
+    fill: "#fff0c0",
+    glow: "#fffef0",
+    stroke: "#b0a888",
+  },
+  {
+    id: "sunlit",
+    hueRange: [30, 55],
+    satMin: 10,
+    lRange: [65, 90],
+    fill: "#f8e070",
+    glow: "#fff090",
+    stroke: "#a89860",
+  },
 ];
 
 // Seeded PRNG (mulberry32) for reproducible animation delays
@@ -169,7 +281,10 @@ function createColorMask(rawBuffer, colorDef) {
       matchCount++;
     } else {
       // Hue-based color: check saturation minimum + hue range
-      if (hsl.s >= colorDef.satMin && hueInRange(hsl.h, colorDef.hueRange[0], colorDef.hueRange[1])) {
+      if (
+        hsl.s >= colorDef.satMin &&
+        hueInRange(hsl.h, colorDef.hueRange[0], colorDef.hueRange[1])
+      ) {
         mask[i] = 0;
         matchCount++;
       }
@@ -261,7 +376,10 @@ function computeBBox(d) {
 
   if (nums.length < 2) return null;
 
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
 
   for (let i = 0; i + 1 < nums.length; i += 2) {
     const x = nums[i];
@@ -293,11 +411,15 @@ function makeUF(n) {
   }
 
   function union(a, b) {
-    const ra = find(a), rb = find(b);
+    const ra = find(a),
+      rb = find(b);
     if (ra === rb) return;
     if (rank[ra] < rank[rb]) parent[ra] = rb;
     else if (rank[ra] > rank[rb]) parent[rb] = ra;
-    else { parent[rb] = ra; rank[ra]++; }
+    else {
+      parent[rb] = ra;
+      rank[ra]++;
+    }
   }
 
   return { find, union };
@@ -332,10 +454,14 @@ function clusterPaths(pathsWithBBoxes) {
       const bboxI = pathsWithBBoxes[i].bbox;
       const bboxJ = pathsWithBBoxes[j].bbox;
       const contained =
-        (bboxJ.minX >= bboxI.minX && bboxJ.maxX <= bboxI.maxX &&
-         bboxJ.minY >= bboxI.minY && bboxJ.maxY <= bboxI.maxY) ||
-        (bboxI.minX >= bboxJ.minX && bboxI.maxX <= bboxJ.maxX &&
-         bboxI.minY >= bboxJ.minY && bboxI.maxY <= bboxJ.maxY);
+        (bboxJ.minX >= bboxI.minX &&
+          bboxJ.maxX <= bboxI.maxX &&
+          bboxJ.minY >= bboxI.minY &&
+          bboxJ.maxY <= bboxI.maxY) ||
+        (bboxI.minX >= bboxJ.minX &&
+          bboxI.maxX <= bboxJ.maxX &&
+          bboxI.minY >= bboxJ.minY &&
+          bboxI.maxY <= bboxJ.maxY);
 
       if (!contained) {
         if (mergedW > MAX_CLUSTER_DIM || mergedH > MAX_CLUSTER_DIM) continue;
@@ -343,7 +469,12 @@ function clusterPaths(pathsWithBBoxes) {
 
       uf.union(i, j);
       const newRoot = uf.find(i);
-      clusterBBox[newRoot] = { minX: mergedMinX, minY: mergedMinY, maxX: mergedMaxX, maxY: mergedMaxY };
+      clusterBBox[newRoot] = {
+        minX: mergedMinX,
+        minY: mergedMinY,
+        maxX: mergedMaxX,
+        maxY: mergedMaxY,
+      };
     }
   }
 
@@ -356,7 +487,10 @@ function clusterPaths(pathsWithBBoxes) {
 
   const clusters = [];
   for (const members of groups.values()) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const m of members) {
       minX = Math.min(minX, m.bbox.minX);
       minY = Math.min(minY, m.bbox.minY);
@@ -436,7 +570,10 @@ function buildAnimatedSVG(allColorClusters) {
         cluster,
         colorDef,
         colorIdx: i,
-        cx, cy, dist, isHidden,
+        cx,
+        cy,
+        dist,
+        isHidden,
       });
     }
   }

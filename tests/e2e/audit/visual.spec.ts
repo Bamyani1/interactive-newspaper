@@ -14,20 +14,13 @@ import { STATIC_AUDIT_ROUTES } from "../support/routes";
 
 test.describe("settled route visual audit", () => {
   for (const route of STATIC_AUDIT_ROUTES) {
-    test(`${route.name} settled state`, async ({
-      page,
-      diagnostics,
-    }, testInfo) => {
+    test(`${route.name} settled state`, async ({ page, diagnostics }, testInfo) => {
       const response = await page.goto(route.path);
       const status = response?.status() ?? 0;
       const acceptedStatuses = route.acceptedStatuses ?? [200];
 
       expect(acceptedStatuses, `${route.path} returned ${status}`).toContain(status);
-      await expectVisibleNonEmptyFirstPaint(
-        page,
-        route.firstPaint,
-        `${route.name} first paint`,
-      );
+      await expectVisibleNonEmptyFirstPaint(page, route.firstPaint, `${route.name} first paint`);
       await waitForSettledUi(page);
 
       const screenshot = await captureAuditScreenshot(
@@ -37,7 +30,7 @@ test.describe("settled route visual audit", () => {
           route: route.name,
           state: "settled",
           viewport: auditViewport(testInfo.project.name),
-        }),
+        })
       );
       await testInfo.attach("settled-page", {
         path: screenshot,

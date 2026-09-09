@@ -26,36 +26,28 @@ describe("/api/editions – input bounds", () => {
     const route = await import("../../src/app/api/editions/route");
     await route.GET(makeRequest("http://localhost/api/editions?limit=9999"));
 
-    expect(mockQueryEditions).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 500 }),
-    );
+    expect(mockQueryEditions).toHaveBeenCalledWith(expect.objectContaining({ limit: 500 }));
   });
 
   it("clamps negative offset to 0", async () => {
     const route = await import("../../src/app/api/editions/route");
     await route.GET(makeRequest("http://localhost/api/editions?offset=-50"));
 
-    expect(mockQueryEditions).toHaveBeenCalledWith(
-      expect.objectContaining({ offset: 0 }),
-    );
+    expect(mockQueryEditions).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
   });
 
   it("handles NaN limit gracefully (falls back to 500)", async () => {
     const route = await import("../../src/app/api/editions/route");
     await route.GET(makeRequest("http://localhost/api/editions?limit=abc"));
 
-    expect(mockQueryEditions).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 500 }),
-    );
+    expect(mockQueryEditions).toHaveBeenCalledWith(expect.objectContaining({ limit: 500 }));
   });
 
   it("handles NaN offset gracefully (falls back to 0)", async () => {
     const route = await import("../../src/app/api/editions/route");
     await route.GET(makeRequest("http://localhost/api/editions?offset=xyz"));
 
-    expect(mockQueryEditions).toHaveBeenCalledWith(
-      expect.objectContaining({ offset: 0 }),
-    );
+    expect(mockQueryEditions).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
   });
 
   it("uses defaults when no params provided", async () => {
@@ -63,7 +55,7 @@ describe("/api/editions – input bounds", () => {
     await route.GET(makeRequest("http://localhost/api/editions"));
 
     expect(mockQueryEditions).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 500, offset: 0 }),
+      expect.objectContaining({ limit: 500, offset: 0 })
     );
   });
 });

@@ -19,18 +19,12 @@ describe("removed edition UI", () => {
 
     const newsFeed = readFileSync(
       resolve("src/features/news-feed/components/NewsFeed.tsx"),
-      "utf8",
+      "utf8"
     );
-    const newsFeedIndex = readFileSync(
-      resolve("src/features/news-feed/index.ts"),
-      "utf8",
-    );
+    const newsFeedIndex = readFileSync(resolve("src/features/news-feed/index.ts"), "utf8");
     const sharedIndex = readFileSync(resolve("src/components/index.ts"), "utf8");
     const styleIndex = readFileSync(resolve("src/styles/index.css"), "utf8");
-    const primitivesGallery = readFileSync(
-      resolve("src/app/dev/primitives/page.tsx"),
-      "utf8",
-    );
+    const primitivesGallery = readFileSync(resolve("src/app/dev/primitives/page.tsx"), "utf8");
 
     expect(newsFeed).not.toMatch(/ScanViewer|useScanViewer|useKeyboardNavigation/);
     expect(newsFeedIndex).not.toMatch(/ArticleCard/);

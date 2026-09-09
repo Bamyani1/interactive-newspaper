@@ -22,10 +22,10 @@ Terms that appear across multiple docs:
 - **`edition.json`** — The canonical OCR output. Shape defined in `ocr/src/transcript_ocr/contracts/content_models.py`.
 - **FTS** — Postgres full-text search. Uses GIN-indexed `tsvector` column `search_vector`.
 - **HNSW** — Hierarchical Navigable Small World. The pgvector ANN index used for embedding similarity search. Parameters: `m=16, ef_construction=128, hnsw.ef_search=100`.
-- **hybrid search** — The combined vector + FTS retrieval in `db.ts :: hybridSearch`. Merged via RRF.
+- **hybrid search** — The combined vector + FTS retrieval in `retrieval.ts :: retrieveCandidates`, which runs both signals independently and merges them with `db.ts :: fuseArticleResults` via RRF. When both signals succeed and return nothing, the reported method is `none`, not `hybrid`.
 - **RRF** — Reciprocal Rank Fusion. The algorithm that merges vector and FTS rank lists: `score = weight / (K + rank)` with `K=40`.
 - **simple pipeline** — The 5-stage non-agent path in `/api/ask`: reformulate → embed → retrieve → rerank → generate.
-- **turn** — One (question, answer) pair in a conversation. Multiple turns form a session (up to 5 within 30 min, stored in `ask_session_turns`).
+- **turn** — One (question, answer) pair in a conversation. Multiple turns form a session: the newest 5 are the prompt context, and rows are kept for `ASK_SESSION_TTL_DAYS` (default 7) in `ask_session_turns`.
 - **citation snapshot** — Bounded, immutable metadata/evidence retained with a turn and keyed to the cited content revision, so later OCR changes do not rewrite hydrated sources.
 - **coverage intent** — `absence`, `count`, or `exhaustive` classification that triggers a deterministic indexed-edition/article scope query. Coverage metadata describes search scope and is never source evidence.
 - **CRAG retry stages** — `reformulate-retry`, `embed-retry`, `retrieve-retry`, `rerank-retry`. Tagged for log attribution.
@@ -34,13 +34,13 @@ Terms that appear across multiple docs:
 
 Common troubleshooting:
 
-| Symptom | Where to look |
-|---|---|
-| `/api/ask` returning 504s | [rag-pipeline.md § Operator runbook](rag-pipeline.md#operator-runbook) |
-| Vector search feels slow | [data-model.md § HNSW index](data-model.md#hnsw-index) — check if index exists |
-| OCR pipeline hung on a page | [ocr-pipeline.md § Failure modes](ocr-pipeline.md#failure-modes) |
+| Symptom                            | Where to look                                                                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `/api/ask` returning 504s          | [rag-pipeline.md § Operator runbook](rag-pipeline.md#operator-runbook)                                    |
+| Vector search feels slow           | [data-model.md § HNSW index](data-model.md#hnsw-index) — check if index exists                            |
+| OCR pipeline hung on a page        | [ocr-pipeline.md § Failure modes](ocr-pipeline.md#failure-modes)                                          |
 | Seed wiped embeddings unexpectedly | [data-model.md § Embedding preservation](data-model.md#embedding-preservation--the-fingerprint-mechanism) |
-| Daily budget blown before noon | [rag-pipeline.md § Budget & cost tracking](rag-pipeline.md#budget--cost-tracking) |
+| Daily budget blown before noon     | [rag-pipeline.md § Budget & cost tracking](rag-pipeline.md#budget--cost-tracking)                         |
 
 ## About this project
 

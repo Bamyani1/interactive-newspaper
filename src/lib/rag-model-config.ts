@@ -19,25 +19,25 @@ export const RAG_TEXT_EMBEDDING_INPUT_VERSION = "article-chunk-v1";
 export const RAG_IMAGE_EMBEDDING_INPUT_VERSION = "article-image-v1";
 
 export const RAG_MODEL_CONFIG = {
-    reformulate: {
-        model: RAG_GENERATION_MODEL,
-        thinkingLevel: "MINIMAL" as ThinkingLevel,
-    },
-    rerank: {
-        model: RAG_ANSWER_MODEL,
-        thinkingLevel: "MINIMAL" as ThinkingLevel,
-    },
-    answer: {
-        // LOW, not MEDIUM: grounded single-hop QA over pre-retrieved
-        // context is Google's canonical low-thinking case, and thinking
-        // bills at the output rate — the holdout regression run gates this.
-        model: RAG_ANSWER_MODEL,
-        thinkingLevel: "LOW" as ThinkingLevel,
-    },
-    agent: {
-        model: RAG_ANSWER_MODEL,
-        thinkingLevel: "MEDIUM" as ThinkingLevel,
-    },
+  reformulate: {
+    model: RAG_GENERATION_MODEL,
+    thinkingLevel: "MINIMAL" as ThinkingLevel,
+  },
+  rerank: {
+    model: RAG_ANSWER_MODEL,
+    thinkingLevel: "MINIMAL" as ThinkingLevel,
+  },
+  answer: {
+    // LOW, not MEDIUM: grounded single-hop QA over pre-retrieved
+    // context is Google's canonical low-thinking case, and thinking
+    // bills at the output rate — the holdout regression run gates this.
+    model: RAG_ANSWER_MODEL,
+    thinkingLevel: "LOW" as ThinkingLevel,
+  },
+  agent: {
+    model: RAG_ANSWER_MODEL,
+    thinkingLevel: "MEDIUM" as ThinkingLevel,
+  },
 } as const;
 
 /**

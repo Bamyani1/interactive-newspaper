@@ -21,20 +21,18 @@ test("landing keeps both core paths coherent without JavaScript", async ({
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
   await expect(page.locator(".cinema-paper")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "The Transcript Archive" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "The Transcript Archive" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Ask the archive" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open this issue" })).toHaveAttribute(
     "href",
-    /\/edition\/\d{4}-\d{2}-\d{2}$/,
+    /\/edition\/\d{4}-\d{2}-\d{2}$/
   );
   await expect(page.locator(".cinema-paper")).toHaveCSS("opacity", "1");
 
   const hasHorizontalOverflow = await page.evaluate(
     () =>
       document.documentElement.scrollWidth > window.innerWidth ||
-      document.body.scrollWidth > window.innerWidth,
+      document.body.scrollWidth > window.innerWidth
   );
   expect(hasHorizontalOverflow).toBe(false);
   expectNoUnexpectedNoJsDiagnostics(diagnostics, {
@@ -46,29 +44,15 @@ test("landing keeps both core paths coherent without JavaScript", async ({
   await context.close();
 });
 
-test("landing stops its ambient and ticker motion for reduced motion", async ({
-  page,
-}) => {
+test("landing stops its ambient and ticker motion for reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await waitForSettledUi(page);
 
-  await expect(page.locator(".cinema-ticker-track").first()).toHaveCSS(
-    "transform",
-    "none",
-  );
-  await expect(page.locator(".cathedral-ambient")).toHaveCSS(
-    "animation-name",
-    "none",
-  );
-  await expect(page.locator(".cathedral-mote").first()).toHaveCSS(
-    "animation-name",
-    "none",
-  );
-  await expect(page.locator(".cinema-paper")).toHaveCSS(
-    "animation-name",
-    "none",
-  );
+  await expect(page.locator(".cinema-ticker-track").first()).toHaveCSS("transform", "none");
+  await expect(page.locator(".cathedral-ambient")).toHaveCSS("animation-name", "none");
+  await expect(page.locator(".cathedral-mote").first()).toHaveCSS("animation-name", "none");
+  await expect(page.locator(".cinema-paper")).toHaveCSS("animation-name", "none");
 
   await expect
     .poll(async () =>
@@ -81,7 +65,7 @@ test("landing stops its ambient and ticker motion for reduced motion", async ({
           pathOpacity: path?.style.fillOpacity,
           animations: document?.getAnimations().length,
         };
-      }),
+      })
     )
     .toEqual({ panelOpacity: "1", pathOpacity: "0.8", animations: 0 });
 });
@@ -90,22 +74,16 @@ test("edition picker has valid tabpanels and 44px targets", async ({ page }) => 
   await page.goto("/");
   await waitForSettledUi(page);
 
-  await page
-    .getByRole("button", { name: /selected edition:.*activate to change/i })
-    .click();
+  await page.getByRole("button", { name: /selected edition:.*activate to change/i }).click();
   const activeTab = page.getByRole("tab", { selected: true });
   const panel = page.getByRole("tabpanel");
   await expect(activeTab).toBeVisible();
   await expect(panel).toBeVisible();
-  expect(await activeTab.getAttribute("aria-controls")).toBe(
-    await panel.getAttribute("id"),
-  );
-  expect(await panel.getAttribute("aria-labelledby")).toBe(
-    await activeTab.getAttribute("id"),
-  );
+  expect(await activeTab.getAttribute("aria-controls")).toBe(await panel.getAttribute("id"));
+  expect(await panel.getAttribute("aria-labelledby")).toBe(await activeTab.getAttribute("id"));
 
   const targets = page.locator(
-    ".ep-decade-tab:visible, .ep-date-item:visible, .ep-close-btn:visible",
+    ".ep-decade-tab:visible, .ep-date-item:visible, .ep-close-btn:visible"
   );
   const targetCount = await targets.count();
   expect(targetCount).toBeGreaterThan(2);
@@ -117,15 +95,14 @@ test("edition picker has valid tabpanels and 44px targets", async ({ page }) => 
     }));
     expect(
       metrics.computedMinHeight,
-      `picker target ${index} computed min-height`,
+      `picker target ${index} computed min-height`
     ).toBeGreaterThanOrEqual(44);
     // Chromium can report a sub-pixel float such as 43.99994 for a
     // computed 44px box. Keep the rendered-size guard strict enough to
     // catch real regressions while tolerating that representation noise.
-    expect(
-      metrics.renderedHeight,
-      `picker target ${index} rendered height`,
-    ).toBeGreaterThanOrEqual(43.99);
+    expect(metrics.renderedHeight, `picker target ${index} rendered height`).toBeGreaterThanOrEqual(
+      43.99
+    );
   }
 });
 
@@ -175,7 +152,7 @@ test("landing fits its canvas across responsive boundaries", async ({
     expect(metrics.paperBottom).toBeLessThanOrEqual(metrics.viewportHeight);
     expect(
       await readCumulativeLayoutShift(page),
-      `CLS at ${viewport.width}x${viewport.height}`,
+      `CLS at ${viewport.width}x${viewport.height}`
     ).toBeLessThanOrEqual(0.01);
     expectNoUnexpectedDiagnostics(diagnostics);
     resetBrowserDiagnostics(diagnostics);

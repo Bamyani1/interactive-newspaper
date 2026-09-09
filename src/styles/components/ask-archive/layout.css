@@ -20,6 +20,18 @@
  * reachable" invariant.
  */
 .ask-main {
+  /*
+   * The reading measure the conversation shares.
+   *
+   * The column is `minmax(0, 1fr)` of a 100rem page beside a 280px
+   * sidebar, so at 1440px and above it ran to roughly 1100px while the
+   * answers capped at the 42rem prose measure and aligned left. The text
+   * sat in the left third of the column under an expanse of empty
+   * newsprint. Centring one measure — turns, landing, notices and the
+   * composer alike — keeps them on a common axis at every width. The
+   * sidebar keeps its 280px.
+   */
+  --ask-measure: 52rem;
   display: flex;
   flex-direction: column;
   height: calc(100dvh - var(--header-height, 54px));
@@ -60,12 +72,16 @@
   height: 100%;
 }
 
-.ask-sidebar::-webkit-scrollbar { width: 6px; }
+.ask-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
 .ask-sidebar::-webkit-scrollbar-thumb {
   background: color-mix(in oklab, var(--color-text-secondary) 20%, transparent);
   border-radius: var(--radius-default);
 }
-.ask-sidebar::-webkit-scrollbar-track { background: transparent; }
+.ask-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
 
 .ask-sidebar-title {
   display: flex;
@@ -161,6 +177,10 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* The list scrolls rather than growing: with a 7-day retention window
+     a busy week otherwise pushes Clear all past the bottom of the page. */
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .ask-sidebar-thread {
@@ -178,7 +198,9 @@
   cursor: pointer;
   font: inherit;
   color: inherit;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .ask-sidebar-thread:hover:not([data-active="true"]) {
@@ -214,6 +236,156 @@
   /* Use the secondary token directly — the 70% color-mix dropped
      contrast under 3:1 (this is small text at 0.58rem). */
   color: var(--color-text-secondary);
+}
+
+/* A thread is one target with two tools beside it. The tools sit outside
+   the open button rather than inside it — a control nested in a button is
+   not reachable — and stay out of the way until the row is hovered or
+   something inside it holds focus. */
+.ask-thread-row {
+  position: relative;
+}
+
+/* Floated over the row's right edge rather than laid out beside it: two
+   44px targets inside a 280px sidebar would take a third of the width
+   permanently, and the title — the thing the reader is scanning — wrapped
+   to three lines to pay for tools that are hidden most of the time. */
+.ask-thread-tools {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  display: flex;
+  align-items: center;
+  padding-inline-start: var(--space-4);
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--color-bg-primary) var(--space-4)
+  );
+  opacity: 0;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.ask-thread-row:has([data-active="true"]) .ask-thread-tools {
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in oklab, var(--color-text-secondary) 10%, var(--color-bg-primary)) var(--space-4)
+  );
+}
+
+.ask-thread-row:hover .ask-thread-tools,
+.ask-thread-row:focus-within .ask-thread-tools {
+  opacity: 1;
+}
+
+/* No hover to reveal them with, and the row is the whole width of the
+   sheet, so on touch they are simply always there. The mobile sheet
+   shows them unconditionally: it is opened deliberately, to manage
+   threads, so hiding its controls behind a hover serves nobody. */
+@media (hover: none) {
+  .ask-thread-tools {
+    opacity: 1;
+  }
+}
+
+.ask-thread-drawer-list .ask-thread-tools {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-thread-tools {
+    transition: none;
+  }
+}
+
+.ask-thread-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-default);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.ask-thread-tool:hover {
+  color: var(--color-accent-text);
+  background: var(--color-accent-wash);
+}
+
+.ask-thread-rename {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ask-thread-rename-field {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--color-rule);
+  border-left: 2px solid var(--color-accent);
+  border-radius: var(--radius-default);
+  background: var(--color-bg-inset);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--color-text-primary);
+}
+
+/* ── Mobile thread sheet ──
+   Below 1024px the sidebar is gone, so this is the only route to the
+   archive. Anchored to the bottom, where a thumb is. */
+.ask-thread-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 100);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: color-mix(in oklab, var(--color-text-primary) 45%, transparent);
+}
+
+.ask-thread-drawer {
+  width: 100%;
+  max-width: 34rem;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3);
+  border-top: 3px solid var(--color-accent);
+  border-radius: var(--radius-default) var(--radius-default) 0 0;
+  background: var(--color-bg-primary);
+}
+
+.ask-thread-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.ask-thread-drawer-head h2 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.ask-thread-drawer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .ask-sidebar-threads-empty {
@@ -260,7 +432,10 @@
   letter-spacing: var(--tracking-label-sm);
   text-transform: uppercase;
   cursor: pointer;
-  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease, background var(--duration-fast) ease;
+  transition:
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    background var(--duration-fast) ease;
 }
 
 .ask-mobile-action:hover:not(:disabled) {
@@ -280,10 +455,135 @@
 }
 
 /* =========================================
+   CLEAR-ALL CONFIRMATION
+   Interrupts to warn before every local thread and its server session
+   are dropped. Sits above the transcript chrome but below the lightbox.
+   ========================================= */
+.ask-clear-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: color-mix(in oklab, var(--color-text-primary) 46%, transparent);
+}
+
+.ask-clear-dialog {
+  width: min(30rem, 100%);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border-default);
+  border-top: 3px solid var(--color-accent);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  box-shadow: 0 1.5rem 4rem color-mix(in oklab, #000 28%, transparent);
+}
+
+.ask-clear-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.ask-clear-dialog-heading > svg {
+  flex: none;
+  margin-top: 0.15rem;
+  color: var(--color-accent);
+}
+
+.ask-clear-dialog-kicker {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-label-md);
+  text-transform: uppercase;
+  color: var(--color-accent-text);
+}
+
+.ask-clear-dialog h2 {
+  margin: 0;
+  font-family: var(--font-header);
+  font-size: var(--text-xl);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-display);
+}
+
+.ask-clear-dialog-copy {
+  margin: var(--space-4) 0 0;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.ask-clear-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+
+.ask-clear-dialog-button {
+  min-height: 44px;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-default);
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-label-sm);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.ask-clear-dialog-button:hover {
+  border-color: var(--color-accent);
+}
+
+.ask-clear-dialog-confirm {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-bg-primary);
+}
+
+.ask-clear-dialog-confirm:hover {
+  background: var(--color-accent-text);
+}
+
+/* =========================================
    SESSION-EXPIRED BANNER
    Rendered at the top of the transcript when a thread outlives the
    cached session — structurally a layout hint, not answer content.
    ========================================= */
+/* Everything in the reading column shares one centred measure. Listed
+   rather than applied with a universal child selector so a future
+   full-bleed element can opt out by not being on this list. */
+.ask-transcript > .ask-turn,
+.ask-transcript > .ask-landing,
+.ask-transcript > .ask-expired-banner,
+.ask-transcript > .ask-hydrating-indicator,
+.ask-transcript > .ask-cleared-indicator,
+.ask-composer > .ask-composer-row,
+.ask-composer > .ask-composer-counter,
+.ask-column > .ask-export-error {
+  width: 100%;
+  max-width: var(--ask-measure);
+  margin-inline: auto;
+}
+
+/* Export failures used to be console-only: the button flickered, no file
+   appeared, and nothing on screen explained why. */
+.ask-export-error {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label-md);
+  color: var(--color-accent-text);
+}
+
 .ask-expired-banner {
   padding: 0.65rem 0.9rem;
   border: 1px dashed var(--stroke-accent-soft);
@@ -312,9 +612,11 @@
 .ask-sidebar-newbtn:focus-visible,
 .ask-sidebar-thread:focus-visible,
 .ask-mobile-action:focus-visible,
+.ask-clear-dialog-button:focus-visible,
 .ask-error-inline-retry:focus-visible,
 .ask-example-chip:focus-visible,
 .ask-source-toggle:focus-visible,
+.ask-photos-panel-overflow:focus-visible,
 .ask-source-card:focus-visible,
 .ask-reader-close:focus-visible,
 .ask-reader-edition-link:focus-visible {
@@ -432,25 +734,6 @@
     font-size: var(--text-md);
     padding-left: 0.75rem;
   }
-  .ask-empty-lede {
-    font-size: var(--text-base);
-  }
-  .ask-empty-stats {
-    grid-template-columns: 1fr;
-    gap: var(--space-2);
-    padding: 0.75rem 0;
-  }
-  .ask-empty-stat {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: baseline;
-  }
-  .ask-empty-stat dd {
-    font-size: 1.05rem;
-  }
-  .ask-empty-example {
-    font-size: 0.95rem;
-  }
   .ask-source-card-thumb {
     width: 72px;
   }
@@ -504,6 +787,7 @@
   .ask-expired-banner,
   .ask-hydrating-indicator,
   .ask-cleared-indicator,
+  .ask-clear-dialog-overlay,
   .ask-followups,
   .color-customizer-toggle,
   .color-customizer-panel,
@@ -552,14 +836,13 @@
   /* Reset transcript colors for paper. Fixed ink values are intentional
      — print drivers map these without variable resolution. */
   .ask-turn,
-  .ask-turn-question,
+  .ask-turn-user-bubble,
   .ask-turn-answer,
   .ask-turn-answer *,
   .ask-source-list,
-  .ask-source-content,
   .ask-source-card,
-  .ask-source-headline,
-  .ask-source-meta {
+  .ask-source-card-headline,
+  .ask-source-card-meta {
     color: #111 !important;
     background: white !important;
     border-color: #ccc !important;

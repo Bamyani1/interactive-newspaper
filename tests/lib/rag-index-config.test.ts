@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  getRagRetrievalConfig,
-  shouldServeVersionedRetrieval,
-} from "@/src/lib/rag-index-config";
+import { getRagRetrievalConfig, shouldServeVersionedRetrieval } from "@/src/lib/rag-index-config";
 
 describe("RAG retrieval configuration", () => {
   it("defaults to legacy with no index identity", () => {
@@ -20,10 +17,10 @@ describe("RAG retrieval configuration", () => {
 
   it("requires an immutable build id for shadow and versioned modes", () => {
     expect(() =>
-      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "shadow" } as unknown as NodeJS.ProcessEnv),
+      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "shadow" } as unknown as NodeJS.ProcessEnv)
     ).toThrow(/RAG_ACTIVE_INDEX_BUILD_ID/);
     expect(() =>
-      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "versioned" } as unknown as NodeJS.ProcessEnv),
+      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "versioned" } as unknown as NodeJS.ProcessEnv)
     ).toThrow(/RAG_ACTIVE_INDEX_BUILD_ID/);
   });
 
@@ -41,16 +38,14 @@ describe("RAG retrieval configuration", () => {
       embeddingModel: "gemini-embedding-2",
       textEmbeddingInputVersion: "article-chunk-v1",
       imageEmbeddingInputVersion: "article-image-v1",
-      cacheIdentity: expect.stringContaining(
-        "index=versioned:build-2026-08-02",
-      ),
+      cacheIdentity: expect.stringContaining("index=versioned:build-2026-08-02"),
     });
     expect(shouldServeVersionedRetrieval(env)).toBe(true);
   });
 
   it("rejects unknown modes rather than guessing", () => {
     expect(() =>
-      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "auto" } as unknown as NodeJS.ProcessEnv),
+      getRagRetrievalConfig({ RAG_RETRIEVAL_MODE: "auto" } as unknown as NodeJS.ProcessEnv)
     ).toThrow(/Invalid RAG_RETRIEVAL_MODE/);
   });
 });

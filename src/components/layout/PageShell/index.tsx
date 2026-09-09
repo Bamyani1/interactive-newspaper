@@ -33,20 +33,20 @@ interface PageShellProps {
 
 /**
  * PageShell
- * 
+ *
  * A consistent wrapper component for all pages that handles:
  * - Background color application
  * - Layout variants (scrollable, cinema)
  * - Header offset when needed
  * - Background/content layer separation
- * 
+ *
  * Usage:
  * ```tsx
  * // Standard page
  * <PageShell variant="default" hasHeader>
  *   <main>...</main>
  * </PageShell>
- * 
+ *
  * // Landing page with background
  * <PageShell variant="cinema" backgroundContent={<BackgroundImage />}>
  *   <main>...</main>
@@ -81,7 +81,11 @@ export const PageShell: React.FC<PageShellProps> = ({
   }
 
   // Simple wrapper for default variant
-  return <div className={shellClasses} data-page-shell data-mode={forcedMode}>{children}</div>;
+  return (
+    <div className={shellClasses} data-page-shell data-mode={forcedMode}>
+      {children}
+    </div>
+  );
 };
 
 export default PageShell;

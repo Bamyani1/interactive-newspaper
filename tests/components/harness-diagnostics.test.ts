@@ -7,7 +7,9 @@ import {
   createBrowserDiagnostics,
   expectNoUnexpectedDiagnostics,
   isExpectedFramerMotionReducedMotionDevWarning,
+  isIgnorableMockedAskStreamAbort,
   isIgnorableOptimizedImageAbort,
+  isIgnorableRscPrefetchAbort,
   type FulfilledHttpError,
 } from "../e2e/support/harness";
 
@@ -21,10 +23,7 @@ function diagnosticsWithWarning(warning: string) {
   return diagnostics;
 }
 
-function diagnosticsWithFailure(
-  kind: "consoleErrors" | "requestFailures",
-  failure: string,
-) {
+function diagnosticsWithFailure(kind: "consoleErrors" | "requestFailures", failure: string) {
   const diagnostics = createBrowserDiagnostics();
   diagnostics[kind].push(failure);
   return diagnostics;
@@ -36,12 +35,8 @@ describe("browser diagnostics warning exceptions", () => {
   });
 
   it("recognizes the exact boot-time upstream warning without weakening the final gate", () => {
-    expect(isExpectedFramerMotionReducedMotionDevWarning(upstreamWarning)).toBe(
-      true,
-    );
-    expect(() =>
-      expectNoUnexpectedDiagnostics(diagnosticsWithWarning(upstreamWarning)),
-    ).toThrow();
+    expect(isExpectedFramerMotionReducedMotionDevWarning(upstreamWarning)).toBe(true);
+    expect(() => expectNoUnexpectedDiagnostics(diagnosticsWithWarning(upstreamWarning))).toThrow();
   });
 
   it.each([
@@ -51,33 +46,25 @@ describe("browser diagnostics warning exceptions", () => {
     `${FRAMER_MOTION_REDUCED_MOTION_DEV_WARNING} [https://example.com/_next/static/chunks/node_modules_next_dist.js]`,
   ])("rejects altered or application-sourced warnings: %s", (warning) => {
     expect(isExpectedFramerMotionReducedMotionDevWarning(warning)).toBe(false);
-    expect(() =>
-      expectNoUnexpectedDiagnostics(diagnosticsWithWarning(warning)),
-    ).toThrow();
+    expect(() => expectNoUnexpectedDiagnostics(diagnosticsWithWarning(warning))).toThrow();
   });
 
   it("never suppresses the warning against a production server", () => {
     vi.stubEnv("PLAYWRIGHT_SERVER_MODE", "production");
-    expect(isExpectedFramerMotionReducedMotionDevWarning(upstreamWarning)).toBe(
-      false,
-    );
-    expect(() =>
-      expectNoUnexpectedDiagnostics(diagnosticsWithWarning(upstreamWarning)),
-    ).toThrow();
+    expect(isExpectedFramerMotionReducedMotionDevWarning(upstreamWarning)).toBe(false);
+    expect(() => expectNoUnexpectedDiagnostics(diagnosticsWithWarning(upstreamWarning))).toThrow();
   });
 
   it("accepts only Firefox's exact frame-ancestors compatibility warning", () => {
     expect(() =>
       expectNoUnexpectedDiagnostics(
-        diagnosticsWithWarning(FIREFOX_FRAME_ANCESTORS_COMPATIBILITY_WARNING),
-      ),
+        diagnosticsWithWarning(FIREFOX_FRAME_ANCESTORS_COMPATIBILITY_WARNING)
+      )
     ).not.toThrow();
     expect(() =>
       expectNoUnexpectedDiagnostics(
-        diagnosticsWithWarning(
-          `${FIREFOX_FRAME_ANCESTORS_COMPATIBILITY_WARNING} altered`,
-        ),
-      ),
+        diagnosticsWithWarning(`${FIREFOX_FRAME_ANCESTORS_COMPATIBILITY_WARNING} altered`)
+      )
     ).toThrow();
   });
 
@@ -89,8 +76,7 @@ describe("browser diagnostics warning exceptions", () => {
     },
     {
       kind: "consoleErrors" as const,
-      value:
-        "error: application prefix /_vercel/insights/script.js application suffix",
+      value: "error: application prefix /_vercel/insights/script.js application suffix",
     },
     {
       kind: "consoleErrors" as const,
@@ -99,18 +85,14 @@ describe("browser diagnostics warning exceptions", () => {
     },
     {
       kind: "requestFailures" as const,
-      value:
-        "GET http://127.0.0.1:3000/_vercel/insights/script.js — csp",
+      value: "GET http://127.0.0.1:3000/_vercel/insights/script.js — csp",
     },
     {
       kind: "requestFailures" as const,
-      value:
-        "GET https://va.vercel-scripts.com/v1/script.debug.js — csp",
+      value: "GET https://va.vercel-scripts.com/v1/script.debug.js — csp",
     },
   ])("never suppresses Analytics-shaped $kind: $value", ({ kind, value }) => {
-    expect(() =>
-      expectNoUnexpectedDiagnostics(diagnosticsWithFailure(kind, value)),
-    ).toThrow();
+    expect(() => expectNoUnexpectedDiagnostics(diagnosticsWithFailure(kind, value))).toThrow();
   });
 });
 
@@ -121,13 +103,13 @@ describe("ASSET-001 optimized image deferral (consumeExpectedOptimizedImageFailu
 
   function optimizerUrl(targetUrl: string, width: number, quality = 75): string {
     return `http://127.0.0.1:3000/_next/image?url=${encodeURIComponent(
-      targetUrl,
+      targetUrl
     )}&w=${width}&q=${quality}`;
   }
 
   function imageHttpError(
     url: string,
-    overrides: Partial<FulfilledHttpError> = {},
+    overrides: Partial<FulfilledHttpError> = {}
   ): FulfilledHttpError {
     return {
       method: "GET",
@@ -156,12 +138,8 @@ describe("ASSET-001 optimized image deferral (consumeExpectedOptimizedImageFailu
   it("consumes the exact mobile-observed optimizer failure triple", () => {
     const diagnostics = createBrowserDiagnostics();
     diagnostics.httpErrors.push(imageHttpError(optimizerUrl(DEFERRED_R2_URL, 640)));
-    diagnostics.consoleErrors.push(
-      loadFailureConsoleError(optimizerUrl(DEFERRED_R2_URL, 640)),
-    );
-    diagnostics.requestFailures.push(
-      abortedRequestFailure(optimizerUrl(DEFERRED_R2_URL, 256)),
-    );
+    diagnostics.consoleErrors.push(loadFailureConsoleError(optimizerUrl(DEFERRED_R2_URL, 640)));
+    diagnostics.requestFailures.push(abortedRequestFailure(optimizerUrl(DEFERRED_R2_URL, 256)));
 
     consumeDeferred(diagnostics);
 
@@ -171,16 +149,10 @@ describe("ASSET-001 optimized image deferral (consumeExpectedOptimizedImageFailu
   it("consumes desktop responsive candidate widths for the same object", () => {
     const diagnostics = createBrowserDiagnostics();
     for (const width of [828, 1200]) {
-      diagnostics.httpErrors.push(
-        imageHttpError(optimizerUrl(DEFERRED_R2_URL, width)),
-      );
-      diagnostics.consoleErrors.push(
-        loadFailureConsoleError(optimizerUrl(DEFERRED_R2_URL, width)),
-      );
+      diagnostics.httpErrors.push(imageHttpError(optimizerUrl(DEFERRED_R2_URL, width)));
+      diagnostics.consoleErrors.push(loadFailureConsoleError(optimizerUrl(DEFERRED_R2_URL, width)));
     }
-    diagnostics.requestFailures.push(
-      abortedRequestFailure(optimizerUrl(DEFERRED_R2_URL, 1080)),
-    );
+    diagnostics.requestFailures.push(abortedRequestFailure(optimizerUrl(DEFERRED_R2_URL, 1080)));
 
     consumeDeferred(diagnostics);
 
@@ -191,37 +163,25 @@ describe("ASSET-001 optimized image deferral (consumeExpectedOptimizedImageFailu
     {
       name: "different edition date",
       error: imageHttpError(
-        optimizerUrl(
-          auditR2ImageObjectUrl("1989-10-26", DEFERRED_OBJECT),
-          640,
-        ),
+        optimizerUrl(auditR2ImageObjectUrl("1989-10-26", DEFERRED_OBJECT), 640)
       ),
     },
     {
       name: "different page filename",
       error: imageHttpError(
-        optimizerUrl(
-          auditR2ImageObjectUrl(DEFERRED_DATE, "0004_Page 5_img1.webp"),
-          640,
-        ),
+        optimizerUrl(auditR2ImageObjectUrl(DEFERRED_DATE, "0004_Page 5_img1.webp"), 640)
       ),
     },
     {
       name: "different image index",
       error: imageHttpError(
-        optimizerUrl(
-          auditR2ImageObjectUrl(DEFERRED_DATE, "0005_Page 4_img1.webp"),
-          640,
-        ),
+        optimizerUrl(auditR2ImageObjectUrl(DEFERRED_DATE, "0005_Page 4_img1.webp"), 640)
       ),
     },
     {
       name: "different host",
       error: imageHttpError(
-        optimizerUrl(
-          `https://cdn.example.com/${DEFERRED_DATE}/images/${DEFERRED_OBJECT}`,
-          640,
-        ),
+        optimizerUrl(`https://cdn.example.com/${DEFERRED_DATE}/images/${DEFERRED_OBJECT}`, 640)
       ),
     },
     {
@@ -256,9 +216,7 @@ describe("ASSET-001 optimized image deferral (consumeExpectedOptimizedImageFailu
     // different edition's abort must survive so its own gate stays fatal.
     const diagnostics = createBrowserDiagnostics();
     diagnostics.requestFailures.push(
-      abortedRequestFailure(
-        optimizerUrl(auditR2ImageObjectUrl("1989-10-26", DEFERRED_OBJECT), 256),
-      ),
+      abortedRequestFailure(optimizerUrl(auditR2ImageObjectUrl("1989-10-26", DEFERRED_OBJECT), 256))
     );
 
     consumeDeferred(diagnostics);
@@ -357,9 +315,151 @@ describe("optimized-image abort exception (isIgnorableOptimizedImageAbort)", () 
     // the gate — like a genuine non-image abort — must still be fatal.
     const diagnostics = createBrowserDiagnostics();
     diagnostics.requestFailures.push(
-      "GET http://127.0.0.1:3219/edition/2001-10-10 — net::ERR_ABORTED",
+      "GET http://127.0.0.1:3219/edition/2001-10-10 — net::ERR_ABORTED"
     );
 
     expect(() => expectNoUnexpectedDiagnostics(diagnostics)).toThrow();
+  });
+});
+
+describe("mocked Ask stream abort exception (isIgnorableMockedAskStreamAbort)", () => {
+  it.each([
+    {
+      name: "the deterministic Ask stream aborted mid-drain",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_ABORTED",
+        fulfilledByMock: true,
+      },
+    },
+    {
+      name: "the same endpoint without a query string",
+      input: {
+        method: "post",
+        url: "http://127.0.0.1:3219/api/ask",
+        errorText: "net::ERR_ABORTED",
+        fulfilledByMock: true,
+      },
+    },
+  ])("ignores $name", ({ input }) => {
+    expect(isIgnorableMockedAskStreamAbort(input)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "an Ask POST no mock ever answered",
+      // The signature of a double submit or a switch mid-stream: the client
+      // cancelled the request itself, so no mock reached `route.fulfill()`.
+      // This is the failure the exemption exists to stay out of the way of.
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_ABORTED",
+        fulfilledByMock: false,
+      },
+    },
+    {
+      name: "the session endpoint",
+      input: {
+        method: "DELETE",
+        url: "http://127.0.0.1:3219/api/ask/session?sessionId=abc",
+        errorText: "net::ERR_ABORTED",
+        fulfilledByMock: true,
+      },
+    },
+    {
+      name: "a GET on the Ask endpoint",
+      input: {
+        method: "GET",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_ABORTED",
+        fulfilledByMock: true,
+      },
+    },
+    {
+      name: "a connection failure rather than an abort",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask?stream=1",
+        errorText: "net::ERR_CONNECTION_REFUSED",
+        fulfilledByMock: true,
+      },
+    },
+    {
+      name: "another route that merely mentions the path",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3219/api/ask-archive",
+        errorText: "net::ERR_ABORTED",
+        fulfilledByMock: true,
+      },
+    },
+  ])("keeps $name fatal", ({ input }) => {
+    expect(isIgnorableMockedAskStreamAbort(input)).toBe(false);
+  });
+
+  it("only filters at collection: a recorded Ask abort still fails the gate", () => {
+    // Same contract as the optimized-image exception — the predicate runs when
+    // the harness records `requestfailed`, so anything already in the array is
+    // fatal by the time the gate reads it.
+    const diagnostics = createBrowserDiagnostics();
+    diagnostics.requestFailures.push(
+      "POST http://127.0.0.1:3219/api/ask?stream=1 — net::ERR_ABORTED"
+    );
+
+    expect(() => expectNoUnexpectedDiagnostics(diagnostics)).toThrow();
+  });
+});
+
+describe("RSC prefetch abort exception (isIgnorableRscPrefetchAbort)", () => {
+  it.each([
+    {
+      name: "a prefetch cancelled by the next navigation",
+      input: {
+        method: "GET",
+        url: "http://127.0.0.1:3102/edition/1950-01-18?_rsc=MlMt8ECJAlrppkZ5",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "a root prefetch",
+      input: {
+        method: "get",
+        url: "http://127.0.0.1:3102/?_rsc=XC-WlyCfq8JIDEk4",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+  ])("ignores $name", ({ input }) => {
+    expect(isIgnorableRscPrefetchAbort(input)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "a document navigation abort",
+      input: {
+        method: "GET",
+        url: "http://127.0.0.1:3102/edition/1950-01-18",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+    {
+      name: "a prefetch that failed to connect",
+      input: {
+        method: "GET",
+        url: "http://127.0.0.1:3102/ask?_rsc=XC-WlyCfq8JIDEk4",
+        errorText: "net::ERR_CONNECTION_REFUSED",
+      },
+    },
+    {
+      name: "a POST carrying an _rsc param",
+      input: {
+        method: "POST",
+        url: "http://127.0.0.1:3102/ask?_rsc=XC-WlyCfq8JIDEk4",
+        errorText: "net::ERR_ABORTED",
+      },
+    },
+  ])("keeps $name fatal", ({ input }) => {
+    expect(isIgnorableRscPrefetchAbort(input)).toBe(false);
   });
 });

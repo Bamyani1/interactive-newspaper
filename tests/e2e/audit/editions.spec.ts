@@ -32,6 +32,13 @@ const EDITION_PATH = /^\/edition\/(\d{4}-\d{2}-\d{2})$/;
 const ASSET_001_EDITION = "1989-10-25";
 const ASSET_001_OBJECT = "0004_Page 4_img1.webp";
 
+// Editions that are ingested locally on purpose but were never published to
+// the live DB. `localOnly` must stay a subset of this list: any other date
+// means an edition was ingested and forgotten, or dropped from the live
+// inventory. 1983-04-21 is the surviving 1983-85 partial; the 21 directories
+// that used to sit beside it held no edition.json and have been removed.
+const UNPUBLISHED_LOCAL_EDITIONS = ["1983-04-21"];
+
 // ASSET-001's aborted responsive candidate fires a late, non-deterministic
 // `requestfailed` event that can surface in a LATER edition's diagnostics, so
 // consume that exact object (tolerant, no-op otherwise) before every edition
@@ -47,7 +54,7 @@ function assertEditionDiagnostics(diagnostics: BrowserDiagnostics): void {
 async function productionPrerenderInventory() {
   expect(
     process.env.PLAYWRIGHT_SERVER_MODE,
-    "edition reconciliation must run against a fresh production build",
+    "edition reconciliation must run against a fresh production build"
   ).toBe("production");
 
   const buildIdPath = path.resolve(".next/BUILD_ID");
@@ -61,7 +68,7 @@ async function productionPrerenderInventory() {
   expect(buildId.trim(), "production BUILD_ID must be nonempty").not.toBe("");
   expect(
     manifestStats.mtimeMs,
-    "prerender manifest must be written by the active production build",
+    "prerender manifest must be written by the active production build"
   ).toBeGreaterThanOrEqual(buildIdStats.mtimeMs);
 
   const manifest = JSON.parse(manifestText) as PrerenderManifest;
@@ -83,9 +90,7 @@ function editionDatesFromApi(value: unknown): string[] {
   if (!Array.isArray(editions)) return [];
   return editions
     .map((edition) => edition.date)
-    .filter((date): date is string =>
-      typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date),
-    );
+    .filter((date): date is string => typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date));
 }
 
 test("reconciles and sweeps the complete production/local edition union", async ({
@@ -100,14 +105,15 @@ test("reconciles and sweeps the complete production/local edition union", async 
   const liveDateRows = editionDatesFromApi(await liveResponse.json());
   const liveDates = [...new Set(liveDateRows)].sort();
   const generated = await productionPrerenderInventory();
-  const generatedDates = generated.dates;
-  const localOnlyDates = localDates.filter(
-    (date) => !generatedDates.includes(date),
-  );
-  const generatedOnlyDates = generatedDates.filter(
-    (date) => !localDates.includes(date),
-  );
-  const unionDates = [...new Set([...generatedDates, ...localDates])].sort();
+  // Nonce-based CSP (middleware.ts, since 7e7cd2f) stamps a per-request nonce,
+  // which disables static prerendering, so a production build emits no edition
+  // routes. The live API is the published-edition inventory the sweep works
+  // from; the manifest is still read to prove the build was fresh and that
+  // nothing silently returned to prerendering.
+  const publishedDates = liveDates;
+  const localOnlyDates = localDates.filter((date) => !publishedDates.includes(date));
+  const publishedOnlyDates = publishedDates.filter((date) => !localDates.includes(date));
+  const unionDates = [...new Set([...publishedDates, ...localDates])].sort();
   const generatedFailures: Array<{ date: string; reason: string }> = [];
   const localOnlyFailures: Array<{ date: string; reason: string }> = [];
   const deferredAssets: Array<{
@@ -120,16 +126,18 @@ test("reconciles and sweeps the complete production/local edition union", async 
 
   expect(liveDateRows).toHaveLength(351);
   expect(liveDates).toHaveLength(351);
-  expect(generatedDates).toHaveLength(351);
-  expect(generated.datePaths).toHaveLength(351);
-  expect(generated.hasIndex).toBe(true);
-  expect(generated.datePaths.length + Number(generated.hasIndex)).toBe(352);
-  expect(localDates).toHaveLength(373);
-  expect(localOnlyDates).toHaveLength(22);
-  expect(generatedOnlyDates).toEqual([]);
-  expect(unionDates).toHaveLength(373);
-  expect(generatedDates).toEqual(liveDates);
-  expect(generatedDates).toEqual(expect.arrayContaining([...DEEP_TEST_EDITIONS]));
+  expect(generated.datePaths).toEqual([]);
+  expect(generated.hasIndex).toBe(false);
+  // `public/editions` is gitignored working output, so its size is a property
+  // of the machine the sweep runs on, not of the app. Assert the relationships
+  // that must hold on any machine instead of a captured inventory count.
+  expect(publishedOnlyDates, "every published edition must also exist locally").toEqual([]);
+  expect(
+    localOnlyDates.filter((date) => !UNPUBLISHED_LOCAL_EDITIONS.includes(date)),
+    "an unpublished local edition must be a documented exception"
+  ).toEqual([]);
+  expect(unionDates).toHaveLength(localDates.length);
+  expect(publishedDates).toEqual(expect.arrayContaining([...DEEP_TEST_EDITIONS]));
 
   await writeAuditJson(
     evidencePath({
@@ -141,23 +149,22 @@ test("reconciles and sweeps the complete production/local edition union", async 
     {
       localCount: localDates.length,
       apiCount: liveDates.length,
-      generatedCount: generatedDates.length,
-      generatedPathCountIncludingIndex:
-        generated.datePaths.length + Number(generated.hasIndex),
+      publishedCount: publishedDates.length,
+      generatedPathCountIncludingIndex: generated.datePaths.length + Number(generated.hasIndex),
       localOnlyCount: localOnlyDates.length,
       localOnly404s: localOnlyDates,
-      generatedOnly: generatedOnlyDates,
+      publishedOnly: publishedOnlyDates,
       unionCount: unionDates.length,
       productionBuild: generated,
       deepTestEditions: DEEP_TEST_EDITIONS,
-    },
+    }
   );
 
   for (const date of unionDates) {
     const response = await page.goto(`/edition/${date}`);
-    const isGenerated = generatedDates.includes(date);
+    const isPublished = publishedDates.includes(date);
 
-    if (!isGenerated) {
+    if (!isPublished) {
       if (response?.status() !== 404) {
         localOnlyFailures.push({
           date,
@@ -171,7 +178,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
         await expectVisibleNonEmptyFirstPaint(
           page,
           FIRST_PAINT.notFound,
-          `local-only edition ${date} 404 first paint`,
+          `local-only edition ${date} 404 first paint`
         );
         await waitForSettledUi(page, 100);
         await captureAuditScreenshot(
@@ -181,7 +188,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
             route: `edition-${date}`,
             state: "local-only-404",
             viewport,
-          }),
+          })
         );
       }
       assertEditionDiagnostics(diagnostics);
@@ -199,11 +206,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
       continue;
     }
 
-    await expectVisibleNonEmptyFirstPaint(
-      page,
-      FIRST_PAINT.edition,
-      `edition ${date} first paint`,
-    );
+    await expectVisibleNonEmptyFirstPaint(page, FIRST_PAINT.edition, `edition ${date} first paint`);
     await waitForSettledUi(page, 100);
     await captureAuditScreenshot(
       page,
@@ -212,7 +215,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
         route: `edition-${date}`,
         state: "settled",
         viewport,
-      }),
+      })
     );
     if (date === ASSET_001_EDITION) {
       // ASSET-001: the jpg→webp rewrite targets an R2 object that was never
@@ -239,10 +242,9 @@ test("reconciles and sweeps the complete production/local edition union", async 
           editionId: "1989-10-25",
           missingObject: object,
           missingObjectUrl,
-          reason:
-            "External R2 object absent; restoring it is outside front-end scope.",
+          reason: "External R2 object absent; restoring it is outside front-end scope.",
           deferralId: "ASSET-001",
-        },
+        }
       );
     }
     assertEditionDiagnostics(diagnostics);
@@ -256,7 +258,7 @@ test("reconciles and sweeps the complete production/local edition union", async 
       state: "reconciliation",
       viewport,
     }),
-    { generatedFailures, localOnlyFailures, deferredAssets },
+    { generatedFailures, localOnlyFailures, deferredAssets }
   );
   expect(generatedFailures).toEqual([]);
   expect(localOnlyFailures).toEqual([]);

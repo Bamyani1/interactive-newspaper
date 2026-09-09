@@ -30,11 +30,7 @@ interface UseModalDialogOptions {
  * siblings are made inert and hidden from assistive technology, body scroll is
  * locked, focus is contained, and the previously focused control is restored.
  */
-export function useModalDialog({
-  isOpen,
-  onDismiss,
-  initialFocusRef,
-}: UseModalDialogOptions) {
+export function useModalDialog({ isOpen, onDismiss, initialFocusRef }: UseModalDialogOptions) {
   const portalRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const onDismissRef = useRef(onDismiss);
@@ -52,13 +48,10 @@ export function useModalDialog({
     const modalId = modalIdRef.current;
     openModalStack.push(modalId);
     const previouslyFocused =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     const siblings = Array.from(document.body.children).filter(
-      (element): element is HTMLElement =>
-        element instanceof HTMLElement && element !== portal,
+      (element): element is HTMLElement => element instanceof HTMLElement && element !== portal
     );
     const siblingState = siblings.map((element) => ({
       element,
@@ -74,7 +67,7 @@ export function useModalDialog({
 
     const getFocusable = () =>
       Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-        (element) => element.getAttribute("aria-hidden") !== "true",
+        (element) => element.getAttribute("aria-hidden") !== "true"
       );
 
     const focusTarget = initialFocusRef?.current ?? getFocusable()[0] ?? dialog;

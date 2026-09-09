@@ -10,8 +10,7 @@ vi.mock("@/src/lib/gemini-client", () => ({
   }),
 }));
 vi.mock("@/src/lib/cost-tracker", () => ({
-  executeTrackedGenerationCall: (options: { call: () => Promise<unknown> }) =>
-    options.call(),
+  executeTrackedGenerationCall: (options: { call: () => Promise<unknown> }) => options.call(),
 }));
 
 import { parseScores, rerankArticles } from "@/src/lib/reranker";
@@ -130,11 +129,7 @@ describe("rerankArticles", () => {
 
   it("filters, sorts, and caps articles by structured scores", async () => {
     generateContentMock.mockResolvedValue({ text: '{"scores":[8,1,6]}' });
-    const articles = [
-      makeArticle({ id: "a" }),
-      makeArticle({ id: "b" }),
-      makeArticle({ id: "c" }),
-    ];
+    const articles = [makeArticle({ id: "a" }), makeArticle({ id: "b" }), makeArticle({ id: "c" })];
 
     const result = await rerankArticles("test?", articles, {
       minScore: 3,
@@ -187,7 +182,7 @@ describe("rerankArticles", () => {
           imageCaptions: ["Students carrying a banner in the homecoming parade."],
         }),
       ],
-      { mode: "visual" },
+      { mode: "visual" }
     );
 
     const call = generateContentMock.mock.calls[0][0];
@@ -195,7 +190,7 @@ describe("rerankArticles", () => {
     expect(prompt).toContain("SEARCH MODE: visual");
     expect(prompt).toContain("Image captions: Students carrying a banner");
     expect(call.config.systemInstruction).toContain(
-      "article prose that mentions the subject does not make an unrelated image relevant",
+      "article prose that mentions the subject does not make an unrelated image relevant"
     );
   });
 
@@ -208,9 +203,7 @@ describe("rerankArticles", () => {
     ]);
 
     const instruction = generateContentMock.mock.calls[0][0].config.systemInstruction;
-    expect(instruction).toContain(
-      "correcting the false premise is the answer",
-    );
+    expect(instruction).toContain("correcting the false premise is the answer");
   });
 
   it("limits a legacy body excerpt to 2000 characters", async () => {
@@ -237,13 +230,46 @@ describe("rerankArticles", () => {
   ])("falls back to capped neutral scores on %s", async (error, _label) => {
     if (error) generateContentMock.mockRejectedValue(error);
     else generateContentMock.mockResolvedValue({ text: "not-json" });
-    const articles = [
-      makeArticle({ id: "a" }),
-      makeArticle({ id: "b" }),
-      makeArticle({ id: "c" }),
-    ];
+    const articles = [makeArticle({ id: "a" }), makeArticle({ id: "b" }), makeArticle({ id: "c" })];
     const result = await rerankArticles("test", articles, { maxArticles: 2 });
     expect(result.map((item) => item.id)).toEqual(["a", "b"]);
     expect(result.every((item) => item.relevanceScore === 5)).toBe(true);
+  });
+
+  it.each([
+    [new Error("API error"), "api error"],
+    [null, "malformed response"],
+  ])("marks the fail-open score as unvetted on %s", async (error, _label) => {
+    // Score 5 is also what a real judge can assign and what the route's
+    // total-veto guard uses, so the score alone cannot say "nobody judged
+    // this" — and an unjudged answer was reporting medium confidence.
+    if (error) generateContentMock.mockRejectedValue(error);
+    else generateContentMock.mockResolvedValue({ text: "not-json" });
+    const result = await rerankArticles("test", [makeArticle({ id: "a" })]);
+    expect(result[0].rerankDegraded).toBe(true);
+  });
+
+  it("does not mark genuinely judged articles as unvetted", async () => {
+    generateContentMock.mockResolvedValue({ text: '{"scores":[5]}' });
+    const result = await rerankArticles("test", [makeArticle({ id: "a" })]);
+    expect(result[0].relevanceScore).toBe(5);
+    expect(result[0].rerankDegraded).toBeUndefined();
+  });
+
+  it("retries a quota failure and then refuses instead of failing open", async () => {
+    vi.useFakeTimers();
+    try {
+      generateContentMock.mockRejectedValue(Object.assign(new Error("429"), { code: 429 }));
+
+      const promise = rerankArticles("test", [makeArticle()]);
+      promise.catch(() => {});
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      await expect(promise).rejects.toMatchObject({ name: "QuotaExhaustedError" });
+      // One attempt plus the two live backoff retries.
+      expect(generateContentMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

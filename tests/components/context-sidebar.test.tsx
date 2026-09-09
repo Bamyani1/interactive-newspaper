@@ -16,7 +16,7 @@ function setDesktopViewport(matches: boolean) {
       addListener: vi.fn(),
       removeListener: vi.fn(),
       dispatchEvent: vi.fn(),
-    })),
+    }))
   );
 }
 
@@ -67,14 +67,10 @@ describe("responsive edition context sidebar", () => {
 
     render(<ContextSidebar currentDate="1989-10-18" />);
 
-    expect(await screen.findByRole("complementary")).toHaveAttribute(
-      "data-context-sidebar",
-    );
+    expect(await screen.findByRole("complementary")).toHaveAttribute("data-context-sidebar");
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/weather?date=1989-10-18");
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/top-10-music/chart-1950-2010.json",
-      );
+      expect(fetchMock).toHaveBeenCalledWith("/top-10-music/chart-1950-2010.json");
     });
   });
 
@@ -97,9 +93,7 @@ describe("responsive edition context sidebar", () => {
 
     render(<ContextSidebar currentDate="1989-10-19" />);
 
-    expect(
-      await screen.findByText("Unable to load weather data right now"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Unable to load weather data right now")).toBeInTheDocument();
     expect(screen.queryByText("Weather data unavailable")).not.toBeInTheDocument();
   });
 });

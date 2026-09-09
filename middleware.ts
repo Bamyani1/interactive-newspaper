@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 
 // Three tiers based on endpoint cost. The bucket name keeps their Neon
-// rows separate — same IP can hit each tier independently.
+// rows separate — same IP can hit each tier independently. This is the only
+// place /api/* is rate-limited: /api/ask and /api/search each used to add a
+// second bucket of their own, so every request paid for two Neon writes and
+// search's two limits disagreed (60 here, 20 in the route). The stricter
+// number won.
 const askLimiter = createRateLimiter({ bucket: "mw-ask", limit: 10, windowMs: 60_000 }); // /api/ask — expensive Gemini calls
-const searchLimiter = createRateLimiter({ bucket: "mw-search", limit: 60, windowMs: 60_000 }); // /api/search — DB query
+const searchLimiter = createRateLimiter({ bucket: "mw-search", limit: 20, windowMs: 60_000 }); // /api/search — DB query
 const generalLimiter = createRateLimiter({ bucket: "mw-general", limit: 120, windowMs: 60_000 }); // /api/editions, /api/weather
 
 // Returns the limiter for the paths we rate-limit, or null for everything
@@ -74,7 +78,7 @@ export async function middleware(request: NextRequest) {
             "X-RateLimit-Reset": String(result.resetAt),
             "Content-Security-Policy": csp,
           },
-        },
+        }
       );
     }
 

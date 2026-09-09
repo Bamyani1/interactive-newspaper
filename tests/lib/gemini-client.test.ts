@@ -3,10 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { GoogleGenAIMock } = vi.hoisted(() => ({ GoogleGenAIMock: vi.fn() }));
 vi.mock("@google/genai", () => ({ GoogleGenAI: GoogleGenAIMock }));
 
-import {
-  _resetGeminiClientForTests,
-  getGeminiClient,
-} from "@/src/lib/gemini-client";
+import { _resetGeminiClientForTests, getGeminiClient } from "@/src/lib/gemini-client";
 
 describe("Gemini Vertex client", () => {
   beforeEach(() => {
@@ -34,7 +31,7 @@ describe("Gemini Vertex client", () => {
     vi.stubEnv("GOOGLE_CLOUD_LOCATION", "us-central1");
     getGeminiClient();
     expect(GoogleGenAIMock).toHaveBeenCalledWith(
-      expect.objectContaining({ location: "us-central1" }),
+      expect.objectContaining({ location: "us-central1" })
     );
   });
 
@@ -43,7 +40,7 @@ describe("Gemini Vertex client", () => {
     vi.stubEnv("GEMINI_API_KEY", "must-not-be-used");
     getGeminiClient();
     expect(GoogleGenAIMock).toHaveBeenCalledWith(
-      expect.objectContaining({ vertexai: true, project: "archive-project" }),
+      expect.objectContaining({ vertexai: true, project: "archive-project" })
     );
   });
 

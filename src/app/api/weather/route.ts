@@ -1,13 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { lookupHistoricalWeatherCached } from '@/src/lib/weather';
-import {
-  getLocalWeatherByDate,
-  isDateWithinLocalArchive,
-} from '@/src/lib/weather-local-archive';
-import { createRateLimiter, getClientIp } from '@/src/lib/rate-limit';
-import type { WeatherQuery } from '@/src/types';
+import { NextRequest, NextResponse } from "next/server";
+import { lookupHistoricalWeatherCached } from "@/src/lib/weather";
+import { getLocalWeatherByDate, isDateWithinLocalArchive } from "@/src/lib/weather-local-archive";
+import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
+import type { WeatherQuery } from "@/src/types";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const weatherRateLimiter = createRateLimiter({ bucket: "weather", limit: 10, windowMs: 60_000 });
@@ -33,21 +30,21 @@ export async function GET(request: NextRequest) {
   const rate = await weatherRateLimiter(ip);
   if (!rate.allowed) {
     return NextResponse.json(
-      { error: 'Too many weather requests. Please wait a moment and try again.' },
+      { error: "Too many weather requests. Please wait a moment and try again." },
       {
         status: 429,
         headers: {
-          'Retry-After': String(Math.ceil((rate.resetAt - Date.now()) / 1000)),
+          "Retry-After": String(Math.ceil((rate.resetAt - Date.now()) / 1000)),
         },
-      },
+      }
     );
   }
 
   const params = request.nextUrl.searchParams;
-  const date = params.get('date');
+  const date = params.get("date");
 
   if (!date) {
-    return NextResponse.json({ error: 'Missing required query parameter: date' }, { status: 400 });
+    return NextResponse.json({ error: "Missing required query parameter: date" }, { status: 400 });
   }
 
   if (isDateWithinLocalArchive(date)) {
@@ -57,37 +54,37 @@ export async function GET(request: NextRequest) {
         query: { date },
         record: localRecord,
         reason: null,
-        attempts: ['LOCAL_ARCHIVE:delaware'],
+        attempts: ["LOCAL_ARCHIVE:delaware"],
       });
     }
   }
 
   // Local input validation — reject out-of-range coordinates and over-long
   // string params before forwarding downstream. See docs/issues/0025.
-  const lat = parseNumericParam(params.get('lat'));
-  const lon = parseNumericParam(params.get('lon'));
+  const lat = parseNumericParam(params.get("lat"));
+  const lon = parseNumericParam(params.get("lon"));
   if (lat !== undefined && (lat < -90 || lat > 90)) {
-    return NextResponse.json({ error: 'lat out of range [-90, 90]' }, { status: 400 });
+    return NextResponse.json({ error: "lat out of range [-90, 90]" }, { status: 400 });
   }
   if (lon !== undefined && (lon < -180 || lon > 180)) {
-    return NextResponse.json({ error: 'lon out of range [-180, 180]' }, { status: 400 });
+    return NextResponse.json({ error: "lon out of range [-180, 180]" }, { status: 400 });
   }
 
-  const location_name = params.get('location_name') ?? undefined;
+  const location_name = params.get("location_name") ?? undefined;
   if (location_name !== undefined && location_name.length > MAX_LOCATION_NAME_LEN) {
-    return NextResponse.json({ error: 'location_name too long' }, { status: 400 });
+    return NextResponse.json({ error: "location_name too long" }, { status: 400 });
   }
-  const country = params.get('country') ?? undefined;
+  const country = params.get("country") ?? undefined;
   if (country !== undefined && country.length > MAX_COUNTRY_LEN) {
-    return NextResponse.json({ error: 'country too long' }, { status: 400 });
+    return NextResponse.json({ error: "country too long" }, { status: 400 });
   }
-  const state = params.get('state') ?? undefined;
+  const state = params.get("state") ?? undefined;
   if (state !== undefined && state.length > MAX_STATE_LEN) {
-    return NextResponse.json({ error: 'state too long' }, { status: 400 });
+    return NextResponse.json({ error: "state too long" }, { status: 400 });
   }
-  const station_id = params.get('station_id') ?? undefined;
+  const station_id = params.get("station_id") ?? undefined;
   if (station_id !== undefined && station_id.length > MAX_STATION_ID_LEN) {
-    return NextResponse.json({ error: 'station_id too long' }, { status: 400 });
+    return NextResponse.json({ error: "station_id too long" }, { status: 400 });
   }
 
   const query: WeatherQuery = {
@@ -98,7 +95,7 @@ export async function GET(request: NextRequest) {
     state,
     country,
     station_id,
-    force_fallback: params.get('force_fallback') === 'true',
+    force_fallback: params.get("force_fallback") === "true",
   };
 
   const lookup = await lookupHistoricalWeatherCached(query);
@@ -110,7 +107,7 @@ export async function GET(request: NextRequest) {
         reason: lookup.reason,
         attempts: lookup.attempts,
       },
-      { status: lookup.reason === 'INVALID_DATE' ? 400 : 404 },
+      { status: lookup.reason === "INVALID_DATE" ? 400 : 404 }
     );
   }
 

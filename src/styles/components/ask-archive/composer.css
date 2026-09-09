@@ -28,11 +28,7 @@
   right: 0;
   top: -2.5rem;
   height: 2.5rem;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    var(--color-bg-primary) 95%
-  );
+  background: linear-gradient(to bottom, transparent, var(--color-bg-primary) 95%);
   pointer-events: none;
 }
 
@@ -45,7 +41,9 @@
   border-radius: var(--radius-default);
   overflow: hidden;
   box-shadow: none;
-  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
 }
 
 .ask-composer-row:focus-within {
@@ -96,7 +94,9 @@
   letter-spacing: var(--tracking-label-md);
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
   flex-shrink: 0;
   min-width: 92px;
 }
@@ -112,6 +112,52 @@
   cursor: not-allowed;
 }
 
+/* The remaining-characters count only appears near the ceiling, so an
+   ordinary question is never shadowed by a counter. */
+.ask-composer-counter {
+  margin: var(--space-1) 0 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label-md);
+  color: var(--color-text-secondary);
+}
+
+/* Stop reads as the live, actionable control while an answer arrives —
+   the accent that Send only borrows on hover. It is never disabled: the
+   whole point is that it works at any moment during generation. */
+.ask-composer-stop {
+  color: var(--color-accent);
+}
+
+.ask-composer-stop:hover {
+  background: color-mix(in oklab, var(--color-accent) 14%, transparent);
+}
+
 .ask-composer-send-label {
   display: inline-block;
+}
+
+/* The shortcut legend. Muted enough to read as chrome, and gone on
+   coarse pointers, where there is no keyboard to press these on and the
+   line would only cost vertical space above the on-screen keyboard. */
+.ask-composer-hint {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label-sm);
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.ask-composer-hint kbd {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--color-text-secondary);
+}
+
+@media (hover: none) {
+  .ask-composer-hint {
+    display: none;
+  }
 }

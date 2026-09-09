@@ -13,63 +13,36 @@ import { CRITICAL_ROUTES, FIRST_PAINT } from "../support/routes";
 
 test.describe("critical route smoke", () => {
   for (const route of CRITICAL_ROUTES) {
-    test(`${route.name} renders coherent document content`, async ({
-      page,
-      diagnostics,
-    }) => {
+    test(`${route.name} renders coherent document content`, async ({ page, diagnostics }) => {
       const response = await page.goto(route.path);
 
       expect(response, `${route.path} should return a response`).not.toBeNull();
       expect(response?.status(), `${route.path} should not return 5xx`).toBeLessThan(500);
-      await expectVisibleNonEmptyFirstPaint(
-        page,
-        route.firstPaint,
-        `${route.name} first paint`,
-      );
+      await expectVisibleNonEmptyFirstPaint(page, route.firstPaint, `${route.name} first paint`);
       await waitForSettledUi(page);
       expectNoUnexpectedDiagnostics(diagnostics);
     });
   }
 
-  test("Ask deep link is fulfilled by the local stream fixture", async ({
-    page,
-    diagnostics,
-  }) => {
+  test("Ask deep link is fulfilled by the local stream fixture", async ({ page, diagnostics }) => {
     const streamResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return (
-        url.pathname === "/api/ask" &&
-        response.request().method() === "POST"
-      );
+      return url.pathname === "/api/ask" && response.request().method() === "POST";
     });
 
-    const response = await page.goto(
-      "/ask?q=Who%20edited%20the%20paper%3F",
-    );
+    const response = await page.goto("/ask?q=Who%20edited%20the%20paper%3F");
     expect(response?.status()).toBe(200);
-    await expectVisibleNonEmptyFirstPaint(
-      page,
-      FIRST_PAINT.ask,
-      "Ask deep-link first paint",
-    );
+    await expectVisibleNonEmptyFirstPaint(page, FIRST_PAINT.ask, "Ask deep-link first paint");
 
     const mockedResponse = await streamResponse;
-    expect(mockedResponse.headers()["x-audit-fixture"]).toBe(
-      "deterministic-ask-stream",
-    );
-    expect(mockedResponse.headers()["content-type"]).toContain(
-      "text/event-stream",
-    );
+    expect(mockedResponse.headers()["x-audit-fixture"]).toBe("deterministic-ask-stream");
+    expect(mockedResponse.headers()["content-type"]).toContain("text/event-stream");
     expect(mockedResponse.request().postDataJSON()).toMatchObject({
       question: "Who edited the paper?",
       sessionId: FIXED_ASK_SESSION_ID,
     });
     await waitForSettledUi(page);
-    await expectVisibleNonEmptyFirstPaint(
-      page,
-      FIRST_PAINT.ask,
-      "Ask deep-link settled paint",
-    );
+    await expectVisibleNonEmptyFirstPaint(page, FIRST_PAINT.ask, "Ask deep-link settled paint");
     expectNoUnexpectedDiagnostics(diagnostics);
   });
 
@@ -87,7 +60,7 @@ test.describe("critical route smoke", () => {
     await expectVisibleNonEmptyFirstPaint(
       page,
       FIRST_PAINT.landing,
-      "JavaScript-disabled landing first paint",
+      "JavaScript-disabled landing first paint"
     );
     expectNoUnexpectedNoJsDiagnostics(diagnostics, {
       browserName,
@@ -130,7 +103,7 @@ test.describe("critical route smoke", () => {
         await expectVisibleNonEmptyFirstPaint(
           page,
           route.firstPaint,
-          `JavaScript-disabled ${route.name} first paint`,
+          `JavaScript-disabled ${route.name} first paint`
         );
 
         if ("status" in route && route.status === 404) {

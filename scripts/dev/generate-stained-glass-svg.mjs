@@ -41,12 +41,61 @@ const MAX_CLUSTERS_PER_COLOR = 1100;
 // Color definitions (HSL-based)
 // hueRange: [min, max] in degrees (wraps for red), null = any hue
 const COLOR_DEFS = [
-  { id: "red", hueRange: [350, 12], satMin: 35, lRange: [15, 82], fill: "#b83030", glow: "#ff6060", stroke: "#802020" },
-  { id: "orange", hueRange: [12, 28], satMin: 35, lRange: [15, 82], fill: "#c06020", glow: "#ff9040", stroke: "#804018" },
-  { id: "gold", hueRange: [28, 58], satMin: 40, lRange: [15, 82], fill: "#c09030", glow: "#ffd060", stroke: "#806020" },
-  { id: "cyan", hueRange: [165, 218], satMin: 30, lRange: [15, 82], fill: "#3090a8", glow: "#60d0f0", stroke: "#1a6080" },
-  { id: "dark", hueRange: null, satMin: 0, lRange: [0, 18], fill: "#1a1008", glow: "#503a20", stroke: "#0d0804", maxPanels: 20 },
-  { id: "bright", hueRange: null, satMin: 0, lRange: [82, 100], fill: "#e8e0d0", glow: "#ffffff", stroke: "#a09880" },
+  {
+    id: "red",
+    hueRange: [350, 12],
+    satMin: 35,
+    lRange: [15, 82],
+    fill: "#b83030",
+    glow: "#ff6060",
+    stroke: "#802020",
+  },
+  {
+    id: "orange",
+    hueRange: [12, 28],
+    satMin: 35,
+    lRange: [15, 82],
+    fill: "#c06020",
+    glow: "#ff9040",
+    stroke: "#804018",
+  },
+  {
+    id: "gold",
+    hueRange: [28, 58],
+    satMin: 40,
+    lRange: [15, 82],
+    fill: "#c09030",
+    glow: "#ffd060",
+    stroke: "#806020",
+  },
+  {
+    id: "cyan",
+    hueRange: [165, 218],
+    satMin: 30,
+    lRange: [15, 82],
+    fill: "#3090a8",
+    glow: "#60d0f0",
+    stroke: "#1a6080",
+  },
+  {
+    id: "dark",
+    hueRange: null,
+    satMin: 0,
+    lRange: [0, 18],
+    fill: "#1a1008",
+    glow: "#503a20",
+    stroke: "#0d0804",
+    maxPanels: 20,
+  },
+  {
+    id: "bright",
+    hueRange: null,
+    satMin: 0,
+    lRange: [82, 100],
+    fill: "#e8e0d0",
+    glow: "#ffffff",
+    stroke: "#a09880",
+  },
 ];
 
 // Seeded PRNG (mulberry32) for reproducible animation delays
@@ -149,7 +198,10 @@ function createColorMask(rawBuffer, colorDef) {
       matchCount++;
     } else {
       // Hue-based color: check saturation minimum + hue range
-      if (hsl.s >= colorDef.satMin && hueInRange(hsl.h, colorDef.hueRange[0], colorDef.hueRange[1])) {
+      if (
+        hsl.s >= colorDef.satMin &&
+        hueInRange(hsl.h, colorDef.hueRange[0], colorDef.hueRange[1])
+      ) {
         mask[i] = 0;
         matchCount++;
       }
@@ -244,7 +296,10 @@ function computeBBox(d) {
 
   if (nums.length < 2) return null;
 
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
 
   for (let i = 0; i + 1 < nums.length; i += 2) {
     const x = nums[i];
@@ -276,11 +331,15 @@ function makeUF(n) {
   }
 
   function union(a, b) {
-    const ra = find(a), rb = find(b);
+    const ra = find(a),
+      rb = find(b);
     if (ra === rb) return;
     if (rank[ra] < rank[rb]) parent[ra] = rb;
     else if (rank[ra] > rank[rb]) parent[rb] = ra;
-    else { parent[rb] = ra; rank[ra]++; }
+    else {
+      parent[rb] = ra;
+      rank[ra]++;
+    }
   }
 
   return { find, union };
@@ -298,7 +357,11 @@ function clusterPaths(pathsWithBBoxes) {
         const h = p.bbox.maxY - p.bbox.minY;
         return { paths: [p.d], bbox: p.bbox, area: w * h };
       })
-      .filter((c) => c.area >= MIN_CLUSTER_AREA || Math.max(c.bbox.maxX - c.bbox.minX, c.bbox.maxY - c.bbox.minY) >= MIN_CLUSTER_SPAN);
+      .filter(
+        (c) =>
+          c.area >= MIN_CLUSTER_AREA ||
+          Math.max(c.bbox.maxX - c.bbox.minX, c.bbox.maxY - c.bbox.minY) >= MIN_CLUSTER_SPAN
+      );
     singles.sort((a, b) => b.area - a.area);
     return singles.slice(0, MAX_CLUSTERS_PER_COLOR);
   }
@@ -328,10 +391,14 @@ function clusterPaths(pathsWithBBoxes) {
       const bboxI = pathsWithBBoxes[i].bbox;
       const bboxJ = pathsWithBBoxes[j].bbox;
       const contained =
-        (bboxJ.minX >= bboxI.minX && bboxJ.maxX <= bboxI.maxX &&
-         bboxJ.minY >= bboxI.minY && bboxJ.maxY <= bboxI.maxY) ||
-        (bboxI.minX >= bboxJ.minX && bboxI.maxX <= bboxJ.maxX &&
-         bboxI.minY >= bboxJ.minY && bboxI.maxY <= bboxJ.maxY);
+        (bboxJ.minX >= bboxI.minX &&
+          bboxJ.maxX <= bboxI.maxX &&
+          bboxJ.minY >= bboxI.minY &&
+          bboxJ.maxY <= bboxI.maxY) ||
+        (bboxI.minX >= bboxJ.minX &&
+          bboxI.maxX <= bboxJ.maxX &&
+          bboxI.minY >= bboxJ.minY &&
+          bboxI.maxY <= bboxJ.maxY);
 
       if (!contained) {
         if (mergedW > MAX_CLUSTER_DIM || mergedH > MAX_CLUSTER_DIM) continue;
@@ -339,7 +406,12 @@ function clusterPaths(pathsWithBBoxes) {
 
       uf.union(i, j);
       const newRoot = uf.find(i);
-      clusterBBox[newRoot] = { minX: mergedMinX, minY: mergedMinY, maxX: mergedMaxX, maxY: mergedMaxY };
+      clusterBBox[newRoot] = {
+        minX: mergedMinX,
+        minY: mergedMinY,
+        maxX: mergedMaxX,
+        maxY: mergedMaxY,
+      };
     }
   }
 
@@ -352,7 +424,10 @@ function clusterPaths(pathsWithBBoxes) {
 
   const clusters = [];
   for (const members of groups.values()) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const m of members) {
       minX = Math.min(minX, m.bbox.minX);
       minY = Math.min(minY, m.bbox.minY);
@@ -432,7 +507,10 @@ function buildAnimatedSVG(allColorClusters) {
         cluster,
         colorDef,
         colorIdx: i,
-        cx, cy, dist, isHidden,
+        cx,
+        cy,
+        dist,
+        isHidden,
       });
     }
   }

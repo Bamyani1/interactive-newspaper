@@ -42,11 +42,7 @@ function searchPayload({
   };
 }
 
-async function fulfillSearch(
-  route: Route,
-  payload: unknown = searchPayload(),
-  status = 200,
-) {
+async function fulfillSearch(route: Route, payload: unknown = searchPayload(), status = 200) {
   await route.fulfill({
     status,
     headers: { "cache-control": "no-store" },
@@ -86,7 +82,7 @@ async function resolveColorToken(page: Page, token: string) {
 async function expectSearchStateHealthy(
   page: Page,
   diagnostics: BrowserDiagnostics,
-  extraTargets: Array<{ locator: Locator; label: string }> = [],
+  extraTargets: Array<{ locator: Locator; label: string }> = []
 ) {
   const targets = [
     {
@@ -113,10 +109,7 @@ async function expectSearchStateHealthy(
 }
 
 test.describe("deterministic Search states", () => {
-  test("pristine state is quiet, mode-aware, and accessible", async ({
-    page,
-    diagnostics,
-  }) => {
+  test("pristine state is quiet, mode-aware, and accessible", async ({ page, diagnostics }) => {
     let requestCount = 0;
     await page.route("**/api/search**", async (route) => {
       requestCount += 1;
@@ -129,7 +122,7 @@ test.describe("deterministic Search states", () => {
     await expect(
       page
         .getByRole("region", { name: "Search results" })
-        .getByText("Enter a search term to explore the archive.", { exact: true }),
+        .getByText("Enter a search term to explore the archive.", { exact: true })
     ).toBeVisible();
     expect(requestCount).toBe(0);
 
@@ -198,54 +191,48 @@ test.describe("deterministic Search states", () => {
 
   test("renders an accessible empty state", async ({ page, diagnostics }) => {
     await page.route("**/api/search**", (route) =>
-      fulfillSearch(route, searchPayload({ results: [], total: 0 })),
+      fulfillSearch(route, searchPayload({ results: [], total: 0 }))
     );
     await page.goto("/search");
     await page.getByRole("textbox", { name: "Search the archive" }).fill("missing");
     await expect(
       page
         .getByRole("region", { name: "Search results" })
-        .getByText(/No results found for “missing”/),
+        .getByText(/No results found for “missing”/)
     ).toBeVisible();
     await expectSearchStateHealthy(page, diagnostics);
   });
 
-  test("renders an explained API error without stale results", async ({
-    page,
-    diagnostics,
-  }) => {
+  test("renders an explained API error without stale results", async ({ page, diagnostics }) => {
     await page.route("**/api/search**", (route) =>
-      fulfillSearch(route, { error: "deterministic failure" }, 500),
+      fulfillSearch(route, { error: "deterministic failure" }, 500)
     );
     await page.goto("/search");
     await page.getByRole("textbox", { name: "Search the archive" }).fill("broken");
     await expect(
       page
         .getByRole("region", { name: "Search results" })
-        .getByText("Search failed. Please try again.", { exact: true }),
+        .getByText("Search failed. Please try again.", { exact: true })
     ).toBeVisible();
 
     const expectedResourceError = diagnostics.consoleErrors.findIndex(
       (entry) =>
         entry.includes("Failed to load resource") &&
         entry.includes("500") &&
-        entry.includes("/api/search"),
+        entry.includes("/api/search")
     );
     if (expectedResourceError !== -1) {
       diagnostics.consoleErrors.splice(expectedResourceError, 1);
     }
     const expectedHttpError = diagnostics.httpErrors.findIndex(
-      (entry) => entry.status === 500 && entry.url.includes("/api/search"),
+      (entry) => entry.status === 500 && entry.url.includes("/api/search")
     );
     expect(expectedHttpError).toBeGreaterThanOrEqual(0);
     diagnostics.httpErrors.splice(expectedHttpError, 1);
     await expectSearchStateHealthy(page, diagnostics);
   });
 
-  test("refetches with category and date filters", async ({
-    page,
-    diagnostics,
-  }) => {
+  test("refetches with category and date filters", async ({ page, diagnostics }) => {
     const requests: URL[] = [];
     await page.route("**/api/search**", async (route) => {
       requests.push(new URL(route.request().url()));
@@ -312,7 +299,7 @@ test.describe("deterministic Search states", () => {
         route,
         offset === 20
           ? searchPayload({ results: [finalResult], total: 21, offset: 20 })
-          : searchPayload({ results: firstPage, total: 21, hasMore: true }),
+          : searchPayload({ results: firstPage, total: 21, hasMore: true })
       );
     });
 
@@ -330,9 +317,7 @@ test.describe("deterministic Search states", () => {
     await secondPage;
 
     await expect(page.locator("article")).toHaveCount(21);
-    await expect(
-      page.getByRole("link", { name: "Campus result 1", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Campus result 1", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: finalResult.headline })).toBeVisible();
     await expect(loadMore).toBeHidden();
     await expectSearchStateHealthy(page, diagnostics, [
@@ -343,10 +328,7 @@ test.describe("deterministic Search states", () => {
     ]);
   });
 
-  test("navigates a result through the client-side edition link", async ({
-    page,
-    diagnostics,
-  }) => {
+  test("navigates a result through the client-side edition link", async ({ page, diagnostics }) => {
     await page.route("**/api/search**", (route) => fulfillSearch(route));
     await page.goto("/search");
     await page.getByRole("textbox", { name: "Search the archive" }).fill("campus");
@@ -377,10 +359,7 @@ test.describe("saved dark Search results", () => {
     },
   });
 
-  test("keeps result and pagination accents semantic", async ({
-    page,
-    diagnostics,
-  }) => {
+  test("keeps result and pagination accents semantic", async ({ page, diagnostics }) => {
     const firstPage = Array.from({ length: 20 }, (_, index) => ({
       ...RESULT,
       id: `dark-search-${index + 1}`,
@@ -398,7 +377,7 @@ test.describe("saved dark Search results", () => {
         route,
         offset === 20
           ? searchPayload({ results: [finalResult], total: 21, offset: 20 })
-          : searchPayload({ results: firstPage, total: 21, hasMore: true }),
+          : searchPayload({ results: firstPage, total: 21, hasMore: true })
       );
     });
 

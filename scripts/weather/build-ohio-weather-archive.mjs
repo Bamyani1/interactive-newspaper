@@ -2,37 +2,38 @@
 
 /* eslint-disable no-console */
 
-import { createHash } from 'crypto';
-import { createReadStream, createWriteStream } from 'fs';
-import { mkdir, stat, writeFile } from 'fs/promises';
-import { createGunzip, createGzip } from 'zlib';
-import { createInterface } from 'readline';
-import { Readable } from 'stream';
-import path from 'path';
-import { once } from 'events';
+import { createHash } from "crypto";
+import { createReadStream, createWriteStream } from "fs";
+import { mkdir, stat, writeFile } from "fs/promises";
+import { createGunzip, createGzip } from "zlib";
+import { createInterface } from "readline";
+import { Readable } from "stream";
+import path from "path";
+import { once } from "events";
 
-const NOAA_STATIONS_URL = 'https://www.ncei.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt';
-const NOAA_YEARLY_URL = (year) => `https://www.ncei.noaa.gov/pub/data/ghcn/daily/by_year/${year}.csv.gz`;
-const OPEN_METEO_ARCHIVE_URL = 'https://archive-api.open-meteo.com/v1/archive';
+const NOAA_STATIONS_URL = "https://www.ncei.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt";
+const NOAA_YEARLY_URL = (year) =>
+  `https://www.ncei.noaa.gov/pub/data/ghcn/daily/by_year/${year}.csv.gz`;
+const OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
 
-const START_DATE = '1950-01-01';
-const END_DATE = '2000-12-31';
+const START_DATE = "1950-01-01";
+const END_DATE = "2000-12-31";
 const START_YEAR = 1950;
 const END_YEAR = 2000;
 const TOTAL_DAYS = 18628;
 
 const DELAWARE = {
-  name: 'Delaware, Ohio',
+  name: "Delaware, Ohio",
   latitude: 40.2987,
   longitude: -83.0679,
 };
 
-const SUPPORTED_ELEMENTS = new Set(['TMAX', 'TMIN', 'PRCP']);
+const SUPPORTED_ELEMENTS = new Set(["TMAX", "TMIN", "PRCP"]);
 
-const ROOT = path.resolve(process.cwd(), 'public', 'data', 'weather', 'ohio');
-const META_DIR = path.join(ROOT, 'meta');
-const RAW_DIR = path.join(ROOT, 'raw', 'by-year');
-const INDEX_DIR = path.join(ROOT, 'index');
+const ROOT = path.resolve(process.cwd(), "public", "data", "weather", "ohio");
+const META_DIR = path.join(ROOT, "meta");
+const RAW_DIR = path.join(ROOT, "raw", "by-year");
+const INDEX_DIR = path.join(ROOT, "index");
 
 function round2(value) {
   return Math.round(value * 100) / 100;
@@ -100,13 +101,13 @@ export function parseStationLine(line) {
     elevation: Number.isNaN(elevation) ? null : elevation,
     state,
     distance_to_delaware_km: round2(
-      haversineKm(latitude, longitude, DELAWARE.latitude, DELAWARE.longitude),
+      haversineKm(latitude, longitude, DELAWARE.latitude, DELAWARE.longitude)
     ),
   };
 }
 
 export function parseGhcndCsvLine(line) {
-  const parts = line.split(',');
+  const parts = line.split(",");
   if (parts.length < 7) {
     return null;
   }
@@ -115,9 +116,9 @@ export function parseGhcndCsvLine(line) {
   const dateRaw = parts[1]?.trim();
   const element = parts[2]?.trim();
   const dataValueRaw = parts[3]?.trim();
-  const mFlag = parts[4]?.trim() ?? '';
-  const qFlag = parts[5]?.trim() ?? '';
-  const sFlag = parts[6]?.trim() ?? '';
+  const mFlag = parts[4]?.trim() ?? "";
+  const qFlag = parts[5]?.trim() ?? "";
+  const sFlag = parts[6]?.trim() ?? "";
 
   if (!stationId || !dateRaw || !element || !dataValueRaw) {
     return null;
@@ -146,10 +147,10 @@ export function parseGhcndCsvLine(line) {
 
 export function normalizeNoaaValue(element, dataValue) {
   if (dataValue === -9999) return null;
-  if (element === 'TMAX' || element === 'TMIN') {
+  if (element === "TMAX" || element === "TMIN") {
     return round2(dataValue / 10);
   }
-  if (element === 'PRCP') {
+  if (element === "PRCP") {
     return round2(dataValue / 10);
   }
   return null;
@@ -194,7 +195,7 @@ export function selectBestDelawareStationRecord(records, stationMetaById) {
 }
 
 function buildQualityFlag(parts) {
-  return [`tmax:${parts.tmax}`, `tmin:${parts.tmin}`, `prcp:${parts.precip}`].join(';');
+  return [`tmax:${parts.tmax}`, `tmin:${parts.tmin}`, `prcp:${parts.precip}`].join(";");
 }
 
 function createObservedRecord(date, stationId) {
@@ -204,12 +205,12 @@ function createObservedRecord(date, stationId) {
     tmax_c: null,
     tmin_c: null,
     precip_mm: null,
-    source: 'NOAA_GHCN_DAILY_ARCHIVE',
+    source: "NOAA_GHCN_DAILY_ARCHIVE",
     source_station_id: stationId,
     quality_flag: null,
     is_estimated: false,
     raw: {
-      origin: 'NOAA_GHCN_DAILY_BY_YEAR',
+      origin: "NOAA_GHCN_DAILY_BY_YEAR",
       elements: {},
     },
   };
@@ -225,11 +226,11 @@ function mergeMetric(record, parsedRow) {
     return;
   }
 
-  if (parsedRow.element === 'TMAX') {
+  if (parsedRow.element === "TMAX") {
     record.tmax_c = value;
-  } else if (parsedRow.element === 'TMIN') {
+  } else if (parsedRow.element === "TMIN") {
     record.tmin_c = value;
-  } else if (parsedRow.element === 'PRCP') {
+  } else if (parsedRow.element === "PRCP") {
     record.precip_mm = value;
   }
 
@@ -262,8 +263,8 @@ async function fetchOpenMeteoFallbackSeries() {
     longitude: `${DELAWARE.longitude}`,
     start_date: START_DATE,
     end_date: END_DATE,
-    daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum',
-    timezone: 'America/New_York',
+    daily: "temperature_2m_max,temperature_2m_min,precipitation_sum",
+    timezone: "America/New_York",
   });
 
   const url = `${OPEN_METEO_ARCHIVE_URL}?${params.toString()}`;
@@ -274,8 +275,13 @@ async function fetchOpenMeteoFallbackSeries() {
   const tmin = payload?.daily?.temperature_2m_min;
   const precip = payload?.daily?.precipitation_sum;
 
-  if (!Array.isArray(dates) || !Array.isArray(tmax) || !Array.isArray(tmin) || !Array.isArray(precip)) {
-    throw new Error('Open-Meteo fallback response missing required daily arrays.');
+  if (
+    !Array.isArray(dates) ||
+    !Array.isArray(tmax) ||
+    !Array.isArray(tmin) ||
+    !Array.isArray(precip)
+  ) {
+    throw new Error("Open-Meteo fallback response missing required daily arrays.");
   }
 
   const byDate = new Map();
@@ -297,7 +303,7 @@ async function fetchOpenMeteoFallbackSeries() {
 
   if (byDate.size !== TOTAL_DAYS) {
     throw new Error(
-      `Open-Meteo fallback day count mismatch. Expected ${TOTAL_DAYS}, got ${byDate.size}.`,
+      `Open-Meteo fallback day count mismatch. Expected ${TOTAL_DAYS}, got ${byDate.size}.`
     );
   }
 
@@ -311,7 +317,7 @@ async function fetchOhioStations() {
 
   for (const line of lines) {
     const parsed = parseStationLine(line);
-    if (!parsed || parsed.state !== 'OH') continue;
+    if (!parsed || parsed.state !== "OH") continue;
     stationMetaById.set(parsed.id, parsed);
   }
 
@@ -330,22 +336,22 @@ export function mergeWithFallback({ date, observedRecord, fallbackValues, mode }
   const precip = precipObserved ?? fallbackValues?.precip_mm ?? null;
 
   const sources = {
-    tmax: tmaxObserved != null ? 'OBS' : 'OPEN_METEO_FILL',
-    tmin: tminObserved != null ? 'OBS' : 'OPEN_METEO_FILL',
-    precip: precipObserved != null ? 'OBS' : 'OPEN_METEO_FILL',
+    tmax: tmaxObserved != null ? "OBS" : "OPEN_METEO_FILL",
+    tmin: tminObserved != null ? "OBS" : "OPEN_METEO_FILL",
+    precip: precipObserved != null ? "OBS" : "OPEN_METEO_FILL",
   };
 
   const anyEstimated =
-    sources.tmax === 'OPEN_METEO_FILL' ||
-    sources.tmin === 'OPEN_METEO_FILL' ||
-    sources.precip === 'OPEN_METEO_FILL';
+    sources.tmax === "OPEN_METEO_FILL" ||
+    sources.tmin === "OPEN_METEO_FILL" ||
+    sources.precip === "OPEN_METEO_FILL";
 
   return {
     date,
     tmax_c: tmax,
     tmin_c: tmin,
     precip_mm: precip,
-    source: 'NOAA_GHCN_DAILY_ARCHIVE',
+    source: "NOAA_GHCN_DAILY_ARCHIVE",
     source_station_id: observed?.station_id ?? null,
     quality_flag: buildQualityFlag(sources),
     is_estimated: anyEstimated,
@@ -353,14 +359,14 @@ export function mergeWithFallback({ date, observedRecord, fallbackValues, mode }
       mode,
       observed_station_id: observed?.station_id ?? null,
       observed_metric_count: observed ? countMetrics(observed) : 0,
-      fallback_source: anyEstimated ? 'OPEN_METEO_ARCHIVE' : null,
+      fallback_source: anyEstimated ? "OPEN_METEO_ARCHIVE" : null,
     },
   };
 }
 
 export function recordsToSlimArchive(records) {
   if (records.length === 0) {
-    throw new Error('Cannot build slim archive from empty records.');
+    throw new Error("Cannot build slim archive from empty records.");
   }
 
   return {
@@ -368,7 +374,7 @@ export function recordsToSlimArchive(records) {
     end_date: records[records.length - 1].date,
     tmax_c: records.map((r) => r.tmax_c),
     tmin_c: records.map((r) => r.tmin_c),
-    is_estimated: records.map((r) => (r.is_estimated ? '1' : '0')).join(''),
+    is_estimated: records.map((r) => (r.is_estimated ? "1" : "0")).join(""),
   };
 }
 
@@ -382,16 +388,16 @@ async function writeNdjsonGz(records, outputFile) {
   }
 
   gzip.end();
-  await once(writeStream, 'finish');
+  await once(writeStream, "finish");
 }
 
 async function sha256File(filePath) {
-  const hash = createHash('sha256');
+  const hash = createHash("sha256");
   const stream = createReadStream(filePath);
   for await (const chunk of stream) {
     hash.update(chunk);
   }
-  return hash.digest('hex');
+  return hash.digest("hex");
 }
 
 async function parseYearRecords(year, ohioStationIds) {
@@ -482,7 +488,7 @@ function buildYearIndexes({ year, records, stationMetaById, fallbackByDate }) {
           }
         : null,
       fallbackValues: fallback,
-      mode: 'DELAWARE_NEAREST_BEST',
+      mode: "DELAWARE_NEAREST_BEST",
     });
 
     delaware.push(delawareRecord);
@@ -498,33 +504,35 @@ async function ensureDirectories() {
 }
 
 async function writeJson(filePath, payload) {
-  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
 async function writeSlimArchive(filePath, archive) {
-  await writeFile(filePath, JSON.stringify(archive), 'utf8');
+  await writeFile(filePath, JSON.stringify(archive), "utf8");
 }
 
 function relativeFromRoot(filePath) {
-  return path.relative(ROOT, filePath).replaceAll('\\', '/');
+  return path.relative(ROOT, filePath).replaceAll("\\", "/");
 }
 
 export async function buildOhioWeatherArchive() {
-  console.log('Preparing directories...');
+  console.log("Preparing directories...");
   await ensureDirectories();
 
-  console.log('Fetching Ohio station metadata...');
+  console.log("Fetching Ohio station metadata...");
   const stationMetaById = await fetchOhioStations();
   const ohioStationIds = new Set(stationMetaById.keys());
 
   console.log(`Loaded ${stationMetaById.size} Ohio stations.`);
 
-  console.log('Fetching Open-Meteo fallback for 1950-2000...');
+  console.log("Fetching Open-Meteo fallback for 1950-2000...");
   const fallbackByDate = await fetchOpenMeteoFallbackSeries();
   console.log(`Loaded fallback series with ${fallbackByDate.size} days.`);
 
-  const stationsOutPath = path.join(META_DIR, 'stations.json');
-  const stationList = [...stationMetaById.values()].sort((left, right) => left.id.localeCompare(right.id));
+  const stationsOutPath = path.join(META_DIR, "stations.json");
+  const stationList = [...stationMetaById.values()].sort((left, right) =>
+    left.id.localeCompare(right.id)
+  );
   await writeJson(stationsOutPath, stationList);
 
   const delawareIndex = [];
@@ -560,7 +568,7 @@ export async function buildOhioWeatherArchive() {
     delawareIndex.push(...indexes.delaware);
 
     console.log(
-      `Year ${year} done: ${records.length.toLocaleString()} records, ${indexes.delaware.length} daily index rows.`,
+      `Year ${year} done: ${records.length.toLocaleString()} records, ${indexes.delaware.length} daily index rows.`
     );
   }
 
@@ -568,18 +576,18 @@ export async function buildOhioWeatherArchive() {
 
   if (delawareIndex.length !== TOTAL_DAYS) {
     throw new Error(
-      `Daily index count mismatch: delaware=${delawareIndex.length}, expected=${TOTAL_DAYS}`,
+      `Daily index count mismatch: delaware=${delawareIndex.length}, expected=${TOTAL_DAYS}`
     );
   }
 
-  const delawareOutPath = path.join(INDEX_DIR, 'delaware-by-date-1950-2000.json');
+  const delawareOutPath = path.join(INDEX_DIR, "delaware-by-date-1950-2000.json");
   const slimArchive = recordsToSlimArchive(delawareIndex);
   await writeSlimArchive(delawareOutPath, slimArchive);
 
   const delawareSha = await sha256File(delawareOutPath);
   const delawareStat = await stat(delawareOutPath);
 
-  const manifestPath = path.join(ROOT, 'manifest.json');
+  const manifestPath = path.join(ROOT, "manifest.json");
   const manifest = {
     generated_at: new Date().toISOString(),
     date_range: {
@@ -588,14 +596,14 @@ export async function buildOhioWeatherArchive() {
       days: TOTAL_DAYS,
     },
     location_defaults: {
-      mode: 'DELAWARE_NEAREST_BEST',
+      mode: "DELAWARE_NEAREST_BEST",
       latitude: DELAWARE.latitude,
       longitude: DELAWARE.longitude,
       name: DELAWARE.name,
     },
     sources: {
-      observed: 'NOAA_GHCN_DAILY_BY_YEAR',
-      fallback: 'OPEN_METEO_ARCHIVE',
+      observed: "NOAA_GHCN_DAILY_BY_YEAR",
+      fallback: "OPEN_METEO_ARCHIVE",
     },
     station_count: stationList.length,
     files: {
@@ -617,7 +625,7 @@ export async function buildOhioWeatherArchive() {
 
   await writeJson(manifestPath, manifest);
 
-  console.log('Ohio weather archive build complete.');
+  console.log("Ohio weather archive build complete.");
   console.log(`Manifest: ${relativeFromRoot(manifestPath)}`);
 }
 

@@ -7,9 +7,7 @@ describe("LowConfidenceCaveat", () => {
   it("renders a caveat when confidence is low", () => {
     render(<LowConfidenceCaveat confidence="low" />);
     expect(screen.getByText(/Heads up/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Limited sources found for this question/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Limited sources found for this question/i)).toBeInTheDocument();
   });
 
   it("renders nothing for medium confidence", () => {
