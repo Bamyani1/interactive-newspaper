@@ -37,3 +37,43 @@
   color: var(--color-text-primary);
   margin: 0;
 }
+
+/**
+ * Ask the Archive — Coverage note
+ *
+ * The scope that was actually searchable for this question, shown above
+ * the answer. Quiet by design: it is context for reading the answer, not
+ * a warning about it, so it stays in muted body text rather than
+ * borrowing the caveat's dashed red frame.
+ */
+
+.ask-coverage {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 var(--space-3);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--color-border-default);
+}
+
+.ask-coverage-icon {
+  flex: none;
+  margin-block-start: 0.15rem;
+  color: var(--color-text-muted);
+}
+
+.ask-coverage-body {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  line-height: var(--leading-normal);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.ask-coverage-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label-md);
+  color: var(--color-text-secondary);
+}

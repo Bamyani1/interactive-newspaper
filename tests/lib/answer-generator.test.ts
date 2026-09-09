@@ -190,7 +190,9 @@ describe("generateAnswer", () => {
       }
     );
     expect(result.answer).toContain("Supported [Source 1] [Source 2].");
-    expect(result.answer).toContain("Coverage note:");
+    // Scope is metadata, and now travels as meta.coverage rather than as a
+    // paragraph appended to the prose.
+    expect(result.answer).not.toContain("Coverage note:");
     expect(result.confidence).toBe("high");
     const prompt = generateContentMock.mock.calls[0][0].contents[0].parts[0].text;
     expect(prompt).toContain("DETERMINISTIC ARCHIVE COVERAGE METADATA");
