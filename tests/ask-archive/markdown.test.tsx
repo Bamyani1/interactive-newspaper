@@ -5,7 +5,9 @@ import { Markdown } from "@/features/ask-archive/components/Markdown";
 
 describe("Markdown renderer", () => {
   it("renders bold and italic", () => {
-    const { container } = render(<Markdown turnId="t-1">{"This is **bold** and *italic* text."}</Markdown>);
+    const { container } = render(
+      <Markdown turnId="t-1">{"This is **bold** and *italic* text."}</Markdown>
+    );
     expect(container.querySelector("strong")?.textContent).toBe("bold");
     expect(container.querySelector("em")?.textContent).toBe("italic");
   });
@@ -24,7 +26,9 @@ describe("Markdown renderer", () => {
   });
 
   it("renders ordered and unordered lists", () => {
-    const { container } = render(<Markdown turnId="t-1">{"- one\n- two\n\n1. first\n2. second"}</Markdown>);
+    const { container } = render(
+      <Markdown turnId="t-1">{"- one\n- two\n\n1. first\n2. second"}</Markdown>
+    );
     expect(container.querySelectorAll("ul li")).toHaveLength(2);
     expect(container.querySelectorAll("ol li")).toHaveLength(2);
   });
@@ -50,12 +54,35 @@ describe("Markdown renderer", () => {
     expect(links[1]).toHaveAttribute("href", "#ask-source-t-1-2");
   });
 
+  // The generator groups evidence as readily as it cites one article.
+  // Only a lone [Source N] used to be rewritten, so a grouped citation
+  // stayed on screen as literal brackets in the middle of the prose.
+  it("turns a grouped [Source N, Source M] citation into one anchor each", () => {
+    render(<Markdown turnId="t-1">{"Students objected [Source 1, Source 2]."}</Markdown>);
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute("href", "#ask-source-t-1-1");
+    expect(links[1]).toHaveAttribute("href", "#ask-source-t-1-2");
+    expect(screen.queryByText(/\[Source/)).toBeNull();
+  });
+
+  it("accepts the shorthand [Source N, M] the generator also writes", () => {
+    render(<Markdown turnId="t-1">{"Editors replied [Source 3, 4]."}</Markdown>);
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+    expect(links[1]).toHaveAttribute("href", "#ask-source-t-1-4");
+  });
+
   it("maps agent [YYYY-MM-DD-N] citations via articleIdIndex", () => {
     const index = new Map<string, number>([
       ["1960-01-07-0", 1],
       ["1965-03-12-4", 2],
     ]);
-    render(<Markdown articleIdIndex={index} turnId="t-1">{"X [1960-01-07-0] Y [1965-03-12-4] Z"}</Markdown>);
+    render(
+      <Markdown articleIdIndex={index} turnId="t-1">
+        {"X [1960-01-07-0] Y [1965-03-12-4] Z"}
+      </Markdown>
+    );
     const links = screen.getAllByRole("link");
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute("href", "#ask-source-t-1-1");
@@ -101,7 +128,9 @@ describe("Markdown renderer", () => {
   });
 
   it("external links open in a new tab", () => {
-    render(<Markdown turnId="t-1">{"See [the docs](https://example.com/docs) for more."}</Markdown>);
+    render(
+      <Markdown turnId="t-1">{"See [the docs](https://example.com/docs) for more."}</Markdown>
+    );
     const link = screen.getByRole("link");
     expect(link).toHaveAttribute("href", "https://example.com/docs");
     expect(link).toHaveAttribute("target", "_blank");
