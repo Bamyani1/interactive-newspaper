@@ -243,22 +243,35 @@
    not reachable — and stay out of the way until the row is hovered or
    something inside it holds focus. */
 .ask-thread-row {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
+  position: relative;
 }
 
-.ask-thread-row .ask-sidebar-thread {
-  flex: 1;
-  min-width: 0;
-}
-
+/* Floated over the row's right edge rather than laid out beside it: two
+   44px targets inside a 280px sidebar would take a third of the width
+   permanently, and the title — the thing the reader is scanning — wrapped
+   to three lines to pay for tools that are hidden most of the time. */
 .ask-thread-tools {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  align-items: center;
+  padding-inline-start: var(--space-4);
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--color-bg-primary) var(--space-4)
+  );
   opacity: 0;
   transition: opacity var(--duration-fast) ease;
+}
+
+.ask-thread-row:has([data-active="true"]) .ask-thread-tools {
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in oklab, var(--color-text-secondary) 10%, var(--color-bg-primary)) var(--space-4)
+  );
 }
 
 .ask-thread-row:hover .ask-thread-tools,
@@ -267,11 +280,17 @@
 }
 
 /* No hover to reveal them with, and the row is the whole width of the
-   sheet, so on touch they are simply always there. */
+   sheet, so on touch they are simply always there. The mobile sheet
+   shows them unconditionally: it is opened deliberately, to manage
+   threads, so hiding its controls behind a hover serves nobody. */
 @media (hover: none) {
   .ask-thread-tools {
     opacity: 1;
   }
+}
+
+.ask-thread-drawer-list .ask-thread-tools {
+  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

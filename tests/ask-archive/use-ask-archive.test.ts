@@ -1541,3 +1541,81 @@ describe("thread rename and delete", () => {
     );
   });
 });
+
+describe("malformed server and stored data", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reports a 200 whose body is not an answer instead of freezing an empty turn", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/ask/session")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ turns: [], expired: false }), { status: 200 })
+          );
+        }
+        // A proxy interstitial, a truncated body, a schema that moved:
+        // all arrive as a 200 carrying JSON that is not an answer.
+        return Promise.resolve(
+          new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } })
+        );
+      })
+    );
+
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+    await act(async () => {
+      result.current.submit("what happened in 1968?");
+    });
+
+    await waitFor(() => expect(result.current.turns[0].status).toBe("error"));
+    // The turn must never reach storage holed: reading it back threw
+    // inside the archive effect, which takes down the page and keeps
+    // doing so on every load.
+    expect(result.current.turns[0].answer).toBe("");
+    expect(result.current.turns[0].sourceArticles).toEqual([]);
+    expect(result.current.turns[0].citations).toEqual([]);
+  });
+
+  it("repairs a thread an earlier build stored with a holed turn", async () => {
+    window.localStorage.setItem("owu-ask-session-id", "sess-live");
+    window.localStorage.setItem(
+      "owu-ask-threads",
+      JSON.stringify([
+        {
+          sessionId: "sess-old",
+          firstQuestion: "Who edited the paper?",
+          turns: [
+            { id: "t1", question: "Who edited the paper?", status: "done", createdAt: Date.now() },
+          ],
+          createdAt: Date.now() - 60_000,
+          lastUpdatedAt: Date.now() - 60_000,
+        },
+      ])
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify({ turns: [], expired: false }), { status: 200 }))
+      )
+    );
+
+    const { result } = renderHook(() => useAskArchive());
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+
+    // The thread survives, readable, instead of throwing on every load.
+    expect(result.current.threads.map((t) => t.id)).toContain("sess-old");
+    const stored = JSON.parse(window.localStorage.getItem("owu-ask-threads") ?? "[]") as Array<{
+      turns: Array<{ answer: unknown; sourceArticles: unknown }>;
+    }>;
+    expect(stored[0].turns[0].answer).toBe("");
+    expect(stored[0].turns[0].sourceArticles).toEqual([]);
+  });
+});
