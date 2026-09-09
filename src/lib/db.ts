@@ -7,58 +7,19 @@ import {
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/rag-model-config";
 import { getRagRetrievalConfig, shouldServeVersionedRetrieval } from "@/src/lib/rag-index-config";
+import { DbTimeoutError, runWithDbTimeout } from "@/src/lib/db-timeout";
+
+// The timeout race lives in db-timeout.ts so callers that must not import
+// this module (it builds a Neon client below, at module load) can still
+// bound a query. Re-exported here so every existing `instanceof` check and
+// test mock keeps resolving through `@/src/lib/db`.
+export { DbTimeoutError, runWithDbTimeout };
 
 // Neon's serverless driver uses HTTP — no persistent connection, no pool.
 // Each query is a single HTTP request, ideal for Vercel serverless functions.
 const sql = neon(process.env.DATABASE_URL!);
 
 const HYBRID_SEARCH_TIMEOUT_MS = 8_000;
-
-/**
- * Thrown by db.ts when a database operation exceeds its timeout budget.
- * Neon HTTP requests receive the same AbortSignal, so a timeout cancels the
- * underlying fetch instead of leaving an orphaned database request running.
- */
-export class DbTimeoutError extends Error {
-  constructor(
-    public readonly op: string,
-    public readonly timeoutMs: number
-  ) {
-    super(`Database operation timed out: ${op} after ${timeoutMs}ms`);
-    this.name = "DbTimeoutError";
-  }
-}
-
-async function runWithDbTimeout<T>(
-  op: string,
-  operation: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number,
-  outerSignal?: AbortSignal
-): Promise<T> {
-  const controller = new AbortController();
-  const signal = outerSignal
-    ? AbortSignal.any([outerSignal, controller.signal])
-    : controller.signal;
-  let rejectOnAbort: (() => void) | undefined;
-  const aborted = new Promise<never>((_, reject) => {
-    rejectOnAbort = () => reject(new DbTimeoutError(op, timeoutMs));
-    signal.addEventListener("abort", rejectOnAbort, { once: true });
-  });
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    if (signal.aborted) throw new DbTimeoutError(op, timeoutMs);
-    // Neon receives the signal and normally rejects its fetch itself. The
-    // race is still required so a driver regression or test double that
-    // ignores AbortSignal can never pin a request past its deadline.
-    return await Promise.race([operation(signal), aborted]);
-  } catch (error) {
-    if (signal.aborted) throw new DbTimeoutError(op, timeoutMs);
-    throw error;
-  } finally {
-    clearTimeout(timer);
-    if (rejectOnAbort) signal.removeEventListener("abort", rejectOnAbort);
-  }
-}
 
 const RAG_SCHEMA_PROBE_TTL_MS = 30_000;
 let ragV2TablesAvailable: { value: boolean; checkedAt: number } | null = null;
@@ -1153,44 +1114,63 @@ export async function fetchArticleForRag(
   );
 }
 
+const SESSION_ARTICLES_TIMEOUT_MS = 5_000;
+
 /**
  * Batch-fetch article metadata by id for the /api/ask/session hydration
  * path. Returns a Map keyed by article id so callers can reassemble
  * per-turn sourceArticles without duplicating rows. Missing ids are
  * silently dropped (the article may have been deleted since the turn
  * was recorded).
+ *
+ * Raced against a timer like every other request-path query: this runs
+ * twice per hydrate, and an un-raced Neon call leaves an orphaned query
+ * running server-side while the route waits forever. Callers degrade to
+ * snapshot-only sources on DbTimeoutError.
  */
-export async function fetchArticlesByIds(ids: string[]): Promise<Map<string, SessionArticleMeta>> {
+export async function fetchArticlesByIds(
+  ids: string[],
+  options: { timeoutMs?: number; signal?: AbortSignal } = {}
+): Promise<Map<string, SessionArticleMeta>> {
   if (ids.length === 0) return new Map();
-  const rows = (await sql`
-    SELECT id, edition_date, category, headline, summary, byline, body_plain, image_urls, image_captions
+  return runWithDbTimeout(
+    "fetchArticlesByIds",
+    async (signal) => {
+      const rows = (await sql.query(
+        `SELECT id, edition_date, category, headline, summary, byline, body_plain, image_urls, image_captions
     FROM articles
-    WHERE id = ANY(${ids})
-  `) as Array<{
-    id: string;
-    edition_date: string;
-    category: string;
-    headline: string;
-    summary: string;
-    byline: string | null;
-    body_plain: string | null;
-    image_urls: string[] | null;
-    image_captions: (string | null)[] | null;
-  }>;
-  const map = new Map<string, SessionArticleMeta>();
-  for (const r of rows) {
-    const body = r.body_plain ?? "";
-    map.set(r.id, {
-      id: r.id,
-      headline: r.headline,
-      editionDate: r.edition_date,
-      category: r.category,
-      summary: r.summary,
-      byline: r.byline ?? null,
-      bodySnippet: body.slice(0, 300) + (body.length > 300 ? "\u2026" : ""),
-      imageUrls: r.image_urls ?? [],
-      imageCaptions: r.image_captions ?? [],
-    });
-  }
-  return map;
+         WHERE id = ANY($1)`,
+        [ids],
+        { fetchOptions: { signal } }
+      )) as Array<{
+        id: string;
+        edition_date: string;
+        category: string;
+        headline: string;
+        summary: string;
+        byline: string | null;
+        body_plain: string | null;
+        image_urls: string[] | null;
+        image_captions: (string | null)[] | null;
+      }>;
+      const map = new Map<string, SessionArticleMeta>();
+      for (const r of rows) {
+        const body = r.body_plain ?? "";
+        map.set(r.id, {
+          id: r.id,
+          headline: r.headline,
+          editionDate: r.edition_date,
+          category: r.category,
+          summary: r.summary,
+          byline: r.byline ?? null,
+          bodySnippet: body.slice(0, 300) + (body.length > 300 ? "\u2026" : ""),
+          imageUrls: r.image_urls ?? [],
+          imageCaptions: r.image_captions ?? [],
+        });
+      }
+      return map;
+    },
+    options.timeoutMs ?? SESSION_ARTICLES_TIMEOUT_MS,
+    options.signal
+  );
 }

@@ -1,8 +1,8 @@
 /**
  * Conversation Store — Neon-backed
  *
- * Stores the last N turns (question + short answer snippet + cited
- * article IDs) for each session in a Neon `ask_session_turns` table
+ * Stores the last MAX_TURNS turns (question + answer + cited article
+ * IDs) for each session in a Neon `ask_session_turns` table
  * so conversation context survives Vercel cold starts and works
  * across function instances. The prior in-memory Map implementation
  * silently lost state on rotation.
@@ -16,11 +16,16 @@
 import { createHash, randomBytes } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
+// The recall window lives in retention.ts, which is driver-free: one constant
+// for the read below, the write-side sweep, and the nightly cron.
+import { askSessionTtlMs } from "@/src/lib/retention";
 import type { CitationSnapshot } from "@/src/types";
 import { isCitationSnapshot } from "@/src/lib/citation-snapshot";
 
+// Prompt-context budget: how many turns the model is shown. Deliberately
+// separate from the recall window below — a thread can be recallable for a
+// week while only its last few turns fit the prompt.
 const MAX_TURNS = 5;
-const TTL_MS = 30 * 60 * 1000; // 30 minutes
 // Store the full answer so follow-ups see real context. Cap at 8000 chars
 // with a marker so a runaway answer can't bloat history past the prompt
 // budget; typical answers are well under this.
@@ -40,7 +45,7 @@ export interface ConversationTurn {
 const evaluationSessions = new Map<string, ConversationTurn[]>();
 
 function liveEvaluationTurns(sessionId: string): ConversationTurn[] {
-  const cutoff = Date.now() - TTL_MS;
+  const cutoff = Date.now() - askSessionTtlMs();
   const turns = (evaluationSessions.get(sessionId) ?? []).filter(
     (turn) => turn.timestamp >= cutoff
   );
@@ -101,7 +106,7 @@ export function newSessionId(): string {
  * the client-held plaintext token never reaches the database. Rows
  * written before this cutover hold plaintext session ids and simply
  * stop matching hashed lookups; they age out naturally via the
- * 30-minute TTL window and the piggybacked retention sweep.
+ * ASK_SESSION_TTL_DAYS window and the piggybacked retention sweep.
  */
 function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -114,7 +119,7 @@ export async function getConversationHistory(sessionId: string): Promise<Convers
   const sql = getSql();
   if (!sql) return [];
   const sessionKey = hashSessionToken(sessionId);
-  const sinceIso = new Date(Date.now() - TTL_MS).toISOString();
+  const sinceIso = new Date(Date.now() - askSessionTtlMs()).toISOString();
   try {
     const rows = (await sql`
             SELECT question, answer, cited_article_ids,
@@ -189,7 +194,7 @@ export async function addConversationTurn(
   const sql = getSql();
   if (!sql) return;
   const sessionKey = hashSessionToken(sessionId);
-  const cutoffIso = new Date(Date.now() - TTL_MS).toISOString();
+  const cutoffIso = new Date(Date.now() - askSessionTtlMs()).toISOString();
   try {
     const snapshotColumnAvailable = await hasCitationSnapshotColumn(sql);
     const insert = snapshotColumnAvailable
@@ -237,7 +242,7 @@ export type DeleteConversationTurnsResult = { ok: true } | { ok: false; error: s
 /**
  * Wipes every stored turn for a session. Used by the "Clear
  * conversation" button so the server doesn't keep the transcript
- * around until its 30-minute TTL. Never throws; instead reports the
+ * around until its TTL expires. Never throws; instead reports the
  * outcome so callers can decide whether to surface a failure. Deleting
  * zero rows is a success — the session was already gone.
  */

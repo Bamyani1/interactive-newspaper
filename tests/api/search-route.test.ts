@@ -5,6 +5,24 @@ vi.mock("@/src/lib/db", () => ({
   searchArticles: vi.fn(),
 }));
 
+// Buckets created at import time. Recorded in a plain array rather than on a
+// spy because the suite's vi.clearAllMocks() would erase spy call history
+// before any assertion could read it.
+const { rateLimiterBuckets } = vi.hoisted(() => ({ rateLimiterBuckets: [] as string[] }));
+
+vi.mock("@/src/lib/rate-limit", () => ({
+  createRateLimiter: (options: { bucket: string }) => {
+    rateLimiterBuckets.push(options.bucket);
+    return async () => ({
+      allowed: true,
+      limit: 20,
+      remaining: 19,
+      resetAt: Date.now() + 60_000,
+    });
+  },
+  getClientIp: () => "127.0.0.1",
+}));
+
 import { GET } from "@/src/app/api/search/route";
 import { searchArticles } from "@/src/lib/db";
 
@@ -32,12 +50,28 @@ describe("GET /api/search", () => {
     });
   });
 
+  it("leaves rate limiting to the middleware", async () => {
+    // The route used to build its own 20/min bucket on top of the
+    // middleware's, so every search cost two Neon writes and the two limits
+    // disagreed. Middleware is now the single gate.
+    expect(rateLimiterBuckets).toEqual([]);
+  });
+
   it("returns 400 when q is missing", async () => {
     const response = await GET(makeRequest(""));
     const body = await response.json();
     expect(response.status).toBe(400);
     expect(body.error).toMatch(/missing/i);
     expect(body.requestId).toBeDefined();
+  });
+
+  it("stamps a UUID request id, not 8 characters of Math.random()", async () => {
+    const a = await (await GET(makeRequest(""))).json();
+    const b = await (await GET(makeRequest(""))).json();
+    expect(a.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    expect(a.requestId).not.toBe(b.requestId);
   });
 
   it("returns 400 when q is empty after trim", async () => {

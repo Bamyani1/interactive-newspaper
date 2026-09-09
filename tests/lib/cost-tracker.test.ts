@@ -161,6 +161,46 @@ describe("checkDailyBudget", () => {
     sqlMock.mockRejectedValueOnce(new Error("neon unreachable"));
     await expect(checkDailyBudget()).resolves.toBeUndefined();
   });
+
+  it("gives up on a hung budget read instead of stalling the request path", async () => {
+    // Neon's serverless driver has no AbortSignal support, so a hung read
+    // never settles on its own — without the race /api/ask waits forever
+    // before its first Gemini call.
+    vi.useFakeTimers();
+    try {
+      sqlMock.mockImplementationOnce(() => new Promise(() => {}));
+      const pending = checkDailyBudget();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(pending).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("applies the outage ceiling to a timed-out read, not just a rejected one", async () => {
+    vi.useFakeTimers();
+    try {
+      sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
+      await recordUsage(
+        "gemini-3.5-flash-lite",
+        { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 }, // $2.80
+        { op: "outage.large" }
+      );
+      sqlMock.mockImplementationOnce(() => new Promise(() => {}));
+      // Attach the handler before advancing the clock: the rejection lands
+      // inside advanceTimersByTimeAsync, and an unattached one is reported as
+      // unhandled before the assertion below could claim it.
+      let rejection: unknown;
+      const settled = checkDailyBudget().catch((err: unknown) => {
+        rejection = err;
+      });
+      await vi.advanceTimersByTimeAsync(2_000);
+      await settled;
+      expect(rejection).toBeInstanceOf(DailyBudgetExceededError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("recordUsage", () => {
@@ -375,6 +415,56 @@ describe("hard evaluation reservations", () => {
     ).rejects.toThrow("google unavailable");
     expect(_getEvaluationReservedForTests()).toBe(0);
     expect(_getEvaluationSpendForTests()).toBe(0);
+  });
+});
+
+describe("RAG_DAILY_BUDGET_USD", () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    _resetEvaluationSpendForTests();
+    _resetOutageSpendForTests();
+    sqlMock.mockReset();
+    // Drop the test override so the env var is what decides.
+    _setDailyBudgetForTests(null);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    _setDailyBudgetForTests(ORIGINAL_BUDGET);
+  });
+
+  it("defaults to $2/day when the variable is unset", () => {
+    expect(_getDailyBudgetForTests()).toBe(2);
+  });
+
+  it("uses a configured value", () => {
+    vi.stubEnv("RAG_DAILY_BUDGET_USD", "7.5");
+    expect(_getDailyBudgetForTests()).toBe(7.5);
+  });
+
+  it("enforces the configured cap, not just the default", async () => {
+    vi.stubEnv("RAG_DAILY_BUDGET_USD", "7.5");
+    sqlMock.mockResolvedValueOnce([{ spent_usd: "7.500000" }]);
+    await expect(checkDailyBudget()).rejects.toMatchObject({ budgetUsd: 7.5 });
+  });
+
+  it("clamps an over-large value to the $50 hard maximum and warns", () => {
+    vi.stubEnv("RAG_DAILY_BUDGET_USD", "5000");
+    expect(_getDailyBudgetForTests()).toBe(50);
+    expect(console.warn).toHaveBeenCalled();
+  });
+
+  it("falls back to $2 and warns on a junk value", () => {
+    vi.stubEnv("RAG_DAILY_BUDGET_USD", "two dollars");
+    expect(_getDailyBudgetForTests()).toBe(2);
+    expect(console.warn).toHaveBeenCalled();
+  });
+
+  it("falls back to $2 and warns on a non-positive value", () => {
+    vi.stubEnv("RAG_DAILY_BUDGET_USD", "0");
+    expect(_getDailyBudgetForTests()).toBe(2);
+    expect(console.warn).toHaveBeenCalled();
   });
 });
 

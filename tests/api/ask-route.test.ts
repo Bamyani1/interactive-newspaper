@@ -35,6 +35,7 @@ vi.mock("@/src/lib/embeddings", () => ({
 
 vi.mock("@/src/lib/db", () => ({
   DbTimeoutError: MockDbTimeoutError,
+  fetchYearDigest: vi.fn(),
   queryArticlesByEmbedding: vi.fn(),
   searchArticlesForRag: vi.fn(),
   queryArchiveCoverage: vi.fn(),
@@ -71,8 +72,16 @@ vi.mock("@/src/lib/reranker", () => ({
   rerankArticles: vi.fn(),
 }));
 
+// Buckets created at import time. Recorded in a plain array rather than on a
+// spy because the suite's vi.clearAllMocks() would erase spy call history
+// before any assertion could read it.
+const { rateLimiterBuckets } = vi.hoisted(() => ({ rateLimiterBuckets: [] as string[] }));
+
 vi.mock("@/src/lib/rate-limit", () => ({
-  createRateLimiter: () => () => ({ allowed: true, resetAt: Date.now() + 60000 }),
+  createRateLimiter: (options: { bucket: string }) => {
+    rateLimiterBuckets.push(options.bucket);
+    return () => ({ allowed: true, resetAt: Date.now() + 60000 });
+  },
   getClientIp: () => "127.0.0.1",
 }));
 
@@ -97,7 +106,12 @@ import {
 } from "@/src/app/api/ask/route";
 import type { NextResponse } from "next/server";
 import { embedQuery } from "@/src/lib/embeddings";
-import { queryArticlesByEmbedding, searchArticlesForRag, queryArchiveCoverage } from "@/src/lib/db";
+import {
+  fetchYearDigest,
+  queryArticlesByEmbedding,
+  searchArticlesForRag,
+  queryArchiveCoverage,
+} from "@/src/lib/db";
 import { generateAnswer, generateAnswerStream } from "@/src/lib/answer-generator";
 import { reformulateQuery } from "@/src/lib/query-reformulator";
 import { rerankArticles } from "@/src/lib/reranker";
@@ -361,6 +375,15 @@ describe("POST /api/ask", () => {
     expect(body.error).toBe(message);
   });
 
+  it("rejects a sessionId outside the shared contract", async () => {
+    for (const sessionId of ["has space", "a/b", "x".repeat(129), ""]) {
+      const response = await POST(makeRequest({ question: "What happened?", sessionId }));
+      const body = await response.json();
+      expect(response.status, `expected ${JSON.stringify(sessionId)} to be rejected`).toBe(400);
+      expect(body.error).toBe("sessionId has an invalid format");
+    }
+  });
+
   it("rejects a regenerate field that is not an object", async () => {
     const response = await POST(
       makeRequest({ question: "What happened?", sessionId: "s-1", regenerate: "yes" })
@@ -405,7 +428,11 @@ describe("POST /api/ask", () => {
 
     expect(response.status).toBe(500);
     expect(body.stage).toBe("reformulate");
-    expect(body.requestId).toMatch(/^[a-z0-9]+$/);
+    // A UUID, not 8 characters of Math.random(): the request id is the join
+    // key into ask_feedback, so a collision silently misattributes a vote.
+    expect(body.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
   });
 
   it("tags reranker errors with stage='rerank'", async () => {
@@ -651,6 +678,82 @@ describe("POST /api/ask", () => {
       // Must return within roughly the deadline budget, not hang
       expect(elapsed).toBeLessThan(600);
       expect(elapsed).toBeGreaterThanOrEqual(140);
+    } finally {
+      _setGlobalDeadlineForTests(null);
+    }
+  });
+
+  it("gives up on a hung year digest and answers without it", async () => {
+    // The digest is non-citable guidance; it had no timer of its own, only
+    // the 55s global, so one hung read could eat the whole request budget.
+    vi.useFakeTimers();
+    try {
+      (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
+        embeddingQuery: "1962 sports",
+        ftsQuery: "1962 sports",
+        mode: "text",
+        complexity: "simple",
+        coverageIntent: "exhaustive",
+        startDate: "1962-01-01",
+        endDate: "1962-12-31",
+      });
+      (fetchYearDigest as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise(() => {}));
+
+      const pending = POST(makeRequest({ question: "Every 1962 game?" }));
+      await vi.advanceTimersByTimeAsync(3_000);
+      const response = await pending;
+
+      expect(response.status).toBe(200);
+      expect(fetchYearDigest).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves rate limiting to the middleware", async () => {
+    // /api/ask was limited twice — an `mw-ask` bucket in middleware and a
+    // second `ask` bucket here — costing two Neon writes on every question.
+    expect(rateLimiterBuckets).toEqual([]);
+  });
+
+  it("degrades to an empty history when the history read hangs", async () => {
+    // The history read is best-effort context, not a system of record: a
+    // hung Neon must cost the follow-up its context, not the whole answer.
+    vi.useFakeTimers();
+    try {
+      (getConversationHistory as ReturnType<typeof vi.fn>).mockImplementation(
+        () => new Promise(() => {})
+      );
+
+      const pending = POST(makeRequest({ question: "Follow-up?", sessionId: "s-hang" }));
+      await vi.advanceTimersByTimeAsync(2_000);
+      const response = await pending;
+
+      expect(response.status).toBe(200);
+      expect(reformulateQuery).toHaveBeenCalledWith(
+        "Follow-up?",
+        expect.objectContaining({ conversationHistory: [] })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("counts the pre-pipeline awaits against the global deadline", async () => {
+    // The deadline used to be armed only after the rate-limit and budget
+    // awaits, so a slow session read bought the pipeline a fresh 55s on top
+    // of time already spent — past Vercel's own 60s ceiling.
+    _setGlobalDeadlineForTests(120);
+    try {
+      (getConversationHistory as ReturnType<typeof vi.fn>).mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve([]), 300))
+      );
+
+      const response = await POST(makeRequest({ question: "Slow session", sessionId: "s-slow" }));
+      const body = await response.json();
+
+      expect(response.status).toBe(504);
+      expect(body.stage).toBe("deadline");
     } finally {
       _setGlobalDeadlineForTests(null);
     }

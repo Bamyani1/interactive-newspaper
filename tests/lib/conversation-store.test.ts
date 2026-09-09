@@ -79,6 +79,71 @@ describe("conversation-store", () => {
     expect(hashCount).toBeGreaterThanOrEqual(4);
   });
 
+  // The browser-side sidebar keeps threads for 7 days, so a server window
+  // shorter than that made a reopened thread silently lose every follow-up's
+  // context. Both sides are 7 days now. MAX_TURNS stays 5 — that is the
+  // prompt-context budget, a separate concern.
+  describe("recall window", () => {
+    function isoParams(): string[] {
+      return sqlMock.mock.calls
+        .flatMap((call) => call.slice(1))
+        .filter(
+          (param): param is string => typeof param === "string" && /^\d{4}-\d{2}-\d{2}T/.test(param)
+        );
+    }
+
+    function daysAgo(iso: string): number {
+      return (Date.now() - new Date(iso).getTime()) / 86_400_000;
+    }
+
+    it("reads history back 7 days, not 30 minutes", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      await getConversationHistory("sid");
+
+      const [since] = isoParams();
+      expect(since).toBeDefined();
+      expect(daysAgo(since)).toBeCloseTo(7, 2);
+    });
+
+    it("sweeps rows older than 7 days on write", async () => {
+      sqlMock.mockResolvedValue([{ exists: true }]);
+      sqlMock.transaction.mockResolvedValue(undefined);
+      await addConversationTurn("sid", "Q", "A", []);
+
+      const [cutoff] = isoParams();
+      expect(cutoff).toBeDefined();
+      expect(daysAgo(cutoff)).toBeCloseTo(7, 2);
+    });
+
+    it("still caps the prompt context at 5 turns", async () => {
+      sqlMock.mockResolvedValueOnce([]);
+      await getConversationHistory("sid");
+      const numbers = sqlMock.mock.calls.flatMap((call) => call.slice(1)).filter(Number.isInteger);
+      expect(numbers).toContain(5);
+    });
+
+    it("honors ASK_SESSION_TTL_DAYS", async () => {
+      vi.stubEnv("ASK_SESSION_TTL_DAYS", "2");
+      sqlMock.mockResolvedValueOnce([]);
+      await getConversationHistory("sid");
+      expect(daysAgo(isoParams()[0])).toBeCloseTo(2, 2);
+    });
+
+    it("clamps ASK_SESSION_TTL_DAYS to the 30-day maximum", async () => {
+      vi.stubEnv("ASK_SESSION_TTL_DAYS", "365");
+      sqlMock.mockResolvedValueOnce([]);
+      await getConversationHistory("sid");
+      expect(daysAgo(isoParams()[0])).toBeCloseTo(30, 2);
+    });
+
+    it("falls back to 7 days on a junk ASK_SESSION_TTL_DAYS", async () => {
+      vi.stubEnv("ASK_SESSION_TTL_DAYS", "a week");
+      sqlMock.mockResolvedValueOnce([]);
+      await getConversationHistory("sid");
+      expect(daysAgo(isoParams()[0])).toBeCloseTo(7, 2);
+    });
+  });
+
   it("reports { ok: true } when a delete matches zero rows", async () => {
     sqlMock.mockResolvedValueOnce([]);
     await expect(deleteConversationTurns("no-such-session")).resolves.toEqual({
