@@ -228,6 +228,56 @@
   margin: 0;
 }
 
+/* A photo whose bytes have not arrived yet. The archive's scans are
+   landscape at roughly 3:2, so the placeholder holds close to the space
+   the real image is about to take and the answer does not jump when it
+   lands. Without it the caption and source chip rendered under nothing,
+   which reads as a broken image rather than a loading one. */
+.ask-answer-figure[data-loading="true"] {
+  min-height: 0;
+}
+
+.ask-answer-figure[data-loading="true"] .ask-answer-image-btn {
+  display: block;
+  aspect-ratio: 3 / 2;
+  width: min(100%, 480px);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--stroke-accent-soft);
+  background: linear-gradient(
+    100deg,
+    var(--color-bg-inset) 30%,
+    color-mix(in srgb, var(--color-bg-paper) 70%, transparent) 50%,
+    var(--color-bg-inset) 70%
+  );
+  background-size: 300% 100%;
+  animation: ask-answer-image-shimmer 1.4s ease-in-out infinite;
+  cursor: default;
+}
+
+/* The <img> still has to be in the tree to load at all, so it sits
+   inside the placeholder at zero height rather than being unmounted. */
+.ask-answer-figure[data-loading="true"] .ask-answer-image {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  border: 0;
+}
+
+@keyframes ask-answer-image-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-answer-figure[data-loading="true"] .ask-answer-image-btn {
+    animation: none;
+  }
+}
+
 .ask-answer-image-btn {
   all: unset;
   display: block;
