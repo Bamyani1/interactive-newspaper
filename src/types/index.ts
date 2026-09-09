@@ -224,6 +224,13 @@ export interface AskResponse {
      * so their relevance was never vetted and confidence is capped.
      */
     rerankDegraded?: boolean;
+    /**
+     * Set when the reformulator never answered, so retrieval ran on a
+     * locally derived keyword set instead of a rewritten query. Tells a
+     * thin answer apart from a question the reformulator had nothing to
+     * add to — both of which leave `reformulatedQuery` undefined.
+     */
+    reformulationDegraded?: boolean;
     corpusVersion?: string;
     indexBuildId?: string | null;
     pipelineVersion?: string;
@@ -260,13 +267,7 @@ export interface AskResponse {
  * answered in this conversation.
  */
 export type AskErrorKind =
-  | "rate_limit"
-  | "budget"
-  | "timeout"
-  | "network"
-  | "server"
-  | "bad_request"
-  | "duplicate";
+  "rate_limit" | "budget" | "timeout" | "network" | "server" | "bad_request" | "duplicate";
 
 export interface AskError {
   kind: AskErrorKind;
@@ -277,3 +278,21 @@ export interface AskError {
   stage?: string;
   cause?: string;
 }
+
+/**
+ * What an answer producer (the generation pipeline or the agent loop) is
+ * telling the route it actually produced.
+ *
+ * `answered` and `no_evidence` are both real replies and both belong in
+ * conversation history — "the archive does not cover this" is genuine
+ * follow-up context. `error` is not a reply at all: the canned apologies
+ * ("I encountered an error while generating an answer") used to be
+ * persisted as history and replayed into the next prompt, so the model
+ * would answer a follow-up having apparently said them. An `error`
+ * outcome becomes an SSE `error` event or a typed 429/504/500 instead,
+ * and is never stored.
+ *
+ * Wider than the wire-level `AskAnswerOutcome`, which only ever sees the
+ * two outcomes that reach a `done` event.
+ */
+export type AnswerOutcome = "answered" | "no_evidence" | "error";

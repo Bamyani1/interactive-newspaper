@@ -18,7 +18,9 @@ import {
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import type { RetrievedArticle } from "@/src/lib/db";
 import type { RankedArticle } from "@/src/lib/reranker";
-import type { Citation } from "@/src/types";
+import type { AnswerOutcome, AskErrorKind, Citation } from "@/src/types";
+import { QuotaExhaustedError } from "@/src/lib/embeddings";
+import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
 import { groundPipelineAnswer } from "@/src/lib/answer-grounding";
 import { AnswerFieldExtractor } from "@/src/lib/answer-stream-extractor";
 import {
@@ -28,12 +30,13 @@ import {
 } from "@/src/lib/rag-coverage";
 
 const GENERATION_MODEL = RAG_MODEL_CONFIG.answer.model;
-// Thinking tokens share the output-token ceiling. MEDIUM reasoning consumed
-// nearly the old 4,096-token limit in a live housing synthesis and truncated
-// the JSON envelope, so leave enough room for both reasoning and the answer.
+// Thinking tokens share the output-token ceiling. Reasoning consumed nearly
+// the old 4,096-token limit in a live housing synthesis and truncated the
+// JSON envelope, so leave enough room for both reasoning and the answer.
 const MAX_ANSWER_TOKENS = 8192;
-// gemini-3.6-flash with MEDIUM thinking regularly needs 15-25s for
-// survey-style answers; the route's global deadline still bounds the request.
+// gemini-3.6-flash still regularly needs 15-25s for survey-style answers at
+// the LOW thinking level this stage uses (see rag-model-config); the route's
+// global deadline bounds the request either way.
 const GENERATION_TIMEOUT_MS = 30_000;
 const MAX_SOURCE_CHARS = 5000;
 
@@ -52,6 +55,20 @@ export interface GeneratedAnswer {
   citations: Citation[];
   confidence: "low" | "medium" | "high";
   followUps: string[];
+  /**
+   * Whether `answer` is a reply at all. `error` means it is a canned
+   * apology: the route turns it into an SSE `error` event or a typed
+   * 429/504/500 and, critically, does not persist it as history.
+   */
+  outcome: AnswerOutcome;
+  /** Only with `outcome: "error"`; picks the recovery the reader is offered. */
+  errorKind?: AskErrorKind;
+  retryAfterSec?: number;
+}
+
+/** Where an answer with citations stands, versus an honest refusal. */
+function outcomeForCitations(citations: Citation[]): AnswerOutcome {
+  return citations.length > 0 ? "answered" : "no_evidence";
 }
 
 /**
@@ -71,6 +88,9 @@ export type AnswerStreamEvent =
       citations: Citation[];
       confidence: "low" | "medium" | "high";
       followUps: string[];
+      outcome: AnswerOutcome;
+      errorKind?: AskErrorKind;
+      retryAfterSec?: number;
     };
 
 // ─── System Prompt ───────────────────────────────────────────────
@@ -356,13 +376,15 @@ export async function generateAnswer(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "no_evidence",
     };
   }
 
   // Confidence comes from reranker scores alone.
   const avgRerankerScore =
     sourceArticles.reduce((s, a) => s + a.relevanceScore, 0) / sourceArticles.length;
-  const confidence = computeConfidence(sourceArticles.length, avgRerankerScore);
+  const rerankDegraded = rerankWasDegraded(sourceArticles);
+  const confidence = computeConfidence(sourceArticles.length, avgRerankerScore, rerankDegraded);
 
   if (avgRerankerScore < RERANK_TANGENTIAL) {
     return {
@@ -374,6 +396,7 @@ export async function generateAnswer(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "no_evidence",
     };
   }
 
@@ -395,27 +418,35 @@ export async function generateAnswer(
     : controller.signal;
 
   try {
-    const response = await executeTrackedGenerationCall({
-      model: GENERATION_MODEL,
-      maxOutputTokens: MAX_ANSWER_TOKENS,
-      requestId: opts.requestId,
-      op: "generate",
-      call: () =>
-        client.models.generateContent({
+    const response = await retryOnQuota(
+      "generate",
+      () =>
+        executeTrackedGenerationCall({
           model: GENERATION_MODEL,
-          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-          config: {
-            systemInstruction: systemPrompt,
-            maxOutputTokens: MAX_ANSWER_TOKENS,
-            thinkingConfig: {
-              thinkingLevel: RAG_MODEL_CONFIG.answer.thinkingLevel,
-            },
-            responseMimeType: "application/json",
-            responseJsonSchema: ANSWER_SCHEMA,
-            abortSignal: combinedSignal,
-          },
+          maxOutputTokens: MAX_ANSWER_TOKENS,
+          requestId: opts.requestId,
+          op: "generate",
+          call: () =>
+            client.models.generateContent({
+              model: GENERATION_MODEL,
+              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+              config: {
+                systemInstruction: systemPrompt,
+                maxOutputTokens: MAX_ANSWER_TOKENS,
+                thinkingConfig: {
+                  thinkingLevel: RAG_MODEL_CONFIG.answer.thinkingLevel,
+                },
+                responseMimeType: "application/json",
+                responseJsonSchema: ANSWER_SCHEMA,
+                abortSignal: combinedSignal,
+              },
+            }),
         }),
-    });
+      // One controller spans the retries on purpose: the 30s budget is what
+      // the route's deadline math assumes, and a 429 rejects in well under a
+      // second, so a retry does not need a fresh budget to have a chance.
+      { signal: combinedSignal, requestId: opts.requestId }
+    );
 
     clearTimeout(timeout);
 
@@ -438,6 +469,8 @@ export async function generateAnswer(
         citations: [],
         confidence: "low",
         followUps: [],
+        outcome: "error",
+        errorKind: "server",
       };
     }
 
@@ -457,9 +490,15 @@ export async function generateAnswer(
       citations,
       confidence: validatedConfidence,
       followUps,
+      outcome: outcomeForCitations(citations),
     };
   } catch (err) {
     clearTimeout(timeout);
+
+    // A spent quota is the one failure worth waiting out, so it leaves as a
+    // typed error the route can answer with 429 + Retry-After rather than as
+    // an HTTP 200 whose body is an apology.
+    if (isQuotaError(err)) throw new QuotaExhaustedError("generate", err);
 
     if (err instanceof Error && err.name === "AbortError") {
       return {
@@ -467,6 +506,8 @@ export async function generateAnswer(
         citations: [],
         confidence: "low",
         followUps: [],
+        outcome: "error",
+        errorKind: "timeout",
       };
     }
 
@@ -485,6 +526,8 @@ export async function generateAnswer(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "error",
+      errorKind: "server",
     };
   }
 }
@@ -523,13 +566,15 @@ export async function* generateAnswerStream(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "no_evidence",
     };
     return;
   }
 
   const avgRerankerScore =
     sourceArticles.reduce((s, a) => s + a.relevanceScore, 0) / sourceArticles.length;
-  const confidence = computeConfidence(sourceArticles.length, avgRerankerScore);
+  const rerankDegraded = rerankWasDegraded(sourceArticles);
+  const confidence = computeConfidence(sourceArticles.length, avgRerankerScore, rerankDegraded);
 
   if (avgRerankerScore < RERANK_TANGENTIAL) {
     yield {
@@ -542,6 +587,7 @@ export async function* generateAnswerStream(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "no_evidence",
     };
     return;
   }
@@ -580,20 +626,27 @@ export async function* generateAnswerStream(
   let budgetSettled = false;
 
   try {
-    const stream = await client.models.generateContentStream({
-      model: GENERATION_MODEL,
-      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-      config: {
-        systemInstruction: systemPrompt,
-        maxOutputTokens: MAX_ANSWER_TOKENS,
-        thinkingConfig: {
-          thinkingLevel: RAG_MODEL_CONFIG.answer.thinkingLevel,
-        },
-        responseMimeType: "application/json",
-        responseJsonSchema: ANSWER_SCHEMA,
-        abortSignal: combinedSignal,
-      },
-    });
+    // Only the initial await is retried. A 429 rejects before the first
+    // chunk, so no text can be emitted twice; retrying mid-stream could.
+    const stream = await retryOnQuota(
+      "generate.stream",
+      () =>
+        client.models.generateContentStream({
+          model: GENERATION_MODEL,
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          config: {
+            systemInstruction: systemPrompt,
+            maxOutputTokens: MAX_ANSWER_TOKENS,
+            thinkingConfig: {
+              thinkingLevel: RAG_MODEL_CONFIG.answer.thinkingLevel,
+            },
+            responseMimeType: "application/json",
+            responseJsonSchema: ANSWER_SCHEMA,
+            abortSignal: combinedSignal,
+          },
+        }),
+      { signal: combinedSignal, requestId: opts.requestId }
+    );
 
     for await (const chunk of stream) {
       if (chunk.usageMetadata) finalUsageMetadata = chunk.usageMetadata;
@@ -636,6 +689,8 @@ export async function* generateAnswerStream(
         citations: [],
         confidence: "low",
         followUps: [],
+        outcome: "error",
+        errorKind: "server",
       };
       return;
     }
@@ -655,10 +710,15 @@ export async function* generateAnswerStream(
       citations,
       confidence: validatedConfidence,
       followUps,
+      outcome: outcomeForCitations(citations),
     };
   } catch (err) {
     clearTimeout(timeout);
     if (!budgetSettled) releaseEvaluationGoogleCall(budgetReservation);
+
+    // See generateAnswer: a spent quota leaves as a typed error so the route
+    // can offer a wait instead of an apology.
+    if (isQuotaError(err)) throw new QuotaExhaustedError("generate.stream", err);
 
     if (err instanceof Error && err.name === "AbortError") {
       yield {
@@ -667,6 +727,8 @@ export async function* generateAnswerStream(
         citations: [],
         confidence: "low",
         followUps: [],
+        outcome: "error",
+        errorKind: "timeout",
       };
       return;
     }
@@ -687,6 +749,8 @@ export async function* generateAnswerStream(
       citations: [],
       confidence: "low",
       followUps: [],
+      outcome: "error",
+      errorKind: "server",
     };
   }
 }
@@ -697,6 +761,9 @@ function confidenceForCitations(
   citations: Citation[],
   retrievalConfidence: "low" | "medium" | "high"
 ): "low" | "medium" | "high" {
+  // An unvetted candidate set cannot be talked back up by counting its own
+  // citations: the scores those citations average are the fail-open constant.
+  if (rerankWasDegraded(sourceArticles)) return "low";
   if (/don['’]t have enough information/i.test(answer)) return "low";
   if (citations.length === 0) return "low";
 
@@ -721,11 +788,21 @@ function confidenceForCitations(
 
 function computeConfidence(
   articleCount: number,
-  avgRerankerScore: number
+  avgRerankerScore: number,
+  degraded = false
 ): "low" | "medium" | "high" {
+  // Nothing judged these articles, so the score below is the reranker's own
+  // fail-open constant rather than a measurement. Reporting anything above
+  // "low" off it would be inventing a confidence.
+  if (degraded) return "low";
   if (avgRerankerScore >= RERANK_CONFIDENT && articleCount >= 2) return "high";
   if (avgRerankerScore >= RERANK_RELEVANT && articleCount >= 3) return "high";
   if (avgRerankerScore >= RERANK_MEDIUM) return "medium";
   if (avgRerankerScore >= RERANK_TANGENTIAL) return "medium";
   return "low";
+}
+
+/** True when any candidate reached the generator without being judged. */
+function rerankWasDegraded(articles: RankedArticle[]): boolean {
+  return articles.some((article) => article.rerankDegraded === true);
 }

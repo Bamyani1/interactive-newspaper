@@ -11,7 +11,7 @@
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
-import { isQuotaError } from "@/src/lib/gemini-quota";
+import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
 import { executeTrackedEmbeddingCall } from "@/src/lib/cost-tracker";
 import {
   RAG_EMBEDDING_MODEL,
@@ -103,12 +103,11 @@ async function embedWithTimeout<T>(
 }
 
 // ─── Quota Retry Helper ───────────────────────────────────────
-// Some Gemini quota errors are per-minute RPM, not daily — e.g. a
-// parallel batch run tripping the RPM bucket in the first few seconds.
-// A short exponential backoff often succeeds on those without burning
-// extra calls; a daily-quota error will just fall through the retries
-// and surface as normal. Scoped to embedDocuments (batch path) because
-// the live query path must stay snappy. Closes docs/issues/0028.
+// The loop itself now lives in gemini-quota so every live model call in
+// the pipeline — not just this batch path — can back off the same way.
+// Re-exported here because this is the module callers and test mocks
+// already reach for. The batch delays stay longer than the live ones: a
+// seed/embed run has no request deadline to respect.
 
 let QUOTA_RETRY_DELAYS_MS: number[] = [1_000, 2_000, 4_000];
 
@@ -119,32 +118,7 @@ export function _setQuotaRetryDelaysForTests(delays: number[]): void {
   QUOTA_RETRY_DELAYS_MS = delays;
 }
 
-async function retryOnQuota<T>(op: string, fn: () => Promise<T>): Promise<T> {
-  let lastErr: unknown;
-  for (let attempt = 0; attempt <= QUOTA_RETRY_DELAYS_MS.length; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      if (!(err instanceof QuotaExhaustedError) || attempt === QUOTA_RETRY_DELAYS_MS.length) {
-        throw err;
-      }
-      const delayMs = QUOTA_RETRY_DELAYS_MS[attempt];
-      console.warn(
-        JSON.stringify({
-          level: "warn",
-          module: "embeddings",
-          op,
-          msg: "quota exhausted, backing off",
-          attempt: attempt + 1,
-          delayMs,
-        })
-      );
-      await sleep(delayMs);
-    }
-  }
-  throw lastErr;
-}
+export { retryOnQuota };
 
 // ─── Query Embedding Cache ─────────────────────────────────────
 // Simple TTL cache to avoid redundant API calls for repeated queries.
@@ -221,7 +195,9 @@ export async function embedDocuments(
   for (let i = 0; i < textOnly.length; i += MAX_BATCH_SIZE) {
     const batch = textOnly.slice(i, i + MAX_BATCH_SIZE);
 
-    const response = await retryOnQuota("embedDocuments.textBatch", () =>
+    const response = await retryOnQuota(
+      "embedDocuments.textBatch",
+      () =>
       executeTrackedEmbeddingCall({
         model: EMBEDDING_MODEL,
         requestId: opts.requestId,
@@ -240,7 +216,8 @@ export async function embedDocuments(
               }),
             EMBED_DOCUMENTS_TIMEOUT_MS
           ),
-      })
+        }),
+      { delaysMs: QUOTA_RETRY_DELAYS_MS, requestId: opts.requestId }
     );
 
     if (!response.embeddings || response.embeddings.length !== batch.length) {
@@ -272,7 +249,9 @@ export async function embedDocuments(
     const inp = withImages[idx];
     let response;
     try {
-      response = await retryOnQuota("embedDocuments.multimodal", () =>
+      response = await retryOnQuota(
+        "embedDocuments.multimodal",
+        () =>
         executeTrackedEmbeddingCall({
           model: EMBEDDING_MODEL,
           requestId: opts.requestId,
@@ -304,7 +283,8 @@ export async function embedDocuments(
                 }),
               EMBED_DOCUMENTS_TIMEOUT_MS
             ),
-        })
+          }),
+        { delaysMs: QUOTA_RETRY_DELAYS_MS, requestId: opts.requestId }
       );
     } catch (err) {
       // Re-throw with context so operators know WHERE the partial failure
@@ -362,7 +342,7 @@ export async function embedDocuments(
 
 /**
  * Embed a single query for retrieval. Uses the "task: search result" prefix
- * format required by gemini-embedding-2. Includes a 5s timeout and
+ * format required by gemini-embedding-2. Includes a 10s timeout and
  * a short-lived LRU cache for repeated queries.
  */
 export async function embedQuery(
@@ -388,13 +368,20 @@ export async function embedQuery(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), EMBED_TIMEOUT_MS);
 
-  // Combine outer request signal with the internal 5s timeout.
+  // Combine outer request signal with the internal 10s timeout.
   const combinedSignal = opts.signal
     ? AbortSignal.any([opts.signal, controller.signal])
     : controller.signal;
 
   try {
-    const response = await executeTrackedEmbeddingCall({
+    // A per-minute RPM trip often clears within a second or two, and losing
+    // the vector signal costs recall for the whole request. One controller
+    // spans the retries so the 10s budget the deadline math assumes is not
+    // multiplied, and the backoff itself gives up as soon as it aborts.
+    const response = await retryOnQuota(
+      "embedQuery",
+      () =>
+        executeTrackedEmbeddingCall({
       model: EMBEDDING_MODEL,
       requestId: opts.requestId,
       op: "embed.query",
@@ -407,7 +394,9 @@ export async function embedQuery(
             abortSignal: combinedSignal,
           },
         }),
-    });
+        }),
+      { signal: combinedSignal, requestId: opts.requestId }
+    );
 
     clearTimeout(timeout);
 
