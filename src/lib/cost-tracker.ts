@@ -4,8 +4,8 @@
  * Reads usageMetadata from Gemini responses, converts token counts to USD,
  * and accumulates today's total in the Neon `ai_spend_counter` table.
  * checkDailyBudget() throws DailyBudgetExceededError once the day crosses
- * DAILY_BUDGET_USD so the route can return 429 before firing another
- * expensive pipeline.
+ * the RAG_DAILY_BUDGET_USD ceiling so the route can return 429 before
+ * firing another expensive pipeline.
  *
  * Both recordUsage and checkDailyBudget are best-effort: if Neon is
  * unreachable, they log a warning and return without blocking the
@@ -24,6 +24,7 @@ import {
   RAG_GENERATION_MODEL,
 } from "@/src/lib/rag-model-config";
 import { getRagEvaluationConfig } from "@/src/lib/rag-evaluation";
+import { runWithDbTimeout } from "@/src/lib/db-timeout";
 
 // USD per 1,000,000 tokens for standard online requests at global.
 const PRICE_PER_MTOKEN: Record<string, { input: number; output: number }> = {
@@ -33,7 +34,48 @@ const PRICE_PER_MTOKEN: Record<string, { input: number; output: number }> = {
 };
 const GEMINI_EMBEDDING_2_IMAGE_USD = 0.00012;
 
-let DAILY_BUDGET_USD = 2;
+// The daily cap comes from RAG_DAILY_BUDGET_USD so it can be raised for a
+// launch or lowered for a quiet month without a deploy. The hard maximum is
+// the real safety property: an operator fat-fingering an extra zero must not
+// be able to authorize an unbounded day of spend.
+const DEFAULT_DAILY_BUDGET_USD = 2;
+const MAX_DAILY_BUDGET_USD = 50;
+
+// Set only by _setDailyBudgetForTests; null means "read the environment".
+let dailyBudgetOverrideUsd: number | null = null;
+
+function warnBudget(msg: string, raw: string, budgetUsd: number): void {
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      module: "cost-tracker",
+      op: "dailyBudget",
+      msg,
+      RAG_DAILY_BUDGET_USD: raw,
+      budgetUsd,
+    })
+  );
+}
+
+/**
+ * Resolved per call rather than at module load so a changed environment
+ * takes effect on the next request instead of the next cold start.
+ */
+function dailyBudgetUsd(): number {
+  if (dailyBudgetOverrideUsd !== null) return dailyBudgetOverrideUsd;
+  const raw = process.env.RAG_DAILY_BUDGET_USD;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_DAILY_BUDGET_USD;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    warnBudget("not a positive number; using the default", raw, DEFAULT_DAILY_BUDGET_USD);
+    return DEFAULT_DAILY_BUDGET_USD;
+  }
+  if (parsed > MAX_DAILY_BUDGET_USD) {
+    warnBudget("above the hard maximum; clamped", raw, MAX_DAILY_BUDGET_USD);
+    return MAX_DAILY_BUDGET_USD;
+  }
+  return parsed;
+}
 
 // Bounded fail-open for the online path. When Neon is unreachable the daily
 // counter can neither be read nor written, so the hard cap above can't be
@@ -45,6 +87,10 @@ let DAILY_BUDGET_USD = 2;
 const OUTAGE_BUDGET_USD = 0.5;
 let outageSpendUsd = 0;
 
+// The budget read sits on the request path, so it gets a timer like every
+// other request-path query.
+const BUDGET_READ_TIMEOUT_MS = 2_000;
+
 let evaluationRunId: string | null = null;
 let evaluationSpendUsd = 0;
 let evaluationReservationSequence = 0;
@@ -53,7 +99,8 @@ const evaluationReservations = new Map<
   { runId: string; reservedUsd: number; model: string; op: string }
 >();
 
-// Gemini 3.5 Flash-Lite accepts at most 1,048,576 context tokens. Usage
+// The generation models we bill against accept at most 1,048,576 context
+// tokens (gemini-3.6-flash and gemini-3.5-flash-lite alike). Usage
 // metadata exposes tool-use and thought counters separately, and our billing
 // policy deliberately adds them, so reserve twice the documented input and
 // configured output ceilings. The reservation is intentionally conservative:
@@ -315,9 +362,17 @@ export async function checkDailyBudget(): Promise<void> {
   const day = today();
   let spent = 0;
   try {
-    const rows = (await sql`
+    // Raced against a timer: this is the last await before the first Gemini
+    // call, and Neon's serverless driver has no AbortSignal support, so a
+    // hung read would otherwise stall /api/ask indefinitely. A timeout is
+    // treated exactly like any other DB error — bounded fail-open below.
+    const rows = (await runWithDbTimeout(
+      "checkDailyBudget",
+      () => sql`
             SELECT spent_usd FROM ai_spend_counter WHERE day = ${day}
-        `) as Array<{ spent_usd: string | number }>;
+        `,
+      BUDGET_READ_TIMEOUT_MS
+    )) as Array<{ spent_usd: string | number }>;
     spent = rows.length > 0 ? Number(rows[0].spent_usd) : 0;
     outageSpendUsd = 0; // DB reachable — clear any accumulated outage estimate
   } catch (err) {
@@ -338,8 +393,9 @@ export async function checkDailyBudget(): Promise<void> {
     }
     return;
   }
-  if (spent >= DAILY_BUDGET_USD) {
-    throw new DailyBudgetExceededError(spent, DAILY_BUDGET_USD);
+  const budgetUsd = dailyBudgetUsd();
+  if (spent >= budgetUsd) {
+    throw new DailyBudgetExceededError(spent, budgetUsd);
   }
 }
 
@@ -479,12 +535,13 @@ export async function recordEmbeddingUsage(
 
 // Test hooks. Kept exported so production callers don't import them
 // accidentally — names carry the `_…ForTests` suffix per convention.
-export function _setDailyBudgetForTests(usd: number): void {
-  DAILY_BUDGET_USD = usd;
+/** Pass null to clear the override and read RAG_DAILY_BUDGET_USD again. */
+export function _setDailyBudgetForTests(usd: number | null): void {
+  dailyBudgetOverrideUsd = usd;
 }
 
 export function _getDailyBudgetForTests(): number {
-  return DAILY_BUDGET_USD;
+  return dailyBudgetUsd();
 }
 
 export function _getOutageSpendForTests(): number {

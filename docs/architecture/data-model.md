@@ -317,7 +317,8 @@ CREATE INDEX IF NOT EXISTS idx_ask_session_turns_created
   ON ask_session_turns (created_at DESC);
 ```
 
-Queries select the last 5 turns within a 30-minute window. Citation snapshots
+Queries select the last 5 turns of prompt context; rows are kept for
+`ASK_SESSION_TTL_DAYS` (default 7, clamped to [1, 30]) to match the sidebar. Citation snapshots
 pin the cited content revision and bounded source-card/evidence metadata so a
 later re-OCR cannot rewrite an earlier answer's hydrated sources. The runtime
 probes this expand-only column with a 30-second TTL and retains the legacy-ID

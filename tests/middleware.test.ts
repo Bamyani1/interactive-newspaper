@@ -8,10 +8,13 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockRateLimit } = vi.hoisted(() => ({ mockRateLimit: vi.fn() }));
+const { mockRateLimit, createRateLimiter } = vi.hoisted(() => {
+  const mockRateLimit = vi.fn();
+  return { mockRateLimit, createRateLimiter: vi.fn(() => mockRateLimit) };
+});
 
 vi.mock("@/src/lib/rate-limit", () => ({
-  createRateLimiter: () => mockRateLimit,
+  createRateLimiter,
   getClientIp: () => "203.0.113.7",
 }));
 
@@ -108,6 +111,20 @@ describe("middleware rate limiting", () => {
       await middleware(req(path));
       expect(mockRateLimit, `expected ${path} to be rate-limited`).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+describe("middleware rate-limit tiers", () => {
+  // Middleware is the single gate: /api/ask and /api/search each used to be
+  // limited twice, here and again in the route, costing two Neon writes per
+  // request. Search's stricter route-level 20/min is the one that survived.
+  it("declares one tier per endpoint class, search at 20/min", () => {
+    const tiers = createRateLimiter.mock.calls.map(([options]) => options);
+    expect(tiers).toEqual([
+      { bucket: "mw-ask", limit: 10, windowMs: 60_000 },
+      { bucket: "mw-search", limit: 20, windowMs: 60_000 },
+      { bucket: "mw-general", limit: 120, windowMs: 60_000 },
+    ]);
   });
 });
 
