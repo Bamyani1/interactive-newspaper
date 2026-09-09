@@ -270,17 +270,32 @@ async function main() {
   let followUp = null;
   if (args.followUps && questions.length > 0) {
     const sessionId = `smoke-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    const first = await askOnce(args.base, "Who edited The Transcript in 1962?", sessionId);
-    const second = await askOnce(args.base, "And what did they write about most?", sessionId);
+    // A pair the archive can actually answer. An opener it has to refuse
+    // proves nothing about recall — the follow-up then has no subject to
+    // inherit, and the check reads as a failure of memory rather than of
+    // coverage.
+    const first = await askOnce(
+      args.base,
+      "What arguments did students make for and against the Vietnam War?",
+      sessionId
+    );
+    const second = await askOnce(
+      args.base,
+      "Which of those arguments came up most often?",
+      sessionId
+    );
     followUp = {
       sessionId,
       first: { outcome: first.outcome, citations: first.citations },
       second: { outcome: second.outcome, citations: second.citations },
-      carriedContext: second.outcome === "answered" && second.citations > 0,
+      // "Which of those" is unanswerable without the first turn, so an
+      // answer at all is the evidence. Citations are coverage, not recall.
+      carriedContext: second.outcome === "answered",
     };
     if (!args.json) {
       console.log(
-        `\nfollow-up context: ${followUp.carriedContext ? "carried" : "NOT CARRIED"} (${second.outcome}, ${second.citations} citations)`
+        `\nfollow-up context: ${followUp.carriedContext ? "carried" : "NOT CARRIED"} ` +
+          `(opener ${first.outcome}, follow-up ${second.outcome}, ${second.citations} citations)`
       );
     }
   }
