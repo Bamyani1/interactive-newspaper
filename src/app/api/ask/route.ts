@@ -43,7 +43,11 @@ import {
 } from "@/src/lib/ask-stream-events";
 import { isQuotaError, kindForQuota, retryAfterSecFromQuotaError } from "@/src/lib/gemini-quota";
 import { getClientIp } from "@/src/lib/rate-limit";
-import { checkDailyBudget, DailyBudgetExceededError } from "@/src/lib/cost-tracker";
+import {
+  checkDailyBudget,
+  DailyBudgetExceededError,
+  secondsUntilBudgetReset,
+} from "@/src/lib/cost-tracker";
 import {
   DEDUP_TTL_MS,
   dedupKey,
@@ -1158,7 +1162,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let rejectDeadline!: (error: DeadlineExceededError) => void;
   const deadlinePromise = new Promise<NextResponse>((_, reject) => {
     rejectDeadline = reject;
-    });
+  });
   const globalTimer = setTimeout(() => {
     globalController.abort();
     rejectDeadline(new DeadlineExceededError(deadlineMs));
@@ -1243,7 +1247,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         message: evaluationBudget
           ? "Evaluation spending cap reached. Start a separately approved run to continue."
           : "Daily AI budget reached. Please try again tomorrow.",
-        retryAfterSec: evaluationBudget ? undefined : 3600,
+        // Until the counter actually rolls over, not a flat hour — the
+        // refusal says "tomorrow", so the countdown beside it has to
+        // agree or it invites a retry that is certain to fail.
+        retryAfterSec: evaluationBudget ? undefined : secondsUntilBudgetReset(),
         cause: evaluationBudget ? "evaluation_budget_reached" : "daily_budget_reached",
         stage: "budget",
         requestId,
@@ -1506,16 +1513,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const generationStart = Date.now();
     const { answer, citations, confidence, followUps, outcome, errorKind, retryAfterSec } =
       await wrapStage("generate", () =>
-      generateAnswer(question, rankedArticles, {
-        signal: globalController.signal,
-        requestId,
-        conversationContext:
+        generateAnswer(question, rankedArticles, {
+          signal: globalController.signal,
+          requestId,
+          conversationContext:
             conversationHistory.length > 0
               ? formatHistoryForPrompt(conversationHistory)
               : undefined,
-        coverage,
-      })
-    );
+          coverage,
+        })
+      );
     const generationTimeMs = Date.now() - generationStart;
 
     // A canned apology is not an answer: return it typed, and never store it
