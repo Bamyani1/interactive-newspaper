@@ -486,6 +486,25 @@ describe("embedQuery", () => {
     mockEmbedContent.mockReset();
   });
 
+  // gemini-embedding-2 has no taskType parameter — the task rides along as
+  // an inline prefix, so this string IS the task selector. Measured on the
+  // frozen golden catalog over two runs each: 87.0% / 95.7% source recall
+  // with "question answering" against 78.3% / 73.9% with "search result".
+  // Changing it shifts the query side of the vector space away from the
+  // documents, which nothing downstream validates, so it is pinned here.
+  it("asks the model for question answering, not general search", async () => {
+    mockEmbedContent.mockResolvedValue({ embeddings: [{ values: makeFakeVector(4) }] });
+
+    await embedQuery("Who edited the paper in 1962?");
+
+    const call = mockEmbedContent.mock.calls[0][0] as {
+      contents: Array<{ parts: Array<{ text: string }> }>;
+    };
+    expect(call.contents[0].parts[0].text).toBe(
+      "task: question answering | query: Who edited the paper in 1962?"
+    );
+  });
+
   it("bypasses the query embedding cache in evaluation mode", async () => {
     vi.stubEnv("RAG_EVALUATION_MODE", "1");
     vi.stubEnv("RAG_EVALUATION_RUN_ID", "embedding-cache-test");

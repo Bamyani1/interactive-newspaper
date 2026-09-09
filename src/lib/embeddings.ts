@@ -7,7 +7,7 @@
  *
  * Gemini Embedding 2 uses inline text prefixes for task instructions instead of taskType enums:
  *   - Documents: "title: {headline} | text: {content}"
- *   - Queries:   "task: search result | query: {question}"
+ *   - Queries:   "task: question answering | query: {question}"
  */
 
 import { getGeminiClient } from "@/src/lib/gemini-client";
@@ -354,9 +354,25 @@ export async function embedDocuments(
 // ─── Query Embedding ───────────────────────────────────────────
 
 /**
- * Embed a single query for retrieval. Uses the "task: search result" prefix
- * format required by gemini-embedding-2. Includes a 10s timeout and
- * a short-lived LRU cache for repeated queries.
+ * Embed a single query for retrieval.
+ *
+ * gemini-embedding-2 takes no `taskType` parameter — the task is carried
+ * as an inline prefix on the text instead, which is why documents read
+ * "title: … | text: …" and queries read "task: … | query: …".
+ *
+ * The task is "question answering", not "search result". Both are
+ * documented prefixes; this surface is called Ask the Archive and almost
+ * every input is a literal question, and the frozen golden catalog agrees:
+ * over two runs each, source recall was 87.0% / 95.7% with question
+ * answering against 78.3% / 73.9% with search result — non-overlapping,
+ * at no latency or token cost. Documents keep their own prefix, so
+ * nothing had to be re-embedded for this.
+ *
+ * (A visual query — "find photographs of …" — is arguably a search rather
+ * than a question, but the catalog is too thin on those to justify
+ * branching on mode here.)
+ *
+ * Includes a 10s timeout and a short-lived LRU cache for repeated queries.
  */
 export async function embedQuery(
   question: string,
@@ -369,7 +385,7 @@ export async function embedQuery(
     throw new Error("embedQuery: signal already aborted");
   }
 
-  const prefixed = `task: search result | query: ${question}`;
+  const prefixed = `task: question answering | query: ${question}`;
   const cacheKey = `${EMBEDDING_MODEL}\0${RAG_QUERY_EMBEDDING_INPUT_VERSION}\0${prefixed}`;
 
   // Check cache first
