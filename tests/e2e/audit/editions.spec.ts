@@ -32,6 +32,13 @@ const EDITION_PATH = /^\/edition\/(\d{4}-\d{2}-\d{2})$/;
 const ASSET_001_EDITION = "1989-10-25";
 const ASSET_001_OBJECT = "0004_Page 4_img1.webp";
 
+// Editions that are ingested locally on purpose but were never published to
+// the live DB. `localOnly` must stay a subset of this list: any other date
+// means an edition was ingested and forgotten, or dropped from the live
+// inventory. 1983-04-21 is the surviving 1983-85 partial; the 21 directories
+// that used to sit beside it held no edition.json and have been removed.
+const UNPUBLISHED_LOCAL_EDITIONS = ["1983-04-21"];
+
 // ASSET-001's aborted responsive candidate fires a late, non-deterministic
 // `requestfailed` event that can surface in a LATER edition's diagnostics, so
 // consume that exact object (tolerant, no-op otherwise) before every edition
@@ -121,13 +128,15 @@ test("reconciles and sweeps the complete production/local edition union", async 
   expect(liveDates).toHaveLength(351);
   expect(generated.datePaths).toEqual([]);
   expect(generated.hasIndex).toBe(false);
-  // 1983-04-21 is ingested locally but was never published to the live DB;
-  // the 21 partial 1983-85 directories that used to sit beside it held no
-  // edition.json and have been removed.
-  expect(localDates).toHaveLength(352);
-  expect(localOnlyDates).toEqual(["1983-04-21"]);
-  expect(publishedOnlyDates).toEqual([]);
-  expect(unionDates).toHaveLength(352);
+  // `public/editions` is gitignored working output, so its size is a property
+  // of the machine the sweep runs on, not of the app. Assert the relationships
+  // that must hold on any machine instead of a captured inventory count.
+  expect(publishedOnlyDates, "every published edition must also exist locally").toEqual([]);
+  expect(
+    localOnlyDates.filter((date) => !UNPUBLISHED_LOCAL_EDITIONS.includes(date)),
+    "an unpublished local edition must be a documented exception"
+  ).toEqual([]);
+  expect(unionDates).toHaveLength(localDates.length);
   expect(publishedDates).toEqual(expect.arrayContaining([...DEEP_TEST_EDITIONS]));
 
   await writeAuditJson(

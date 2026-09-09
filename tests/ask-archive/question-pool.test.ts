@@ -80,3 +80,20 @@ describe("pickSuggestions", () => {
     }
   });
 });
+
+describe("prompt length budget", () => {
+  // The homepage teaser reserves fixed slot heights per breakpoint
+  // (`.cinema-ask-teaser-slot` in cinema-landing.css) so the Ask CTA below it
+  // cannot jump when the day-of-year pick lands post-hydration. Those heights
+  // were measured against the longest prompt in the pool, which is exactly
+  // this many characters — a longer prompt wraps to another line and silently
+  // reintroduces the shift. Raising the ceiling means re-measuring the slot
+  // heights at every breakpoint first.
+  const MAX_PROMPT_CHARS = 83;
+
+  it("keeps every prompt inside the reserved teaser slot", () => {
+    for (const prompt of QUESTION_PROMPTS) {
+      expect(prompt.question.length, prompt.question).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
+    }
+  });
+});

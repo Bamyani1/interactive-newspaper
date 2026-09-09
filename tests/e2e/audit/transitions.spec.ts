@@ -10,6 +10,7 @@ import {
   expectVisibleNonEmptyFirstPaint,
   readCumulativeLayoutShift,
   readCumulativeLayoutShiftSamples,
+  recordFulfilledMockRequest,
   resetBrowserDiagnostics,
   waitForSettledUi,
   writeAuditJson,
@@ -241,6 +242,10 @@ test("delayed Ask API keeps the hydrated workspace visible", async ({ page, diag
       },
       body: DETERMINISTIC_ASK_STREAM,
     });
+    // The diagnostics gate only forgives an aborted Ask POST that a mock
+    // actually answered; this handler bypasses `installApiMocks`, so it
+    // records its own fulfilment.
+    recordFulfilledMockRequest(route.request());
   });
 
   await page.goto("/ask?q=Who%20edited%20the%20paper%3F");

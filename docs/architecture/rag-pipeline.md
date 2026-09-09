@@ -1,6 +1,6 @@
 # RAG Pipeline — Ask the Archive
 
-This document describes the `/api/ask` pipeline and the isolated RAG-v2 candidate. Production remains on explicit `legacy` retrieval until a versioned index is separately validated and activated. OCR is intentionally out of scope; see `ocr-pipeline.md` for that system.
+This document describes the `/api/ask` pipeline and the versioned RAG-v2 index it retrieves from. That index was validated and then activated on 2026-08-03: production runs `RAG_RETRIEVAL_MODE=versioned` against one explicit build, and `legacy` is retained only as an escape hatch (see [Legacy cutover behavior](#legacy-cutover-behavior) for what it actually serves now). OCR is intentionally out of scope; see `ocr-pipeline.md` for that system.
 
 ## Core decisions
 
@@ -51,11 +51,13 @@ DATABASE_URL=postgresql://...
 GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=global
 RAG_CORPUS_VERSION=legacy-8b8207373510d69e
-RAG_RETRIEVAL_MODE=legacy
+RAG_RETRIEVAL_MODE=versioned    # `legacy` is the rollback value
+RAG_ACTIVE_INDEX_BUILD_ID=...   # the one active build for this corpus
 ```
 
-`RAG_RETRIEVAL_MODE` defaults to `legacy`. `shadow` and `versioned` require an
-explicit `RAG_ACTIVE_INDEX_BUILD_ID`; table existence never changes behavior.
+`RAG_RETRIEVAL_MODE` defaults to `legacy` in code; production has set
+`versioned` since 2026-08-03. `shadow` and `versioned` require an explicit
+`RAG_ACTIVE_INDEX_BUILD_ID`; table existence never changes behavior.
 The active build, corpus, pipeline, embedding model, and text/image input
 versions are part of retrieval telemetry and cache identities. A versioned
 build must match every configured identity field and be in the allowed state;
@@ -115,7 +117,9 @@ Visual queries search this index. The closest matched image is promoted to the f
 
 ### Legacy cutover behavior
 
-The old `articles.embedding` column remains during migration and rollback. Legacy retrieval filters by `embedding_model = 'gemini-embedding-2'`; it never compares a stable query vector against preview-model document vectors. Before the v2 vectors are backfilled, lexical FTS therefore remains useful without mixing incompatible embedding spaces. Even if `article_chunks` and `article_images` exist, they are not served unless `RAG_RETRIEVAL_MODE=versioned` names an explicit build.
+The old `articles.embedding` column remains for rollback. Legacy retrieval filters by `embedding_model = 'gemini-embedding-2'`, so it never compares a stable query vector against preview-model document vectors — but no row carries that stamp: all 11,705 articles are stamped `gemini-embedding-2-preview` (9,582) or `NULL` (2,123). The filtered query succeeds with zero rows, so nothing errors and no fallback fires; the pipeline silently degrades to keyword-only FTS. `RAG_RETRIEVAL_MODE=legacy` is therefore a way to keep answering during an incident, not a way to keep answering well, and production must run `versioned`. Restoring real legacy vectors would mean re-embedding `articles.embedding` under the current model, which nothing in the pipeline does any more.
+
+Retrieval never switches on table existence: `article_chunks` and `article_images` are served only when `RAG_RETRIEVAL_MODE=versioned` names an explicit build.
 
 ## Hybrid search
 

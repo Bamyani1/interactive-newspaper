@@ -22,8 +22,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  /* When there are no turns, the empty state centers in the
-     available space instead of hugging the top. */
+  /* An empty transcript doesn't hug the top: the landing centres itself
+     with the auto margins below. Turns hug the top. */
 }
 
 /* Auto margins centre a short landing in the available transcript space
@@ -52,6 +52,16 @@
   position: absolute;
   inset-block-start: 0;
   inset-inline: 0;
+}
+
+/* Being out of flow, the indicator reserves nothing, so it would paint over
+   the top of the landing it renders above — the kicker, once the landing is
+   tall enough for its auto margins to collapse. Reserve one indicator line at
+   the top of the transcript. Keyed to the landing rather than to the indicator
+   so that removing the indicator changes no geometry: that reflow is the
+   layout shift the absolute positioning above exists to prevent. */
+.ask-transcript:has(> .ask-landing) {
+  padding-block-start: calc(var(--space-2) + var(--text-xs) * var(--leading-base));
 }
 
 /* Subtle scrollbar that matches the dark theme */
