@@ -23,6 +23,7 @@ import {
   embeddingTokenCount,
   checkDailyBudget,
   recordUsage,
+  secondsUntilBudgetReset,
   DailyBudgetExceededError,
   _setDailyBudgetForTests,
   _getDailyBudgetForTests,
@@ -465,6 +466,27 @@ describe("RAG_DAILY_BUDGET_USD", () => {
     vi.stubEnv("RAG_DAILY_BUDGET_USD", "0");
     expect(_getDailyBudgetForTests()).toBe(2);
     expect(console.warn).toHaveBeenCalled();
+  });
+});
+
+// The refusal tells the reader to try again tomorrow, so the countdown
+// beside it has to name the same moment. It used to be a flat hour,
+// which invited a retry that was certain to fail.
+describe("secondsUntilBudgetReset", () => {
+  it("counts to the next UTC midnight, the boundary the counter rolls on", () => {
+    expect(secondsUntilBudgetReset(new Date("2026-09-09T02:43:24.000Z"))).toBe(
+      21 * 3600 + 16 * 60 + 36
+    );
+    expect(secondsUntilBudgetReset(new Date("2026-09-09T23:59:59.000Z"))).toBe(1);
+    expect(secondsUntilBudgetReset(new Date("2026-09-09T00:00:00.000Z"))).toBe(86_400);
+  });
+
+  it("never reports zero or a negative wait", () => {
+    expect(secondsUntilBudgetReset(new Date("2026-09-09T23:59:59.999Z"))).toBeGreaterThan(0);
+  });
+
+  it("crosses month and year boundaries", () => {
+    expect(secondsUntilBudgetReset(new Date("2026-12-31T23:00:00.000Z"))).toBe(3600);
   });
 });
 
