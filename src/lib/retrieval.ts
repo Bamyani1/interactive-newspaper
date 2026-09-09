@@ -466,7 +466,7 @@ export async function searchAndRankArchive(params: {
     embeddingQuery: reformulated.embeddingQuery,
     ftsQuery: reformulated.ftsQuery,
     filters,
-    limit: visual ? Math.max(maxArticles * 2, 20) : Math.max(maxArticles * 2, 20),
+    limit: Math.max(maxArticles * 2, candidateLimitFor(reformulated.mode)),
     vectorWeight: visual ? 0.7 : 0.6,
     onlyWithImages: visual,
     signal: params.signal,
@@ -479,7 +479,7 @@ export async function searchAndRankArchive(params: {
     maxArticles,
     conversationHistory: params.conversationHistory,
     filters,
-    retrievalLimit: visual ? 30 : 20,
+    retrievalLimit: candidateLimitFor(reformulated.mode),
     vectorWeight: visual ? 0.7 : 0.6,
     onlyWithImages: visual,
     signal: params.signal,
@@ -492,4 +492,21 @@ export async function searchAndRankArchive(params: {
     mode: reformulated.mode,
     retrievalTimeMs: retrieval.retrievalTimeMs,
   };
+}
+
+/**
+ * How many fused candidates the reranker gets to choose from.
+ *
+ * The vector leg saturates: on a typical question full-text returns 2-4
+ * rows while vector returns exactly `limit`, so this number is a binding
+ * constraint on what the judge ever sees, not a ceiling it rarely reaches.
+ * Widening it is close to free — the reranker's prompt is held to a fixed
+ * character budget regardless of how many candidates arrive, and the extra
+ * cost is one larger SQL result.
+ *
+ * Visual mode keeps a wider pool because it also keeps 15 after ranking,
+ * for the gallery, against 6 for a text answer.
+ */
+export function candidateLimitFor(mode: "text" | "visual"): number {
+  return mode === "visual" ? 50 : 40;
 }
