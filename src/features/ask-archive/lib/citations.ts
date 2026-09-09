@@ -21,7 +21,14 @@
 
 const CITATION_TRAILING = "(?:[ \\t]+(?=[.,;:!?]))?";
 
-const PIPELINE_CITATION_RE = new RegExp(`[ \\t]*\\[Source (\\d+)\\]${CITATION_TRAILING}`, "g");
+// The generator groups evidence as readily as it cites one article, so
+// "[Source 1, Source 2]" (and the shorthand "[Source 3, 4]") has to
+// resolve the same way the agent's comma-joined ids do. Matching only a
+// lone [Source N] left those groups on screen as literal brackets.
+const PIPELINE_CITATION_RE = new RegExp(
+  `[ \\t]*\\[Source (\\d+(?:\\s*,\\s*(?:Source[ \\t]*)?\\d+)*)\\]${CITATION_TRAILING}`,
+  "g"
+);
 
 const AGENT_CITATION_RE = new RegExp(
   `[ \\t]*\\[(\\d{4}-\\d{2}-\\d{2}-\\d+(?:\\s*,\\s*\\d{4}-\\d{2}-\\d{2}-\\d+)*)\\]${CITATION_TRAILING}`,
@@ -38,7 +45,10 @@ function rewriteCitations(
   render: (index: number | string) => string,
   articleIdIndex?: Map<string, number>
 ): string {
-  const out = text.replace(PIPELINE_CITATION_RE, (_match, n: string) => ` ${render(n)}`);
+  const out = text.replace(PIPELINE_CITATION_RE, (_match, inner: string) => {
+    const rendered = inner.split(/\s*,\s*/).map((n) => render(n.replace(/^Source[ \t]*/, "")));
+    return ` ${rendered.join(" ")}`;
+  });
   return out.replace(AGENT_CITATION_RE, (_match, inner: string) => {
     const resolved = inner
       .split(/\s*,\s*/)
