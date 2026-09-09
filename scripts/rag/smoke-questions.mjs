@@ -67,10 +67,16 @@ async function askOnce(base, question, sessionId) {
   });
 
   if (!response.ok || !response.body) {
+    // Say *why*. A run that trips the daily budget returns twenty
+    // identical 60ms rows, and "http_error" alone sends the reader
+    // looking at retrieval instead of at the spend counter.
+    const body = await response.json().catch(() => null);
     return {
       question,
       outcome: "http_error",
       httpStatus: response.status,
+      errorKind: body?.kind,
+      errorMessage: body?.message ?? body?.error,
       totalMs: Date.now() - startedAt,
     };
   }
@@ -150,7 +156,9 @@ async function askOnce(base, question, sessionId) {
  */
 function judge(row) {
   const problems = [];
-  if (row.outcome === "http_error") problems.push(`HTTP ${row.httpStatus}`);
+  if (row.outcome === "http_error") {
+    problems.push(`HTTP ${row.httpStatus}${row.errorKind ? ` (${row.errorKind})` : ""}`);
+  }
   else if (row.outcome === "error") problems.push(`error:${row.errorKind ?? "unknown"}`);
   else if (row.outcome === "no_terminal_frame") problems.push("stream ended without done");
   else {
@@ -243,6 +251,13 @@ async function main() {
     const row = await askOnce(args.base, question);
     row.problems = judge(row);
     rows.push(row);
+    if (row.errorKind === "budget") {
+      console.error(
+        `\nDaily AI budget reached — every remaining question would return the same 429.\n` +
+          `Raise RAG_DAILY_BUDGET_USD for the run, or continue tomorrow. Stopping here.`
+      );
+      break;
+    }
     if (!args.json) {
       const status = row.problems.length === 0 ? "ok  " : "FAIL";
       console.log(`${status} ${row.totalMs}ms  ${question}`);
