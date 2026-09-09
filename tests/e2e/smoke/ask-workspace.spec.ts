@@ -841,9 +841,14 @@ test.describe("visual Ask sources", () => {
     await page.goto("/ask");
     await expect(page.getByText(VISUAL_ASK_ANSWER)).toBeVisible();
 
+    // Every action in the strip, not a fixed count: the point is that
+    // each one is reachable, and pinning the number only made the audit
+    // fail the next time the strip grew (it gained Threads, which is the
+    // sole route to the archive at this width).
     const mobileActions = page.locator(".ask-mobile-action");
-    await expect(mobileActions).toHaveCount(3);
-    for (let index = 0; index < 3; index += 1) {
+    const actionCount = await mobileActions.count();
+    expect(actionCount).toBeGreaterThanOrEqual(3);
+    for (let index = 0; index < actionCount; index += 1) {
       await expectMinimumTarget(mobileActions.nth(index), `mobile action ${index + 1}`);
       await expectMinimumFontSize(mobileActions.nth(index), `mobile action ${index + 1}`);
     }
