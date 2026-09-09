@@ -548,9 +548,6 @@ export function hasGoogleCredentials(): boolean {
   return Boolean(process.env.GOOGLE_CLOUD_PROJECT);
 }
 
-/** @deprecated Kept for script compatibility; RAG now uses Vertex ADC. */
-export const hasApiKey = hasGoogleCredentials;
-
 export { EMBEDDING_MODEL, EMBEDDING_DIMS, EMBEDDING_INPUT_VERSION, IMAGE_EMBEDDING_INPUT_VERSION };
 
 function sleep(ms: number): Promise<void> {

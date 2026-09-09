@@ -106,7 +106,7 @@ export interface AgentResult {
   articleMeta: Map<string, ArticleMeta>;
   retrievalTimeMs: number;
   generationTimeMs: number;
-  retrievalMethod: RetrievalMethod | "none";
+  retrievalMethod: RetrievalMethod;
 }
 
 /**
@@ -434,7 +434,7 @@ function textFromParts(parts: Part[] | undefined): string {
     .trim();
 }
 
-function combinedRetrievalMethod(methods: Set<RetrievalMethod>): RetrievalMethod | "none" {
+function combinedRetrievalMethod(methods: Set<RetrievalMethod>): RetrievalMethod {
   if (methods.size === 0) return "none";
   if (methods.has("hybrid") || methods.size > 1) return "hybrid";
   return [...methods][0];

@@ -359,22 +359,10 @@ export async function generateAnswer(
     };
   }
 
-  // Compute confidence from vector distances + reranker scores. Pass null
-  // for avgDistance when no vector results exist so computeConfidence uses
-  // the FTS-only path instead of guessing a "medium" 0.27 default. The
-  // hardcoded default capped FTS-only confidence at medium even when the
-  // reranker scored articles 9/10. See docs/issues for the brittleness fix.
-  const vectorArticles = sourceArticles.filter(
-    (a): a is RankedArticle & { distance: number } =>
-      (a.source === "vector" || a.source === "both") && a.distance !== null
-  );
-  const avgDistance: number | null =
-    vectorArticles.length > 0
-      ? vectorArticles.reduce((s, a) => s + a.distance, 0) / vectorArticles.length
-      : null;
+  // Confidence comes from reranker scores alone.
   const avgRerankerScore =
     sourceArticles.reduce((s, a) => s + a.relevanceScore, 0) / sourceArticles.length;
-  const confidence = computeConfidence(avgDistance, sourceArticles.length, avgRerankerScore);
+  const confidence = computeConfidence(sourceArticles.length, avgRerankerScore);
 
   if (avgRerankerScore < RERANK_TANGENTIAL) {
     return {
@@ -539,17 +527,9 @@ export async function* generateAnswerStream(
     return;
   }
 
-  const vectorArticles = sourceArticles.filter(
-    (a): a is RankedArticle & { distance: number } =>
-      (a.source === "vector" || a.source === "both") && a.distance !== null
-  );
-  const avgDistance: number | null =
-    vectorArticles.length > 0
-      ? vectorArticles.reduce((s, a) => s + a.distance, 0) / vectorArticles.length
-      : null;
   const avgRerankerScore =
     sourceArticles.reduce((s, a) => s + a.relevanceScore, 0) / sourceArticles.length;
-  const confidence = computeConfidence(avgDistance, sourceArticles.length, avgRerankerScore);
+  const confidence = computeConfidence(sourceArticles.length, avgRerankerScore);
 
   if (avgRerankerScore < RERANK_TANGENTIAL) {
     yield {
@@ -726,19 +706,7 @@ function confidenceForCitations(
 
   const averageRerankerScore =
     citedArticles.reduce((sum, article) => sum + article.relevanceScore, 0) / citedArticles.length;
-  const vectorArticles = citedArticles.filter(
-    (article): article is RankedArticle & { distance: number } =>
-      article.distance !== null && (article.source === "vector" || article.source === "both")
-  );
-  const averageDistance =
-    vectorArticles.length > 0
-      ? vectorArticles.reduce((sum, article) => sum + article.distance, 0) / vectorArticles.length
-      : null;
-  const citedConfidence = computeConfidence(
-    averageDistance,
-    citedArticles.length,
-    averageRerankerScore
-  );
+  const citedConfidence = computeConfidence(citedArticles.length, averageRerankerScore);
 
   const rank = { low: 0, medium: 1, high: 2 } as const;
   const lower =
@@ -752,7 +720,6 @@ function confidenceForCitations(
 // ─── Confidence ──────────────────────────────────────────────────
 
 function computeConfidence(
-  _avgDistance: number | null,
   articleCount: number,
   avgRerankerScore: number
 ): "low" | "medium" | "high" {
