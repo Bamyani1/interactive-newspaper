@@ -466,7 +466,7 @@ export async function searchAndRankArchive(params: {
     embeddingQuery: reformulated.embeddingQuery,
     ftsQuery: reformulated.ftsQuery,
     filters,
-    limit: Math.max(maxArticles * 2, candidateLimitFor(reformulated.mode)),
+    limit: Math.max(maxArticles * 2, agentCandidateLimitFor(reformulated.mode)),
     vectorWeight: visual ? 0.7 : 0.6,
     onlyWithImages: visual,
     signal: params.signal,
@@ -479,7 +479,7 @@ export async function searchAndRankArchive(params: {
     maxArticles,
     conversationHistory: params.conversationHistory,
     filters,
-    retrievalLimit: candidateLimitFor(reformulated.mode),
+    retrievalLimit: agentCandidateLimitFor(reformulated.mode),
     vectorWeight: visual ? 0.7 : 0.6,
     onlyWithImages: visual,
     signal: params.signal,
@@ -509,4 +509,19 @@ export async function searchAndRankArchive(params: {
  */
 export function candidateLimitFor(mode: "text" | "visual"): number {
   return mode === "visual" ? 50 : 40;
+}
+
+/**
+ * The same pool, sized for a search the agent runs as one of several.
+ *
+ * A single-shot answer sees one query's results and nothing else, so depth
+ * on that one query is the only breadth it gets. The agent instead issues
+ * up to three differently-phrased searches and reads full articles between
+ * them, so its breadth comes from the spread of queries — and paying for
+ * depth three times over lands on the request deadline. Measured: at the
+ * full pool, agent questions reached first token at 48-50s against a 55s
+ * budget.
+ */
+export function agentCandidateLimitFor(mode: "text" | "visual"): number {
+  return mode === "visual" ? 30 : 24;
 }
