@@ -234,6 +234,18 @@ function today(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
 }
 
+/**
+ * How long until the daily counter starts over — the boundary `today()`
+ * rolls on, which is UTC midnight. The budget refusal quotes this, and it
+ * used to quote a flat hour instead: the reader was told "try again
+ * tomorrow" above a countdown that said 60m, and after that hour passed
+ * the retry failed exactly as before.
+ */
+export function secondsUntilBudgetReset(now: Date = new Date()): number {
+  const nextMidnightUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return Math.max(1, Math.ceil((nextMidnightUtc - now.getTime()) / 1000));
+}
+
 export function computeCostUsd(
   model: string,
   usage: GenerateContentResponseUsageMetadata | undefined
