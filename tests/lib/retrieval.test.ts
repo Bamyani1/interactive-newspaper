@@ -43,6 +43,7 @@ vi.mock("@/src/lib/query-reformulator", () => ({
 vi.mock("@/src/lib/reranker", () => ({ rerankArticles: rerankArticlesMock }));
 
 import {
+  candidateLimitFor,
   rerankWithCorrectiveRetry,
   RetrievalSignalsUnavailableError,
   RetrievalStageError,
@@ -506,7 +507,7 @@ describe("canonical RAG retrieval", () => {
 
     expect(searchArticlesForRagMock).toHaveBeenCalledWith(
       "homecoming parade",
-      expect.objectContaining({ limit: 20, onlyWithImages: true })
+      expect.objectContaining({ limit: candidateLimitFor("visual"), onlyWithImages: true })
     );
     expect(rerankArticlesMock).toHaveBeenCalledWith(
       "Show homecoming photos",

@@ -67,6 +67,7 @@ import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 import {
   rerankWithCorrectiveRetry,
   retrieveCandidates,
+  candidateLimitFor,
   RetrievalSignalsUnavailableError,
   RetrievalStageError,
 } from "@/src/lib/retrieval";
@@ -832,7 +833,7 @@ async function handleStreamingAsk(params: {
 
         // ── Step 2: Retrieve independent lexical + vector signals ──
         const retrievalTimeoutMs = _testRetrievalTimeoutMsOverride ?? RETRIEVAL_TIMEOUT_MS;
-        const retrievalLimit = mode === "visual" ? 30 : 20;
+        const retrievalLimit = candidateLimitFor(mode);
         const vectorWeight = mode === "visual" ? 0.7 : 0.6;
         const onlyWithImages = mode === "visual";
 
@@ -1430,7 +1431,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let retrievalIdentity = getRagRetrievalConfig();
     // Visual mode retrieves more candidates since we pre-filter to articles
     // with images (smaller pool, need wider net to find relevant photos)
-    const retrievalLimit = mode === "visual" ? 30 : 20;
+    const retrievalLimit = candidateLimitFor(mode);
 
     const retrievalTimeoutMs = _testRetrievalTimeoutMsOverride ?? RETRIEVAL_TIMEOUT_MS;
     // Adaptive vector/FTS weighting based on query mode:
