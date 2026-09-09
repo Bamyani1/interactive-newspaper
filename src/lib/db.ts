@@ -4,89 +4,15 @@ import { createHash } from "crypto";
 import {
   RAG_EMBEDDING_MODEL,
   RAG_IMAGE_EMBEDDING_INPUT_VERSION,
-  RAG_PIPELINE_VERSION,
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/rag-model-config";
 import { getRagRetrievalConfig, shouldServeVersionedRetrieval } from "@/src/lib/rag-index-config";
-import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 
 // Neon's serverless driver uses HTTP — no persistent connection, no pool.
 // Each query is a single HTTP request, ideal for Vercel serverless functions.
 const sql = neon(process.env.DATABASE_URL!);
 
 const HYBRID_SEARCH_TIMEOUT_MS = 8_000;
-
-// ── hybridSearch LRU cache ──
-// Short-TTL cache for full hybrid-search results so repeated identical
-// questions within the same function instance skip the double SQL round
-// trip + RRF merge. Mirrors the shape of embeddings.ts's query cache.
-const HYBRID_CACHE_TTL_MS = 5 * 60 * 1000;
-const HYBRID_CACHE_MAX_SIZE = 50;
-
-interface HybridCacheEntry {
-  results: RetrievedArticle[];
-  ts: number;
-}
-
-const hybridCache = new Map<string, HybridCacheEntry>();
-
-function hybridCacheKey(
-  question: string,
-  embeddingVec: number[],
-  options: {
-    limit?: number;
-    vectorWeight?: number;
-    category?: string | null;
-    startDate?: string | null;
-    endDate?: string | null;
-    onlyWithImages?: boolean;
-  }
-): string {
-  return JSON.stringify({
-    fts: question,
-    semantic: createHash("sha256")
-      .update(Buffer.from(new Float32Array(embeddingVec).buffer))
-      .digest("base64url"),
-    pipeline: RAG_PIPELINE_VERSION,
-    corpus: process.env.RAG_CORPUS_VERSION ?? "default",
-    index: getRagRetrievalConfig().cacheIdentity,
-    l: options.limit ?? 8,
-    v: options.vectorWeight ?? 0.7,
-    c: options.category ?? null,
-    s: options.startDate ?? null,
-    e: options.endDate ?? null,
-    oi: options.onlyWithImages ?? false,
-  });
-}
-
-function getCachedHybridSearch(key: string): RetrievedArticle[] | null {
-  if (isRagEvaluationMode()) return null;
-  const entry = hybridCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > HYBRID_CACHE_TTL_MS) {
-    hybridCache.delete(key);
-    return null;
-  }
-  // Promote to most-recently-used
-  hybridCache.delete(key);
-  hybridCache.set(key, entry);
-  return entry.results;
-}
-
-function setCachedHybridSearch(key: string, results: RetrievedArticle[]): void {
-  if (isRagEvaluationMode()) return;
-  if (hybridCache.size >= HYBRID_CACHE_MAX_SIZE) {
-    const oldest = hybridCache.keys().next().value;
-    if (oldest !== undefined) hybridCache.delete(oldest);
-  }
-  hybridCache.set(key, { results, ts: Date.now() });
-}
-
-// Test hook: clears the module-level cache between tests so prior runs
-// don't leak into new ones.
-export function _clearHybridSearchCacheForTests(): void {
-  hybridCache.clear();
-}
 
 /**
  * Thrown by db.ts when a database operation exceeds its timeout budget.
@@ -564,7 +490,13 @@ export interface RetrievedArticle {
   matchedPassages?: string[];
 }
 
-export type RetrievalMethod = "hybrid" | "fts" | "vector";
+/**
+ * How a candidate set was actually produced. "none" is a first-class member,
+ * not an absence: both signals can succeed and return zero rows, and calling
+ * that "hybrid" hides the exact signature of a serving filter that matches no
+ * rows. Callers must not widen this union locally.
+ */
+export type RetrievalMethod = "hybrid" | "fts" | "vector" | "none";
 
 type RetrievalTarget = "legacy" | "versioned";
 
@@ -953,89 +885,6 @@ export async function queryArticlesByEmbedding(
     timeoutMs,
     options.signal
   );
-}
-
-/**
- * Hybrid search: combine vector similarity + full-text search using
- * Reciprocal Rank Fusion (RRF). Returns the top-K most relevant articles
- * by merging both ranking signals.
- */
-export async function hybridSearch(
-  question: string,
-  embeddingVec: number[],
-  options: {
-    limit?: number;
-    vectorWeight?: number;
-    category?: string | null;
-    startDate?: string | null;
-    endDate?: string | null;
-    onlyWithImages?: boolean;
-    timeoutMs?: number;
-    signal?: AbortSignal;
-  } = {}
-): Promise<RetrievedArticle[]> {
-  const limit = options.limit ?? 8;
-  const vectorWeight = options.vectorWeight ?? 0.7;
-  const fetchK = Math.min(3 * limit, 100); // fetch from each source before fusion
-  const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
-
-  // If the outer deadline has already fired, short-circuit.
-  if (options.signal?.aborted) {
-    throw new DbTimeoutError("hybridSearch", timeoutMs);
-  }
-
-  // The key includes both the lexical query and a digest of the semantic
-  // vector. A CRAG retry can therefore never receive an earlier result just
-  // because its FTS string happens to collide.
-  const cacheKey = hybridCacheKey(question, embeddingVec, options);
-  const cached = getCachedHybridSearch(cacheKey);
-  if (cached) return cached;
-
-  // Each Neon HTTP fetch receives the outer signal and its own bounded
-  // timeout, so a timed-out branch is actually cancelled.
-  const [vectorOutcome, ftsOutcome] = await Promise.allSettled([
-    queryArticlesByEmbedding(embeddingVec, {
-      limit: fetchK,
-      category: options.category,
-      startDate: options.startDate,
-      endDate: options.endDate,
-      onlyWithImages: options.onlyWithImages,
-      timeoutMs,
-      signal: options.signal,
-    }),
-    searchArticlesForRag(question, {
-      limit: fetchK,
-      category: options.category ?? undefined,
-      startDate: options.startDate ?? undefined,
-      endDate: options.endDate ?? undefined,
-      onlyWithImages: options.onlyWithImages,
-      timeoutMs,
-      signal: options.signal,
-    }),
-  ]);
-
-  if (vectorOutcome.status === "rejected" && ftsOutcome.status === "rejected") {
-    const timeoutError = [vectorOutcome.reason, ftsOutcome.reason].find(
-      (reason): reason is DbTimeoutError => reason instanceof DbTimeoutError
-    );
-    if (timeoutError) {
-      throw timeoutError;
-    }
-    throw new AggregateError(
-      [vectorOutcome.reason, ftsOutcome.reason],
-      "Both vector and full-text retrieval failed."
-    );
-  }
-  const vectorResults = vectorOutcome.status === "fulfilled" ? vectorOutcome.value : [];
-  const ftsResults = ftsOutcome.status === "fulfilled" ? ftsOutcome.value : [];
-
-  const fused = fuseArticleResults(vectorResults, ftsResults, {
-    limit,
-    vectorWeight,
-  });
-
-  setCachedHybridSearch(cacheKey, fused);
-  return fused;
 }
 
 /**

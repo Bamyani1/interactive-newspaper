@@ -183,7 +183,7 @@ The three docs cross-reference each other and share a glossary. Read them in ord
 `POST /api/ask` is the single endpoint that runs retrieval-augmented generation. Two paths share the same guards:
 
 ```
-Simple pipeline:  reformulate → embed → hybridSearch → rerank (+ CRAG retry) → generate
+Simple pipeline:  reformulate → embed → retrieve (vector ∥ FTS → RRF) → rerank (+ CRAG retry) → generate
 Agent loop:       reformulate → agent[search/read/list] → generate
 ```
 
@@ -199,7 +199,9 @@ Modern user queries don't match 1960s newspaper language. "What did students thi
 
 ### Embedding & retrieval
 
-`embeddings.ts` produces 768-dimensional vectors via stable `gemini-embedding-2`. Article text is indexed as deterministic overlapping chunks, while every image receives its own vector. A five-minute query LRU avoids duplicate calls. `db.ts :: hybridSearch` runs HNSW vector and chunk-aware FTS retrieval in parallel, then merges them with Reciprocal Rank Fusion using mode-specific weights (0.7/0.3 for visual, 0.6/0.4 for text).
+`embeddings.ts` produces 768-dimensional vectors via stable `gemini-embedding-2`. Article text is indexed as deterministic overlapping chunks, while every image receives its own vector. A five-minute query LRU avoids duplicate calls. `retrieval.ts :: retrieveCandidates` runs HNSW vector and chunk-aware FTS retrieval as two independent legs, then merges them with Reciprocal Rank Fusion using mode-specific weights (0.7/0.3 for visual, 0.6/0.4 for text). Each leg's raw result stays inspectable, so `meta.method` reports what actually produced the candidates — `hybrid`, `fts`, `vector`, or `none` when both legs succeeded and returned nothing.
+
+`npm run rag:health` is the read-only check for the retrieval identity itself: it reports the index-build readiness predicates individually, the embedding stamps actually present on the served table, and the serving `WHERE` clause run as a `COUNT`. A count of zero there means the serving filter matches no rows — the vector leg goes dark without raising an error.
 
 ### Reranking with CRAG
 
