@@ -5,9 +5,10 @@
  *   - article_chunks: sentence-aware text chunks
  *   - article_images: one vector per image
  *
- * Usage:
- *   npm run db:embed
- *   npm run db:embed -- --dry-run
+ * Usage (every run, --dry-run included, needs --legacy-unversioned: this
+ * script only maintains rows outside any index build):
+ *   npm run db:embed -- --legacy-unversioned
+ *   npm run db:embed -- --legacy-unversioned --dry-run
  */
 
 import { neon } from "@neondatabase/serverless";
