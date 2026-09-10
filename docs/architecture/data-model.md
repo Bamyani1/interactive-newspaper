@@ -557,7 +557,7 @@ Model: stable `gemini-embedding-2` on Vertex AI with ADC. Dimension: `EMBEDDING_
 This model uses inline text prefixes rather than `taskType` enums:
 
 - Documents: `"title: {headline} | text: {body}"` via `buildEmbeddingText`
-- Queries: `"task: search result | query: {question}"` via `embedQuery`
+- Queries: `"task: question answering | query: {question}"` via `embedQuery`
 
 ### Text chunk input
 

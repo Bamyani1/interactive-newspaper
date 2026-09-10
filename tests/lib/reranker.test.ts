@@ -44,12 +44,31 @@ describe("parseScores", () => {
   it.each([
     ["", 3],
     ["not json", 3],
-    ['{"scores":[8,3]}', 3],
     ['{"scores":[8,11,3]}', 3],
     ['{"scores":[8,-1,3]}', 3],
     ['{"scores":[8,"high",3]}', 3],
   ])("rejects an invalid score contract", (text, count) => {
     expect(parseScores(text, count)).toBeNull();
+  });
+
+  // Observed in production: for 20 articles the judge returned about ten
+  // scores (45 output tokens against the 91 a full array costs). Rejecting
+  // the whole array threw away ten real judgements and dropped the request
+  // into fail-open, where every candidate is unvetted. Keeping what came
+  // back is strictly better, and the short tail lands on the same neutral
+  // score fail-open would have given all of them.
+  it("keeps a short score array and pads the unjudged tail", () => {
+    expect(parseScores('{"scores":[8,3]}', 4)).toEqual([8, 3, 5, 5]);
+  });
+
+  it("drops scores past the article count", () => {
+    expect(parseScores('{"scores":[8,3,6,9]}', 2)).toEqual([8, 3]);
+  });
+
+  // Half is the line between "the judge did the task badly" and "the judge
+  // did a different task"; below it the alignment is not worth trusting.
+  it("rejects an array too short to trust the alignment", () => {
+    expect(parseScores('{"scores":[8]}', 6)).toBeNull();
   });
 });
 
