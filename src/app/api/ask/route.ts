@@ -394,7 +394,8 @@ function askErrorJson(params: {
  * ("rerank", "reformulate-retry", "retrieve-retry", "rerank-retry").
  *
  * The retry itself — one broader reformulation, re-retrieval, and a re-rank at
- * a lower minScore, then the total-veto fallback to fused order — lives in
+ * a lower minScore, then for text searches the total-veto fallback to fused
+ * order — lives in
  * retrieval.ts, which the agent tools already share. This wrapper only maps
  * errors; it deliberately holds no pipeline logic of its own.
  */

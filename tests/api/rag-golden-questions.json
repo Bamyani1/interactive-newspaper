@@ -141,6 +141,16 @@
     "mode": "visual"
   },
   {
+    "id": "campus-protest-visual",
+    "question": "Show me photographs of student protests and demonstrations on campus.",
+    "minCitations": 1,
+    "keywordsAny": ["protest", "demonstrat", "rally"],
+    "expectedSourceIdsAny": ["1982-04-29-37", "1990-04-18-0", "1990-09-26-0", "2000-04-05-15"],
+    "forbiddenSourceIds": ["1971-04-29-1", "1971-04-29-10", "1972-10-05-3", "2001-01-24-2"],
+    "confidenceMin": "low",
+    "mode": "visual"
+  },
+  {
     "id": "empty-query-guard",
     "question": "   ",
     "expectError": true,
