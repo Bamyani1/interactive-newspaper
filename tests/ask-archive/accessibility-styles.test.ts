@@ -102,4 +102,25 @@ describe("Ask accessibility style contracts", () => {
     expect(rule(sources, ".ask-source-card-date")).not.toContain("opacity:");
     expect(rule(sources, ".ask-source-card-num")).not.toContain("opacity:");
   });
+
+  // A caption that waits for the image's load event puts the CSS in the
+  // load path. Sizing the <img> to nothing while it waits stops
+  // `loading="lazy"` from ever fetching it, and the figure deadlocks: the
+  // caption is waiting on a load the stylesheet just made impossible.
+  // Observed live — the photo sat at currentSrc:"" for 18s.
+  it("never zero-sizes the answer image while it is still loading", () => {
+    const loadingImage = rule(markdown, '.ask-answer-figure[data-loading="true"] .ask-answer-image');
+    expect(loadingImage).not.toMatch(/(width|height)\s*:\s*0/);
+    expect(loadingImage).not.toMatch(/display\s*:\s*none/);
+  });
+
+  // The placeholder is the whole point: without reserved space the answer
+  // jumps when the photo lands.
+  it("reserves the photo's space while it loads", () => {
+    const placeholder = rule(
+      markdown,
+      '.ask-answer-figure[data-loading="true"] .ask-answer-image-btn'
+    );
+    expect(placeholder).toMatch(/aspect-ratio/);
+  });
 });

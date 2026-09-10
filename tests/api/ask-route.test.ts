@@ -123,6 +123,7 @@ import {
   formatHistoryForPrompt,
 } from "@/src/lib/conversation-store";
 import { clearAnswerCache } from "@/src/lib/answer-cache";
+import { answerSourceLimitFor, candidateLimitFor } from "@/src/lib/retrieval";
 
 function makeRequest(body: Record<string, unknown>, opts: { stream?: boolean } = {}): NextRequest {
   const url = opts.stream
@@ -578,13 +579,17 @@ describe("POST /api/ask", () => {
       "expanded OWU query",
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
+    // Read from the constant rather than restating it: the point of the
+    // assertion is that both legs are asked for the same pool, not what
+    // this release happens to have sized that pool at.
+    const limit = candidateLimitFor("text");
     expect(searchArticlesForRag).toHaveBeenCalledWith(
       "OWU OR Ohio Wesleyan",
-      expect.objectContaining({ limit: 20, signal: expect.any(AbortSignal) })
+      expect.objectContaining({ limit, signal: expect.any(AbortSignal) })
     );
     expect(queryArticlesByEmbedding).toHaveBeenCalledWith(
       expect.any(Array),
-      expect.objectContaining({ limit: 20, signal: expect.any(AbortSignal) })
+      expect.objectContaining({ limit, signal: expect.any(AbortSignal) })
     );
   });
 
@@ -617,7 +622,9 @@ describe("POST /api/ask", () => {
       "Test?",
       retrieved,
       expect.objectContaining({
-        maxArticles: 6,
+        // Read from the constant: the assertion is that the route hands the
+        // reranker its configured keep-count, not what that count is today.
+        maxArticles: answerSourceLimitFor("text"),
         minScore: 4,
         signal: expect.any(AbortSignal),
       })

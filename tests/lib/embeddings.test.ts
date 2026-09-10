@@ -116,27 +116,54 @@ describe("embedDocuments", () => {
     _setQuotaRetryDelaysForTests([]);
   });
 
-  it("batches text-only inputs and returns vectors in input order", async () => {
-    mockEmbedContent.mockResolvedValueOnce({
-      embeddings: [{ values: makeFakeVector(1) }, { values: makeFakeVector(2) }],
-    });
+  // Vertex rejects a multi-content embedContent for gemini-embedding-2:
+  // "The embedContent API for this model only supports one content at a
+  // time." Verified live against the API. This test previously asserted a
+  // single call carrying both contents — the mock accepted what the real
+  // endpoint refuses, so the double was encoding the bug.
+  it("embeds one content per request and returns vectors in input order", async () => {
+    mockEmbedContent
+      .mockResolvedValueOnce({ embeddings: [{ values: makeFakeVector(1) }] })
+      .mockResolvedValueOnce({ embeddings: [{ values: makeFakeVector(2) }] });
 
     const result = await embedDocuments([{ text: "first" }, { text: "second" }]);
 
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual(makeFakeVector(1));
     expect(result[1]).toEqual(makeFakeVector(2));
-    expect(mockEmbedContent).toHaveBeenCalledTimes(1);
-    const call = mockEmbedContent.mock.calls[0][0] as {
+    expect(mockEmbedContent).toHaveBeenCalledTimes(2);
+
+    type EmbedCall = {
       model: string;
       contents: Array<{ parts: Array<{ text: string }> }>;
       config: { outputDimensionality: number; abortSignal?: AbortSignal };
     };
-    expect(call.model).toBe("gemini-embedding-2");
-    expect(call.contents).toHaveLength(2);
-    expect(call.contents[0].parts[0].text).toBe("first");
-    // Step 2 wraps the call with AbortController, so the signal must be passed
-    expect(call.config.abortSignal).toBeDefined();
+    const calls = mockEmbedContent.mock.calls.map(([c]) => c as EmbedCall);
+    for (const call of calls) {
+      expect(call.model).toBe("gemini-embedding-2");
+      expect(call.contents).toHaveLength(1);
+      // Step 2 wraps the call with AbortController, so the signal must be passed
+      expect(call.config.abortSignal).toBeDefined();
+    }
+    // Order is the contract: callers zip these back onto their own rows.
+    expect(calls.map((c) => c.contents[0].parts[0].text)).toEqual(["first", "second"]);
+  });
+
+  // The seed and backfill paths hand this function 50 inputs at a time. If
+  // it ever batches again, every one of those calls fails wholesale.
+  it("never sends more than one content per request, at any input size", async () => {
+    mockEmbedContent.mockImplementation(async () => ({
+      embeddings: [{ values: makeFakeVector(3) }],
+    }));
+
+    const inputs = Array.from({ length: 50 }, (_, i) => ({ text: `doc ${i}` }));
+    const result = await embedDocuments(inputs);
+
+    expect(result).toHaveLength(50);
+    expect(mockEmbedContent).toHaveBeenCalledTimes(50);
+    for (const [call] of mockEmbedContent.mock.calls) {
+      expect((call as { contents: unknown[] }).contents).toHaveLength(1);
+    }
   });
 
   it("throws EmbedTimeoutError when embedContent hangs past the budget", async () => {
@@ -174,7 +201,7 @@ describe("embedDocuments", () => {
       await settled;
       expect(caught).toBeInstanceOf(EmbedTimeoutError);
       if (caught instanceof EmbedTimeoutError) {
-        expect(caught.op).toBe("embedDocuments.textBatch");
+        expect(caught.op).toBe("embedDocuments.text");
         expect(caught.timeoutMs).toBe(30_000);
         expect(caught.name).toBe("EmbedTimeoutError");
       }
@@ -183,13 +210,14 @@ describe("embedDocuments", () => {
     }
   });
 
-  it("throws on mismatched response length", async () => {
-    mockEmbedContent.mockResolvedValueOnce({
-      embeddings: [{ values: makeFakeVector(1) }], // only 1 returned
-    });
+  // Was "throws on mismatched response length", which only had meaning
+  // while one request carried many documents. Per document, the same
+  // failure is a response that carries no embedding back.
+  it("throws when a document's response carries no embedding", async () => {
+    mockEmbedContent.mockResolvedValue({ embeddings: [] });
 
     await expect(embedDocuments([{ text: "first" }, { text: "second" }])).rejects.toThrow(
-      /Embedding response mismatch/
+      /Invalid embedding dimensions/
     );
   });
 
@@ -312,7 +340,7 @@ describe("embedDocuments", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(QuotaExhaustedError);
       if (err instanceof QuotaExhaustedError) {
-        expect(err.op).toBe("embedDocuments.textBatch");
+        expect(err.op).toBe("embedDocuments.text");
         expect(err.cause).toBe(quotaErr);
         expect(err.name).toBe("QuotaExhaustedError");
       }
@@ -384,9 +412,10 @@ describe("embedDocuments", () => {
         const parts = params.contents[0].parts as Array<{ text?: string; inlineData?: unknown }>;
         const isImage = parts.some((p) => p.inlineData !== undefined);
         if (!isImage) {
-          return {
-            embeddings: params.contents.map((_, i) => ({ values: makeFakeVector(i) })),
-          };
+          // One content per request now, so seed the vector from the text
+          // itself rather than from a position within a batch.
+          const text = String(parts[0].text ?? "");
+          return { embeddings: [{ values: makeFakeVector(text === "text1" ? 0 : 1) }] };
         }
         imgCount++;
         return { embeddings: [{ values: makeFakeVector(500 + imgCount) }] };
@@ -408,7 +437,7 @@ describe("embedDocuments", () => {
       expect(result[i]).toBeDefined();
       expect(result[i]).toHaveLength(768);
     }
-    // text1 and text2 came from the text batch (positions 0, 1 in the batch)
+    // text1 and text2 keep their input positions in the result
     expect(result[0]).toEqual(makeFakeVector(0));
     expect(result[2]).toEqual(makeFakeVector(1));
     // images came from sequential image calls
@@ -455,6 +484,25 @@ describe("embedQuery", () => {
     // clearAllMocks only clears history, so queued mockRejectedValueOnce
     // calls would otherwise fall back to a stale impl after one call.
     mockEmbedContent.mockReset();
+  });
+
+  // gemini-embedding-2 has no taskType parameter — the task rides along as
+  // an inline prefix, so this string IS the task selector. Measured on the
+  // frozen golden catalog over two runs each: 87.0% / 95.7% source recall
+  // with "question answering" against 78.3% / 73.9% with "search result".
+  // Changing it shifts the query side of the vector space away from the
+  // documents, which nothing downstream validates, so it is pinned here.
+  it("asks the model for question answering, not general search", async () => {
+    mockEmbedContent.mockResolvedValue({ embeddings: [{ values: makeFakeVector(4) }] });
+
+    await embedQuery("Who edited the paper in 1962?");
+
+    const call = mockEmbedContent.mock.calls[0][0] as {
+      contents: Array<{ parts: Array<{ text: string }> }>;
+    };
+    expect(call.contents[0].parts[0].text).toBe(
+      "task: question answering | query: Who edited the paper in 1962?"
+    );
   });
 
   it("bypasses the query embedding cache in evaluation mode", async () => {

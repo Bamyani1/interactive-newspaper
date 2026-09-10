@@ -14,7 +14,7 @@ export const RAG_GENERATION_MODEL = "gemini-3.5-flash-lite";
  */
 export const RAG_ANSWER_MODEL = "gemini-3.6-flash";
 export const RAG_EMBEDDING_MODEL = "gemini-embedding-2";
-export const RAG_QUERY_EMBEDDING_INPUT_VERSION = "query-search-v1";
+export const RAG_QUERY_EMBEDDING_INPUT_VERSION = "query-qa-v1";
 export const RAG_TEXT_EMBEDDING_INPUT_VERSION = "article-chunk-v1";
 export const RAG_IMAGE_EMBEDDING_INPUT_VERSION = "article-image-v1";
 

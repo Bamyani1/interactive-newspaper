@@ -466,7 +466,7 @@ export async function searchAndRankArchive(params: {
     embeddingQuery: reformulated.embeddingQuery,
     ftsQuery: reformulated.ftsQuery,
     filters,
-    limit: visual ? Math.max(maxArticles * 2, 20) : Math.max(maxArticles * 2, 20),
+    limit: Math.max(maxArticles * 2, agentCandidateLimitFor(reformulated.mode)),
     vectorWeight: visual ? 0.7 : 0.6,
     onlyWithImages: visual,
     signal: params.signal,
@@ -479,7 +479,7 @@ export async function searchAndRankArchive(params: {
     maxArticles,
     conversationHistory: params.conversationHistory,
     filters,
-    retrievalLimit: visual ? 30 : 20,
+    retrievalLimit: agentCandidateLimitFor(reformulated.mode),
     vectorWeight: visual ? 0.7 : 0.6,
     onlyWithImages: visual,
     signal: params.signal,
@@ -492,4 +492,67 @@ export async function searchAndRankArchive(params: {
     mode: reformulated.mode,
     retrievalTimeMs: retrieval.retrievalTimeMs,
   };
+}
+
+/**
+ * How many fused candidates the reranker gets to choose from.
+ *
+ * The vector leg saturates: on a typical question full-text returns 2-4
+ * rows while vector returns exactly `limit`, so this number is a binding
+ * constraint on what the judge ever sees, not a ceiling it rarely reaches.
+ * Widening it is close to free — the reranker's prompt is held to a fixed
+ * character budget regardless of how many candidates arrive, and the extra
+ * cost is one larger SQL result.
+ *
+ * Visual mode keeps a wider pool because it also keeps 15 after ranking,
+ * for the gallery, against 6 for a text answer.
+ */
+export function candidateLimitFor(mode: "text" | "visual"): number {
+  return mode === "visual" ? 50 : 40;
+}
+
+/**
+ * The same pool, sized for a search the agent runs as one of several.
+ *
+ * A single-shot answer sees one query's results and nothing else, so depth
+ * on that one query is the only breadth it gets. The agent instead issues
+ * up to three differently-phrased searches and reads full articles between
+ * them, so its breadth comes from the spread of queries — and paying for
+ * depth three times over lands on the request deadline. Measured: at the
+ * full pool, agent questions reached first token at 48-50s against a 55s
+ * budget.
+ */
+export function agentCandidateLimitFor(mode: "text" | "visual"): number {
+  return mode === "visual" ? 30 : 24;
+}
+
+/**
+ * How many ranked sources the answer generator is given — and therefore
+ * the most a reader can ever be shown for one question.
+ *
+ * Distinct from the candidate pool above: that is how much the judge gets
+ * to choose from, this is how much survives into the answer.
+ *
+ * Text was 6, on the finding that answer F1 peaks near 3-6 kept sources
+ * and declines as distractors accumulate. That finding was made when the
+ * judge chose from 20 candidates and silently discarded one verdict in
+ * six, so ranks 7-12 really were mostly distractors. With a 40-candidate
+ * pool and the judge's verdicts no longer being thrown away, they are
+ * not. Measured against the frozen golden catalog:
+ *
+ *   6  sources: 60.9% source recall, 5/6 questions surfacing a known
+ *               good source, 3.09 citations, 3 high-confidence answers
+ *   12 sources: 78.3% recall, 6/6 questions, 4.18 citations, 3 high
+ *   18 sources: 82.6% recall, 6/6 questions, 4.09 citations, 1 high
+ *
+ * 18 is where the original warning reasserts itself: recall still creeps
+ * up, but confidence collapses as the tail dilutes the evidence. 12 takes
+ * the recall and keeps the grounding, for +1.9s and no answer bloat
+ * (mean answer 1,330 -> 1,394 chars).
+ *
+ * Visual stays at 15: that band is gated by the holdout eval, and the
+ * gallery was never the complaint.
+ */
+export function answerSourceLimitFor(mode: "text" | "visual"): number {
+  return mode === "visual" ? 15 : 12;
 }

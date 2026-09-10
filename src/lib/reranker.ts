@@ -19,10 +19,39 @@ import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import type { RetrievedArticle } from "@/src/lib/db";
 
 const RERANKER_MODEL = RAG_MODEL_CONFIG.rerank.model;
-const RERANKER_TIMEOUT_MS = 8_000;
-const RERANKER_MAX_TOKENS = 150;
-const RERANKER_BODY_CHARS = 2000; // body excerpt sent to reranker per article
+/**
+ * 8s timed out on roughly one rerank in sixteen at ~9k prompt tokens, and
+ * every timeout costs the request its whole ranking. Rerank is on the
+ * critical path but the request's own budget is 55s, so buying headroom
+ * here is cheap.
+ */
+const RERANKER_TIMEOUT_MS = 12_000;
+/**
+ * Total body excerpt across all candidates, not per candidate. The judge
+ * prompt has to stay roughly constant as the candidate pool grows, or
+ * widening retrieval buys recall and pays for it in rerank latency and
+ * timeouts. At 20 candidates this reproduces the previous 2,000 chars each.
+ */
+const RERANKER_EXCERPT_BUDGET_CHARS = 40_000;
+const RERANKER_MIN_BODY_CHARS = 700;
+const RERANKER_MAX_BODY_CHARS = 2000;
 const RERANKER_IMAGE_CAPTION_CHARS = 1000;
+
+/** Per-article excerpt that keeps the whole prompt inside the budget. */
+function bodyCharsFor(articleCount: number): number {
+  const share = Math.floor(RERANKER_EXCERPT_BUDGET_CHARS / Math.max(1, articleCount));
+  return Math.min(RERANKER_MAX_BODY_CHARS, Math.max(RERANKER_MIN_BODY_CHARS, share));
+}
+
+/**
+ * One score per article, as JSON. Measured at ~4.6 output tokens per score
+ * (20 articles cost 91), so a flat cap silently truncated the array as the
+ * pool grew — which `parseScores` then had to salvage. Scale it instead,
+ * with room for the wrapper and a stray decimal.
+ */
+function scoreTokenBudget(articleCount: number): number {
+  return Math.max(150, articleCount * 8 + 64);
+}
 const DEFAULT_MIN_SCORE = 5;
 const DEFAULT_MAX_ARTICLES = 5;
 
@@ -66,24 +95,34 @@ Judge whether a source helps answer the question, not whether it confirms the qu
 
 Return a JSON object with a "scores" array in the same order as the articles. Example: {"scores":[8,2,6,0,9]}`;
 
-const RERANKER_SCHEMA = {
-  type: "object",
-  properties: {
-    scores: {
-      type: "array",
-      items: { type: "number", minimum: 0, maximum: 10 },
+/**
+ * Pinned to the article count in both directions. Left unbounded, the
+ * judge returned about half the scores often enough to degrade one
+ * request in six; the schema is the only place that constraint can be
+ * enforced rather than asked for.
+ */
+function rerankerSchema(articleCount: number) {
+  return {
+    type: "object",
+    properties: {
+      scores: {
+        type: "array",
+        items: { type: "number", minimum: 0, maximum: 10 },
+        minItems: articleCount,
+        maxItems: articleCount,
+      },
     },
-  },
-  required: ["scores"],
-  additionalProperties: false,
-} as const;
+    required: ["scores"],
+    additionalProperties: false,
+  };
+}
 
-function articleDocument(a: RetrievedArticle, index: number | null): string {
+function articleDocument(a: RetrievedArticle, index: number | null, bodyChars: number): string {
   const relevantText =
     a.matchedPassages && a.matchedPassages.length > 0
       ? a.matchedPassages.join("\n\n")
       : a.bodyPlain || "";
-  const bodyExcerpt = relevantText.slice(0, RERANKER_BODY_CHARS);
+  const bodyExcerpt = relevantText.slice(0, bodyChars);
   const imageCaptions = (a.imageCaptions ?? [])
     .filter((caption): caption is string => Boolean(caption?.trim()))
     .map((caption) => caption.trim())
@@ -128,7 +167,7 @@ async function voyageRerank(
       body: JSON.stringify({
         model: VOYAGE_RERANK_MODEL,
         query: question,
-        documents: articles.map((a) => articleDocument(a, null)),
+        documents: articles.map((a) => articleDocument(a, null, bodyCharsFor(articles.length))),
       }),
       signal: combinedSignal,
     });
@@ -198,9 +237,13 @@ export async function rerankArticles(
   try {
     const client = getGeminiClient();
 
-    const articleSummaries = articles.map((a, i) => articleDocument(a, i)).join("\n\n");
+    const bodyChars = bodyCharsFor(articles.length);
+    const maxScoreTokens = scoreTokenBudget(articles.length);
+    const articleSummaries = articles
+      .map((a, i) => articleDocument(a, i, bodyChars))
+      .join("\n\n");
 
-    const userPrompt = `SEARCH MODE: ${options.mode ?? "text"}\nUSER QUESTION (JSON string): ${JSON.stringify(question)}\n\nArticles:\n${articleSummaries}`;
+    const userPrompt = `SEARCH MODE: ${options.mode ?? "text"}\nUSER QUESTION (JSON string): ${JSON.stringify(question)}\n\nScore all ${articles.length} articles below. The "scores" array must hold exactly ${articles.length} numbers, in the order the articles are listed.\n\nArticles:\n${articleSummaries}`;
 
     const response = await retryOnQuota(
       "rerank",
@@ -216,7 +259,7 @@ export async function rerankArticles(
 
         return executeTrackedGenerationCall({
           model: RERANKER_MODEL,
-          maxOutputTokens: RERANKER_MAX_TOKENS,
+          maxOutputTokens: maxScoreTokens,
           requestId: options.requestId,
           op: "rerank",
           call: () =>
@@ -225,12 +268,12 @@ export async function rerankArticles(
               contents: [{ role: "user", parts: [{ text: userPrompt }] }],
               config: {
                 systemInstruction: RERANKER_PROMPT,
-                maxOutputTokens: RERANKER_MAX_TOKENS,
+                maxOutputTokens: maxScoreTokens,
                 thinkingConfig: {
                   thinkingLevel: RAG_MODEL_CONFIG.rerank.thinkingLevel,
                 },
                 responseMimeType: "application/json",
-                responseJsonSchema: RERANKER_SCHEMA,
+                responseJsonSchema: rerankerSchema(articles.length),
                 abortSignal: combinedSignal,
               },
             }),
@@ -250,6 +293,13 @@ export async function rerankArticles(
           requestId: options.requestId,
           stage: "rerank",
           msg: "failed to parse reranker scores, returning original articles",
+          // Without these the failure is indistinguishable from a timeout
+          // in the log, which is how a one-in-six degradation went unread
+          // for as long as it did.
+          articleCount: articles.length,
+          maxOutputTokens: maxScoreTokens,
+          responseChars: text.length,
+          responseHead: text.slice(0, 200),
         })
       );
       return failOpen(articles, maxArticles);
@@ -297,6 +347,21 @@ function failOpen(articles: RetrievedArticle[], maxArticles: number): RankedArti
     .map((a) => ({ ...a, relevanceScore: DEFAULT_MIN_SCORE, rerankDegraded: true as const }));
 }
 
+/**
+ * Scores for `expectedCount` articles, in article order.
+ *
+ * A judge that returns the wrong number of scores is common enough to
+ * design for: in production, 20-article reranks came back with roughly ten
+ * scores often enough to degrade one request in six. Discarding the array
+ * over the mismatch threw away every real judgement and fell open to "no
+ * article was judged at all", which is a worse answer than using the
+ * judgements that did arrive. A short array is therefore kept and its
+ * unjudged tail padded with the neutral score — the same value fail-open
+ * would have assigned to all of them — and a long one is cut to length.
+ *
+ * Below half the expected count the model is answering some other
+ * question, and its alignment to the article order is not worth trusting.
+ */
 export function parseScores(text: string, expectedCount: number): number[] | null {
   try {
     const decoded = JSON.parse(text) as unknown;
@@ -305,10 +370,12 @@ export function parseScores(text: string, expectedCount: number): number[] | nul
       : typeof decoded === "object" && decoded !== null
         ? (decoded as { scores?: unknown }).scores
         : null;
-    if (!Array.isArray(parsed) || parsed.length !== expectedCount) return null;
+    if (!Array.isArray(parsed)) return null;
+    if (parsed.length < Math.ceil(expectedCount / 2)) return null;
 
-    const scores = parsed.map(Number);
+    const scores = parsed.slice(0, expectedCount).map(Number);
     if (scores.some((s) => isNaN(s) || s < 0 || s > 10)) return null;
+    while (scores.length < expectedCount) scores.push(DEFAULT_MIN_SCORE);
 
     return scores;
   } catch {

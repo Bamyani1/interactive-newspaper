@@ -78,9 +78,17 @@ function noEvidenceAnswer(coverage: ArchiveCoverage): string {
 /**
  * Enforces the coverage wording after model output has already passed citation
  * allowlisting. With no verified citation, model prose is replaced by a safe,
- * deterministic no-evidence statement. With citations, the answer is retained
- * verbatim and receives only a scope note, so a supported positive claim keeps
- * its evidence-derived confidence.
+ * deterministic no-evidence statement. With citations, the answer is returned
+ * verbatim, so a supported positive claim keeps its evidence-derived
+ * confidence.
+ *
+ * The scope itself is no longer appended as prose. It was a paragraph of
+ * metadata ("Coverage note: the searchable scope contained 216 indexed
+ * editions…") sitting under every answer, in the same voice as the answer,
+ * saying nothing about the question — read as filler and skipped. It travels
+ * to the client as `meta.coverage` instead, where the transcript can present
+ * it as what it is: the scope that was searched, shown before the reader
+ * decides how much to trust a thin answer.
  */
 export function applyCoverageAnswerPolicy(
   answer: string,
@@ -89,11 +97,5 @@ export function applyCoverageAnswerPolicy(
 ): string {
   if (!coverage) return answer;
   if (citationCount === 0) return noEvidenceAnswer(coverage);
-
-  const scope = describeCoverageScope(coverage);
-  const note =
-    coverage.intent === "absence"
-      ? `Coverage note: the searchable scope contained ${scope}. That scope count does not itself prove absence; the claims above rely on the cited archive evidence.`
-      : `Coverage note: the searchable scope contained ${scope}. The scope count is metadata; the claims above rely on the cited archive evidence.`;
-  return `${answer.trim()}\n\n${note}`;
+  return answer.trim();
 }
