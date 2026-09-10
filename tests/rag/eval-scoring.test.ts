@@ -210,6 +210,38 @@ describe("scoreRun retrieval metrics (hand-computed)", () => {
   });
 });
 
+describe("scoreRun recall counts an any-of list as one unit", () => {
+  // Three acceptable sources, and the top result is one of them. Counting
+  // ids scored this 1/3, as if two relevant sources were missing, when
+  // "any one of these" was fully satisfied.
+  const records = [
+    makeRecord({ questionId: "qa", rankedSourceIds: ["B", "X", "Y"], totalMs: 1000 }),
+  ];
+  const scores = scoreRun({
+    runFile: finalizeRunFile({
+      schemaVersion: 1,
+      runId: RUN_ID,
+      datasetId: DATASET_ID,
+      split: "development",
+      config: records[0].config,
+      startedAt: null,
+      records,
+      totals: computeRunTotals(records),
+      selfSha256: null,
+    }),
+    evidence: {
+      datasetId: DATASET_ID,
+      split: "development",
+      questions: [{ id: "qa", expectedSourceIdsAny: ["A", "B", "C"] }],
+    },
+  });
+
+  it("scores a satisfied any-of list as full recall at 3 and 8", () => {
+    expect(scores.metrics.recallAt3).toBe(1);
+    expect(scores.metrics.recallAt8).toBe(1);
+  });
+});
+
 describe("scoreRun citation and answer metrics", () => {
   const scores = scoreRun({ runFile: makeRunFile(), evidence });
 

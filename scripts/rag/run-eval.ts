@@ -348,8 +348,11 @@ interface CliArgs {
 function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     dataset: "dev",
-    mode: "legacy",
-    build: null,
+    // Default to what the exported serving config says. A hard-coded
+    // "legacy" silently evaluated the path production no longer serves
+    // unless every run remembered --mode versioned --build <id>.
+    mode: process.env.RAG_RETRIEVAL_MODE?.trim() === "versioned" ? "versioned" : "legacy",
+    build: process.env.RAG_ACTIVE_INDEX_BUILD_ID?.trim() || null,
     out: "",
     yes: false,
     bands: null,
