@@ -418,6 +418,18 @@ describe("canonical RAG retrieval", () => {
     expect(result[0].relevanceScore).toBe(5);
   });
 
+  // Unjudged photos in fused order answered "protests on campus" with a
+  // march in Washington. A twice-vetoed photo search has nothing to show.
+  it("returns no photos when both visual rerank passes keep nothing", async () => {
+    rerankArticlesMock.mockResolvedValue([]);
+    const result = await rerankWithCorrectiveRetry(
+      retryParams({ question: "Show me photos of protests on campus", mode: "visual" })
+    );
+
+    expect(rerankArticlesMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual([]);
+  });
+
   // The ask route re-tags these onto its own StageError to name the failing
   // step in an error response, so each stage must be distinguishable here.
   it("tags a first-pass rerank failure with stage 'rerank'", async () => {
