@@ -88,6 +88,7 @@ export function buildCoveragePromptBlock(coverage?: ArchiveCoverage): string {
 
 COVERAGE RULES:
 - Use this metadata only to describe what archive scope was searchable.
+- The reader already sees this scope above the answer. Do not open with a scope section or restate the edition and article counts; mention the scope only where it explains why evidence is thin.
 - A positive historical claim still requires a cited article; coverage metadata never supports a source claim.
 - If no relevant cited evidence was found, say that no matching evidence was found in the indexed scope. Never claim that the event or subject was absent from every newspaper page.
 - For count or exhaustive questions, do not imply a database-wide exact result unless the cited evidence itself establishes that result.
