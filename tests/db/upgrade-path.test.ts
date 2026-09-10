@@ -58,6 +58,41 @@ describe("production-baseline upgrade path", () => {
   });
 });
 
+describe("0012 per-environment spend ledger", () => {
+  let db: TestDb;
+
+  beforeAll(async () => {
+    db = await createTestDb();
+    await applyFixture(db.pg, "legacy-baseline-prod.sql");
+    // Shared-counter rows written before 0012 ran: today's and an old day's.
+    await db.pg.query(
+      "INSERT INTO ai_spend_counter (day, spent_usd) VALUES " +
+        "((now() AT TIME ZONE 'UTC')::date, 1.25), ('1999-12-31', 9)"
+    );
+    await runMigrations(db.executor);
+  }, DB_TIMEOUT);
+
+  afterAll(async () => {
+    await db.close();
+  });
+
+  // Starting the new ledger empty would hand production a fresh budget
+  // part-way through a day it had already spent.
+  it("carries today's shared total over as production spend, and only today's", async () => {
+    const { rows } = await db.pg.query<{ scope: string; spent_usd: string }>(
+      "SELECT scope, spent_usd::text AS spent_usd FROM ai_spend_by_scope ORDER BY day"
+    );
+    expect(rows).toEqual([{ scope: "production", spent_usd: "1.250000" }]);
+  });
+
+  it("leaves the shared counter untouched for code deployed before 0012", async () => {
+    const { rows } = await db.pg.query<{ n: number }>(
+      "SELECT COUNT(*)::int AS n FROM ai_spend_counter"
+    );
+    expect(rows[0].n).toBe(2);
+  });
+});
+
 describe("migrate-rag-v2-era upgrade path", () => {
   let db: TestDb;
   let snapshotUpgraded: SchemaSnapshot;

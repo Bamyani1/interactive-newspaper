@@ -335,7 +335,13 @@ export function buildFreezeReport(corpus: CorpusSnapshot, source: SourceInventor
       directRagContent: ["articles", "editions"],
       excludedFromDefaultRag: ["ads"],
       unusedByCurrentRag: ["article_entities", "entities", "music", "weather"],
-      operationalOnly: ["ai_spend_counter", "api_rate_bucket", "ask_feedback", "ask_session_turns"],
+      operationalOnly: [
+        "ai_spend_by_scope",
+        "ai_spend_counter",
+        "api_rate_bucket",
+        "ask_feedback",
+        "ask_session_turns",
+      ],
       candidateTablesAbsent: ["article_chunks", "article_images"].filter(
         (table) => !corpus.tableNames.includes(table)
       ),
