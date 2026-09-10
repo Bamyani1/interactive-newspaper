@@ -71,17 +71,20 @@ describe("exportConversationPdf", () => {
     pdfMocks.addPage.mockReset();
     pdfMocks.save.mockReset();
     pdfMocks.jsPDF.mockReset();
-    pdfMocks.jsPDF.mockImplementation(() => ({
-      internal: {
-        pageSize: {
-          getWidth: () => 612,
-          getHeight: () => 792,
+    // `new jsPDF()`: an arrow function can't be constructed under Vitest 4.
+    pdfMocks.jsPDF.mockImplementation(function () {
+      return {
+        internal: {
+          pageSize: {
+            getWidth: () => 612,
+            getHeight: () => 792,
+          },
         },
-      },
-      addImage: pdfMocks.addImage,
-      addPage: pdfMocks.addPage,
-      save: pdfMocks.save,
-    }));
+        addImage: pdfMocks.addImage,
+        addPage: pdfMocks.addPage,
+        save: pdfMocks.save,
+      };
+    });
     html2canvasMock.mockImplementation(async (node: HTMLElement) => {
       capturedText = node.textContent ?? "";
       capturedHtml = node.innerHTML;
