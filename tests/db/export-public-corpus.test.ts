@@ -124,6 +124,7 @@ describe("export-public-corpus (PGlite)", () => {
       "ask_feedback",
       "api_rate_bucket",
       "ai_spend_counter",
+      "ai_spend_by_scope",
     ]) {
       expect(excludedNames).toContain(name);
     }

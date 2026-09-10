@@ -165,13 +165,13 @@ Columns grouped by access pattern:
 
 **Hot — read on every query**
 
-| Column          | Type                                      | Notes                                                                  |
+| Column          | Type                                      | Notes                                                                                                                           |
 | --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `id`            | `TEXT PRIMARY KEY`                        | `'{date}-{index}'`                                                     |
-| `edition_date`  | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target                                                   |
-| `headline`      | `TEXT NOT NULL DEFAULT ''`                | result display + FTS weight A                                          |
-| `body_plain`    | `TEXT NOT NULL DEFAULT ''`                | canonical plain text and legacy fallback evidence                      |
-| `search_vector` | `TSVECTOR`                                | auto-populated by trigger; GIN indexed                                 |
+| `id`            | `TEXT PRIMARY KEY`                        | `'{date}-{index}'`                                                                                                              |
+| `edition_date`  | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target                                                                                                            |
+| `headline`      | `TEXT NOT NULL DEFAULT ''`                | result display + FTS weight A                                                                                                   |
+| `body_plain`    | `TEXT NOT NULL DEFAULT ''`                | canonical plain text and legacy fallback evidence                                                                               |
+| `search_vector` | `TSVECTOR`                                | auto-populated by trigger; GIN indexed                                                                                          |
 | `embedding`     | `VECTOR(768)`                             | rollback only since the 2026-08-03 cutover, and every row is preview-stamped or `NULL`; served vectors live in the child tables |
 
 **Warm — read on result hydration**
@@ -267,19 +267,25 @@ Source: `scripts/db/migrations/0002_legacy_core.sql:47-70`.
 
 Index: `idx_ads_edition` on `(edition_date)`. The SERIAL PK means ads can't be upserted — seed does a `DELETE WHERE edition_date = $date` before insert.
 
-### `ai_spend_counter`
+### `ai_spend_by_scope`
 
-Source: `scripts/db/migrations/0003_runtime_tables.sql:39-43`.
+Source: `scripts/db/migrations/0012_ai_spend_by_scope.sql`.
 
 ```sql
-CREATE TABLE IF NOT EXISTS ai_spend_counter (
-  day         DATE PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS ai_spend_by_scope (
+  day         DATE NOT NULL,
+  scope       TEXT NOT NULL CHECK (scope IN ('production', 'preview', 'development', 'local')),
   spent_usd   NUMERIC(12, 6) NOT NULL DEFAULT 0,
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, scope)
 );
 ```
 
-Written by `cost-tracker.ts :: recordUsage()` as an atomic increment via `INSERT … ON CONFLICT (day) DO UPDATE SET spent_usd = spent_usd + $cost`. Read by `checkDailyBudget()` at the top of every `/api/ask` call. Hard limit: `$2/day` (`DAILY_BUDGET_USD`). A separate `$0.50` `OUTAGE_BUDGET_USD` bounds blind spend while this table is unreachable.
+One row per UTC day per environment. `cost-tracker.ts :: spendScope()` takes the scope from `VERCEL_ENV` (`production`, `preview`, `development`) and uses `local` everywhere else, so local testing never spends production's budget. Written by `recordUsage()` and `recordEmbeddingUsage()` as an atomic increment via `INSERT … ON CONFLICT (day, scope) DO UPDATE SET spent_usd = spent_usd + $cost, updated_at = now()`. Read by `checkDailyBudget()` at the top of every `/api/ask` call, against the calling environment's row only. Cap: `RAG_DAILY_BUDGET_USD` per environment (default `$2`, clamped to `$50`). A separate `$0.50` `OUTAGE_BUDGET_USD` bounds blind spend while this table is unreachable.
+
+### `ai_spend_counter` (superseded)
+
+Source: `scripts/db/migrations/0003_runtime_tables.sql:39-43`. Keyed by `day` alone, so every environment shared one budget. Nothing writes it once 0012's code is deployed; the migration carried that day's total over to `ai_spend_by_scope` as `production` spend. It stays so code deployed before 0012 kept working between the migration and the deploy, and can be dropped by a later migration.
 
 ### `api_rate_bucket`
 
@@ -744,7 +750,7 @@ Online embedding is deliberately separate from schema migration so it can be cos
 After the step-1 preflight, the script:
 
 - **`exportLockedEditions()`** — reads `editions`, `articles`, `ads` for every date in `locked-editions.json` and saves them in memory. This protects the gold edition even when the source files aren't locally present.
-- **`truncateSeedTables()`** — one `TRUNCATE … RESTART IDENTITY CASCADE` over every `reseedable` table in the `CANONICAL_TABLES` registry. Runtime tables (`ask_session_turns`, `ask_feedback`, `ai_spend_counter`, `api_rate_bucket`) are preserved by default; `--include-runtime` truncates them too. The `schema_migrations` ledger is never touched.
+- **`truncateSeedTables()`** — one `TRUNCATE … RESTART IDENTITY CASCADE` over every `reseedable` table in the `CANONICAL_TABLES` registry. Runtime tables (`ask_session_turns`, `ask_feedback`, `ai_spend_by_scope`, `ai_spend_counter`, `api_rate_bucket`) are preserved by default; `--include-runtime` truncates them too. The `schema_migrations` ledger is never touched.
 
 Then `restoreLockedEditions(savedData)` re-inserts the saved gold rows before the general seed loop runs. There is no DROP and no schema re-apply — reset is data-only.
 
@@ -925,7 +931,7 @@ without a corresponding hash bump. The version bump _is_ the force switch; there
 ### Investigate a slow query
 
 1. **Confirm v2 indexes exist**. Use `\d article_chunks` and `\d article_images` in `psql` to verify both HNSW indexes.
-2. **Check the daily budget**. `SELECT * FROM ai_spend_counter WHERE day = CURRENT_DATE`. A request that looks stuck may be budget-blocked before the query reached the DB.
+2. **Check the daily budget**. `SELECT * FROM ai_spend_by_scope WHERE day = CURRENT_DATE` (one row per environment). A request that looks stuck may be budget-blocked before the query reached the DB.
 3. **Check `api_rate_bucket`**. Look for IP-level throttling.
 4. **Query timeout**. Each retrieval query defaults to an 8-second budget (`HYBRID_SEARCH_TIMEOUT_MS`); a `DbTimeoutError` in logs means the DB exceeded it.
 5. **Serving filter reaches no rows**. Run `npm run rag:health`. A `served.predicate` count of 0 means the configured filter matches nothing, so the vector leg returns zero rows without erroring — the retrieval log warns `vector signal returned 0 rows while full-text returned rows` when that happens in production.
