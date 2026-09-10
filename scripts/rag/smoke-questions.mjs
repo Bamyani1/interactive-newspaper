@@ -12,6 +12,7 @@
  *   npm run rag:smoke -- --limit 5         # first 5, for a quick look
  *   npm run rag:smoke -- --json            # machine-readable
  *   npm run rag:smoke -- --base http://localhost:3001
+ *   npm run rag:smoke -- --pace 8000       # ms between requests (default 6500)
  *
  * Exit codes: 0 all rows healthy · 1 at least one row failed a criterion
  * · 2 the run could not be made at all.
@@ -33,14 +34,70 @@ const REGRESSION_QUESTIONS = [
 
 const HEALTHY_METHODS = new Set(["hybrid", "vector"]);
 
+// Prompts the archive genuinely cannot answer, listed by name. Empty on
+// purpose: every landing prompt is meant to be answerable. The route labels
+// any zero-citation answer "no_evidence", so exempting that outcome
+// wholesale let a canned refusal pass as healthy — the exact failure this
+// script exists to catch.
+const EXPECTED_NO_EVIDENCE = new Set([]);
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The pool and the regression list overlap, and a trailing period was
+ * enough for a Set to keep both copies — so one prompt was asked twice.
+ */
+function uniqueQuestions(questions) {
+  const seen = new Set();
+  return questions.filter((question) => {
+    const key = question
+      .trim()
+      .toLowerCase()
+      .replace(/[.?!\s]+$/, "");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * /api/ask allows 10 requests a minute per IP (middleware.ts), in dev too,
+ * and a 429 row reads as a broken pipeline. Space request starts out, and
+ * retry one rate-limit refusal after the wait the server asked for. A
+ * budget refusal is not retried: it holds until the day rolls over.
+ */
+function makeAsker(args) {
+  let lastStart = 0;
+  const pace = async () => {
+    const wait = lastStart + args.pace - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastStart = Date.now();
+  };
+  return async (question, sessionId) => {
+    await pace();
+    const row = await askOnce(args.base, question, sessionId);
+    if (row.httpStatus !== 429 || row.errorKind === "budget") return row;
+    await sleep(Math.min(60_000, (row.retryAfterSec || 30) * 1000));
+    await pace();
+    return askOnce(args.base, question, sessionId);
+  };
+}
+
 function parseArgs(argv) {
-  const args = { base: "http://localhost:3000", limit: Infinity, json: false, followUps: true };
+  const args = {
+    base: "http://localhost:3000",
+    limit: Infinity,
+    json: false,
+    followUps: true,
+    pace: 6500,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--json") args.json = true;
     else if (arg === "--no-follow-ups") args.followUps = false;
     else if (arg === "--base") args.base = argv[++i];
     else if (arg === "--limit") args.limit = Number(argv[++i]);
+    else if (arg === "--pace") args.pace = Number(argv[++i]);
     else {
       console.error(`Unknown argument: ${arg}`);
       process.exit(2);
@@ -48,6 +105,10 @@ function parseArgs(argv) {
   }
   if (!Number.isFinite(args.limit) && args.limit !== Infinity) {
     console.error("--limit must be a number");
+    process.exit(2);
+  }
+  if (!Number.isFinite(args.pace) || args.pace < 0) {
+    console.error("--pace must be a non-negative number of milliseconds");
     process.exit(2);
   }
   return args;
@@ -77,6 +138,7 @@ async function askOnce(base, question, sessionId) {
       httpStatus: response.status,
       errorKind: body?.kind,
       errorMessage: body?.message ?? body?.error,
+      retryAfterSec: Number(response.headers.get("retry-after")) || body?.retryAfterSec,
       totalMs: Date.now() - startedAt,
     };
   }
@@ -129,6 +191,7 @@ async function askOnce(base, question, sessionId) {
         row.citations = event.citations?.length ?? 0;
         row.confidence = event.confidence;
         row.answerChars = event.answer?.length ?? row.answerChars;
+        row.answerText = event.answer ?? "";
         row.outcome = event.outcome ?? "answered";
         row.method ??= event.meta?.method;
       } else if (event.type === "error") {
@@ -165,7 +228,9 @@ function judge(row) {
     if (!row.isAgent && !HEALTHY_METHODS.has(row.method)) {
       problems.push(`method=${row.method ?? "none"}`);
     }
-    if (row.outcome !== "no_evidence" && row.citations === 0) problems.push("no citations");
+    if (row.citations === 0 && !EXPECTED_NO_EVIDENCE.has(row.question)) {
+      problems.push(row.outcome === "no_evidence" ? "refused (no evidence)" : "no citations");
+    }
   }
   if (row.rerankDegraded) problems.push("rerank degraded");
   if (row.reformulationDegraded) problems.push("reformulation degraded");
@@ -236,7 +301,11 @@ function printLatency(rows) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const questions = [...new Set([...QUESTION_POOL, ...REGRESSION_QUESTIONS])].slice(0, args.limit);
+  const questions = uniqueQuestions([...QUESTION_POOL, ...REGRESSION_QUESTIONS]).slice(
+    0,
+    args.limit
+  );
+  const ask = makeAsker(args);
 
   try {
     const probe = await fetch(`${args.base}/api/ask`, { method: "OPTIONS" });
@@ -248,7 +317,7 @@ async function main() {
 
   const rows = [];
   for (const question of questions) {
-    const row = await askOnce(args.base, question);
+    const row = await ask(question);
     row.problems = judge(row);
     rows.push(row);
     if (row.errorKind === "budget") {
@@ -274,23 +343,21 @@ async function main() {
     // proves nothing about recall — the follow-up then has no subject to
     // inherit, and the check reads as a failure of memory rather than of
     // coverage.
-    const first = await askOnce(
-      args.base,
+    const first = await ask(
       "What arguments did students make for and against the Vietnam War?",
       sessionId
     );
-    const second = await askOnce(
-      args.base,
-      "Which of those arguments came up most often?",
-      sessionId
-    );
+    const second = await ask("Which of those arguments came up most often?", sessionId);
     followUp = {
       sessionId,
       first: { outcome: first.outcome, citations: first.citations },
       second: { outcome: second.outcome, citations: second.citations },
-      // "Which of those" is unanswerable without the first turn, so an
-      // answer at all is the evidence. Citations are coverage, not recall.
-      carriedContext: second.outcome === "answered",
+      // "Which of those" has no subject without the first turn, so the
+      // answer must still be about the war. Counting any answer passed a
+      // cited reply about something else, which is what lost context looks
+      // like.
+      carriedContext:
+        second.outcome === "answered" && /vietnam|war|draft/i.test(second.answerText ?? ""),
     };
     if (!args.json) {
       console.log(
@@ -313,7 +380,8 @@ async function main() {
     );
   }
 
-  process.exit(failed.length > 0 ? 1 : 0);
+  const lostContext = followUp !== null && !followUp.carriedContext;
+  process.exit(failed.length > 0 || lostContext ? 1 : 0);
 }
 
 main().catch((err) => {

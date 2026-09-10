@@ -245,9 +245,17 @@ export function scoreRun(options: ScoreRunOptions): ScoreReport {
     if (relevant.size === 0) continue;
     const ranked = rankedIdsFor(record);
 
-    const inTop = (k: number): number => ranked.slice(0, k).filter((id) => relevant.has(id)).length;
-    recall3.push(inTop(3) / relevant.size);
-    recall8.push(inTop(8) / relevant.size);
+    // Recall counts evidence groups, not ids. An expectedSourceIdsAny list
+    // means "any one of these answers it", so it is one unit that a single
+    // hit satisfies; counting every listed id capped a seven-id any-of list
+    // at 3/7 recall@3 even when all three top results were correct.
+    const groups = evidenceGroupsFor(question);
+    const groupRecallAt = (k: number): number => {
+      const top = new Set(ranked.slice(0, k));
+      return groups.filter((group) => group.some((id) => top.has(id))).length / groups.length;
+    };
+    recall3.push(groupRecallAt(3));
+    recall8.push(groupRecallAt(8));
 
     const firstRank = ranked.findIndex((id) => relevant.has(id));
     reciprocalRanks.push(firstRank === -1 ? 0 : 1 / (firstRank + 1));

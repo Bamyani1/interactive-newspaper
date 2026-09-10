@@ -221,7 +221,7 @@ The answer generator receives the **original** user question plus the matched pa
 
 ### Guards
 
-- **Rate limiting**: two layers (middleware + route), 10 req/min per IP on `/api/ask`, Neon-backed with in-memory fallback
+- **Rate limiting**: one layer (`middleware.ts`), 10 req/min per IP on `/api/ask`, Neon-backed with in-memory fallback
 - **Daily budget**: `RAG_DAILY_BUDGET_USD` (default $2/day) per environment via the `ai_spend_by_scope` table (`cost-tracker.ts`), so local testing never spends production's budget
 - **Concurrent dedup**: identical in-flight (ip, question, filters, sessionId) requests share one pipeline run (JSON path only)
 - **Global deadline**: `GLOBAL_DEADLINE_MS = 55_000`; all stages race against it
