@@ -388,7 +388,7 @@ Every pipeline step has a timeout and a typed error envelope with a `kind` discr
 
 ### CI
 
-- `.github/workflows/nextjs-ci.yml` — typecheck, ESLint, and Vitest on every PR and push to `main`
+- `.github/workflows/nextjs-ci.yml` — typecheck, ESLint, and Vitest on every PR and push to `main`; with a `CI_DATABASE_URL` repository secret, also a production build and the Chromium desktop and mobile browser tests
 - `.github/workflows/ocr-architecture.yml` — AST-based import-boundary enforcement and wrapper/entrypoint consistency checks
 
 ---
