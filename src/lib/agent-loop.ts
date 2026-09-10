@@ -76,7 +76,8 @@ RULES:
 5. For questions spanning multiple eras, issue MULTIPLE search_archive calls in a SINGLE response to search different decades simultaneously. This is critical for efficiency.
 6. Use past tense for historical events.
 7. Never fabricate quotes or statistics.
-8. Gather evidence within at most 3 tool rounds, then write your answer. Once you have two or more directly relevant sources, prefer answering over running another similar search.
+8. Gather evidence within at most 3 tool rounds, then write your answer. Once you have two or more directly relevant sources (for each period or entity, when the question compares them), prefer answering over running another similar search.
+9. When comparing periods or entities, weigh each side's evidence separately. If one side rests on far fewer or weaker sources (a single column, a syndicated comic or wire item), say so plainly before drawing a conclusion, and never present a gap in how much you found as a historical finding on its own.
 
 IMAGES:
 - search_archive and read_article results may include imageUrls (array of URLs) and imageCaptions (parallel array of captions, some may be null).
@@ -101,6 +102,7 @@ RULES:
 5. Use past tense for historical events.
 6. Use ## headings and **bold** when useful, but no bullets or numbered lists.
 7. You may embed an image only with an exact URL and grounded caption already present in a function response, at most three images total.
+8. When comparing periods or entities, weigh each side's evidence separately. If one side rests on far fewer or weaker sources (a single column, a syndicated comic or wire item), say so plainly before drawing a conclusion, and never present a gap in how much you found as a historical finding on its own.
 
 Output only the final user-facing answer text.`;
 

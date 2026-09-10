@@ -12,6 +12,13 @@ interface CoverageNoteProps {
 
 const YEAR = /^(\d{4})-/;
 
+/** "1960–1969" for a requested period, or one year when it spans only one. */
+function describePeriod(startDate: string, endDate: string): string {
+  const from = startDate.slice(0, 4);
+  const to = endDate.slice(0, 4);
+  return from === to ? from : `${from}–${to}`;
+}
+
 /** "1960–1989", or a single year when the scope doesn't span one. */
 function describeSpan(coverage: Coverage): string | null {
   const from = coverage.earliestEditionDate?.match(YEAR)?.[1];
@@ -30,12 +37,34 @@ function describeSpan(coverage: Coverage): string | null {
  * scope reads as a broken product. This turns the second into the first.
  *
  * Only present on questions whose wording depends on scope (absence,
- * count, exhaustive) — the pipeline computes coverage for those alone,
- * and they are the questions where the number changes how the answer
- * should be read.
+ * count, exhaustive) and on comparisons across separate periods — the
+ * pipeline computes coverage for those alone, and they are the questions
+ * where the number changes how the answer should be read. A comparison
+ * gets one count per period: a single "1960–1999" span counted every issue
+ * from the decades nobody asked about.
  */
 export const CoverageNote: React.FC<CoverageNoteProps> = ({ coverage }) => {
   if (!coverage || coverage.editionCount === 0) return null;
+
+  const periods = coverage.periods ?? [];
+  if (periods.length >= 2) {
+    return (
+      <aside className="ask-coverage" role="note">
+        <Layers size={13} aria-hidden="true" className="ask-coverage-icon" />
+        <p className="ask-coverage-body">
+          <span className="ask-coverage-label">Searched</span>{" "}
+          {periods
+            .map(
+              (period) =>
+                `${describePeriod(period.startDate, period.endDate)}: ${period.editionCount.toLocaleString("en-US")} ${period.editionCount === 1 ? "issue" : "issues"}`
+            )
+            .join(" · ")}
+          {coverage.category ? ` in ${coverage.category}` : ""}. That is the indexed scope, not
+          everything the paper printed.
+        </p>
+      </aside>
+    );
+  }
 
   const span = describeSpan(coverage);
   const editions = coverage.editionCount.toLocaleString("en-US");

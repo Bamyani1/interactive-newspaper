@@ -50,6 +50,27 @@
     "complexity": "complex"
   },
   {
+    "id": "vietnam-gulf-comparison",
+    "question": "Compare how The Transcript covered the Vietnam War in the 1960s with how it covered the Gulf War in the 1990s.",
+    "minCitations": 2,
+    "keywordsAny": ["Vietnam", "Gulf", "Saddam", "Iraq"],
+    "expectedSourceIdGroupsAll": [
+      [
+        "1966-01-12-0",
+        "1967-01-10-2",
+        "1968-01-10-3",
+        "1968-01-10-6",
+        "1968-01-31-28",
+        "1968-01-31-43"
+      ],
+      ["1990-09-12-17", "1991-02-07-9"]
+    ],
+    "expectedFactsAny": [["Saddam", "Kuwait", "Iraq", "Baghdad", "Persian Gulf"]],
+    "confidenceMin": "medium",
+    "mode": "text",
+    "complexity": "complex"
+  },
+  {
     "id": "women-at-owu",
     "question": "What was student life like for women at Ohio Wesleyan in the 1960s?",
     "minCitations": 2,

@@ -116,6 +116,77 @@ describe("parseReformulationResponse", () => {
     }
   });
 
+  function withPeriods(periods: unknown, startYear = 1960, endYear = 1999) {
+    return JSON.stringify({
+      embeddingQuery: "Vietnam War and Gulf War coverage",
+      ftsQuery: "war",
+      mode: "text",
+      complexity: "complex",
+      coverageIntent: "none",
+      startYear,
+      endYear,
+      periods,
+    });
+  }
+
+  // The overall span stays as the retrieval filter; the periods are what
+  // let coverage be counted for each side instead of the decades between.
+  it("parses the periods of a comparison, earliest first", () => {
+    const result = parseReformulationResponse(
+      withPeriods([
+        { startYear: 1990, endYear: 1999 },
+        { startYear: 1960, endYear: 1969 },
+      ]),
+      fallback
+    );
+    expect(result).toMatchObject({ startDate: "1960-01-01", endDate: "1999-12-31" });
+    expect(result.periods).toEqual([
+      { startDate: "1960-01-01", endDate: "1969-12-31" },
+      { startDate: "1990-01-01", endDate: "1999-12-31" },
+    ]);
+  });
+
+  // One period is not a comparison, and a malformed or duplicate entry
+  // cannot make one.
+  it.each([
+    [[]],
+    [[{ startYear: 1960, endYear: 1969 }]],
+    [
+      [
+        { startYear: 1960, endYear: 1969 },
+        { startYear: 1960, endYear: 1969 },
+      ],
+    ],
+    [
+      [
+        { startYear: 1960, endYear: 1969 },
+        { startYear: 1970, endYear: 1960 },
+      ],
+    ],
+    [
+      [
+        { startYear: 1960, endYear: 1969 },
+        { startYear: 1940, endYear: 1949 },
+      ],
+    ],
+    [[{ startYear: 1960, endYear: 1969 }, "1990s"]],
+    ["1960s and 1990s"],
+  ])("drops periods that do not make a comparison: %j", (periods) => {
+    expect(parseReformulationResponse(withPeriods(periods), fallback).periods).toBeUndefined();
+  });
+
+  it("keeps at most three periods", () => {
+    const periods = [1950, 1960, 1970, 1980].map((year) => ({
+      startYear: year,
+      endYear: year + 9,
+    }));
+    expect(parseReformulationResponse(withPeriods(periods, 1950, 1989), fallback).periods).toEqual([
+      { startDate: "1950-01-01", endDate: "1959-12-31" },
+      { startDate: "1960-01-01", endDate: "1969-12-31" },
+      { startDate: "1970-01-01", endDate: "1979-12-31" },
+    ]);
+  });
+
   it("removes malformed OR boundaries before FTS", () => {
     expect(normalizeFtsQuery(" OR  women OR OR sorority OR ")).toBe("women OR sorority");
   });
@@ -152,6 +223,7 @@ describe("reformulateQuery", () => {
       "coverageIntent",
       "startYear",
       "endYear",
+      "periods",
     ]);
     expect(call.config).not.toHaveProperty("temperature");
     expect(call.config).not.toHaveProperty("topP");

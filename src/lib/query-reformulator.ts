@@ -23,6 +23,11 @@ const REFORMULATION_MAX_TOKENS = 350;
 export type Complexity = "simple" | "complex";
 export type CoverageIntent = "none" | "absence" | "count" | "exhaustive";
 
+export interface ComparisonPeriod {
+  startDate: string;
+  endDate: string;
+}
+
 export interface ReformulatedQuery {
   embeddingQuery: string;
   ftsQuery: string;
@@ -32,6 +37,13 @@ export interface ReformulatedQuery {
   /** Inferred only from an explicit year/decade/range in the user's query. */
   startDate?: string;
   endDate?: string;
+  /**
+   * Each period of an explicit comparison ("the 1960s versus the 1990s"),
+   * earliest first. startDate/endDate still span all of them; this is what
+   * lets coverage be counted per period instead of across the decades in
+   * between. Absent unless there are at least two.
+   */
+  periods?: ComparisonPeriod[];
   /**
    * The model never answered, so `ftsQuery` is a locally derived keyword
    * set rather than a reformulation, and `mode`/`coverageIntent` are
@@ -170,6 +182,7 @@ Given a user question, produce:
 4. startYear and endYear: Infer these ONLY when the user explicitly states a year, decade, or bounded time range. For a decade, use its first and last years (1960s -> 1960 and 1969). Use 0 for both when no explicit temporal constraint exists.
 5. complexity: Use "complex" ONLY when answering genuinely requires separate searches: an explicit comparison across periods/entities, multiple independent subquestions, an aggregate/count over the corpus, or multi-hop entity reasoning. A broad synthesis about one topic in one era is "simple" and can be answered from one ranked result set.
 6. coverageIntent: Classify whether the answer needs deterministic archive-scope metadata. Use "absence" when the user asks whether something ever appeared or did not occur, "count" for a requested total or how-many answer, "exhaustive" for all/every/complete-list requests AND for survey questions scoped to a period ("what happened in 1986?", "tell me about the 1970s", "what was going on that spring") — any question whose good answer summarizes a time span rather than one fact. Use "none" for ordinary factual or thematic questions about a specific event, person, or topic. Prefer "count" over "exhaustive" when the requested output is a number.
+7. periods: Only for an explicit comparison between separate time periods ("the 1960s versus the 1990s", "1968 and 1970"), list each period as startYear and endYear using the same rules as item 4, earliest first, at most 3. startYear and endYear above still hold the overall span. Use an empty array for every other question, including a single period or one continuous range ("from the 1950s to the 1990s").
 
 Expand abbreviations (OWU → Ohio Wesleyan University) and add era-appropriate synonyms only in embeddingQuery. Useful semantic expansions include basketball/cagers/hoopsters, football/gridiron/Battling Bishops, protest/demonstration/rally/sit-in, dormitory/dorm/residence hall, fraternity/sorority/Greek life/pledge/rush, and draft/selective service/conscription/ROTC/Vietnam/anti-war. Never copy an entire synonym list into ftsQuery.
 
@@ -190,6 +203,19 @@ const REFORMULATION_SCHEMA = {
     },
     startYear: { type: "integer", minimum: 0, maximum: 2006 },
     endYear: { type: "integer", minimum: 0, maximum: 2006 },
+    periods: {
+      type: "array",
+      maxItems: 3,
+      items: {
+        type: "object",
+        properties: {
+          startYear: { type: "integer", minimum: 0, maximum: 2006 },
+          endYear: { type: "integer", minimum: 0, maximum: 2006 },
+        },
+        required: ["startYear", "endYear"],
+        additionalProperties: false,
+      },
+    },
   },
   required: [
     "embeddingQuery",
@@ -199,6 +225,7 @@ const REFORMULATION_SCHEMA = {
     "coverageIntent",
     "startYear",
     "endYear",
+    "periods",
   ],
   additionalProperties: false,
 } as const;
@@ -319,6 +346,7 @@ export function parseReformulationResponse(
     const ftsQuery = normalizeFtsQuery(typeof parsed.ftsQuery === "string" ? parsed.ftsQuery : "");
     if (embeddingQuery && ftsQuery) {
       const dates = parseExplicitYearRange(parsed.startYear, parsed.endYear);
+      const periods = parseComparisonPeriods(parsed.periods);
       return {
         embeddingQuery,
         ftsQuery,
@@ -326,6 +354,7 @@ export function parseReformulationResponse(
         complexity: parsed.complexity === "complex" ? "complex" : "simple",
         coverageIntent: parseCoverageIntent(parsed.coverageIntent),
         ...dates,
+        ...(periods ? { periods } : {}),
       };
     }
   } catch {
@@ -403,4 +432,25 @@ function parseExplicitYearRange(
     startDate: `${startYear}-01-01`,
     endDate: `${endYear}-12-31`,
   };
+}
+
+/**
+ * Two or more valid, distinct periods, earliest first, or nothing. One
+ * period is not a comparison, and a model that returns only malformed ones
+ * still has the overall span it reported alongside them.
+ */
+function parseComparisonPeriods(value: unknown): ComparisonPeriod[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const seen = new Set<string>();
+  const periods: ComparisonPeriod[] = [];
+  for (const entry of value.slice(0, 3)) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { startYear, endYear } = entry as Record<string, unknown>;
+    const { startDate, endDate } = parseExplicitYearRange(startYear, endYear);
+    if (!startDate || !endDate || seen.has(`${startDate}/${endDate}`)) continue;
+    seen.add(`${startDate}/${endDate}`);
+    periods.push({ startDate, endDate });
+  }
+  periods.sort((a, b) => a.startDate.localeCompare(b.startDate));
+  return periods.length >= 2 ? periods : undefined;
 }
