@@ -2,7 +2,8 @@
  * AI Cost Tracker
  *
  * Reads usageMetadata from Gemini responses, converts token counts to USD,
- * and accumulates today's total in the Neon `ai_spend_counter` table.
+ * and accumulates today's total in the Neon `ai_spend_by_scope` table, one
+ * row per UTC day per environment (see spendScope()).
  * checkDailyBudget() throws DailyBudgetExceededError once the day crosses
  * the RAG_DAILY_BUDGET_USD ceiling so the route can return 429 before
  * firing another expensive pipeline.
@@ -234,6 +235,19 @@ function today(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
 }
 
+export type SpendScope = "production" | "preview" | "development" | "local";
+
+/**
+ * Which daily ledger this process spends against. Vercel sets VERCEL_ENV on
+ * every deployment; anything else (next dev, scripts, tests) is "local".
+ * All of them used to share one row per day, so an afternoon of local
+ * testing could exhaust the budget production readers were capped by.
+ */
+export function spendScope(): SpendScope {
+  const env = process.env.VERCEL_ENV;
+  return env === "production" || env === "preview" || env === "development" ? env : "local";
+}
+
 /**
  * How long until the daily counter starts over — the boundary `today()`
  * rolls on, which is UTC midnight. The budget refusal quotes this, and it
@@ -381,7 +395,8 @@ export async function checkDailyBudget(): Promise<void> {
     const rows = (await runWithDbTimeout(
       "checkDailyBudget",
       () => sql`
-            SELECT spent_usd FROM ai_spend_counter WHERE day = ${day}
+            SELECT spent_usd FROM ai_spend_by_scope
+            WHERE day = ${day} AND scope = ${spendScope()}
         `,
       BUDGET_READ_TIMEOUT_MS
     )) as Array<{ spent_usd: string | number }>;
@@ -439,10 +454,11 @@ export async function recordUsage(
     const day = today();
     try {
       await sql`
-                INSERT INTO ai_spend_counter (day, spent_usd)
-                VALUES (${day}, ${cost})
-                ON CONFLICT (day) DO UPDATE
-                  SET spent_usd = ai_spend_counter.spent_usd + ${cost}
+                INSERT INTO ai_spend_by_scope (day, scope, spent_usd)
+                VALUES (${day}, ${spendScope()}, ${cost})
+                ON CONFLICT (day, scope) DO UPDATE
+                  SET spent_usd = ai_spend_by_scope.spent_usd + ${cost},
+                      updated_at = now()
             `;
       outageSpendUsd = 0; // write succeeded — Neon reachable
     } catch (err) {
@@ -508,10 +524,11 @@ export async function recordEmbeddingUsage(
     const day = today();
     try {
       await sql`
-                INSERT INTO ai_spend_counter (day, spent_usd)
-                VALUES (${day}, ${cost})
-                ON CONFLICT (day) DO UPDATE
-                  SET spent_usd = ai_spend_counter.spent_usd + ${cost}
+                INSERT INTO ai_spend_by_scope (day, scope, spent_usd)
+                VALUES (${day}, ${spendScope()}, ${cost})
+                ON CONFLICT (day, scope) DO UPDATE
+                  SET spent_usd = ai_spend_by_scope.spent_usd + ${cost},
+                      updated_at = now()
             `;
       outageSpendUsd = 0; // write succeeded — Neon reachable
     } catch (err) {

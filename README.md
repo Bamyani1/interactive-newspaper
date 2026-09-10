@@ -127,7 +127,7 @@ flowchart LR
 
 1. **Frontend.** Next.js App Router with server components, streaming API routes, and feature modules in `src/features/` (`news-feed`, `ask-archive`, `search`, `archive`, `time-controls`, `navigation`, `music-player`, `weather`, `context-panel`, `footer`, `theme`). No cross-feature imports.
 2. **API layer.** Server routes in `src/app/api/`. `POST /api/ask` runs the RAG pipeline (streaming or JSON). `GET /api/editions/[date]` serves full edition data. `GET /api/ask/session` rehydrates conversation history.
-3. **Database.** Neon serverless Postgres. Tables: `editions`, `articles`, `ads`, `weather`, `music`, `ask_session_turns`, `ai_spend_counter`, `api_rate_bucket`, `ask_feedback`. Articles carry both `search_vector tsvector` (auto-maintained via trigger) and `embedding vector(768)` with an HNSW index.
+3. **Database.** Neon serverless Postgres. Tables: `editions`, `articles`, `ads`, `weather`, `music`, `ask_session_turns`, `ai_spend_by_scope`, `api_rate_bucket`, `ask_feedback`. Articles carry both `search_vector tsvector` (auto-maintained via trigger) and `embedding vector(768)` with an HNSW index.
 4. **OCR pipeline.** Python 3.12 domain-driven package with enforced import boundaries. Seven phases, parallel per-page for phases 1–2.
 5. **Ops scripts.** Shell + Node scripts for seed, embed, cleanup, image upload, weather archive build, and schema migrations.
 6. **Image CDN.** Cloudflare R2 hosts `.webp` edition images in production via `IMAGE_BASE_URL`; falls back to a local API proxy in dev.
@@ -222,7 +222,7 @@ The answer generator receives the **original** user question plus the matched pa
 ### Guards
 
 - **Rate limiting**: two layers (middleware + route), 10 req/min per IP on `/api/ask`, Neon-backed with in-memory fallback
-- **Daily budget**: $2/day hard stop via `ai_spend_counter` table (`cost-tracker.ts`)
+- **Daily budget**: `RAG_DAILY_BUDGET_USD` (default $2/day) per environment via the `ai_spend_by_scope` table (`cost-tracker.ts`), so local testing never spends production's budget
 - **Concurrent dedup**: identical in-flight (ip, question, filters, sessionId) requests share one pipeline run (JSON path only)
 - **Global deadline**: `GLOBAL_DEADLINE_MS = 55_000`; all stages race against it
 - **Prompt-injection defense**: user questions are encoded as JSON strings, model outputs use schemas, and citations are accepted only for evidence actually returned by retrieval/tools
@@ -322,7 +322,7 @@ ads (id, edition_date FK, position, title, body, category, ad_type,
 
 -- RAG infrastructure
 ask_session_turns (id, session_id, question, answer, cited_article_ids, created_at)
-ai_spend_counter  (day PK, spent_usd, updated_at)                   -- $2/day kill switch
+ai_spend_by_scope (day + scope PK, spent_usd, updated_at)           -- daily AI budget per environment
 api_rate_bucket   (key PK, count, expires_at, created_at)           -- sliding window
 ask_feedback      (id, request_id, question, answer, vote, …)       -- thumbs up/down
 

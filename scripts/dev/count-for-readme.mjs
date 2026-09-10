@@ -80,10 +80,10 @@ async function main() {
   }
 
   try {
-    const spendRows = await sql`SELECT COUNT(*)::int AS days FROM ai_spend_counter`;
-    out.ai_spend_counter = spendRows[0];
+    const spendRows = await sql`SELECT COUNT(DISTINCT day)::int AS days FROM ai_spend_by_scope`;
+    out.ai_spend_by_scope = spendRows[0];
   } catch (e) {
-    out.ai_spend_counter = { error: String(e.message).slice(0, 80) };
+    out.ai_spend_by_scope = { error: String(e.message).slice(0, 80) };
   }
 
   // Articles per category (for color on scale)

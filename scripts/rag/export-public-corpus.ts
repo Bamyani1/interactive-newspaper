@@ -7,7 +7,7 @@
  * was copied. Everything outside the allowlist is private by default: the
  * table-export internal hard-fails on any other table name, and this module
  * never reads ask_session_turns, ask_feedback, api_rate_bucket,
- * ai_spend_counter, or the schema_migrations ledger.
+ * ai_spend_counter, ai_spend_by_scope, or the schema_migrations ledger.
  *
  * Documented decisions:
  * - Excluded columns: articles.search_vector only. It is a derived tsvector
@@ -67,6 +67,10 @@ export type PublicTable = (typeof PUBLIC_EXPORT_ALLOWLIST)[number];
  * hold user/privacy/operational state and must be provably absent.
  */
 export const PRIVATE_TABLES: ReadonlyArray<{ name: string; reason: string }> = Object.freeze([
+  {
+    name: "ai_spend_by_scope",
+    reason: "Operational AI spend accounting per environment; never read by this exporter.",
+  },
   {
     name: "ai_spend_counter",
     reason: "Operational AI spend accounting; never read by this exporter.",
