@@ -985,6 +985,69 @@ describe("POST /api/ask", () => {
     });
   });
 
+  describe("comparison coverage", () => {
+    const comparison = {
+      embeddingQuery: "Vietnam War and Gulf War coverage",
+      ftsQuery: "war",
+      mode: "text",
+      complexity: "simple",
+      coverageIntent: "none",
+      startDate: "1960-01-01",
+      endDate: "1999-12-31",
+      periods: [
+        { startDate: "1960-01-01", endDate: "1969-12-31" },
+        { startDate: "1990-01-01", endDate: "1991-12-31" },
+      ],
+    };
+
+    beforeEach(() => {
+      (queryArchiveCoverage as ReturnType<typeof vi.fn>).mockImplementation(
+        async ({ startDate }: { startDate?: string }) => ({
+          editionCount: startDate === "1960-01-01" ? 27 : startDate === "1990-01-01" ? 19 : 271,
+          articleCount: 100,
+          earliestEditionDate: startDate ?? null,
+          latestEditionDate: null,
+          retrievalTarget: "versioned",
+        })
+      );
+    });
+
+    // One span over "the 1960s versus the 1990s" counted every issue from
+    // the decades between, and a comparison with no coverage intent got no
+    // scope at all.
+    it("counts each period separately, even with no coverage intent", async () => {
+      (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue(comparison);
+
+      const response = await POST(makeRequest({ question: "Compare the 1960s and the 1990s" }));
+      const body = await response.json();
+
+      // The overall span plus one query per period.
+      expect(queryArchiveCoverage).toHaveBeenCalledTimes(3);
+      expect(body.meta.coverage).toMatchObject({
+        intent: "comparison",
+        periods: [
+          { startDate: "1960-01-01", endDate: "1969-12-31", editionCount: 27 },
+          { startDate: "1990-01-01", endDate: "1991-12-31", editionCount: 19 },
+        ],
+      });
+    });
+
+    it("ignores the question's periods when the caller set explicit dates", async () => {
+      (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue(comparison);
+
+      const response = await POST(
+        makeRequest({
+          question: "Compare the 1960s and the 1990s",
+          filters: { startDate: "1970-01-01", endDate: "1979-12-31" },
+        })
+      );
+      const body = await response.json();
+
+      expect(queryArchiveCoverage).not.toHaveBeenCalled();
+      expect(body.meta.coverage).toBeUndefined();
+    });
+  });
+
   it("does NOT dedup same question with different sessionIds (bug_018)", async () => {
     // Two different users on the same NAT'd IP asking the same question:
     // if dedup ignored sessionId, the piggybacker's addConversationTurn

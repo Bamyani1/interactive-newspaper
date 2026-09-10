@@ -1,7 +1,16 @@
 import type { CoverageIntent } from "@/src/lib/query-reformulator";
 
+/** One period of a comparison and what the archive holds for it. */
+export interface ArchiveCoveragePeriod {
+  startDate: string;
+  endDate: string;
+  editionCount: number;
+  articleCount: number;
+}
+
 export interface ArchiveCoverage {
-  intent: Exclude<CoverageIntent, "none">;
+  /** "comparison" when only the question's separate periods called for scope. */
+  intent: Exclude<CoverageIntent, "none"> | "comparison";
   editionCount: number;
   articleCount: number;
   earliestEditionDate: string | null;
@@ -15,13 +24,37 @@ export interface ArchiveCoverage {
    * question targets a single archive year. Trusted guidance, never
    * citable evidence. */
   yearDigest?: string;
+  /**
+   * Per-period scope when the question compares separate periods. The
+   * single span above runs from the first to the last and so counts every
+   * issue in between, which for "the 1960s versus the 1990s" is mostly the
+   * 1970s and 1980s.
+   */
+  periods?: ArchiveCoveragePeriod[];
 }
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
   return `${count.toLocaleString("en-US")} ${count === 1 ? singular : pluralForm}`;
 }
 
+function yearSpan(startDate: string, endDate: string): string {
+  const from = startDate.slice(0, 4);
+  const to = endDate.slice(0, 4);
+  return from === to ? from : `${from}–${to}`;
+}
+
 export function describeCoverageScope(coverage: ArchiveCoverage): string {
+  if (coverage.periods?.length) {
+    const category = coverage.category ? ` (${coverage.category} category)` : "";
+    return (
+      coverage.periods
+        .map(
+          (period) =>
+            `${yearSpan(period.startDate, period.endDate)}: ${plural(period.editionCount, "indexed edition")} containing ${plural(period.articleCount, "searchable article")}`
+        )
+        .join("; ") + category
+    );
+  }
   const dateSpan =
     coverage.earliestEditionDate && coverage.latestEditionDate
       ? ` dated ${coverage.earliestEditionDate} through ${coverage.latestEditionDate}`
@@ -29,6 +62,15 @@ export function describeCoverageScope(coverage: ArchiveCoverage): string {
   const category = coverage.category ? ` in the ${coverage.category} category` : "";
   return `${plural(coverage.editionCount, "indexed edition")}${dateSpan}, containing ${plural(coverage.articleCount, "searchable article")}${category}`;
 }
+
+// A comparison answer weighed a column and a syndicated comic strip from
+// 1990-91 against seven 1960s articles and called the difference student
+// apathy. Uneven evidence can be a finding about the paper or a limit of
+// the archive; the per-period scope is what tells the two apart.
+const COMPARISON_RULES = `
+- This question compares periods. Weigh each period's evidence separately and say how many cited sources support each side.
+- If one period rests on far fewer or weaker sources than another (a single column, a syndicated comic or wire item), say so plainly before drawing any conclusion from the difference.
+- Use the per-period scope above to say which it is: little evidence from a period with many searchable editions is a finding about the paper's coverage; little evidence from a period with few searchable editions is a limit of this archive.`;
 
 /**
  * Trusted metadata block for questions whose wording depends on the scope that
@@ -50,6 +92,8 @@ COVERAGE RULES:
 - If no relevant cited evidence was found, say that no matching evidence was found in the indexed scope. Never claim that the event or subject was absent from every newspaper page.
 - For count or exhaustive questions, do not imply a database-wide exact result unless the cited evidence itself establishes that result.
 - Do not lower confidence in a supported positive claim merely because editions outside the requested scope were not searched.${
+    coverage.periods?.length ? COMPARISON_RULES : ""
+  }${
     coverage.yearDigest
       ? `
 

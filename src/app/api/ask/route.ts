@@ -155,11 +155,30 @@ async function resolveArchiveCoverage(
   intent: CoverageIntent | undefined,
   filters: { category?: string; startDate?: string; endDate?: string },
   signal: AbortSignal,
-  requestId: string
+  requestId: string,
+  periods?: ReadonlyArray<{ startDate: string; endDate: string }>
 ): Promise<ArchiveCoverage | undefined> {
-  if (!intent || intent === "none") return undefined;
+  // A comparison needs each period's scope even with no coverage intent:
+  // one span over "the 1960s versus the 1990s" counted every issue from the
+  // decades in between, which is most of the archive.
+  const comparedPeriods = periods && periods.length >= 2 ? periods : undefined;
+  if (!comparedPeriods && (!intent || intent === "none")) return undefined;
   const identity = getRagRetrievalConfig();
-  const stats = await queryArchiveCoverage({ ...filters, signal });
+  const [stats, periodStats] = await Promise.all([
+    queryArchiveCoverage({ ...filters, signal }),
+    comparedPeriods
+      ? Promise.all(
+          comparedPeriods.map((period) =>
+            queryArchiveCoverage({
+              category: filters.category,
+              startDate: period.startDate,
+              endDate: period.endDate,
+              signal,
+            })
+          )
+        )
+      : undefined,
+  ]);
   // Survey questions scoped to one calendar year get the pre-computed
   // digest as non-citable guidance. Absence (undigested year, table not
   // migrated yet) degrades silently.
@@ -193,13 +212,23 @@ async function resolveArchiveCoverage(
     }
   }
   const coverage: ArchiveCoverage = {
-    intent,
+    intent: intent && intent !== "none" ? intent : "comparison",
     ...stats,
     requestedStartDate: filters.startDate,
     requestedEndDate: filters.endDate,
     category: filters.category,
     corpusVersion: identity.corpusVersion,
     yearDigest,
+    ...(comparedPeriods && periodStats
+      ? {
+          periods: comparedPeriods.map((period, index) => ({
+            startDate: period.startDate,
+            endDate: period.endDate,
+            editionCount: periodStats[index].editionCount,
+            articleCount: periodStats[index].articleCount,
+          })),
+        }
+      : {}),
   };
   // eslint-disable-next-line no-console -- structured retrieval telemetry
   console.info(
@@ -228,6 +257,7 @@ function coverageMetadata(coverage?: ArchiveCoverage) {
           requestedStartDate: coverage.requestedStartDate,
           requestedEndDate: coverage.requestedEndDate,
           category: coverage.category,
+          periods: coverage.periods,
         },
       }
     : {};
@@ -516,6 +546,19 @@ function resolveRetrievalFilters(
 }
 
 /**
+ * A comparison's periods come from the question, so they apply only when
+ * the dates do too: explicit filter dates replace the inferred span, and
+ * periods counted inside a span the caller overrode would describe the
+ * wrong issues.
+ */
+function resolveComparisonPeriods(
+  explicit: AskRequestBody["filters"] | undefined,
+  inferred: ReadonlyArray<{ startDate: string; endDate: string }> | undefined
+): ReadonlyArray<{ startDate: string; endDate: string }> | undefined {
+  return explicit?.startDate || explicit?.endDate ? undefined : inferred;
+}
+
+/**
  * Whether an answer stands on evidence, so the client can tell "the
  * archive does not cover this" from a grounded reply.
  *
@@ -636,6 +679,7 @@ async function handleStreamingAsk(params: {
         let coverageIntent: CoverageIntent | undefined;
         let inferredStartDate: string | undefined;
         let inferredEndDate: string | undefined;
+        let inferredPeriods: ReadonlyArray<{ startDate: string; endDate: string }> | undefined;
         let reformulationDegraded: boolean | undefined;
         try {
           const reformulated = await reformulateQuery(question, {
@@ -650,6 +694,7 @@ async function handleStreamingAsk(params: {
           coverageIntent = reformulated.coverageIntent;
           inferredStartDate = reformulated.startDate;
           inferredEndDate = reformulated.endDate;
+          inferredPeriods = reformulated.periods;
           reformulationDegraded = reformulated.reformulationDegraded;
         } catch (err) {
           console.error(
@@ -688,7 +733,8 @@ async function handleStreamingAsk(params: {
             coverageIntent,
             filters,
             globalController.signal,
-            requestId
+            requestId,
+            resolveComparisonPeriods(explicitFilters, inferredPeriods)
           );
         } catch (err) {
           // Coverage is supplementary caveat metadata; retrieval
@@ -1345,7 +1391,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Coverage is supplementary caveat metadata — a failed stats query
     // degrades to "no coverage" rather than failing the whole request.
     const coverage = await wrapStage("coverage", () =>
-      resolveArchiveCoverage(coverageIntent, filters, globalController.signal, requestId)
+      resolveArchiveCoverage(
+        coverageIntent,
+        filters,
+        globalController.signal,
+        requestId,
+        resolveComparisonPeriods(body.filters, reformulated.periods)
+      )
     ).catch((err: unknown) => {
       console.warn(
         JSON.stringify({
