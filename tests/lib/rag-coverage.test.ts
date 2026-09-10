@@ -64,6 +64,9 @@ describe("RAG coverage semantics", () => {
 
   it("labels coverage metadata as non-evidence in the model prompt", () => {
     const prompt = buildCoveragePromptBlock(coverage({ intent: "count", category: "Sports" }));
+    // The CoverageNote already shows the scope; answers opened with a
+    // paragraph repeating it, which also ate into the answer deadline.
+    expect(prompt).toContain("Do not open with a scope section");
     expect(prompt).toContain("not factual evidence");
     expect(prompt).toContain("42 indexed editions");
     expect(prompt).toContain("Sports category");
