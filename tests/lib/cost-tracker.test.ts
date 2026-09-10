@@ -24,6 +24,7 @@ import {
   checkDailyBudget,
   recordUsage,
   secondsUntilBudgetReset,
+  spendScope,
   DailyBudgetExceededError,
   _setDailyBudgetForTests,
   _getDailyBudgetForTests,
@@ -119,6 +120,27 @@ describe("embedding cost", () => {
   });
 });
 
+describe("spendScope", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(["production", "preview", "development"] as const)(
+    "spends a %s deployment against its own row",
+    (env) => {
+      vi.stubEnv("VERCEL_ENV", env);
+      expect(spendScope()).toBe(env);
+    }
+  );
+
+  // Every environment used to share one row per day, so an afternoon of
+  // local testing could leave production readers budget-blocked.
+  it.each(["", "staging"])("treats VERCEL_ENV=%j as local", (env) => {
+    vi.stubEnv("VERCEL_ENV", env);
+    expect(spendScope()).toBe("local");
+  });
+});
+
 describe("checkDailyBudget", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
@@ -156,6 +178,15 @@ describe("checkDailyBudget", () => {
         expect(err.budgetUsd).toBe(1.0);
       }
     }
+  });
+
+  it("reads only the calling environment's row", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    sqlMock.mockResolvedValueOnce([{ spent_usd: "0.100000" }]);
+    await checkDailyBudget();
+    const [strings, ...values] = sqlMock.mock.calls[0];
+    expect((strings as string[]).join("?")).toContain("FROM ai_spend_by_scope");
+    expect(values).toContain("preview");
   });
 
   it("swallows DB errors (does not throw on unreachable Neon)", async () => {
@@ -241,6 +272,35 @@ describe("recordUsage", () => {
     expect(substitutions).toContain(2.8); // cost in USD
     // day string is YYYY-MM-DD
     expect(substitutions.some((v: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(v)))).toBe(true);
+  });
+
+  it("adds the cost to the calling environment's row and stamps updated_at", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    sqlMock.mockResolvedValueOnce(undefined);
+    await recordUsage(
+      "gemini-3.5-flash-lite",
+      { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 },
+      { op: "test.scope" }
+    );
+    const [strings, ...values] = sqlMock.mock.calls[0];
+    const text = (strings as string[]).join("?");
+    expect(text).toContain("INSERT INTO ai_spend_by_scope");
+    expect(text).toContain("ON CONFLICT (day, scope)");
+    expect(text).toContain("updated_at = now()");
+    expect(values).toContain("production");
+  });
+
+  it("keeps local spend off the production row", async () => {
+    vi.stubEnv("VERCEL_ENV", "");
+    sqlMock.mockResolvedValueOnce(undefined);
+    await recordUsage(
+      "gemini-3.5-flash-lite",
+      { promptTokenCount: 100, candidatesTokenCount: 50 },
+      { op: "test.scope" }
+    );
+    const values = sqlMock.mock.calls[0].slice(1);
+    expect(values).toContain("local");
+    expect(values).not.toContain("production");
   });
 
   it("does not throw when the DB write fails", async () => {
