@@ -621,17 +621,23 @@ async function embedArticles(scopedDate = "") {
     return;
   }
 
+  // Unversioned chunks only, the same scope embed.mjs keeps. Rows that
+  // belong to an index build are written by rag:index:build, which records
+  // and validates what it embeds; seed filling them in behind its back
+  // would leave a build holding vectors it never checked.
   const unembedded = scopedDate
     ? await sql`SELECT c.id, c.chunk_index, c.chunk_text, a.headline, a.byline, a.edition_date, a.category, a.summary
                 FROM article_chunks c JOIN articles a ON a.id = c.article_id
                 WHERE a.edition_date = ${scopedDate}
+                  AND c.index_build_id IS NULL
                   AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
                        OR c.embedding_input_version IS DISTINCT FROM ${EMBEDDING_INPUT_VERSION})
                 ORDER BY c.id`
     : await sql`SELECT c.id, c.chunk_index, c.chunk_text, a.headline, a.byline, a.edition_date, a.category, a.summary
                 FROM article_chunks c JOIN articles a ON a.id = c.article_id
-                WHERE c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
-                   OR c.embedding_input_version IS DISTINCT FROM ${EMBEDDING_INPUT_VERSION}
+                WHERE c.index_build_id IS NULL
+                  AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
+                       OR c.embedding_input_version IS DISTINCT FROM ${EMBEDDING_INPUT_VERSION})
                 ORDER BY c.id`;
   if (unembedded.length === 0) {
     console.log("All article chunks already embedded.");
@@ -669,7 +675,7 @@ async function embedArticles(scopedDate = "") {
                        embedding_model = ${EMBEDDING_MODEL},
                        embedding_input_version = ${EMBEDDING_INPUT_VERSION},
                        embedding_input_hash = ${inputHash}
-                   WHERE id = ${chunk.id}`;
+                   WHERE id = ${chunk.id} AND index_build_id IS NULL`;
       });
       await sql.transaction(updates);
       done += batch.length;
