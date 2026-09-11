@@ -344,6 +344,34 @@ describe("POST /api/ask", () => {
     expect(del.mock.invocationCallOrder[0]).toBeLessThan(read.mock.invocationCallOrder[0]);
   });
 
+  // "Which of those came up most often?" names no subject, so the judge
+  // rejected every candidate the history-aware retrieval had found.
+  it("gives the relevance judge a follow-up's earlier question", async () => {
+    (getConversationHistory as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        question: "What arguments did students make about the war?",
+        answer: "Several.",
+        citedArticleIds: [],
+        citationSnapshots: [],
+        timestamp: Date.now(),
+      },
+    ]);
+
+    await POST(makeRequest({ question: "Which came up most often?", sessionId: "session-follow" }));
+
+    expect(rerankArticles).toHaveBeenCalledWith(
+      "Which came up most often?\n(Follow-up to the earlier question: What arguments did students make about the war?)",
+      expect.any(Array),
+      expect.any(Object)
+    );
+    // The answer still addresses what the reader actually asked.
+    expect(generateAnswer).toHaveBeenCalledWith(
+      "Which came up most often?",
+      expect.any(Array),
+      expect.any(Object)
+    );
+  });
+
   it("never deletes a stored turn for an ordinary question", async () => {
     await POST(makeRequest({ question: "What happened?", sessionId: "session-plain" }));
     expect(deleteLatestTurn as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();

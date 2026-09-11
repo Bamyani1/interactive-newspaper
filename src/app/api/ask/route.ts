@@ -389,6 +389,19 @@ function askErrorJson(params: {
 }
 
 /**
+ * The judge scores articles against one sentence. A follow-up like "Which of
+ * those came up most often?" has no subject, so it rejected every candidate
+ * the history-aware retrieval found. The earlier question gives it one.
+ */
+function questionForJudge(
+  question: string,
+  history: import("@/src/lib/conversation-store").ConversationTurn[]
+): string {
+  const previous = history.at(-1)?.question?.trim();
+  return previous ? `${question}\n(Follow-up to the earlier question: ${previous})` : question;
+}
+
+/**
  * Rerank via the canonical retrieval service, translating its stage tags into
  * this route's StageError so error responses keep naming the step that failed
  * ("rerank", "reformulate-retry", "retrieve-retry", "rerank-retry").
@@ -415,7 +428,7 @@ async function rerankWithCragRetry(params: {
 }): Promise<RankedArticle[]> {
   try {
     return await rerankWithCorrectiveRetry({
-      question: params.question,
+      question: questionForJudge(params.question, params.conversationHistory),
       articles: params.articles,
       mode: params.mode,
       maxArticles: params.keepTopK,
