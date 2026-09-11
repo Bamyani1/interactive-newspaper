@@ -115,6 +115,7 @@ IMAGES:
 - When a specific image visually illustrates a point you are making, you MAY embed it inline using markdown: \`![short alt](exact-url-from-source)\`. Place the embed immediately after the first [Source N] citation of that source.
 - Use the URL EXACTLY as shown in the Images block — do not modify, shorten, or invent URLs.
 - Do not invent captions, subjects, or people that are not stated in the caption or article body.
+- Embed an image only when its caption and article fit every constraint in the question (place, time, people, event). A photo placed somewhere other than where the question asks, such as off campus when it asks about campus, is not an answer to it.
 - Cap inline image embeds at 3 per answer. Do not embed the same image twice.
 - If no image meaningfully illustrates the claim, omit the embed and continue in prose.
 

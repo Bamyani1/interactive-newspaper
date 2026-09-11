@@ -211,6 +211,13 @@ describe("rerankArticles", () => {
     expect(call.config.systemInstruction).toContain(
       "article prose that mentions the subject does not make an unrelated image relevant"
     );
+    // Every image vector carries the same Ohio Wesleyan preamble, so the
+    // judge is the only step that can tell a campus photo from one taken
+    // in Washington.
+    expect(call.config.systemInstruction).toContain(
+      '"On campus" or "at OWU" means Ohio Wesleyan University in Delaware, Ohio'
+    );
+    expect(call.config.systemInstruction).toContain("score it 0-1 even when the subject matches");
   });
 
   it("tells the judge to retain evidence that corrects a false premise", async () => {

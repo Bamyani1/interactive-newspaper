@@ -287,6 +287,10 @@ describe("generateAnswer", () => {
     const prompt = generateContentMock.mock.calls[0][0].contents[0].parts[0].text;
     expect(prompt).toContain("[Homecoming parade]");
     expect(prompt).toContain("https://cdn/Page%203.webp");
+    // A backstop for the judge: a photo from the wrong place is no answer.
+    expect(generateContentMock.mock.calls[0][0].config.systemInstruction).toContain(
+      "Embed an image only when its caption and article fit every constraint in the question"
+    );
   });
 
   it("encodes the question as a JSON string", async () => {

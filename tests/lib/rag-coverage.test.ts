@@ -26,8 +26,47 @@ describe("RAG coverage semantics", () => {
     );
   });
 
+  // "The 1960s versus the 1990s" as one span counts the 1970s and 1980s,
+  // which is most of the archive and no part of the question.
+  it("describes each compared period instead of the span between them", () => {
+    const compared = coverage({
+      intent: "comparison",
+      periods: [
+        { startDate: "1960-01-01", endDate: "1969-12-31", editionCount: 27, articleCount: 1_390 },
+        { startDate: "1990-01-01", endDate: "1991-12-31", editionCount: 19, articleCount: 480 },
+      ],
+    });
+    expect(describeCoverageScope(compared)).toBe(
+      "1960–1969: 27 indexed editions containing 1,390 searchable articles; 1990–1991: 19 indexed editions containing 480 searchable articles"
+    );
+    expect(describeCoverageScope({ ...compared, category: "Sports" })).toMatch(
+      /480 searchable articles \(Sports category\)$/
+    );
+  });
+
+  // A comparison answer once weighed a column and a comic strip against
+  // seven articles and called the difference a historical finding.
+  it("tells the model to weigh each compared period's evidence separately", () => {
+    const prompt = buildCoveragePromptBlock(
+      coverage({
+        intent: "comparison",
+        periods: [
+          { startDate: "1960-01-01", endDate: "1969-12-31", editionCount: 27, articleCount: 1_390 },
+          { startDate: "1990-01-01", endDate: "1991-12-31", editionCount: 19, articleCount: 480 },
+        ],
+      })
+    );
+    expect(prompt).toContain("Coverage intent: comparison");
+    expect(prompt).toContain("Weigh each period's evidence separately");
+    expect(prompt).toContain("a limit of this archive");
+    expect(buildCoveragePromptBlock(coverage())).not.toContain("Weigh each period");
+  });
+
   it("labels coverage metadata as non-evidence in the model prompt", () => {
     const prompt = buildCoveragePromptBlock(coverage({ intent: "count", category: "Sports" }));
+    // The CoverageNote already shows the scope; answers opened with a
+    // paragraph repeating it, which also ate into the answer deadline.
+    expect(prompt).toContain("Do not open with a scope section");
     expect(prompt).toContain("not factual evidence");
     expect(prompt).toContain("42 indexed editions");
     expect(prompt).toContain("Sports category");
