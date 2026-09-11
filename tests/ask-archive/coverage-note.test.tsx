@@ -57,6 +57,31 @@ describe("CoverageNote", () => {
     expect(screen.getByRole("note")).toHaveTextContent("1 issue from 1962 · 1 article");
   });
 
+  // One span over "the 1960s versus the 1990s" counted the 1970s and 1980s
+  // too: most of the archive, and no part of the question.
+  it("gives each compared period its own count", () => {
+    render(
+      <CoverageNote
+        coverage={coverage({
+          intent: "comparison",
+          editionCount: 271,
+          periods: [
+            {
+              startDate: "1960-01-01",
+              endDate: "1969-12-31",
+              editionCount: 27,
+              articleCount: 1390,
+            },
+            { startDate: "1990-01-01", endDate: "1991-12-31", editionCount: 19, articleCount: 480 },
+          ],
+        })}
+      />
+    );
+    const note = screen.getByRole("note");
+    expect(note).toHaveTextContent("Searched 1960–1969: 27 issues · 1990–1991: 19 issues.");
+    expect(note).not.toHaveTextContent("271");
+  });
+
   it("names a category filter when the question carried one", () => {
     render(<CoverageNote coverage={coverage({ category: "Sports" })} />);
     expect(screen.getByRole("note")).toHaveTextContent("in Sports");

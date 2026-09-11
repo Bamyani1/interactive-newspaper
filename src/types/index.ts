@@ -239,7 +239,7 @@ export interface AskResponse {
     imageEmbeddingInputVersion?: string;
     retrievalTarget?: "legacy" | "versioned";
     coverage?: {
-      intent: "absence" | "count" | "exhaustive";
+      intent: "absence" | "count" | "exhaustive" | "comparison";
       editionCount: number;
       articleCount: number;
       earliestEditionDate: string | null;
@@ -247,6 +247,13 @@ export interface AskResponse {
       requestedStartDate?: string;
       requestedEndDate?: string;
       category?: string;
+      /** One entry per period when the question compares separate periods. */
+      periods?: Array<{
+        startDate: string;
+        endDate: string;
+        editionCount: number;
+        articleCount: number;
+      }>;
     };
   };
 }

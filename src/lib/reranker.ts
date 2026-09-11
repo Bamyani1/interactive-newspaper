@@ -89,7 +89,7 @@ Given a user question and a list of article summaries, rate each article's relev
 
 For broad survey questions (a year in review, "what happened in ...", a topic or era overview), no single article can directly answer on its own; any substantive article within the asked-about scope is relevant material for the survey (5-8). Reserve 0-3 for content genuinely outside the question's scope.
 
-For a visual search, judge whether the listed image captions describe the requested visual. A direct caption match is strong evidence (7-10); article prose that mentions the subject does not make an unrelated image relevant.
+For a visual search, judge whether the listed image captions describe the requested visual. A direct caption match is strong evidence (7-10); article prose that mentions the subject does not make an unrelated image relevant. Every constraint the question puts on the picture (place, time, people, event) must hold for the pictured scene. "On campus" or "at OWU" means Ohio Wesleyan University in Delaware, Ohio. If the caption or article places the photo somewhere else, such as another campus, Washington, or a national wire photo, score it 0-1 even when the subject matches. When a caption says nothing about a constraint, judge it from the article.
 
 Judge whether a source helps answer the question, not whether it confirms the question's premise. A source that directly says a supposed visit, event, plan, or claim did not happen is highly relevant (7-10), because correcting the false premise is the answer.
 
@@ -239,9 +239,7 @@ export async function rerankArticles(
 
     const bodyChars = bodyCharsFor(articles.length);
     const maxScoreTokens = scoreTokenBudget(articles.length);
-    const articleSummaries = articles
-      .map((a, i) => articleDocument(a, i, bodyChars))
-      .join("\n\n");
+    const articleSummaries = articles.map((a, i) => articleDocument(a, i, bodyChars)).join("\n\n");
 
     const userPrompt = `SEARCH MODE: ${options.mode ?? "text"}\nUSER QUESTION (JSON string): ${JSON.stringify(question)}\n\nScore all ${articles.length} articles below. The "scores" array must hold exactly ${articles.length} numbers, in the order the articles are listed.\n\nArticles:\n${articleSummaries}`;
 

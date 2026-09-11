@@ -63,6 +63,8 @@ interface GoldenQuestion {
   expectedSourceIdsAll?: string[];
   /** Every group must contribute at least one returned source ID. */
   expectedSourceIdGroupsAll?: string[][];
+  /** Sources that match the subject but break one of the question's constraints. */
+  forbiddenSourceIds?: string[];
   expectedFactsAny?: string[][];
 }
 
@@ -306,6 +308,9 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
             group.some((id) => sourceIds.has(id)),
             `Expected one frozen source from group [${group.join(", ")}]; got ${[...sourceIds].join(", ")}`
           ).toBe(true);
+        }
+        for (const id of q.forbiddenSourceIds ?? []) {
+          expect(sourceIds.has(id), `Source ${id} breaks a constraint in the question`).toBe(false);
         }
         const answerLower = body.answer.toLowerCase();
         for (const aliases of q.expectedFactsAny ?? []) {

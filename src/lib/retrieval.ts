@@ -409,6 +409,11 @@ export async function rerankWithCorrectiveRetry(params: {
     })
   );
   if (ranked.length === 0 && !params.signal?.aborted) {
+    // A photo search the judge vetoed twice has no picture that fits the
+    // question. Unjudged images in fused order answered "protests on
+    // campus" with a march in Washington; saying none was found is the
+    // honest answer, so visual mode stops here.
+    if (params.mode === "visual") return ranked;
     // Total-veto guard, mirroring the route pipeline: an all-below-
     // threshold verdict over real retrieval candidates is usually a
     // judging artifact on broad questions, not a no-evidence state.
