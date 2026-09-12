@@ -14,8 +14,12 @@ export interface GroundedAnswer {
   citations: Citation[];
 }
 
-const PIPELINE_CITATION_RE = /\[Source (\d+)\]/gi;
-const AGENT_CITATION_RE = /\[(\d{4}-\d{2}-\d{2}-\d+)\]/g;
+// Groups match the reader's parser (src/features/ask-archive/lib/citations.ts):
+// "[Source 1, Source 2]", the shorthand "[Source 3, 4]", and comma-joined agent
+// ids. Counting only lone markers made an answer that cites in groups read as
+// uncited, and it was replaced by a refusal.
+const PIPELINE_CITATION_RE = /\[Source (\d+(?:\s*,\s*(?:Source\s*)?\d+)*)\]/gi;
+const AGENT_CITATION_RE = /\[(\d{4}-\d{2}-\d{2}-\d+(?:\s*,\s*\d{4}-\d{2}-\d{2}-\d+)*)\]/g;
 const IMAGE_MARKDOWN_RE = /!\[([^\]\r\n]*)\]\(([^)\r\n]+)\)/g;
 const MARKDOWN_LINK_RE = /(?<!!)\[([^\]\r\n]+)\]\(([^)\r\n]+)\)/g;
 const BARE_WEB_URL_RE = /https?:\/\/[^\s<>]+/gi;
@@ -73,11 +77,15 @@ export function groundPipelineAnswer(
   sourceArticles: RetrievedArticle[]
 ): GroundedAnswer {
   const citedIndexes: number[] = [];
-  const cleanedMarkers = answer.replace(PIPELINE_CITATION_RE, (marker, rawIndex: string) => {
-    const index = Number.parseInt(rawIndex, 10) - 1;
-    if (index < 0 || index >= sourceArticles.length) return "";
-    citedIndexes.push(index);
-    return marker;
+  const cleanedMarkers = answer.replace(PIPELINE_CITATION_RE, (_marker, inner: string) => {
+    const indexes = inner
+      .split(/\s*,\s*/)
+      .map((raw) => Number.parseInt(raw.replace(/^Source\s*/i, ""), 10) - 1)
+      .filter((index) => index >= 0 && index < sourceArticles.length);
+    citedIndexes.push(...indexes);
+    return indexes.length === 0
+      ? ""
+      : `[${indexes.map((index) => `Source ${index + 1}`).join(", ")}]`;
   });
 
   const citations: Citation[] = [];
@@ -112,10 +120,10 @@ export function groundAgentAnswer(
   articleLookup: Map<string, AgentGroundingArticle>
 ): GroundedAnswer {
   const citedIdsInOrder: string[] = [];
-  const cleanedMarkers = answer.replace(AGENT_CITATION_RE, (marker, articleId: string) => {
-    if (!articleLookup.has(articleId)) return "";
-    citedIdsInOrder.push(articleId);
-    return marker;
+  const cleanedMarkers = answer.replace(AGENT_CITATION_RE, (_marker, inner: string) => {
+    const ids = inner.split(/\s*,\s*/).filter((articleId) => articleLookup.has(articleId));
+    citedIdsInOrder.push(...ids);
+    return ids.length === 0 ? "" : `[${ids.join(", ")}]`;
   });
 
   const citations: Citation[] = [];
