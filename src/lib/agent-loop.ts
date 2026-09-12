@@ -49,7 +49,7 @@ const AGENT_MODEL = RAG_MODEL_CONFIG.agent.model;
 const MAX_TOOL_ROUNDS = 3;
 // Time kept back for writing the answer. Research rounds could run out the
 // route's deadline, and the reader got a timeout with no answer at all.
-const WRITING_RESERVE_MS = 15_000;
+const WRITING_RESERVE_MS = 20_000;
 /**
  * Thinking is billed against this same budget, not on top of it, and the
  * agent thinks at MEDIUM. At 4096 that was not a ceiling the answer rarely
