@@ -279,6 +279,26 @@ describe("agent-tools", () => {
     expect(result.kind).toBe("timeout");
   });
 
+  it("labels a database timeout that retrieval wrapped", async () => {
+    const bothLegs = Object.assign(
+      new Error("Both full-text and vector retrieval signals failed."),
+      {
+        name: "RetrievalSignalsUnavailableError",
+        ftsError: new MockDbTimeoutError("hybridSearch", 10_000),
+        vectorError: new Error("embedding failed"),
+      }
+    );
+    searchAndRankArchiveMock.mockRejectedValueOnce(bothLegs);
+    expect((await executeTool("search_archive", { query: "football" })).kind).toBe("timeout");
+
+    const staged = Object.assign(new Error("retry retrieval failed"), {
+      name: "RetrievalStageError",
+      cause: new MockDbTimeoutError("hybridSearch", 10_000),
+    });
+    searchAndRankArchiveMock.mockRejectedValueOnce(staged);
+    expect((await executeTool("search_archive", { query: "football" })).kind).toBe("timeout");
+  });
+
   it("labels anything else as a plain failure", async () => {
     searchAndRankArchiveMock.mockRejectedValue(new Error("index exploded"));
 

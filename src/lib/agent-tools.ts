@@ -275,5 +275,14 @@ function toolErrorKind(error: unknown): ToolErrorKind {
   if (error instanceof ToolArgumentError) return "invalid_arguments";
   if (isQuotaFailure(error)) return "quota";
   if (error instanceof DbTimeoutError) return "timeout";
+  // Retrieval wraps what failed (RetrievalStageError.cause, and both legs of
+  // RetrievalSignalsUnavailableError), so a timeout inside one used to read as
+  // a plain failure and the answer was never marked degraded.
+  const wrapper = error as { cause?: unknown; ftsError?: unknown; vectorError?: unknown } | null;
+  for (const inner of [wrapper?.cause, wrapper?.ftsError, wrapper?.vectorError]) {
+    if (inner === undefined) continue;
+    const kind = toolErrorKind(inner);
+    if (kind !== "failed") return kind;
+  }
   return "failed";
 }
