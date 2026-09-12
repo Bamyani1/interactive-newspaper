@@ -232,6 +232,17 @@ describe("rerankArticles", () => {
     expect(instruction).toContain("correcting the false premise is the answer");
   });
 
+  // "Which of those arguments came up most often?" has no one article that
+  // answers it, so every article scored 4-5 and the answer step refused.
+  it("tells the judge an article giving one instance of a tally is relevant", async () => {
+    generateContentMock.mockResolvedValue({ text: '{"scores":[6]}' });
+    await rerankArticles("Which argument against the war came up most often?", [makeArticle()]);
+
+    const instruction = generateContentMock.mock.calls[0][0].config.systemInstruction;
+    expect(instruction).toContain("score each article by whether it gives one instance to count");
+    expect(instruction).toContain("This applies only to tally questions");
+  });
+
   it("limits a legacy body excerpt to 2000 characters", async () => {
     generateContentMock.mockResolvedValue({ text: '{"scores":[7]}' });
     await rerankArticles("test", [makeArticle({ bodyPlain: "X".repeat(3000) })]);

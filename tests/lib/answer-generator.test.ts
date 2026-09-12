@@ -47,6 +47,10 @@ function makeArticle(overrides: Partial<RankedArticle> = {}): RankedArticle {
   };
 }
 
+function articlesScored(scores: number[]): RankedArticle[] {
+  return scores.map((relevanceScore, i) => makeArticle({ id: `1960-01-07-${i}`, relevanceScore }));
+}
+
 function jsonResponse(answer: string, followUps: string[] = []) {
   return { text: JSON.stringify({ answer, follow_ups: followUps }) };
 }
@@ -253,6 +257,22 @@ describe("generateAnswer", () => {
     expect(result.answer).toContain("Answer");
   });
 
+  // "Which of those arguments came up most often?" has no one article that
+  // answers it: a few sources score 6-7 and the rest 4. The mean of all of
+  // them fell under the cutoff and the reader got a refusal.
+  it("generates when the best sources are relevant and the rest partial", async () => {
+    generateContentMock.mockResolvedValue(jsonResponse("Answer [Source 1]."));
+    const result = await generateAnswer("question", articlesScored([7, 6, 6, 4, 4, 4, 4, 4]));
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+    expect(result.outcome).toBe("answered");
+  });
+
+  it("refuses when even the best sources are only partial", async () => {
+    const result = await generateAnswer("question", articlesScored([6, 4, 4, 4, 4]));
+    expect(generateContentMock).not.toHaveBeenCalled();
+    expect(result.outcome).toBe("no_evidence");
+  });
+
   it("passes matched chunks instead of unrelated full article text", async () => {
     generateContentMock.mockResolvedValue(jsonResponse("Answer [Source 1]."));
     await generateAnswer("late fact", [
@@ -290,6 +310,16 @@ describe("generateAnswer", () => {
     // A backstop for the judge: a photo from the wrong place is no answer.
     expect(generateContentMock.mock.calls[0][0].config.systemInstruction).toContain(
       "Embed an image only when its caption and article fit every constraint in the question"
+    );
+  });
+
+  // "Which of those arguments came up most often?" was refused because no
+  // article publishes a tally; counting across the sources is the answer.
+  it("tells the model to count a tally across the sources", async () => {
+    generateContentMock.mockResolvedValue(jsonResponse("Answer [Source 1]."));
+    await generateAnswer("Which argument came up most often?", [makeArticle()]);
+    expect(generateContentMock.mock.calls[0][0].config.systemInstruction).toContain(
+      "the lack of a published tally is not a reason to refuse"
     );
   });
 
@@ -354,6 +384,20 @@ describe("generateAnswer", () => {
 });
 
 describe("generateAnswerStream", () => {
+  it("streams an answer when the best sources are relevant and the rest partial", async () => {
+    generateContentStreamMock.mockResolvedValue(
+      (async function* () {
+        yield { text: '{"answer":"Answer [Source 1].","follow_ups":[]}', usageMetadata: {} };
+      })()
+    );
+    const events = [];
+    for await (const event of generateAnswerStream("q", articlesScored([7, 6, 6, 4, 4, 4, 4, 4]))) {
+      events.push(event);
+    }
+    expect(generateContentStreamMock).toHaveBeenCalledTimes(1);
+    expect(events.at(-1)).toEqual(expect.objectContaining({ type: "done", outcome: "answered" }));
+  });
+
   it("emits only decoded answer text from the JSON envelope, never syntax", async () => {
     generateContentStreamMock.mockResolvedValue(
       (async function* () {
