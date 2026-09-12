@@ -48,6 +48,20 @@ const RERANK_MEDIUM = 6;
 const RERANK_RELEVANT = 7;
 const RERANK_CONFIDENT = 8;
 
+// The refusal cutoff reads the best few sources, not the whole set. A
+// question that summarizes across articles ("which argument came up most
+// often?") keeps a few strong sources and many partial ones, and the mean
+// of all of them refused it.
+const CUTOFF_SOURCE_COUNT = 3;
+
+function bestScoresMean(articles: RankedArticle[]): number {
+  const best = articles
+    .map((a) => a.relevanceScore)
+    .sort((a, b) => b - a)
+    .slice(0, CUTOFF_SOURCE_COUNT);
+  return best.reduce((sum, score) => sum + score, 0) / best.length;
+}
+
 // ─── Types ───────────────────────────────────────────────────────
 
 export interface GeneratedAnswer {
@@ -109,6 +123,7 @@ RULES — follow these exactly:
 7. Preserve exact names, dates, and figures from the sources — do not paraphrase numbers or proper nouns.
 8. If multiple sources discuss the same topic, synthesize them and cite all relevant sources.
 9. Never make up quotes, statistics, or events not explicitly stated in the sources.
+10. For a question that asks which topic or argument came up most often, or how often something appeared, count across these sources: say how many sources show each item, cite them, and say the count covers only the sources found here, not the whole archive. A count made this way is not a made-up statistic, and the lack of a published tally is not a reason to refuse.
 
 IMAGES:
 - Some sources list an "Images:" block after their text. Each image has a caption (or "Untitled photo") and a URL.
@@ -387,7 +402,7 @@ export async function generateAnswer(
   const rerankDegraded = rerankWasDegraded(sourceArticles);
   const confidence = computeConfidence(sourceArticles.length, avgRerankerScore, rerankDegraded);
 
-  if (avgRerankerScore < RERANK_TANGENTIAL) {
+  if (bestScoresMean(sourceArticles) < RERANK_TANGENTIAL) {
     return {
       answer: applyCoverageAnswerPolicy(
         "I don't have enough information in the archive to answer this question. The articles I found don't seem to be closely related to what you're asking about.",
@@ -577,7 +592,7 @@ export async function* generateAnswerStream(
   const rerankDegraded = rerankWasDegraded(sourceArticles);
   const confidence = computeConfidence(sourceArticles.length, avgRerankerScore, rerankDegraded);
 
-  if (avgRerankerScore < RERANK_TANGENTIAL) {
+  if (bestScoresMean(sourceArticles) < RERANK_TANGENTIAL) {
     yield {
       type: "done",
       answer: applyCoverageAnswerPolicy(
