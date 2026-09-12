@@ -26,6 +26,8 @@ const RERANKER_MODEL = RAG_MODEL_CONFIG.rerank.model;
  * here is cheap.
  */
 const RERANKER_TIMEOUT_MS = 12_000;
+/** Most candidates re-judged after a timeout: the top of the fused order. */
+const RERANKER_TIMEOUT_RETRY_CANDIDATES = 20;
 /**
  * Total body excerpt across all candidates, not per candidate. The judge
  * prompt has to stay roughly constant as the candidate pool grows, or
@@ -222,6 +224,83 @@ async function voyageRerank(
   }
 }
 
+/**
+ * One Gemini judge call: scores for `articles` in order, or null when the
+ * response can't be parsed. Throws on quota, timeout, and API errors.
+ */
+async function geminiScores(
+  question: string,
+  articles: RetrievedArticle[],
+  bodyChars: number,
+  options: RerankOptions
+): Promise<number[] | null> {
+  const client = getGeminiClient();
+  const maxScoreTokens = scoreTokenBudget(articles.length);
+  const articleSummaries = articles.map((a, i) => articleDocument(a, i, bodyChars)).join("\n\n");
+
+  const userPrompt = `SEARCH MODE: ${options.mode ?? "text"}\nUSER QUESTION (JSON string): ${JSON.stringify(question)}\n\nScore all ${articles.length} articles below. The "scores" array must hold exactly ${articles.length} numbers, in the order the articles are listed.\n\nArticles:\n${articleSummaries}`;
+
+  const response = await retryOnQuota(
+    "rerank",
+    () => {
+      // Fresh timeout per attempt: a retried call needs its own budget,
+      // not the remains of the attempt that hit the quota.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), RERANKER_TIMEOUT_MS);
+
+      const combinedSignal = options.signal
+        ? AbortSignal.any([options.signal, controller.signal])
+        : controller.signal;
+
+      return executeTrackedGenerationCall({
+        model: RERANKER_MODEL,
+        maxOutputTokens: maxScoreTokens,
+        requestId: options.requestId,
+        op: "rerank",
+        call: () =>
+          client.models.generateContent({
+            model: RERANKER_MODEL,
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+            config: {
+              systemInstruction: RERANKER_PROMPT,
+              maxOutputTokens: maxScoreTokens,
+              thinkingConfig: {
+                thinkingLevel: RAG_MODEL_CONFIG.rerank.thinkingLevel,
+              },
+              responseMimeType: "application/json",
+              responseJsonSchema: rerankerSchema(articles.length),
+              abortSignal: combinedSignal,
+            },
+          }),
+      }).finally(() => clearTimeout(timeout));
+    },
+    { signal: options.signal, requestId: options.requestId }
+  );
+
+  const text = response.text?.trim() ?? "";
+  const scores = parseScores(text, articles.length);
+
+  if (!scores) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        route: "/api/ask",
+        requestId: options.requestId,
+        stage: "rerank",
+        msg: "failed to parse reranker scores, returning original articles",
+        // Without these the failure is indistinguishable from a timeout
+        // in the log, which is how a one-in-six degradation went unread
+        // for as long as it did.
+        articleCount: articles.length,
+        maxOutputTokens: maxScoreTokens,
+        responseChars: text.length,
+        responseHead: text.slice(0, 200),
+      })
+    );
+  }
+  return scores;
+}
+
 export async function rerankArticles(
   question: string,
   articles: RetrievedArticle[],
@@ -237,76 +316,41 @@ export async function rerankArticles(
   if (voyageRanked !== null) return voyageRanked;
 
   try {
-    const client = getGeminiClient();
-
     const bodyChars = bodyCharsFor(articles.length);
-    const maxScoreTokens = scoreTokenBudget(articles.length);
-    const articleSummaries = articles.map((a, i) => articleDocument(a, i, bodyChars)).join("\n\n");
-
-    const userPrompt = `SEARCH MODE: ${options.mode ?? "text"}\nUSER QUESTION (JSON string): ${JSON.stringify(question)}\n\nScore all ${articles.length} articles below. The "scores" array must hold exactly ${articles.length} numbers, in the order the articles are listed.\n\nArticles:\n${articleSummaries}`;
-
-    const response = await retryOnQuota(
-      "rerank",
-      () => {
-        // Fresh timeout per attempt: a retried call needs its own budget,
-        // not the remains of the attempt that hit the quota.
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), RERANKER_TIMEOUT_MS);
-
-        const combinedSignal = options.signal
-          ? AbortSignal.any([options.signal, controller.signal])
-          : controller.signal;
-
-        return executeTrackedGenerationCall({
-          model: RERANKER_MODEL,
-          maxOutputTokens: maxScoreTokens,
-          requestId: options.requestId,
-          op: "rerank",
-          call: () =>
-            client.models.generateContent({
-              model: RERANKER_MODEL,
-              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-              config: {
-                systemInstruction: RERANKER_PROMPT,
-                maxOutputTokens: maxScoreTokens,
-                thinkingConfig: {
-                  thinkingLevel: RAG_MODEL_CONFIG.rerank.thinkingLevel,
-                },
-                responseMimeType: "application/json",
-                responseJsonSchema: rerankerSchema(articles.length),
-                abortSignal: combinedSignal,
-              },
-            }),
-        }).finally(() => clearTimeout(timeout));
-      },
-      { signal: options.signal, requestId: options.requestId }
-    );
-
-    const text = response.text?.trim() ?? "";
-    const scores = parseScores(text, articles.length);
-
-    if (!scores) {
+    let judged = articles;
+    let scores: number[] | null;
+    try {
+      scores = await geminiScores(question, judged, bodyChars, options);
+    } catch (err) {
+      // Only the judge's own timer, not the request's deadline.
+      const judgeTimedOut =
+        err instanceof Error && err.name === "AbortError" && !options.signal?.aborted;
+      if (!judgeTimedOut) throw err;
+      // Ask once more about the top of the fused order at the same excerpt
+      // length, so the retry prompt is half the size instead of the same
+      // excerpt budget spread over fewer articles.
+      judged = articles.slice(
+        0,
+        Math.min(RERANKER_TIMEOUT_RETRY_CANDIDATES, Math.ceil(articles.length / 2))
+      );
       console.warn(
         JSON.stringify({
           level: "warn",
           route: "/api/ask",
           requestId: options.requestId,
           stage: "rerank",
-          msg: "failed to parse reranker scores, returning original articles",
-          // Without these the failure is indistinguishable from a timeout
-          // in the log, which is how a one-in-six degradation went unread
-          // for as long as it did.
+          msg: "reranker timed out; retrying with fewer candidates",
           articleCount: articles.length,
-          maxOutputTokens: maxScoreTokens,
-          responseChars: text.length,
-          responseHead: text.slice(0, 200),
+          retryCount: judged.length,
         })
       );
-      return failOpen(articles, maxArticles);
+      scores = await geminiScores(question, judged, bodyChars, options);
     }
 
+    if (!scores) return failOpen(articles, maxArticles);
+
     // Attach scores, filter, sort, and cap
-    return articles
+    return judged
       .map((a, i) => ({ ...a, relevanceScore: scores[i] }))
       .filter((a) => a.relevanceScore >= minScore)
       .sort((a, b) => b.relevanceScore - a.relevanceScore)

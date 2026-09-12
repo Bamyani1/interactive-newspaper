@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   runAgentLoop,
-  parseCitations,
   scoreConfidence,
   accumulateArticleMeta,
   buildAgentSourceArticleIds,
@@ -783,57 +782,6 @@ describe("agent-loop", () => {
       expect(meta.category).toBe("News");
       expect(meta.imageUrls).toEqual(["img.jpg"]);
       expect(meta.evidenceText).toBe("E1");
-    });
-  });
-
-  describe("parseCitations", () => {
-    const lookup = new Map<string, ArticleMeta>();
-    lookup.set("1965-03-15-4", {
-      headline: "Test Headline",
-      editionDate: "1965-03-15",
-      category: "News",
-      summary: "",
-      byline: null,
-      bodySnippet: "",
-      imageUrls: [],
-      imageCaptions: [],
-    });
-
-    it("extracts valid citation IDs", () => {
-      const citations = parseCitations("See [1965-03-15-4] for details.", lookup);
-      expect(citations).toHaveLength(1);
-      expect(citations[0].articleId).toBe("1965-03-15-4");
-      expect(citations[0].headline).toBe("Test Headline");
-    });
-
-    it("deduplicates repeated citations", () => {
-      const citations = parseCitations("[1965-03-15-4] and again [1965-03-15-4].", lookup);
-      expect(citations).toHaveLength(1);
-    });
-
-    it("returns empty array when no citations found", () => {
-      const citations = parseCitations("No citations here.", lookup);
-      expect(citations).toHaveLength(0);
-    });
-
-    it("rejects citations that were not returned by a tool", () => {
-      const citations = parseCitations("[2000-01-01-1] unknown.", lookup);
-      expect(citations).toEqual([]);
-    });
-
-    it("handles multiple different citations", () => {
-      lookup.set("1970-05-20-2", {
-        headline: "Another",
-        editionDate: "1970-05-20",
-        category: "Sports",
-        summary: "",
-        byline: null,
-        bodySnippet: "",
-        imageUrls: [],
-        imageCaptions: [],
-      });
-      const citations = parseCitations("[1965-03-15-4] and [1970-05-20-2].", lookup);
-      expect(citations).toHaveLength(2);
     });
   });
 

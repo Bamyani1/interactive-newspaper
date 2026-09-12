@@ -17,7 +17,10 @@ import { formatHistoryForPrompt } from "@/src/lib/conversation-store";
 import type { ConversationTurn } from "@/src/lib/conversation-store";
 
 const REFORMULATION_MODEL = RAG_MODEL_CONFIG.reformulate.model;
-const REFORMULATION_TIMEOUT_MS = 5_000;
+// The slowest production rewrites took 5.0 s against a 5 s limit, and a
+// timed-out rewrite searches crude keywords with no date filter and never
+// reaches the agent. Eight seconds lets a slow rewrite finish.
+const REFORMULATION_TIMEOUT_MS = 8_000;
 const REFORMULATION_MAX_TOKENS = 350;
 
 export type Complexity = "simple" | "complex";
@@ -257,12 +260,12 @@ export async function reformulateQuery(
       "reformulate",
       () => {
         // Fresh timeout per attempt: a retried call must get its own
-        // 5s budget, not the remains of the first attempt's.
+        // budget, not the remains of the first attempt's.
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), REFORMULATION_TIMEOUT_MS);
 
         // Combine the outer request signal (from /api/ask's global deadline)
-        // with the internal 5s timeout. Either firing aborts the SDK call.
+        // with the internal timeout. Either firing aborts the SDK call.
         const combinedSignal = opts.signal
           ? AbortSignal.any([opts.signal, controller.signal])
           : controller.signal;

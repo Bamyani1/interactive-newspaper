@@ -293,6 +293,64 @@ describe("rerankArticles", () => {
     expect(result[0].rerankDegraded).toBeUndefined();
   });
 
+  // A judge call over a 40-candidate pool ran past its 12-second timer on
+  // about one question in fifteen, and that answer came from unchecked
+  // search results.
+  describe("on a judge timeout", () => {
+    const abortError = () =>
+      Object.assign(new Error("This operation was aborted"), { name: "AbortError" });
+    const pool = (count: number) =>
+      Array.from({ length: count }, (_, i) =>
+        makeArticle({ id: `a${i}`, bodyPlain: "B".repeat(3000) })
+      );
+
+    it("retries once with the top half of the pool at the first excerpt length", async () => {
+      generateContentMock
+        .mockRejectedValueOnce(abortError())
+        .mockResolvedValueOnce({ text: JSON.stringify({ scores: Array(20).fill(7) }) });
+
+      const result = await rerankArticles("test", pool(40), { minScore: 4, maxArticles: 12 });
+
+      expect(generateContentMock).toHaveBeenCalledTimes(2);
+      const retryPrompt = generateContentMock.mock.calls[1][0].contents[0].parts[0].text;
+      expect(retryPrompt).toContain("Score all 20 articles");
+      expect(retryPrompt).toContain(`Excerpt: ${"B".repeat(1000)}\n`);
+      expect(retryPrompt).not.toContain("B".repeat(1001));
+      expect(result.map((article) => article.id)).toEqual(
+        Array.from({ length: 12 }, (_, i) => `a${i}`)
+      );
+      expect(result.every((article) => article.rerankDegraded === undefined)).toBe(true);
+    });
+
+    it("fails open when the retry times out too", async () => {
+      generateContentMock.mockRejectedValue(abortError());
+      const result = await rerankArticles("test", pool(40), { minScore: 4, maxArticles: 12 });
+      expect(generateContentMock).toHaveBeenCalledTimes(2);
+      expect(result).toHaveLength(12);
+      expect(result.every((article) => article.rerankDegraded === true)).toBe(true);
+    });
+
+    it("does not retry once the request itself was aborted", async () => {
+      const controller = new AbortController();
+      generateContentMock.mockImplementation(async () => {
+        controller.abort();
+        throw abortError();
+      });
+      const result = await rerankArticles("test", pool(40), {
+        signal: controller.signal,
+        maxArticles: 12,
+      });
+      expect(generateContentMock).toHaveBeenCalledTimes(1);
+      expect(result[0].rerankDegraded).toBe(true);
+    });
+
+    it("does not retry an ordinary failure", async () => {
+      generateContentMock.mockRejectedValue(new Error("API error"));
+      await rerankArticles("test", pool(40), { maxArticles: 12 });
+      expect(generateContentMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("retries a quota failure and then refuses instead of failing open", async () => {
     vi.useFakeTimers();
     try {
