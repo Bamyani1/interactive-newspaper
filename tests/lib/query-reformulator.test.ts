@@ -283,6 +283,52 @@ describe("reformulateQuery", () => {
     expect(result.reformulationDegraded).toBeUndefined();
   });
 
+  // The slowest production rewrites took 5.0 s, the old limit, and a timed-out
+  // rewrite searches crude keywords with no date filter.
+  it("waits up to 8 seconds for a slow rewrite and gives up after that", async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const respondAfter = (delayMs: number) =>
+      generateContentMock.mockImplementationOnce(
+        ({ config }: { config: { abortSignal: AbortSignal } }) =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(
+              () =>
+                resolve({
+                  text: JSON.stringify({
+                    embeddingQuery: "Ohio Wesleyan basketball",
+                    ftsQuery: "basketball",
+                    mode: "text",
+                    complexity: "simple",
+                    coverageIntent: "none",
+                    startYear: 0,
+                    endYear: 0,
+                  }),
+                }),
+              delayMs
+            );
+            config.abortSignal.addEventListener("abort", () => {
+              clearTimeout(timer);
+              reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+            });
+          })
+      );
+    try {
+      respondAfter(6_000);
+      const slow = reformulateQuery("What basketball teams existed?");
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect((await slow).reformulationDegraded).toBeUndefined();
+
+      respondAfter(9_000);
+      const hung = reformulateQuery("What basketball teams existed?");
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect((await hung).reformulationDegraded).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("flags a quota failure in the warning and refuses to degrade past it", async () => {
     vi.useFakeTimers();
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
