@@ -456,7 +456,7 @@ async function rerankWithCragRetry(params: {
 }
 
 // Test hook: tests set this to a short value so they can exercise the
-// global deadline path without waiting 30 real seconds. Null = default.
+// global deadline path without waiting 55 real seconds. Null = default.
 let _testDeadlineMsOverride: number | null = null;
 export function _setGlobalDeadlineForTests(ms: number | null): void {
   _testDeadlineMsOverride = ms;
@@ -951,10 +951,8 @@ async function handleStreamingAsk(params: {
         send({ type: "stage", name: "retrieve", elapsedMs: stageElapsed() });
 
         // ── Step 3: Rerank ──
-        // Text answers: 6 sources post-rerank — answer F1 peaks near 3-6 kept
-        // sources and declines as distractors accumulate; also trims ~40% off
-        // the generation prompt. Visual mode keeps a wider pool for image
-        // selection (accuracy band-gated by the holdout eval).
+        // How many sources survive the rerank comes from answerSourceLimitFor:
+        // 12 for text answers, and a wider pool for visual image selection.
         const keepTopK = answerSourceLimitFor(mode);
         logRerankSignals(requestId, computeRerankSignals(articles), mode, "streaming");
 
@@ -984,7 +982,7 @@ async function handleStreamingAsk(params: {
           const cause = err instanceof StageError ? err.cause : err;
           const message =
             cause instanceof QuotaExhaustedError
-              ? "Daily AI quota reached. Please try again later."
+              ? "AI quota reached. Please try again later."
               : cause instanceof DeadlineExceededError
                 ? "Request timed out. Please try again."
                 : cause instanceof DbTimeoutError
@@ -1544,12 +1542,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
       }
       if (quotaError) {
+        // A per-minute quota trip clears in seconds; only a long provider wait
+        // is the daily budget. Parse it instead of always saying "an hour".
+        const retryAfterSec = retryAfterSecFromQuotaError(quotaError);
         return askErrorJson({
           status: 429,
-          kind: "budget",
+          kind: kindForQuota(retryAfterSec),
           message:
             "Vector quota was exhausted and full-text retrieval also failed. Please try again later.",
-          retryAfterSec: 3600,
+          retryAfterSec,
           cause: "quota_exhausted",
           stage: "retrieve",
           requestId,
@@ -1726,11 +1727,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             err: err.cause.message,
           })
         );
+        const retryAfterSec = retryAfterSecFromQuotaError(err.cause);
         return askErrorJson({
           status: 429,
-          kind: "budget",
-          message: "Daily AI quota reached. Please try again tomorrow.",
-          retryAfterSec: 3600,
+          kind: kindForQuota(retryAfterSec),
+          message: "AI quota reached. Please try again later.",
+          retryAfterSec,
           cause: "quota_exhausted",
           stage: err.stage,
           requestId,
