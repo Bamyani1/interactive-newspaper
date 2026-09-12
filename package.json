@@ -95,6 +95,6 @@
     "tsx": "^4.23.13",
     "typescript": "^5",
     "vitest": "4.1.11",
-    "youtubei.js": "^17.2.0"
+    "youtubei.js": "^18.0.0"
   }
 }
