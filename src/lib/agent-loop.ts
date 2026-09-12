@@ -239,34 +239,6 @@ export function buildAgentSourceArticleIds(
   return ids;
 }
 
-// ─── Citation Parsing ───────────────────────────────────────────
-
-const CITATION_RE = /\[(\d{4}-\d{2}-\d{2}-\d+)\]/g;
-
-export function parseCitations(text: string, articleLookup: Map<string, ArticleMeta>): Citation[] {
-  CITATION_RE.lastIndex = 0;
-  const seen = new Set<string>();
-  const citations: Citation[] = [];
-
-  let match;
-  while ((match = CITATION_RE.exec(text)) !== null) {
-    const articleId = match[1];
-    if (seen.has(articleId)) continue;
-    seen.add(articleId);
-
-    const meta = articleLookup.get(articleId);
-    if (!meta) continue;
-    citations.push({
-      articleId,
-      ...(meta.contentRevisionId ? { contentRevisionId: meta.contentRevisionId } : {}),
-      headline: meta.headline,
-      editionDate: meta.editionDate,
-    });
-  }
-
-  return citations;
-}
-
 // ─── Confidence Scoring ─────────────────────────────────────────
 
 export function scoreConfidence(
@@ -789,7 +761,7 @@ export async function runAgentLoop(
           (r) => typeof (r.response as Record<string, unknown>).error === "string"
         );
         if (allErrors) {
-          logError(requestId, "all tools in round returned errors", { round });
+          logError(requestId, "all tools in round returned errors", `round ${round}`);
         }
 
         toolCallCount += functionCalls.length;
