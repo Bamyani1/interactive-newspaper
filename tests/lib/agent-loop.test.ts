@@ -346,6 +346,71 @@ describe("agent-loop", () => {
       expect(result.answer).toContain("incomplete");
     });
 
+    // Research rounds could use the whole 55-second budget, and the reader
+    // got a timeout with no answer. Near the deadline the loop writes from
+    // the evidence it already has.
+    it("writes the answer instead of starting a round near the deadline", async () => {
+      (executeTool as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+      mockGenerateContent(
+        { functionCalls: [{ name: "search_archive", args: { query: "q0" } }] },
+        { text: "Written from the evidence so far." }
+      );
+
+      const result = await runAgentLoop("hard question", { deadlineAt: Date.now() + 10_000 });
+
+      expect(modelCalls).toHaveLength(2);
+      expect(modelCalls[1].config.toolConfig.functionCallingConfig.mode).toBe("NONE");
+      expect(result.rounds).toBe(1);
+      expect(result.answer).toContain("Written from the evidence so far.");
+    });
+
+    it("skips a round's searches when the deadline arrives during the round", async () => {
+      let clock = 1_000_000;
+      const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => clock);
+      try {
+        (executeTool as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+          clock += 20_000;
+          return { results: [] };
+        });
+        const streamed = mockGenerateContentStreamFn.getMockImplementation()!;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mockGenerateContentStreamFn.mockImplementation(async (request: any) => {
+          clock += 15_000;
+          return streamed(request);
+        });
+        mockGenerateContent(
+          { functionCalls: [{ name: "search_archive", args: { query: "q0" } }] },
+          { functionCalls: [{ name: "search_archive", args: { query: "q1" } }] },
+          { text: "Written before the deadline." }
+        );
+
+        // Round 0 ends at 35 s. Round 1 starts with 20 s left and asks for
+        // another search at 50 s, leaving 5 s: too little to search and write.
+        const result = await runAgentLoop("hard question", { deadlineAt: clock + 55_000 });
+
+        expect(executeTool).toHaveBeenCalledTimes(1);
+        expect(modelCalls).toHaveLength(3);
+        expect(modelCalls[2].config.toolConfig.functionCallingConfig.mode).toBe("NONE");
+        expect(result.answer).toContain("Written before the deadline.");
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
+
+    it("keeps researching while the deadline is far off", async () => {
+      (executeTool as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+      mockGenerateContent(
+        { functionCalls: [{ name: "search_archive", args: { query: "q0" } }] },
+        { text: "Answered in round one." }
+      );
+
+      const result = await runAgentLoop("hard question", { deadlineAt: Date.now() + 50_000 });
+
+      expect(modelCalls).toHaveLength(2);
+      expect(modelCalls[1].config.tools).toBeDefined();
+      expect(result.answer).toContain("Answered in round one.");
+    });
+
     it("synthesizes from a fresh deduplicated evidence packet", async () => {
       (executeTool as ReturnType<typeof vi.fn>).mockResolvedValue({
         results: [

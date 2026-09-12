@@ -655,6 +655,8 @@ async function handleStreamingAsk(params: {
    */
   globalController: AbortController;
   deadlineTimer: ReturnType<typeof setTimeout>;
+  /** When `deadlineTimer` fires, in epoch ms. */
+  deadlineAt: number;
 }): Promise<NextResponse> {
   const {
     body,
@@ -664,6 +666,7 @@ async function handleStreamingAsk(params: {
     conversationHistory,
     globalController,
     deadlineTimer,
+    deadlineAt,
   } = params;
   const question = body.question.trim();
   const explicitFilters = body.filters ?? {};
@@ -799,6 +802,7 @@ async function handleStreamingAsk(params: {
           try {
             const agentResult = await runAgentLoop(question, {
               signal: globalController.signal,
+              deadlineAt,
               requestId,
               conversationContext,
               filters,
@@ -1370,6 +1374,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       conversationHistory,
       globalController,
       deadlineTimer: globalTimer,
+      deadlineAt: totalStart + deadlineMs,
     });
   }
 
@@ -1434,6 +1439,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const agentResult = await wrapStage("agent", () =>
         runAgentLoop(question, {
           signal: globalController.signal,
+          deadlineAt: totalStart + deadlineMs,
           requestId,
           conversationContext,
           filters,

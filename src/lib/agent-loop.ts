@@ -47,6 +47,9 @@ import {
 
 const AGENT_MODEL = RAG_MODEL_CONFIG.agent.model;
 const MAX_TOOL_ROUNDS = 3;
+// Time kept back for writing the answer. Research rounds could run out the
+// route's deadline, and the reader got a timeout with no answer at all.
+const WRITING_RESERVE_MS = 15_000;
 /**
  * Thinking is billed against this same budget, not on top of it, and the
  * agent thinks at MEDIUM. At 4096 that was not a ceiling the answer rarely
@@ -588,9 +591,12 @@ export async function runAgentLoop(
     filters?: RetrievalFilters;
     coverage?: ArchiveCoverage;
     onProgress?: (event: AgentProgressEvent) => void;
+    /** When the route aborts the request, in epoch ms. */
+    deadlineAt?: number;
   } = {}
 ): Promise<AgentResult> {
-  const { signal, requestId, conversationContext, filters, coverage, onProgress } = opts;
+  const { signal, requestId, conversationContext, filters, coverage, onProgress, deadlineAt } =
+    opts;
 
   const articleLookup = new Map<string, ArticleMeta>();
 
@@ -614,6 +620,9 @@ export async function runAgentLoop(
   let toolErrorCount = 0;
   let successfulSearchCount = 0;
   let finalAnswerProduced = false;
+  // Round 0 always searches: an answer written from no evidence helps nobody.
+  const outOfResearchTime = () =>
+    round > 0 && deadlineAt !== undefined && deadlineAt - Date.now() < WRITING_RESERVE_MS;
   let toolTimedOut = false;
   let answerTruncated = false;
   let quotaStop: { retryAfterSec: number } | undefined;
@@ -667,6 +676,10 @@ export async function runAgentLoop(
       if (signal?.aborted) {
         return failed(TIMED_OUT_ANSWER, "timeout");
       }
+      if (outOfResearchTime()) {
+        logWarn(requestId, "research stopped to leave time for the answer", { rounds: round });
+        break;
+      }
 
       const modelStart = Date.now();
       const roundRequest: GenerateContentParameters = {
@@ -700,6 +713,11 @@ export async function runAgentLoop(
       noteFinishReason(response, `agent.round${round}`);
 
       const functionCalls = response.functionCalls;
+
+      if (functionCalls && functionCalls.length > 0 && outOfResearchTime()) {
+        logWarn(requestId, "searches skipped to leave time for the answer", { rounds: round });
+        break;
+      }
 
       if (functionCalls && functionCalls.length > 0) {
         const toolStart = Date.now();
