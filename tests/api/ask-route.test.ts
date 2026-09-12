@@ -2503,7 +2503,9 @@ describe("typed AskError response body", () => {
     expect(body.kind).toBe("bad_request");
   });
 
-  it("429 budget when vector quota and full-text retrieval both fail", async () => {
+  // A per-minute quota trip with no provider delay is a short wait, not the
+  // daily budget; this path used to promise the reader an hour.
+  it("429 rate_limit when vector quota and full-text retrieval both fail", async () => {
     (embedQuery as ReturnType<typeof vi.fn>).mockRejectedValue(
       new MockQuotaExhaustedError("embedQuery", { code: 429 })
     );
@@ -2515,11 +2517,11 @@ describe("typed AskError response body", () => {
     const body = await response.json();
 
     expect(response.status).toBe(429);
-    expect(body.kind).toBe("budget");
-    expect(body.retryAfterSec).toBe(3600);
+    expect(body.kind).toBe("rate_limit");
+    expect(body.retryAfterSec).toBe(30);
     expect(body.cause).toBe("quota_exhausted");
     expect(body.stage).toBe("retrieve");
-    expect(response.headers.get("Retry-After")).toBe("3600");
+    expect(response.headers.get("Retry-After")).toBe("30");
   });
 
   it("500 server when both retrieval signals fail generically", async () => {
