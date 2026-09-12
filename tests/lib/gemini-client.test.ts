@@ -9,7 +9,11 @@ describe("Gemini Vertex client", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
     GoogleGenAIMock.mockReset();
-    GoogleGenAIMock.mockImplementation((options) => ({ options }));
+    // The client is built with `new`, which an arrow function can't serve
+    // under Vitest 4.
+    GoogleGenAIMock.mockImplementation(function (options) {
+      return { options };
+    });
     _resetGeminiClientForTests();
   });
 
