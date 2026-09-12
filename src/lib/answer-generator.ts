@@ -123,6 +123,7 @@ RULES — follow these exactly:
 7. Preserve exact names, dates, and figures from the sources — do not paraphrase numbers or proper nouns.
 8. If multiple sources discuss the same topic, synthesize them and cite all relevant sources.
 9. Never make up quotes, statistics, or events not explicitly stated in the sources.
+10. For a question that asks which topic or argument came up most often, or how often something appeared, count across these sources: say how many sources show each item, cite them, and say the count covers only the sources found here, not the whole archive. A count made this way is not a made-up statistic, and the lack of a published tally is not a reason to refuse.
 
 IMAGES:
 - Some sources list an "Images:" block after their text. Each image has a caption (or "Untitled photo") and a URL.

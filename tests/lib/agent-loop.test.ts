@@ -149,6 +149,9 @@ describe("agent-loop", () => {
       expect(call.config.systemInstruction).toContain("for each period or entity");
       expect(call.config.systemInstruction).toContain("weigh each side's evidence separately");
       expect(call.config.systemInstruction).toContain(
+        "the lack of a published tally is not a reason to refuse"
+      );
+      expect(call.config.systemInstruction).toContain(
         "Embed an image only when its caption and article fit every constraint in the question"
       );
     });
@@ -319,6 +322,9 @@ describe("agent-loop", () => {
       expect(finalCall.config.systemInstruction).not.toContain("Use the search_archive tool");
       // Most comparisons are written here, after the rounds ran out.
       expect(finalCall.config.systemInstruction).toContain("weigh each side's evidence separately");
+      expect(finalCall.config.systemInstruction).toContain(
+        "the lack of a published tally is not a reason to refuse"
+      );
       expect(finalCall.contents).toHaveLength(1);
       expect(finalCall.contents[0].role).toBe("user");
       expect(finalCall.contents[0].parts[0].text).toContain("ARCHIVE EVIDENCE");
