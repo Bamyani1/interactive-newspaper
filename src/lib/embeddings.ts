@@ -35,7 +35,7 @@ const EMBED_CONCURRENCY = 6;
 // Query embed budget: 10s. Previously 5s, but under Gemini load (or
 // adjacent rapid calls from the rest of the /api/ask pipeline) the
 // p95 query-embed latency spikes to 5-8s, which blew through the old
-// budget and raised spurious 502s. 10s is still well inside the 30s
+// budget and raised spurious 502s. 10s is still well inside the 55s
 // global deadline and consistent with the 30s per-document budget.
 const EMBED_TIMEOUT_MS = 10_000;
 const EMBED_DOCUMENTS_TIMEOUT_MS = 30_000; // per-document budget
