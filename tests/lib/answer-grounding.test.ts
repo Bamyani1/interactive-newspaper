@@ -85,6 +85,47 @@ describe("answer grounding", () => {
     expect(result.answer).toContain("![Tool caption](https://archive.example/tool.webp)");
   });
 
+  // A counted answer ("appeared in three sources [Source 1, Source 3]")
+  // cites in groups. Only lone markers counted, so it read as uncited and
+  // was replaced by a refusal, while the reader's view linked the groups.
+  it("counts every source in a grouped pipeline marker", () => {
+    const result = groundPipelineAnswer(
+      "Moral arguments appeared in [Source 1, Source 3, Source 9]. Economic ones in [Source 2, 1].",
+      [article(), article({ id: "1960-01-07-1" }), article({ id: "1960-01-07-2" })]
+    );
+
+    expect(result.citations.map((citation) => citation.articleId)).toEqual([
+      "1960-01-07-0",
+      "1960-01-07-2",
+      "1960-01-07-1",
+    ]);
+    expect(result.answer).toContain("[Source 1, Source 3]");
+    expect(result.answer).toContain("[Source 2, Source 1]");
+    expect(result.answer).not.toContain("9");
+  });
+
+  it("drops a grouped pipeline marker whose sources are all invented", () => {
+    const result = groundPipelineAnswer("Claim [Source 8, Source 9].", [article()]);
+    expect(result.citations).toEqual([]);
+    expect(result.answer).not.toContain("Source");
+  });
+
+  it("counts every article in a grouped agent marker", () => {
+    const meta = { headline: "H", editionDate: "1965-03-15", imageUrls: [], imageCaptions: [] };
+    const lookup = new Map([
+      ["1965-03-15-4", meta],
+      ["1966-01-12-0", { ...meta, editionDate: "1966-01-12" }],
+    ]);
+    const result = groundAgentAnswer("Claim [1965-03-15-4, 2000-01-01-1, 1966-01-12-0].", lookup);
+
+    expect(result.citations.map((citation) => citation.articleId)).toEqual([
+      "1965-03-15-4",
+      "1966-01-12-0",
+    ]);
+    expect(result.answer).toContain("[1965-03-15-4, 1966-01-12-0]");
+    expect(result.answer).not.toContain("2000-01-01-1");
+  });
+
   it("enforces the three-image output cap", () => {
     const source = article({
       imageUrls: ["https://a/1", "https://a/2", "https://a/3", "https://a/4"],
