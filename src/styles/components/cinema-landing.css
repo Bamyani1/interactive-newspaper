@@ -207,7 +207,8 @@
        inline descendants like the solid .cinema-btn (dark bg, cream text)
        keep the same contrast in light and dark modes. */
   --color-text-primary: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
-  --color-text-secondary: color-mix(in srgb, var(--owu-black) 55%, var(--owu-white));
+  /* 70% clears design.md's 5.4:1 muted floor on the card's paper; 55% was 3.4:1. */
+  --color-text-secondary: color-mix(in srgb, var(--owu-black) 70%, var(--owu-white));
   --color-text-inverse: var(--newsprint-50);
   --color-focus-ring: var(--red-700);
   color: var(--color-text-primary);
@@ -680,7 +681,7 @@
     font-weight: 600;
     letter-spacing: var(--tracking-label-md);
     text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-text-primary) 55%, transparent);
+    color: var(--color-text-secondary);
   }
 
   .cinema-col-action {
