@@ -86,8 +86,11 @@ describe("copy answer", () => {
             editionDate: "1962-04-05",
             category: "News",
             summary: "",
+            byline: null,
             bodySnippet: "",
+            distance: null,
             imageUrls: [],
+            imageCaptions: [],
           },
         ] as TurnData["sourceArticles"],
       })

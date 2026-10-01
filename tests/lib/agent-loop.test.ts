@@ -665,10 +665,11 @@ describe("agent-loop", () => {
       // The round that answers streams like any other, so its text follows
       // the tool rows as a delta rather than arriving only in the result.
       expect(events.map((e) => e.type)).toEqual(["tool_call", "tool_result", "delta"]);
-      expect(events[0].type).toBe("tool_call");
-      expect(events[0].tool).toBe("search_archive");
-      expect(events[1].type).toBe("tool_result");
-      expect(events[1].summary).toContain("Found 1 articles");
+      expect(events[0]).toMatchObject({ type: "tool_call", tool: "search_archive" });
+      expect(events[1]).toMatchObject({
+        type: "tool_result",
+        summary: expect.stringContaining("Found 1 articles"),
+      });
     });
 
     it("streams a first-round answer that needs no tools", async () => {
