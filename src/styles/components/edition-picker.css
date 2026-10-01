@@ -113,7 +113,7 @@
   font-weight: 600;
   letter-spacing: var(--tracking-label-sm);
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-accent) 80%, transparent);
+  color: var(--color-accent);
   margin-top: 8px;
   transition:
     color var(--duration-normal) var(--ease-default),
@@ -149,7 +149,7 @@
 }
 
 .ep-closed-btn:hover .ep-closed-change {
-  color: var(--color-accent);
+  color: var(--color-accent-hover);
   letter-spacing: var(--tracking-label-md);
 }
 
