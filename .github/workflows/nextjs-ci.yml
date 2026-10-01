@@ -88,6 +88,7 @@ jobs:
       - name: Browser tests
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+          PLAYWRIGHT_SERVER_MODE: production
         run: |
           npm run start -- --hostname 127.0.0.1 --port 3000 > next-start.log 2>&1 &
           for _ in $(seq 1 60); do
