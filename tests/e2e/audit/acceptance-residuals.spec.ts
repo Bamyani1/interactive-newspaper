@@ -275,6 +275,10 @@ test("application warnings cannot impersonate the upstream motion warning", asyn
   page,
   diagnostics,
 }) => {
+  test.skip(
+    process.env.PLAYWRIGHT_SERVER_MODE === "production",
+    "The dev-warning allowance is off in production, whose CSP also blocks the injected script."
+  );
   await page.goto("/search");
   await waitForSettledUi(page);
   expectNoUnexpectedDiagnostics(diagnostics);
@@ -417,14 +421,17 @@ test.describe("keyboard-reachable code regions", () => {
     page,
     diagnostics,
   }) => {
-    const response = await page.goto("/dev/primitives");
-    expect(response?.status()).toBe(200);
-    await waitForSettledUi(page);
+    // /dev/primitives is a 404 in production builds; the Ask half still runs there.
+    if (process.env.PLAYWRIGHT_SERVER_MODE !== "production") {
+      const response = await page.goto("/dev/primitives");
+      expect(response?.status()).toBe(200);
+      await waitForSettledUi(page);
 
-    const primitiveCodeRegion = page.locator("pre").first();
-    await expect(primitiveCodeRegion).toHaveAttribute("tabindex", "0");
-    await primitiveCodeRegion.focus();
-    await expect(primitiveCodeRegion).toBeFocused();
+      const primitiveCodeRegion = page.locator("pre").first();
+      await expect(primitiveCodeRegion).toHaveAttribute("tabindex", "0");
+      await primitiveCodeRegion.focus();
+      await expect(primitiveCodeRegion).toBeFocused();
+    }
 
     await page.goto("/ask");
     await waitForSettledUi(page);
