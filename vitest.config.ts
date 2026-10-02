@@ -10,10 +10,6 @@ export default defineConfig({
     setupFiles: ["./tests/setup.ts"],
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     exclude: ["node_modules", "dist"],
-    environmentMatchGlobs: [
-      // Component tests use jsdom
-      ["tests/**", "jsdom"],
-    ],
   },
   resolve: {
     alias: {

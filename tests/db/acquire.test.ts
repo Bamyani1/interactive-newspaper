@@ -19,8 +19,8 @@ function sha256Of(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function fetchReturning(bytes: Buffer): ReturnType<typeof vi.fn> {
-  return vi.fn(async () => new Response(new Uint8Array(bytes)));
+function fetchReturning(bytes: Buffer) {
+  return vi.fn(async (_url: string) => new Response(new Uint8Array(bytes)));
 }
 
 describe("acquireFile", () => {
