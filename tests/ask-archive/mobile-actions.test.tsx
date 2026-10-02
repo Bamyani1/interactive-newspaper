@@ -13,6 +13,8 @@ import { AskMobileActions } from "@/features/ask-archive/components/AskMobileAct
 
 describe("AskMobileActions", () => {
   const baseProps = {
+    onOpenThreads: vi.fn(),
+    threadCount: 0,
     onNewConversation: vi.fn(),
     onClearAllThreads: vi.fn(),
     onExportConversation: vi.fn(),
