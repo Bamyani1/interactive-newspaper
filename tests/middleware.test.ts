@@ -10,7 +10,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { mockRateLimit, createRateLimiter } = vi.hoisted(() => {
   const mockRateLimit = vi.fn();
-  return { mockRateLimit, createRateLimiter: vi.fn(() => mockRateLimit) };
+  return {
+    mockRateLimit,
+    createRateLimiter: vi.fn<(options: unknown) => typeof mockRateLimit>(() => mockRateLimit),
+  };
 });
 
 vi.mock("@/src/lib/rate-limit", () => ({

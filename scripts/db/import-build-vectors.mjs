@@ -173,6 +173,10 @@ async function importTable(executor, dir, table, file, cols, casts, revisionMap,
   return { total: rows.length, inserted };
 }
 
+/**
+ * @param {unknown} executor
+ * @param {{ dir?: string, log?: (message: string) => void }} [options]
+ */
 export async function importBuildVectors(executor, { dir, log = () => {} } = {}) {
   if (!dir) throw new Error("importBuildVectors requires options.dir.");
   const manifest = verifyExportDir(dir);

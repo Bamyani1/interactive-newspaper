@@ -52,6 +52,10 @@ function lastIdInFile(filePath) {
   return JSON.parse(lines[lines.length - 1]).id;
 }
 
+/**
+ * @param {unknown} executor
+ * @param {{ buildId?: string, dir?: string, maxRowsPerTable?: number, log?: (message: string) => void }} [options]
+ */
 export async function exportBuildVectors(
   executor,
   { buildId, dir, maxRowsPerTable = Infinity, log = () => {} } = {}
