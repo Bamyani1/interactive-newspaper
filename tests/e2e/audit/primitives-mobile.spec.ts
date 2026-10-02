@@ -3,6 +3,10 @@ import { expect, test } from "@playwright/test";
 test.use({ viewport: { width: 390, height: 844 } });
 
 test("primitive gallery fits a 390px reduced-motion viewport", async ({ page }) => {
+  test.skip(
+    process.env.PLAYWRIGHT_SERVER_MODE === "production",
+    "/dev/primitives is a 404 in production builds."
+  );
   const response = await page.goto("/dev/primitives");
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { name: "Primitive component library" })).toBeVisible();
