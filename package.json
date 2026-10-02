@@ -45,6 +45,7 @@
     "test:invariants": "vitest run tests/ocr/pipeline-invariants.test.ts",
     "images:upload": "node scripts/db/upload-images.mjs",
     "images:gc": "node scripts/db/gc-r2-assets.mjs",
+    "editions:backup": "node scripts/db/backup-editions.mjs",
     "assets:bootstrap": "node --import tsx scripts/db/bootstrap-asset-registry.mjs",
     "test:typecheck": "tsc -p tsconfig.test.json --noEmit",
     "db:publish-edition": "node --import tsx scripts/db/publish-edition.mjs",
