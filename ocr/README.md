@@ -213,8 +213,9 @@ ocr/logs/failures.jsonl
 It contains sanitized metadata—not prompts, OCR text, images, or model
 responses. Candidate directories, source/OCR derivatives, crop intermediates,
 and rollback directories are removed after success or failure. A source
-directory under the canonical `ocr/inbox/` is removed by the wrapper after the
-attempt; an externally supplied source directory is preserved.
+directory under the canonical `ocr/inbox/` is removed by the wrapper only once
+the edition is published; a run that fails earlier keeps it for a retry. An
+externally supplied source directory is always preserved.
 
 R2 garbage collection is global and manifest-aware. It is dry-run by default
 and refuses a grace period below 30 days. First-unreferenced timestamps live in
