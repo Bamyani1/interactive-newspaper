@@ -106,7 +106,7 @@ def test_content_addressed_webp_is_not_lossily_reencoded(tmp_path: Path) -> None
 
 def test_r2_gc_uses_unreferenced_since_not_object_age() -> None:
     source = GC_SCRIPT.read_text(encoding="utf-8")
-    assert 'gcStateKey = "ocr-assets-gc/unreferenced.json"' in source
+    assert 'GC_STATE_KEY = "ocr-assets-gc/unreferenced.json"' in source
     assert "unreferenced_since" in source
     assert "unreferencedSince <= cutoff" in source
     assert "object.LastModified" not in source
@@ -118,9 +118,14 @@ def test_r2_gc_is_fail_closed_key_scoped_and_publication_locked() -> None:
         encoding="utf-8"
     )
 
-    assert "has no asset manifest" in source
-    assert "no public edition manifests were found" in source
-    assert source.count(r"^ocr-assets\/[a-f0-9]{64}\.webp$") >= 2
+    # Registry-driven since b3c4ace: refuse on a missing, unverified, empty or
+    # stale registry, and only ever collect the two known key layouts.
+    assert "Refusing R2 GC: a registry artifact is required" in source
+    assert "Refusing R2 GC: registry self-hash does not verify" in source
+    assert "Refusing R2 GC: registry contains zero references" in source
+    assert "Refusing R2 GC: the protected reference set is empty" in source
+    assert r"CONTENT_KEY_PATTERN = /^ocr-assets\/[a-f0-9]{64}\.webp$/" in source
+    assert r"LEGACY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}\/images\/[^/]+$/" in source
     assert 'join(assetLockParent, "assets.lock")' in source
     assert 'ASSET_LOCK_DIR="$LOCK_PARENT/assets.lock"' in publisher
     acquisitions = [match.start() for match in re.finditer(r"^\s*acquire_asset_lock$", publisher, re.MULTILINE)]

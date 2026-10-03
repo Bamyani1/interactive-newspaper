@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -102,3 +103,11 @@ def test_batch_and_audit_keep_only_stdout_summaries():
     ):
         assert forbidden not in combined.casefold()
     assert "--seed" in _text(BATCH)
+
+
+def test_inbox_source_is_removed_only_after_publication():
+    source = _text(PROCESS)
+    arming = [match.start() for match in re.finditer(r"^INPUT_CLEANUP_ARMED=true$", source, re.MULTILINE)]
+    final_promotion = source.rindex('promote_candidate || fail 40 "promotion"')
+    assert len(arming) == 1
+    assert arming[0] > final_promotion

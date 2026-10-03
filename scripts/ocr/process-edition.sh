@@ -186,7 +186,6 @@ if [[ "$MODE" == "normal" ]]; then
   [[ -n "$EDITION_PATH" ]] || { usage >&2; fail 2 "arguments" "edition directory is required"; }
   [[ -d "$EDITION_PATH" ]] || fail 2 "preflight" "edition directory not found: $EDITION_PATH"
   SOURCE_ABS="$(cd "$EDITION_PATH" && pwd -P)"
-  INPUT_CLEANUP_ARMED=true
   source_name="$(basename "$SOURCE_ABS")"
   if [[ "$source_name" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
     DATE="${BASH_REMATCH[1]}"
@@ -377,6 +376,9 @@ validate_edition_dir "$CANDIDATE_EDITION" || fail 20 "$FAILURE_STAGE" "uploaded 
 
 promote_candidate || fail 40 "promotion" "atomic public replacement failed"
 release_asset_lock || fail 75 "asset-lock" "could not release asset publication lock"
+# Published: only now may the inbox source go. Earlier failures keep the scans
+# for a retry; a seed failure from here is fixed by --repair-seed, which needs none.
+INPUT_CLEANUP_ARMED=true
 
 if [[ "$SEED_AFTER_PUBLISH" == "true" ]]; then
   FAILURE_STAGE="seed"
