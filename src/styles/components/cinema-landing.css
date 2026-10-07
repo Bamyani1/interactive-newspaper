@@ -206,9 +206,9 @@
        data-mode. Lock the text triad — primary, secondary, inverse — so
        inline descendants like the solid .cinema-btn (dark bg, cream text)
        keep the same contrast in light and dark modes. */
-  --color-text-primary: color-mix(in srgb, var(--owu-black) 90%, var(--owu-white));
+  --color-text-primary: color-mix(in srgb, var(--ink-900) 90%, var(--newsprint-50));
   /* 70% clears design.md's 5.4:1 muted floor on the card's paper; 55% was 3.4:1. */
-  --color-text-secondary: color-mix(in srgb, var(--owu-black) 70%, var(--owu-white));
+  --color-text-secondary: color-mix(in srgb, var(--ink-900) 70%, var(--newsprint-50));
   --color-text-inverse: var(--newsprint-50);
   --color-focus-ring: var(--red-700);
   color: var(--color-text-primary);
@@ -569,7 +569,7 @@
   background: radial-gradient(
     ellipse at center,
     transparent 55%,
-    color-mix(in srgb, var(--owu-charcoal) 15%, transparent) 100%
+    color-mix(in srgb, var(--ink-700) 15%, transparent) 100%
   );
 }
 
@@ -580,11 +580,11 @@
   .cinema-overlay {
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--owu-charcoal) 30%, transparent) 0%,
-    color-mix(in srgb, var(--owu-charcoal) 10%, transparent) 30%,
+    color-mix(in srgb, var(--ink-700) 30%, transparent) 0%,
+    color-mix(in srgb, var(--ink-700) 10%, transparent) 30%,
     transparent 50%,
-    color-mix(in srgb, var(--owu-charcoal) 10%, transparent) 70%,
-    color-mix(in srgb, var(--owu-charcoal) 30%, transparent) 100%
+    color-mix(in srgb, var(--ink-700) 10%, transparent) 70%,
+    color-mix(in srgb, var(--ink-700) 30%, transparent) 100%
   );
 }
 
@@ -593,8 +593,8 @@
     [data-page-shell][data-mode="light"]
   )
   .cinema-paper {
-  filter: drop-shadow(6px 10px 30px color-mix(in srgb, var(--owu-black) 12%, transparent))
-    drop-shadow(2px 4px 10px color-mix(in srgb, var(--owu-black) 8%, transparent));
+  filter: drop-shadow(6px 10px 30px color-mix(in srgb, var(--ink-900) 12%, transparent))
+    drop-shadow(2px 4px 10px color-mix(in srgb, var(--ink-900) 8%, transparent));
 }
 
 :is(
@@ -636,8 +636,8 @@
   .cinema-paper {
     max-width: 440px;
     padding: 32px 24px;
-    background: color-mix(in srgb, var(--owu-white) 94%, var(--owu-black));
-    border: 1px solid color-mix(in srgb, var(--owu-black) 12%, transparent);
+    background: color-mix(in srgb, var(--newsprint-50) 94%, var(--ink-900));
+    border: 1px solid color-mix(in srgb, var(--ink-900) 12%, transparent);
     border-top: 3px solid var(--color-accent);
     filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.35));
   }
