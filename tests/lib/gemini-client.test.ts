@@ -48,13 +48,12 @@ describe("Gemini Vertex client", () => {
     );
   });
 
-  it("uses API-key mode without an ADC project (Vercel serving path)", () => {
-    vi.stubEnv("GOOGLE_API_KEY", "serving-key");
-    getGeminiClient();
-    expect(GoogleGenAIMock).toHaveBeenCalledWith({
-      apiKey: "serving-key",
-      apiVersion: "v1",
-    });
+  // An API key bills a different account than the Cloud project, so a
+  // missing project must fail loudly instead of quietly switching rails.
+  it.each(["GEMINI_API_KEY", "GOOGLE_API_KEY"])("refuses %s without a Cloud project", (name) => {
+    vi.stubEnv(name, "must-not-be-used");
+    expect(() => getGeminiClient()).toThrow(/GOOGLE_CLOUD_PROJECT is not set/);
+    expect(GoogleGenAIMock).not.toHaveBeenCalled();
   });
 
   // Vercel has no gcloud ADC on disk and no metadata server, so the
@@ -122,8 +121,8 @@ describe("Gemini Vertex client", () => {
     });
   });
 
-  it("throws when neither ADC project nor API key is configured", () => {
-    expect(() => getGeminiClient()).toThrow(/Gemini auth is not configured/);
+  it("throws when no Cloud project is configured", () => {
+    expect(() => getGeminiClient()).toThrow(/GOOGLE_CLOUD_PROJECT is not set/);
     expect(GoogleGenAIMock).not.toHaveBeenCalled();
   });
 });

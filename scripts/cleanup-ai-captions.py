@@ -25,6 +25,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "ocr", "src"))
 
 from google import genai
+from transcript_ocr.config.google_clients import create_genai_client, has_google_ai_credentials
 
 # ── AI caption detection ──────────────────────────────────────
 
@@ -131,12 +132,13 @@ def main():
                 value = value.strip("\"'")
                 os.environ.setdefault(key, value)
 
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key and args.apply:
-        print("ERROR: GOOGLE_API_KEY required for --apply mode")
+    # Vertex only (ADC), through the OCR pipeline's client: an API key bills a different account.
+    has_vertex = has_google_ai_credentials()
+    if not has_vertex and args.apply:
+        print("ERROR: GOOGLE_CLOUD_PROJECT required for --apply mode (Vertex AI, ADC)")
         sys.exit(1)
 
-    client = genai.Client(api_key=api_key) if api_key else None
+    client = create_genai_client() if has_vertex else None
 
     # Find editions
     editions_dir = os.path.join(ROOT, "public", "editions")

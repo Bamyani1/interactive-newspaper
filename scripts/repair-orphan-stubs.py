@@ -28,6 +28,7 @@ load_dotenv(ROOT / ".env.local")
 
 from google import genai
 from google.genai import types
+from transcript_ocr.config.google_clients import create_genai_client
 from transcript_ocr.merging.continuation import _strip_continuation_markers
 
 EDITIONS_DIR = ROOT / "public" / "editions"
@@ -275,7 +276,8 @@ def main():
     parser.add_argument("--date", help="Repair a single edition")
     args = parser.parse_args()
 
-    client = genai.Client()
+    # Vertex only (ADC): an API key bills a different account.
+    client = create_genai_client()
 
     # Find affected editions
     if args.date:

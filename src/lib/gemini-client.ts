@@ -46,37 +46,28 @@ function serviceAccountCredentials(): { client_email: string; private_key: strin
 
 export function getGeminiClient(): GoogleGenAI {
   if (!_client) {
-    // Vertex whenever GOOGLE_CLOUD_PROJECT is set, otherwise Gemini
-    // API-key mode. Vertex covers local dev and the data pipeline (where
-    // ADC is the locked provenance decision) and now the serving path too,
-    // which supplies a service account because it has no ADC on disk.
-    //
-    // Serving on Vertex also puts query embeddings on the same endpoint
-    // that produced the index, rather than trusting the two spaces to
-    // match. The API-key branch remains for a deployment with no Cloud
-    // project — and as the rollback if the service account misbehaves.
+    // Vertex only: ADC for local dev and the data pipeline, a service
+    // account on Vercel. Serving on Vertex also puts query embeddings on
+    // the endpoint that produced the index. There is no API-key mode: a
+    // key bills a different account, so a missing project fails here
+    // instead of quietly moving the spend.
     const project = process.env.GOOGLE_CLOUD_PROJECT;
-    if (project) {
-      // Credentials, when supplied, are the only difference between the
-      // two Vertex environments: locally ADC resolves itself and this is
-      // undefined, so the constructor call is byte-identical to before.
-      const credentials = serviceAccountCredentials();
-      _client = new GoogleGenAI({
-        vertexai: true,
-        project,
-        location: process.env.GOOGLE_CLOUD_LOCATION || "global",
-        apiVersion: "v1",
-        ...(credentials ? { googleAuthOptions: { credentials } } : {}),
-      });
-    } else {
-      const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-      if (!apiKey) {
-        throw new Error(
-          "Gemini auth is not configured: set GOOGLE_CLOUD_PROJECT for Vertex ADC, or GEMINI_API_KEY / GOOGLE_API_KEY for API-key mode."
-        );
-      }
-      _client = new GoogleGenAI({ apiKey, apiVersion: "v1" });
+    if (!project) {
+      throw new Error(
+        "GOOGLE_CLOUD_PROJECT is not set. Gemini runs only on Vertex AI; API keys are not used."
+      );
     }
+    // Credentials, when supplied, are the only difference between the
+    // two Vertex environments: locally ADC resolves itself and this is
+    // undefined.
+    const credentials = serviceAccountCredentials();
+    _client = new GoogleGenAI({
+      vertexai: true,
+      project,
+      location: process.env.GOOGLE_CLOUD_LOCATION || "global",
+      apiVersion: "v1",
+      ...(credentials ? { googleAuthOptions: { credentials } } : {}),
+    });
   }
   return _client;
 }

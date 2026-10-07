@@ -12,8 +12,8 @@
  *       [--out digests.jsonl] [--dry-run]
  *   node scripts/db/generate-year-digests.mjs --import-file digests.jsonl --db-url <url>
  *
- * Generation needs Gemini credentials (GOOGLE_CLOUD_PROJECT ADC or an API
- * key). --import-file applies a previously generated JSONL without any model
+ * Generation needs GOOGLE_CLOUD_PROJECT and ADC (Vertex AI). --import-file
+ * applies a previously generated JSONL without any model
  * calls (used for the production import).
  */
 
@@ -47,19 +47,18 @@ function parseArgs(argv) {
   return args;
 }
 
+// Vertex only, like src/lib/gemini-client.ts: an API key bills a different account.
 function getClient() {
   const project = process.env.GOOGLE_CLOUD_PROJECT;
-  if (project) {
-    return new GoogleGenAI({
-      vertexai: true,
-      project,
-      location: process.env.GOOGLE_CLOUD_LOCATION || "global",
-      apiVersion: "v1",
-    });
+  if (!project) {
+    throw new Error("GOOGLE_CLOUD_PROJECT is not set. Gemini runs only on Vertex AI (ADC).");
   }
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error("No Gemini credentials configured.");
-  return new GoogleGenAI({ apiKey, apiVersion: "v1" });
+  return new GoogleGenAI({
+    vertexai: true,
+    project,
+    location: process.env.GOOGLE_CLOUD_LOCATION || "global",
+    apiVersion: "v1",
+  });
 }
 
 const DIGEST_PROMPT = `You are compiling an internal editorial digest of one year of a university newspaper (The Transcript, Ohio Wesleyan University).
