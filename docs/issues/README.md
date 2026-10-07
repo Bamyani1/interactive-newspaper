@@ -40,7 +40,7 @@ when adding or removing a citation.
 | [0023](./0023-embed-mjs-silent-image-fallback.md) | `embed.mjs` silent image fallback | superseded | — |
 | [0024](./0024-weather-raw-response-type-cast.md) | Weather raw response type cast | fixed | `src/lib/weather.ts` |
 | [0025](./0025-weather-route-input-bounds.md) | Weather route input bounds | fixed | `src/app/api/weather/route.ts` |
-| [0028](./0028-embed-no-quota-backoff.md) | Embed no quota backoff | fixed | `src/lib/embeddings.ts`, `scripts/db/seed.mjs` |
+| [0028](./0028-embed-no-quota-backoff.md) | Embed no quota backoff | fixed | `src/lib/embeddings.ts` |
 | [0029](./0029-seed-wipes-embeddings-on-every-run.md) | Seed wipes embeddings on every run | fixed | — |
 
 ## Purpose

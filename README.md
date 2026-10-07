@@ -471,7 +471,7 @@ npm run db:seed                         # upserts editions, articles, ads, weath
 npm run dev                     # http://localhost:3000
 ```
 
-Edition data (`public/editions/`) is not in the repository. Without access to the R2 backup, produce editions with the OCR pipeline below. Point `IMAGE_BASE_URL` at the R2 CDN, since the backup holds JSON only. With `GOOGLE_CLOUD_PROJECT` set, `db:seed` also embeds unversioned chunks, which Ask never reads.
+Edition data (`public/editions/`) is not in the repository. Without access to the R2 backup, produce editions with the OCR pipeline below. Point `IMAGE_BASE_URL` at the R2 CDN, since the backup holds JSON only. `db:seed` never embeds; new editions reach Ask through an index build.
 
 The reader and search work once the data is seeded. Ask's vector search also needs an index build:
 
