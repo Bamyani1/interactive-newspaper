@@ -191,7 +191,7 @@ The three deep-dives cross-reference each other and share a glossary. Read them 
 
 **AI / Machine Learning**
 
-- **Google Gemini** (`@google/genai`) — answers and reranking on `gemini-3.6-flash`, query reformulation on `gemini-3.5-flash-lite`, and 768-dimensional `gemini-embedding-2` vectors, plus the independently configured OCR stages. Vertex AI everywhere: ADC locally and for the data pipeline, a service account (`GOOGLE_SERVICE_ACCOUNT_JSON`) on the Vercel serving runtime. API-key auth remains only as a rollback when `GOOGLE_CLOUD_PROJECT` is unset.
+- **Google Gemini** (`@google/genai`) — answers and reranking on `gemini-3.6-flash`, query reformulation on `gemini-3.5-flash-lite`, and 768-dimensional `gemini-embedding-2` vectors, plus the independently configured OCR stages. Vertex AI everywhere: ADC locally and for the data pipeline, a service account (`GOOGLE_SERVICE_ACCOUNT_JSON`) on the Vercel serving runtime (production and previews). There is no API-key mode: without `GOOGLE_CLOUD_PROJECT` every Gemini client refuses to start.
 - **Google Document AI** — Enterprise OCR processor for page text with token-level confidence
 - **American Stories layout model + DocLayout-YOLO** — hybrid visual detector: the American Stories ONNX checkpoint finds photos, cartoons, and ads; DocLayout-YOLO adds tables it missed
 
@@ -535,11 +535,10 @@ Create `.env.local` from `.env.example`:
 | Variable                                                                      | Required            | Purpose                                                                                                                       |
 | ----------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                                                | Yes                 | Neon Postgres connection string                                                                                               |
-| `GOOGLE_CLOUD_PROJECT`                                                        | Yes                 | Vertex AI / Document AI project. Its presence selects Vertex for every Gemini call, Vercel included                           |
+| `GOOGLE_CLOUD_PROJECT`                                                        | Yes                 | Vertex AI / Document AI project. Required by every Gemini client; without it they refuse to start rather than use an API key  |
 | `GOOGLE_CLOUD_LOCATION`                                                       | Optional            | Vertex location; defaults to `global`, which `google:verify-adc` requires                                                     |
 | `GOOGLE_SERVICE_ACCOUNT_JSON`                                                 | Yes on Vercel       | Service-account key JSON (raw or base64) for Vertex where there is no ADC; a malformed value throws                           |
 | `GOOGLE_ADC_EXPECTED_PRINCIPAL`                                               | Recommended locally | Optional identity assertion used by the read-only ADC preflight                                                               |
-| `GEMINI_API_KEY` / `GOOGLE_API_KEY`                                           | Rollback only       | Read only when `GOOGLE_CLOUD_PROJECT` is unset; bills prepaid Gemini API credits, not the Cloud account                       |
 | `RAG_RETRIEVAL_MODE`                                                          | Yes                 | `versioned` in production; the code default `legacy` serves keyword-only results                                              |
 | `RAG_ACTIVE_INDEX_BUILD_ID`                                                   | Yes with versioned  | The immutable index build Ask serves                                                                                          |
 | `RAG_CORPUS_VERSION`                                                          | Yes with versioned  | Must equal the active build's `corpus_version`, or versioned retrieval fails readiness                                        |
@@ -656,7 +655,7 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 │   ├── db.ts                     # FTS, vector search, RRF fusion, edition queries
 │   ├── editions-server.ts        # Cached edition list + prod DB-outage guard
 │   ├── embeddings.ts             # gemini-embedding-2 text/image vectors + LRU
-│   ├── gemini-client.ts          # Lazy client (Vertex when GOOGLE_CLOUD_PROJECT is set)
+│   ├── gemini-client.ts          # Lazy Vertex client (requires GOOGLE_CLOUD_PROJECT)
 │   ├── gemini-quota.ts           # Quota-exhaustion detection and messaging
 │   ├── query-reformulator.ts     # Era-aware expansion + intent classification
 │   ├── rag-coverage.ts           # Coverage notes for absence/count/exhaustive questions
