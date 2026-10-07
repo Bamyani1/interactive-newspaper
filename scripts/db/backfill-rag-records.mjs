@@ -88,9 +88,11 @@ async function backfillRecords() {
     if (chunkIds.length > 0) {
       await sql`DELETE FROM article_chunks
                       WHERE article_id = ANY(${articleIds})
-                        AND NOT (id = ANY(${chunkIds}))`;
+                        AND NOT (id = ANY(${chunkIds}))
+                        AND index_build_id IS NULL`;
     } else {
-      await sql`DELETE FROM article_chunks WHERE article_id = ANY(${articleIds})`;
+      await sql`DELETE FROM article_chunks
+                      WHERE article_id = ANY(${articleIds}) AND index_build_id IS NULL`;
     }
 
     const imageRecords = batch.flatMap((article) =>
@@ -137,9 +139,11 @@ async function backfillRecords() {
     if (imageIds.length > 0) {
       await sql`DELETE FROM article_images
                       WHERE article_id = ANY(${articleIds})
-                        AND NOT (id = ANY(${imageIds}))`;
+                        AND NOT (id = ANY(${imageIds}))
+                        AND index_build_id IS NULL`;
     } else {
-      await sql`DELETE FROM article_images WHERE article_id = ANY(${articleIds})`;
+      await sql`DELETE FROM article_images
+                      WHERE article_id = ANY(${articleIds}) AND index_build_id IS NULL`;
     }
     console.log(
       `  ${Math.min(offset + batch.length, articles.length)}/${articles.length} articles indexed`

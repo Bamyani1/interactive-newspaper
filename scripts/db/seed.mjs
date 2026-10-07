@@ -378,7 +378,8 @@ async function seedEditions(scopedDate = "") {
       );
       const chunkIds = chunkRecords.map((chunk) => chunk.id);
       await sql`DELETE FROM article_chunks
-                WHERE article_id = ANY(${articleIds}) AND NOT (id = ANY(${chunkIds}))`;
+                WHERE article_id = ANY(${articleIds}) AND NOT (id = ANY(${chunkIds}))
+                  AND index_build_id IS NULL`;
     }
 
     const imageRecords = preparedArticles.flatMap((article) =>
@@ -421,9 +422,11 @@ async function seedEditions(scopedDate = "") {
       );
       const imageIds = imageRecords.map((image) => image.id);
       await sql`DELETE FROM article_images
-                WHERE article_id = ANY(${articleIds}) AND NOT (id = ANY(${imageIds}))`;
+                WHERE article_id = ANY(${articleIds}) AND NOT (id = ANY(${imageIds}))
+                  AND index_build_id IS NULL`;
     } else if (articleIds.length > 0) {
-      await sql`DELETE FROM article_images WHERE article_id = ANY(${articleIds})`;
+      await sql`DELETE FROM article_images
+                WHERE article_id = ANY(${articleIds}) AND index_build_id IS NULL`;
     }
 
     // Insert ads in a transaction
