@@ -139,3 +139,39 @@ def test_r2_gc_is_fail_closed_key_scoped_and_publication_locked() -> None:
     ]
     assert len(acquisitions) == len(promotions) == 2
     assert acquisitions[0] < promotions[0] < acquisitions[1] < promotions[1]
+
+
+def _run_acquire_asset_lock(tmp_path: Path, setup: str, wait_seconds: int):
+    publisher = (ROOT / "scripts" / "ocr" / "process-edition.sh").read_text(encoding="utf-8")
+    function = re.search(r"^acquire_asset_lock\(\) \{.*?^\}", publisher, re.MULTILINE | re.DOTALL)
+    assert function, "acquire_asset_lock not found"
+    script = f"""
+fail() {{ echo "$3" >&2; exit "$1"; }}
+ASSET_LOCK_DIR="{tmp_path}/assets.lock"
+ASSET_LOCK_WAIT_SECONDS={wait_seconds}
+ASSET_LOCK_HELD=false
+{function.group(0)}
+{setup}
+acquire_asset_lock
+echo "held=$ASSET_LOCK_HELD"
+"""
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+
+
+def test_asset_lock_waits_for_the_holder_instead_of_failing(tmp_path):
+    # Two parallel batch workers reach upload together; the second must
+    # wait rather than discard its finished OCR candidate.
+    result = _run_acquire_asset_lock(
+        tmp_path,
+        setup='mkdir "$ASSET_LOCK_DIR"; (sleep 1; rmdir "$ASSET_LOCK_DIR") &',
+        wait_seconds=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "held=true" in result.stdout
+    assert (tmp_path / "assets.lock").is_dir()
+
+
+def test_asset_lock_wait_is_bounded(tmp_path):
+    result = _run_acquire_asset_lock(tmp_path, setup='mkdir "$ASSET_LOCK_DIR"', wait_seconds=1)
+    assert result.returncode == 75
+    assert "assets.lock" in result.stderr

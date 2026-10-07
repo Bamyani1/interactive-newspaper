@@ -31,6 +31,7 @@ WORK_ROOT=""
 LOCK_DIR=""
 ASSET_LOCK_DIR="$LOCK_PARENT/assets.lock"
 ASSET_LOCK_HELD=false
+ASSET_LOCK_WAIT_SECONDS=900
 ROLLBACK_CONTAINER=""
 SOURCE_ABS=""
 INPUT_CLEANUP_ARMED=false
@@ -298,10 +299,17 @@ run_upload() {
     --editions-dir "$editions_root"
 }
 
+# Parallel batch workers and R2 GC share this lock. Wait for the holder
+# instead of failing, which would discard a finished OCR candidate.
 acquire_asset_lock() {
-  if ! mkdir "$ASSET_LOCK_DIR" 2>/dev/null; then
-    fail 75 "asset-lock" "asset publication or R2 garbage collection is already active"
-  fi
+  local waited=0
+  until mkdir "$ASSET_LOCK_DIR" 2>/dev/null; do
+    if (( waited >= ASSET_LOCK_WAIT_SECONDS )); then
+      fail 75 "asset-lock" "asset publication or R2 garbage collection still holds $ASSET_LOCK_DIR after ${ASSET_LOCK_WAIT_SECONDS}s"
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
   ASSET_LOCK_HELD=true
 }
 
