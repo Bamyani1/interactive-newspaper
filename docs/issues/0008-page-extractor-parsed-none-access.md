@@ -1,12 +1,14 @@
 ---
 id: 0008
 title: page_extractor accesses .page_number on possibly-None response.parsed
-status: fixed
+status: superseded
 severity: high
 area: ocr
 opened: 2026-04-13
 closed: 2026-04-14
 ---
+
+> **Superseded (checked 2026-10-07).** The OCR rewrite (`88d7b27`) removed this fix: `require_parsed` in `shared/retry.py` now raises on a missing parse, and a response validator retries first.
 
 > **Fix:** `page_extractor.py:105` now uses `getattr(response.parsed,
 > "page_number", None)` with an explicit default, so any shape shift in the

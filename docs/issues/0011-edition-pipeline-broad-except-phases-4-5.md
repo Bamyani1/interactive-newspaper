@@ -1,12 +1,14 @@
 ---
 id: 0011
 title: edition_pipeline broad except in Phase 4/5 masks Gemini 503s as warnings
-status: fixed
+status: mitigated
 severity: high
 area: ocr
 opened: 2026-04-13
 closed: 2026-04-14
 ---
+
+> **Mitigated (checked 2026-10-07).** The OCR rewrite (`88d7b27`) removed `_is_gemini_transient`. The broad `except` remains in `edition_pipeline.py`, but it rolls back the JSON and logs through `_log_failure`.
 
 > **Fix (partial — log-only):** kept the broad `except Exception` in Phases
 > 4 and 5 intentionally. Narrowing it would start failing editions that

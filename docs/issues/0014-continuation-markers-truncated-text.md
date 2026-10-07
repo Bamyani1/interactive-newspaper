@@ -1,12 +1,14 @@
 ---
 id: 0014
 title: continuation marker extraction returns [] on truncated page text
-status: fixed
+status: obsolete
 severity: high
 area: ocr
 opened: 2026-04-13
 closed: 2026-04-14
 ---
+
+> **Obsolete (checked 2026-10-07).** The OCR rewrite (`88d7b27`) removed continuation-marker extraction entirely (`docai_provider.py`).
 
 > **Fix (partial — diagnostic only):** `docai_provider.py` now has a
 > `_detect_truncated_continuation` helper called after

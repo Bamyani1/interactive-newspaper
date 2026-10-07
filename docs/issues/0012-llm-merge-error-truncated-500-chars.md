@@ -1,12 +1,14 @@
 ---
 id: 0012
 title: llm_merge parse-failure error message truncated to 500 chars
-status: fixed
+status: superseded
 severity: high
 area: ocr
 opened: 2026-04-13
 closed: 2026-04-14
 ---
+
+> **Superseded (checked 2026-10-07).** The OCR rewrite (`88d7b27`) removed both the truncation and the `merge_raw_response.txt` dump; raw model text is deliberately never saved (`shared/retry.py`).
 
 > **Fix:** `llm_merge.py` now dumps the full raw response to
 > `<snapshots_dir>/merge_raw_response.txt` on parse failure and includes

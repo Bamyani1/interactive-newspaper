@@ -13,7 +13,7 @@ export { Lightbox, ImageGallery } from "@/src/components/ui/lightbox";
  * design system. Do not blanket-migrate these to tokens without reviewing
  * the printed output.
  *
- * See docs/design/carve-outs.md item 3.
+ * See docs/design/carve-outs.md, "Print-edition period-matching hardcodes".
  */
 
 // ─── Helpers ───────────────────────────────────────────────────────

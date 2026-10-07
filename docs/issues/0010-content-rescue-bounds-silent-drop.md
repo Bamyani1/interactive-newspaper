@@ -1,12 +1,14 @@
 ---
 id: 0010
 title: content_rescue silently drops out-of-bounds index decisions
-status: fixed
+status: superseded
 severity: high
 area: ocr
 opened: 2026-04-13
 closed: 2026-04-14
 ---
+
+> **Superseded (checked 2026-10-07).** The OCR rewrite (`88d7b27`) removed `dropped_oob`: rescue decisions are keyed by item id and rejected unless the id set matches exactly (`content_rescue.py`).
 
 > **Fix:** `content_rescue.py` now tracks a `dropped_oob` list across both
 > the demote and promote decision loops and emits a warning line at the end

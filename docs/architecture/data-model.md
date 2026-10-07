@@ -8,15 +8,15 @@
 
 ## Scale
 
-As of this writing:
+As of 2026-10-07:
 
-| Metric                | Value                                                      |
-| --------------------- | ---------------------------------------------------------- |
-| Editions              | 351                                                        |
-| Articles              | 11,705                                                     |
-| Ads                   | 6,846                                                      |
-| Embedding dimension   | 768                                                        |
-| Active vector records | Query with `npm run db:embed -- --dry-run` after migration |
+| Metric              | Value                                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| Editions            | 351 (3,099 pages)                                                                        |
+| Articles            | 11,705                                                                                   |
+| Ads                 | 6,846                                                                                    |
+| Embedding dimension | 768                                                                                      |
+| Active index build  | 13,143 text chunks + 2,875 image vectors; check with `npm run rag:health` (`coverage.*`) |
 
 Every tuning decision in this doc is anchored in that scale. "RRF K=40 because the corpus is small" means "small relative to ~12k articles."
 
@@ -33,6 +33,7 @@ Every tuning decision in this doc is anchored in that scale. "RRF K=40 because t
 - [Image storage](#image-storage)
 - [Neon specifics](#neon-specifics)
 - [Tests](#tests)
+- [Known limitations](#known-limitations)
 - [Operator runbook](#operator-runbook)
 - [Start here](#start-here)
 
@@ -43,21 +44,22 @@ Every tuning decision in this doc is anchored in that scale. "RRF K=40 because t
 ### A. Ingest: OCR output to DB rows
 
 ```
-ocr/inbox/<date>/
-  └── (IIIF scans)
+ocr/inbox/<date>/  (IIIF scans)
         │
         ▼
-scripts/ocr/process-edition.sh          (shell wrapper)
-        │
-        ▼
-ocr Python pipeline                      (see docs/architecture/ocr-pipeline.md)
+scripts/ocr/process-edition.sh <folder> [--seed]
+  ├── ocr/convert_scans.py         → public/editions/.staging/<date>.XXXXXX/<date>/
+  ├── ocr/validate_candidate.py
+  ├── scripts/db/upload-images.mjs  (assets.lock; R2 ocr-assets/<sha256>.webp)
+  ├── validate again → atomic rename → public/editions/<date>/
+  └── only with --seed: npm run db:seed -- --date <date> --editions-dir public/editions
         │
         ▼
 public/editions/<date>/edition.json      ← canonical OCR output (OcrEdition shape)
-public/editions/<date>/images/*          ← raw scans (legacy) or <sha256>.webp (post-upload)
+public/editions/<date>/images/*          ← <sha256>.webp after upload (legacy editions: other names)
         │
         ▼
-npm run db:seed  →  scripts/db/seed.mjs
+scripts/db/seed.mjs
         │  imports TS via tsx
         ▼
 src/server/ocr-adapter/index.ts
@@ -69,8 +71,7 @@ src/server/ocr-adapter/index.ts
 Neon PostgreSQL (via @neondatabase/serverless HTTP)
   ├── editions   (UPSERT on conflict)
   ├── articles   (in-place UPSERT; removed IDs deleted)
-  ├── article_chunks (deterministic text evidence)
-  ├── article_images (one record per visual)
+  ├── article_chunks / article_images (unversioned rows, index_build_id NULL)
   └── ads        (DELETE + INSERT)
         │
         ▼
@@ -78,31 +79,25 @@ seed.mjs → buildSearchVectors()
   UPDATE articles SET search_vector = …   (FTS trigger also fires on any INSERT)
 ```
 
-### B. Embeddings pass
+### B. Embedding pass (index builds)
 
 ```
-npm run db:embed  →  scripts/db/embed.mjs
-        │
-        ▼
-SELECT pending article_chunks and article_images   (or all, with --force)
-        │
-        ▼
-src/lib/article-chunking.ts + src/lib/embeddings.ts
-  sentence-aware text chunks + separately loaded images
-        │
-        ▼
-Vertex AI via ADC (gemini-embedding-2, 768 dimensions)
-        │
-        ▼
-UPDATE article_chunks/article_images with vector, model, version, and hash
+npm run rag:index:build -- --create --corpus <id> --yes   → rag_index_builds, 'building'
+  --populate <b>      rows keyed {build}:{article}:…    (no model calls)
+  --embed-text <b>    gemini-embedding-2, 768 dims, batches of 50, resumable by hash
+  --embed-images <b>  bytes fetched from R2
+  --finalize <b>      all chunks embedded → 'validated', else 'failed'
+  --activate <b>      'validated' → 'active' (one per corpus)
 ```
+
+Serving switches only when `RAG_RETRIEVAL_MODE=versioned`, `RAG_ACTIVE_INDEX_BUILD_ID`, and `RAG_CORPUS_VERSION` name that build. `db:embed -- --legacy-unversioned` fills only the unversioned seed rows, which nothing reads.
 
 ### C. Image CDN path
 
 ```
 public/editions/<date>/images/*
         │
-npm run images:upload
+npm run images:upload -- --date <date>   (normally run by the OCR wrapper on the staging copy)
         ▼
 scripts/db/upload-images.mjs
   sharp: source → WebP (quality ladder; see ocr-pipeline.md)
@@ -165,14 +160,14 @@ Columns grouped by access pattern:
 
 **Hot — read on every query**
 
-| Column          | Type                                      | Notes                                                                                                                           |
-| --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `id`            | `TEXT PRIMARY KEY`                        | `'{date}-{index}'`                                                                                                              |
-| `edition_date`  | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target                                                                                                            |
-| `headline`      | `TEXT NOT NULL DEFAULT ''`                | result display + FTS weight A                                                                                                   |
-| `body_plain`    | `TEXT NOT NULL DEFAULT ''`                | canonical plain text and legacy fallback evidence                                                                               |
-| `search_vector` | `TSVECTOR`                                | auto-populated by trigger; GIN indexed                                                                                          |
-| `embedding`     | `VECTOR(768)`                             | rollback only since the 2026-08-03 cutover, and every row is preview-stamped or `NULL`; served vectors live in the child tables |
+| Column          | Type                                      | Notes                                                                                                                                                                            |
+| --------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`            | `TEXT PRIMARY KEY`                        | `'{date}-{index}'`                                                                                                                                                               |
+| `edition_date`  | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target                                                                                                                                                             |
+| `headline`      | `TEXT NOT NULL DEFAULT ''`                | result display + FTS weight A                                                                                                                                                    |
+| `body_plain`    | `TEXT NOT NULL DEFAULT ''`                | canonical plain text and legacy fallback evidence                                                                                                                                |
+| `search_vector` | `TSVECTOR`                                | auto-populated by trigger; GIN indexed                                                                                                                                           |
+| `embedding`     | `VECTOR(768)`                             | read only when `RAG_RETRIEVAL_MODE=legacy` (the code default); every row is preview-stamped or `NULL`, so legacy mode serves no vectors; served vectors live in the child tables |
 
 **Warm — read on result hydration**
 
@@ -214,18 +209,18 @@ The `search_vector` is maintained by a `BEFORE INSERT OR UPDATE` trigger (`artic
 
 Source: `scripts/db/migrations/0005_rag_evidence_tables.sql` plus `0009_revision_keys_and_corpus.sql` (`content_revision_id`).
 
-Each row is one deterministic sentence-aware article segment. `id` is `{article_id}:{chunk_index padded to four digits}`. `article_id` cascades on delete.
+Each row is one deterministic sentence-aware article segment. `id` is `{article_id}:{chunk_index padded to four digits}`; build rows use `{index_build_id}:{article_id}:{NNNN}`. `article_id` cascades on delete.
 
-| Column                    | Type                                    | Notes                                                                                                                                                                                          |
-| ------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `index_build_id`          | `TEXT REFERENCES rag_index_builds(id)`  | **nullable** — `NULL` marks legacy seed rows, which versioned retrieval never serves (runtime SQL filters by an explicit build id); build-scoped rows are written only by the index build tool |
-| `content_revision_id`     | `TEXT REFERENCES content_revisions(id)` | nullable; keys versioned rows to an immutable content revision; legacy rows keep `NULL`                                                                                                        |
-| `chunk_text`              | `TEXT NOT NULL`                         | evidence sent to reranking/generation when matched                                                                                                                                             |
-| `search_vector`           | `TSVECTOR`                              | trigger-maintained and GIN indexed                                                                                                                                                             |
-| `embedding`               | `VECTOR(768)`                           | HNSW cosine index                                                                                                                                                                              |
-| `embedding_model`         | `TEXT`                                  | must equal the query embedding model                                                                                                                                                           |
-| `embedding_input_version` | `TEXT`                                  | currently `article-chunk-v1`                                                                                                                                                                   |
-| `embedding_input_hash`    | `TEXT NOT NULL`                         | SHA-256 identity of canonical model/version/input                                                                                                                                              |
+| Column                    | Type                                    | Notes                                                                                                                                                                                                                    |
+| ------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `index_build_id`          | `TEXT REFERENCES rag_index_builds(id)`  | **nullable** — `NULL` marks legacy seed rows, which versioned retrieval never serves (runtime SQL filters by an explicit build id); build-scoped rows are written only by `rag:index:build` or `db:import-build-vectors` |
+| `content_revision_id`     | `TEXT REFERENCES content_revisions(id)` | nullable; keys versioned rows to an immutable content revision; legacy rows keep `NULL`                                                                                                                                  |
+| `chunk_text`              | `TEXT NOT NULL`                         | evidence sent to reranking/generation when matched                                                                                                                                                                       |
+| `search_vector`           | `TSVECTOR`                              | trigger-maintained and GIN indexed                                                                                                                                                                                       |
+| `embedding`               | `VECTOR(768)`                           | HNSW cosine index                                                                                                                                                                                                        |
+| `embedding_model`         | `TEXT`                                  | must equal the query embedding model                                                                                                                                                                                     |
+| `embedding_input_version` | `TEXT`                                  | currently `article-chunk-v1`                                                                                                                                                                                             |
+| `embedding_input_hash`    | `TEXT NOT NULL`                         | SHA-256 identity of canonical model/version/input                                                                                                                                                                        |
 
 Uniqueness is two partial unique indexes, not one table constraint: `uq_article_chunks_legacy` on `(article_id, chunk_index) WHERE index_build_id IS NULL` and `uq_article_chunks_build` on `(index_build_id, article_id, chunk_index) WHERE index_build_id IS NOT NULL`.
 
@@ -233,7 +228,7 @@ Uniqueness is two partial unique indexes, not one table constraint: `uq_article_
 
 Source: `scripts/db/migrations/0005_rag_evidence_tables.sql` plus `0009_revision_keys_and_corpus.sql` (`content_revision_id`).
 
-Each row represents one image, not one article. `id` is `{article_id}:image:{image_index padded to three digits}`.
+Each row represents one image, not one article. `id` is `{article_id}:image:{image_index padded to three digits}`; build rows use `{index_build_id}:{article_id}:image:{NNN}`.
 
 | Column                    | Type                                    | Notes                                                                             |
 | ------------------------- | --------------------------------------- | --------------------------------------------------------------------------------- |
@@ -301,7 +296,7 @@ CREATE TABLE IF NOT EXISTS api_rate_bucket (
 CREATE INDEX IF NOT EXISTS idx_api_rate_bucket_expires ON api_rate_bucket (expires_at);
 ```
 
-Written by `rate-limit.ts :: checkNeon()` via atomic upsert that resets `count` to 1 if the window is expired, otherwise increments. Falls back to an in-memory Map per limiter-factory instance when Neon is unreachable.
+Written by `rate-limit.ts :: checkNeon()` via atomic upsert that resets `count` to 1 if the window is expired, otherwise increments. Falls back to an in-memory Map per limiter-factory instance when Neon is unreachable. The nightly retention sweep deletes rows 60 minutes past `expires_at`.
 
 ### `ask_session_turns`
 
@@ -323,14 +318,16 @@ CREATE INDEX IF NOT EXISTS idx_ask_session_turns_created
   ON ask_session_turns (created_at DESC);
 ```
 
-Queries select the last 5 turns of prompt context; rows are kept for
-`ASK_SESSION_TTL_DAYS` (default 7, clamped to [1, 30]) to match the sidebar. Citation snapshots
+`session_id` holds the SHA-256 of the client token. Queries select the last 5
+turns of prompt context. Every write deletes turns older than
+`ASK_SESSION_TTL_DAYS` (default 7, clamped to [1, 30]) and trims the session to
+its last 5; the nightly `/api/internal/retention` cron sweeps with the same
+window. Citation snapshots
 pin the cited content revision and bounded source-card/evidence metadata so a
 later re-OCR cannot rewrite an earlier answer's hydrated sources. The runtime
 probes this expand-only column with a 30-second TTL and retains the legacy-ID
-fallback for pre-migration rows. Rows age out of the query window (not
-automatically purged). User-triggered "Clear conversation" issues a hard
-`DELETE`.
+fallback for pre-migration rows. Deleting a thread or "Clear all threads"
+issues a hard `DELETE`.
 
 ### `ask_feedback`
 
@@ -351,7 +348,7 @@ CREATE TABLE IF NOT EXISTS ask_feedback (
 );
 ```
 
-Indexes: `idx_ask_feedback_request` on `(request_id)`, `idx_ask_feedback_created` on `(created_at DESC)`. Wired to `/api/ask/feedback`.
+Indexes: `idx_ask_feedback_request` on `(request_id)`, `idx_ask_feedback_created` on `(created_at DESC)`. Wired to `/api/ask/feedback`. Deleted after `FEEDBACK_RETENTION_DAYS` (default 90) by the nightly sweep.
 
 ### `answer_cache`
 
@@ -371,7 +368,7 @@ CREATE INDEX IF NOT EXISTS answer_cache_scope_idx
   ON answer_cache (cache_identity, filters_hash, created_at DESC);
 ```
 
-Durable half of the semantic answer cache (`answer-cache.ts`): a stored answer is reused only when a new question's embedding is close enough _within the same_ `cache_identity` scope, so any pipeline/model/corpus/retrieval change invalidates by scoping rather than deletion. Low volume — an exact scan, no vector index. Bypassed when conversation history is non-empty, and agent-loop answers are never cached. See [rag-pipeline.md](./rag-pipeline.md).
+Durable half of the former semantic answer cache (`answer-cache.ts`). Since `243f9d0` the route never reads or writes it — a paraphrase match could serve one reader another's answer — so every question runs the full pipeline. The table remains for a later migration to drop. See [rag-pipeline.md](./rag-pipeline.md#caching-and-conversations).
 
 ### `year_digests`
 
@@ -399,26 +396,26 @@ Source: `scripts/db/migrations/0002_legacy_core.sql:85-93`. Composite PK `(year,
 
 ### Phase 3 identity and publication tables
 
-Created by migrations `0004` and `0006`–`0009`. Column-by-column detail lives in those migration files, deliberately not duplicated here. Nothing in the runtime writes these yet; the writers are `backfill-identities.mjs`, `register-corpus-version.mjs`, and the Phase 4 publisher below (all data-only, `--yes`-gated, local/test databases only in this phase).
+Created by migrations `0004` and `0006`–`0009`. Column-by-column detail lives in those migration files, deliberately not duplicated here. The writers are `backfill-identities.mjs`, `register-corpus-version.mjs`, and the Phase 4 publisher below (all data-only and `--yes`-gated). Exceptions: `rag_index_builds` is production state, written by `rag:index:build` / `db:import-build-vectors` and read by every Ask readiness check; `corpus_versions` must hold a build's corpus before import; `assets` is written by `assets:bootstrap -- --apply`.
 
-| Table                        | Purpose                                                                                                                                                                       |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema_migrations`          | Migration ledger: `id`, `checksum`, `applied_at`, `duration_ms`, `runner_version`. Created by the runner itself, not by a numbered migration                                  |
-| `rag_index_builds`           | Immutable index-build identity + status state machine (`building`→`validated`→`active`/`failed`/`retired`); partial unique index enforces one active build per corpus version |
-| `source_records`             | Immutable external source identity: `(source_system, pointer)` unique, classified by `kind`                                                                                   |
-| `issues`                     | Stable internal issue identity per canonical date; points at the active edition revision                                                                                      |
-| `legacy_edition_aliases`     | Maps legacy `editions.date` to an issue id                                                                                                                                    |
-| `edition_revisions`          | Immutable per-run edition snapshots, unique on `(issue_id, revision_hash)`                                                                                                    |
-| `edition_revision_pages`     | Page-level provenance and `processed`/`failed`/`missing` status per revision                                                                                                  |
-| `content_items`              | Stable content identity per issue: `(issue_id, identity_key)` unique, with identity evidence and an active-revision pointer                                                   |
-| `content_revisions`          | Immutable content snapshots; a `BEFORE UPDATE` trigger (`content_revisions_immutable_trig`) rejects any `UPDATE`                                                              |
-| `legacy_content_aliases`     | Maps legacy article ids to content items/revisions (articles only in Phase 3)                                                                                                 |
-| `content_identity_conflicts` | Review queue for ambiguous re-OCR identity matches                                                                                                                            |
-| `assets`                     | Content-addressed asset registry keyed by `sha256`; rows are immutable                                                                                                        |
-| `asset_references`           | Per-revision image references `(content_revision_id, position)` → asset, with role and printed caption                                                                        |
-| `publication_runs`           | Publication state machine (`discovered` → … → `active`/`failed`/`rolled_back`)                                                                                                |
-| `publication_run_events`     | Append-only transition log per run                                                                                                                                            |
-| `corpus_versions`            | Corpus version registry; the frozen legacy snapshot row is registered by `register-corpus-version.mjs`, never by migrations                                                   |
+| Table                        | Purpose                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_migrations`          | Migration ledger: `id`, `checksum`, `applied_at`, `duration_ms`, `runner_version`. Created by the runner itself, not by a numbered migration                                                                                                                                                                                                |
+| `rag_index_builds`           | Immutable index-build identity + status: `building` → `validated`/`failed` (`--finalize`); `validated` ⇄ `active` (`--activate` / `--rollback-activation`). `retired` is allowed by the CHECK but never written; superseded builds are deleted by `db:gc-index-builds`. A partial unique index enforces one active build per corpus version |
+| `source_records`             | Immutable external source identity: `(source_system, pointer)` unique, classified by `kind`                                                                                                                                                                                                                                                 |
+| `issues`                     | Stable internal issue identity per canonical date; points at the active edition revision                                                                                                                                                                                                                                                    |
+| `legacy_edition_aliases`     | Maps legacy `editions.date` to an issue id                                                                                                                                                                                                                                                                                                  |
+| `edition_revisions`          | Immutable per-run edition snapshots, unique on `(issue_id, revision_hash)`                                                                                                                                                                                                                                                                  |
+| `edition_revision_pages`     | Page-level provenance and `processed`/`failed`/`missing` status per revision                                                                                                                                                                                                                                                                |
+| `content_items`              | Stable content identity per issue: `(issue_id, identity_key)` unique, with identity evidence and an active-revision pointer                                                                                                                                                                                                                 |
+| `content_revisions`          | Immutable content snapshots; a `BEFORE UPDATE` trigger (`content_revisions_immutable_trig`) rejects any `UPDATE`                                                                                                                                                                                                                            |
+| `legacy_content_aliases`     | Maps legacy article ids to content items/revisions (articles only in Phase 3)                                                                                                                                                                                                                                                               |
+| `content_identity_conflicts` | Review queue for ambiguous re-OCR identity matches                                                                                                                                                                                                                                                                                          |
+| `assets`                     | Content-addressed asset registry keyed by `sha256`; rows are immutable                                                                                                                                                                                                                                                                      |
+| `asset_references`           | Per-revision image references `(content_revision_id, position)` → asset, with role and printed caption                                                                                                                                                                                                                                      |
+| `publication_runs`           | Publication state machine (`discovered` → … → `active`/`failed`/`rolled_back`)                                                                                                                                                                                                                                                              |
+| `publication_run_events`     | Append-only transition log per run                                                                                                                                                                                                                                                                                                          |
+| `corpus_versions`            | Corpus version registry; the frozen legacy snapshot row is registered by `register-corpus-version.mjs`, never by migrations                                                                                                                                                                                                                 |
 
 ### Versioned publisher (Phase 4)
 
@@ -485,7 +482,7 @@ exists — a passing file short-circuits, a failing one is re-downloaded.
 ## The `edition.json` contract
 
 Python source: `ocr/src/transcript_ocr/contracts/content_models.py`.
-TypeScript mirror: `src/types/index.ts:147-155` (`OcrEdition`).
+TypeScript mirror: `src/types/index.ts:152-160` (`OcrEdition`).
 
 ### Top-level shape
 
@@ -506,7 +503,7 @@ TypeScript mirror: `src/types/index.ts:147-155` (`OcrEdition`).
 | `headline`                       | `string`         | yes (default `""`)     | primary title only                             |
 | `author`                         | `string`         | no (default `""`)      | may include section tag                        |
 | `writer_position`                | `string`         | no (default `""`)      | role line if present                           |
-| `category`                       | `Literal[...]`   | yes (default `"News"`) | one of five fixed values                       |
+| `category`                       | `str`            | yes (default `"News"`) | one of five values; invalid → `News`           |
 | `body`                           | `string`         | yes (default `""`)     | raw paragraph text                             |
 | `images`                         | `ArticleImage[]` | no                     | each has `caption`, `position`                 |
 | `image_files`                    | `string[]`       | no                     | filenames; adapter filters to valid extensions |
@@ -523,10 +520,11 @@ Extends `Ad` (`business_name`, `body`, `image_files`) with `category`, `ad_type`
 
 ## The ocr-adapter boundary
 
-`src/server/ocr-adapter/` is the **single place** that writes `edition.json` content to DB rows. Two callers:
+`src/server/ocr-adapter/` is the **single place** that writes `edition.json` content to DB rows. Three callers:
 
 1. `scripts/db/seed.mjs` — build/ops time
-2. `src/app/api/editions/[date]/route.ts` — runtime gold-edition fallback
+2. `src/lib/gold-edition.ts`, via `src/app/api/editions/[date]/route.ts` — runtime gold-edition fallback
+3. `src/server/publisher/revision-writer.ts` — versioned revision staging
 
 The API route reads from DB in the normal case; it only invokes the adapter when `queryEditionByDate` returns null AND the date is `1960-01-13` (the gold edition, which may not be seeded in a fresh environment).
 
@@ -570,9 +568,14 @@ This model uses inline text prefixes rather than `taskType` enums:
 `buildArticleChunkRecords` normalizes whitespace, targets 3,200-character sentence-aware chunks, and overlaps up to 600 characters of complete trailing sentences. Each chunk passes through `buildEmbeddingText`, which assembles:
 
 ```
-From The Transcript Archive: {date}, {category} section.
-Byline: {byline}
-Summary: {summary}
+title: {headline} | text: From The Transcript Archive (Ohio Wesleyan University newspaper), {date}, {category} section.
+
+{byline}
+
+{summary — first chunk only}
+
+[Photo: {caption} — image inputs only]
+
 {chunk_text}
 ```
 
@@ -580,7 +583,7 @@ Capped at 30,000 chars to stay under the API's 8,192-token limit.
 
 ### Image input
 
-Every `article_images` record is embedded independently. The input combines article context and caption with the exact local image bytes. Missing local files remain pending and are reported; they do not abort text backfill.
+Every `article_images` record is embedded independently. The input combines article context and caption with the image bytes, which `--embed-images` fetches from R2 (`ocr-assets/<sha256>.webp` or `<date>/images/<name>`, 10 MiB cap). `--finalize` requires text coverage only; failed images are reported but don't block validation.
 
 ### Vector identity
 
@@ -590,7 +593,7 @@ Every active vector stores:
 - `embedding_input_version` (`article-chunk-v1` or `article-image-v1`);
 - `embedding_input_hash`, a SHA-256 digest of model, version, exact text, and image data when present.
 
-Seed/migration upserts preserve a vector only when its canonical identity is unchanged. Any changed input clears only that vector. Query SQL filters by model and input version, so old and new embedding spaces are never compared.
+Build rows are immutable once the build leaves `building`; a changed input means a new build. Seed's unversioned rows keep a vector only when its canonical identity is unchanged. Query SQL filters by build, model, and input version, so old and new embedding spaces are never compared.
 
 ### HNSW index
 
@@ -613,25 +616,22 @@ BEGIN;
 COMMIT;
 ```
 
-Iterative scanning improves recall when category/date/image filters would otherwise discard ANN candidates.
+Iterative scanning improves recall when category/date/image filters would otherwise discard ANN candidates. The legacy `articles.embedding` path sets only `ef_search`.
 
 ### Embedding runs
 
-`db:embed` is always incremental — there is no force flag. Re-embedding everything is
-driven by the input version, not by a command-line switch: bump
-`RAG_TEXT_EMBEDDING_INPUT_VERSION` or `RAG_IMAGE_EMBEDDING_INPUT_VERSION` in
-`src/lib/rag-model-config.ts`, which makes every existing row stale, then run `db:embed`.
+Served vectors are written only by `npm run rag:index:build`. There is no `--force`: a changed model, input version, or pipeline version means a new build. Change the version in `src/lib/rag-model-config.ts` on a branch, run the build lifecycle from that branch (`--create` stamps the build with the code's versions), then ship the code and set `RAG_ACTIVE_INDEX_BUILD_ID` / `RAG_CORPUS_VERSION` together. Readiness (`db.ts`) rejects a build whose versions differ from the deployed code.
 
-| Command                                    | Effect                                                                      |
-| ------------------------------------------ | --------------------------------------------------------------------------- |
-| `npm run db:embed -- --dry-run`            | Counts pending chunks/images and estimates online cost; no model call       |
-| `npm run db:embed`                         | Missing/stale model or version rows only                                    |
-| `npm run db:embed -- --legacy-unversioned` | Targets the pre-build legacy article vectors instead of the versioned index |
+| Command                                                | Effect                                          |
+| ------------------------------------------------------ | ----------------------------------------------- |
+| `npm run rag:index:build -- --dry-run --yes`           | Read-only plan and cost                         |
+| `npm run rag:index:build -- --status <b> --yes`        | Build row plus pending counts                   |
+| `npm run db:embed -- --legacy-unversioned [--dry-run]` | Unversioned seed rows only; nothing serves them |
 
-- Script text batch size: 50 chunks.
+- Text batch size: 50 chunks.
 - Images are embedded one at a time.
 - One script-level transient retry is allowed; `QuotaExhaustedError` stops the run.
-- Rerunning resumes pending rows.
+- Rerunning resumes pending rows, keyed by exact input hash.
 
 ---
 
@@ -646,20 +646,7 @@ score(article) = vectorWeight / (RRF_K + vectorRank)
               + ftsWeight    / (RRF_K + ftsRank)
 ```
 
-Defaults (all tunable per-call):
-
-| Parameter      | Default               | Notes                                                              |
-| -------------- | --------------------- | ------------------------------------------------------------------ |
-| `vectorWeight` | 0.7                   |                                                                    |
-| `ftsWeight`    | 0.3                   | = `1 - vectorWeight`                                               |
-| `limit`        | 8                     | final results                                                      |
-| `fetchK`       | `min(3 * limit, 100)` | candidates fetched from each source before fusion                  |
-| `RRF_K`        | 40                    | standard is 60; lowered for better differentiation on small corpus |
-
-Route.ts overrides by mode:
-
-- `visual` mode → 0.7 vector / 0.3 FTS
-- `text` mode → 0.6 vector / 0.4 FTS
+Every caller passes `limit` and `vectorWeight`; each signal fetches `limit` rows and fusion keeps `limit`. Single-shot `/api/ask` uses limit 40 for text and 50 for visual; agent searches use at least 24 / 30. `vectorWeight` is 0.6 for text and 0.7 for visual; `ftsWeight = 1 − vectorWeight`. `RRF_K = 40` (the standard is 60; lowered for better differentiation on a small corpus). Ranges of 90+ days use month-stratified vector ranking.
 
 Articles appearing in both result sets get both scores summed and their `source` field set to `"both"`. Their unique matched passages are combined. Retrieval is not cached: each request issues both signals so `meta.method` and the retrieval log always describe that request's own signals.
 
@@ -667,7 +654,7 @@ Articles appearing in both result sets get both scores summed and their `source`
 
 ## Migrations
 
-Canonical system: numbered SQL files in `scripts/db/migrations/` (`NNNN_snake_case.sql`, currently `0001`–`0011`), applied by `scripts/db/lib/migration-runner.ts` through the CLI `scripts/db/migrate.mjs`. All schema comes from here — nothing else runs DDL. `scripts/db/schema.sql` no longer exists; the old file is frozen as `tests/db/fixtures/legacy-draft-schema.sql`, where the upgrade-path tests prove the canonical migrations converge a database that was created from it.
+Canonical system: numbered SQL files in `scripts/db/migrations/` (`NNNN_snake_case.sql`, currently `0001`–`0012`), applied by `scripts/db/lib/migration-runner.ts` through the CLI `scripts/db/migrate.mjs`. All schema comes from here — nothing else runs DDL. `scripts/db/schema.sql` no longer exists; the old file is frozen as `tests/db/fixtures/legacy-draft-schema.sql`, where the upgrade-path tests prove the canonical migrations converge a database that was created from it.
 
 | Command                      | Effect                                                                                                                   |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -717,7 +704,7 @@ The pre-ledger one-off `migrate-*.mjs` scripts in `scripts/db/` are kept as prod
 | `migrate-rag-v2.mjs`           | Renamed to `backfill-rag-records.mjs` (`npm run db:backfill:rag-records`); its DDL moved into `0005_rag_evidence_tables.sql`, leaving a deterministic DML-only backfill |
 | `migrate-rag-improvements.mjs` | Legacy whole-article migration, superseded by RAG v2                                                                                                                    |
 
-Online embedding is deliberately separate from schema migration so it can be cost-previewed, stopped, and resumed (`db:embed`).
+Online embedding is deliberately separate from schema migration so it can be cost-previewed, stopped, and resumed (`rag:index:build`).
 
 ---
 
@@ -735,14 +722,14 @@ Online embedding is deliberately separate from schema migration so it can be cos
    - Call adapter's `transformArticles` and `transformAds`
    - UPSERT into `editions` (ON CONFLICT DO UPDATE)
    - Build canonical article/chunk/image records and hashes
-   - UPSERT current article IDs in place; preserve unchanged vectors
-   - Delete article IDs no longer produced by the adapter
-   - Synchronize chunk and image child records, invalidating only changed vectors
+   - UPSERT current article IDs in place
+   - Delete article IDs no longer produced by the adapter (their chunk and image rows cascade, build rows included)
+   - Synchronize the unversioned chunk and image rows (`index_build_id IS NULL`); index-build rows are never touched
    - DELETE and re-INSERT `ads`
 5. **`seedWeather()`** — bulk insert weather records (batched 500), skipped if `--date` flag set.
 6. **`seedMusic()`** — bulk insert music records, skipped if `--date` flag set.
 7. **`buildSearchVectors(targetDate)`** — bulk `UPDATE articles SET search_vector = …`. Redundant with the trigger but ensures correctness on first seed when the trigger wasn't yet active.
-8. **`embedArticles(targetDate)`** — embeds pending current-version text chunks when ADC is configured. Image backfill remains explicit through `db:embed`.
+8. **`embedArticles(targetDate)`** — when `GOOGLE_CLOUD_PROJECT` is set, embeds the edition's unversioned chunks (`index_build_id IS NULL`): a paid call whose vectors no query reads.
 9. **`ANALYZE`** — updates planner statistics, including the v2 child tables.
 
 ### Reset mode — `npm run db:reset`
@@ -750,7 +737,7 @@ Online embedding is deliberately separate from schema migration so it can be cos
 After the step-1 preflight, the script:
 
 - **`exportLockedEditions()`** — reads `editions`, `articles`, `ads` for every date in `locked-editions.json` and saves them in memory. This protects the gold edition even when the source files aren't locally present.
-- **`truncateSeedTables()`** — one `TRUNCATE … RESTART IDENTITY CASCADE` over every `reseedable` table in the `CANONICAL_TABLES` registry. Runtime tables (`ask_session_turns`, `ask_feedback`, `ai_spend_by_scope`, `ai_spend_counter`, `api_rate_bucket`) are preserved by default; `--include-runtime` truncates them too. The `schema_migrations` ledger is never touched.
+- **`truncateSeedTables()`** — refuses if `rag_index_builds` holds a `validated` or `active` build unless `--include-rag-builds`. Otherwise one `TRUNCATE … RESTART IDENTITY CASCADE` over every `reseedable` table in the `CANONICAL_TABLES` registry (including builds, evidence, identity tables, and `assets`). Runtime tables (`ask_session_turns`, `ask_feedback`, `ai_spend_by_scope`, `ai_spend_counter`, `api_rate_bucket`, `answer_cache`, `year_digests`) are preserved by default; `--include-runtime` truncates them too. The `schema_migrations` ledger is never touched.
 
 Then `restoreLockedEditions(savedData)` re-inserts the saved gold rows before the general seed loop runs. There is no DROP and no schema re-apply — reset is data-only.
 
@@ -758,7 +745,7 @@ With `--unlock`, the export/restore of locked editions is skipped entirely.
 
 ### Embedding preservation — canonical identity
 
-The seed does not delete and recreate current articles. For every active vector it compares the stored canonical hash/version with the newly derived record. Exact matches retain their vector; changed inputs clear it for the next incremental backfill. Record IDs removed by the adapter are deleted, so their child vectors cascade instead of becoming stale search results.
+The seed updates current articles in place. `articles.embedding` is kept only when hash, version, and model `gemini-embedding-2` all match (`seed.mjs`). Unversioned chunk rows keep vectors when hash and version match; unversioned image rows when URL and caption are unchanged. Index-build rows are never pruned by the seed. Article ids the adapter drops are deleted, and their chunk and image rows, build rows included, cascade instead of becoming stale search results.
 
 ---
 
@@ -766,17 +753,22 @@ The seed does not delete and recreate current articles. For every active vector 
 
 Local path: `public/editions/<date>/images/<filename>`
 
-Two R2 namespaces:
+R2 keys:
 
 - **Content-addressed** (current uploads): `ocr-assets/<sha256>.webp`, where
   the hash is the SHA-256 of the final WebP bytes. Shared across editions —
   no date segment; identical bytes upload once.
 - **Legacy** (frozen): `<date>/images/<filename>.webp`. Existing objects stay;
   nothing writes here anymore.
+- **Edition backups**: `edition-backups/<date>/{edition.json, asset-manifest.json,
+upload-manifest.json, provenance.json}`, written by `npm run editions:backup`
+  (`-- --restore` downloads missing files). `public/editions/` is gitignored, so
+  this is the off-machine copy of the JSON that `db:seed` rebuilds the database from.
+- **GC ledger**: `ocr-assets-gc/unreferenced.json`.
 
 ### Upload flow
 
-`scripts/db/upload-images.mjs` (`npm run images:upload`):
+`scripts/db/upload-images.mjs` (`npm run images:upload -- --date <date>`; the OCR wrapper runs it on the staging copy):
 
 1. Collect only image references from `edition.json` (unreferenced local files are deleted)
 2. Encode to WebP with `sharp` under the size/dimension policy in [ocr-pipeline.md](ocr-pipeline.md) (quality ladder 85/80/75, capped long edge, <500 KiB per asset)
@@ -806,11 +798,14 @@ shape:
 - Any other filename with `IMAGE_BASE_URL` set: returns `${IMAGE_BASE_URL}/<date>/images/<file>.webp` (legacy namespace)
 - Without `IMAGE_BASE_URL` (dev): returns `/api/editions/<date>/images/<file>` for both shapes — the proxy is unchanged
 
-All 2,876 current production image URLs are legacy-shaped, so the
-content-addressed branch is forward-looking: it serves editions published
-through the current upload flow, not a migration of existing data.
+Older editions use legacy-shaped URLs; editions published through the
+current upload flow use content-addressed ones. Existing data was not migrated.
 
 Called in `article-transform.ts` and `ad-transform.ts` at seed time.
+
+### R2 garbage collection
+
+`npm run images:gc` is a dry run unless `--apply`. It requires a registry from `npm run assets:bootstrap -- --build --yes` (self-hash verified; refused if empty or listing missing objects), unioned with live references (`articles.image_urls`, `ads.image_urls`, `article_images.image_url`). Candidates are only `ocr-assets/<64-hex>.webp` and `<date>/images/<name>` keys, so edition backups are never collected. Unreferenced keys are marked, then deleted on a later `--apply` after `--grace-days` (minimum 30), which also needs `--approval-token` equal to `GC_APPROVAL_TOKEN`. It shares `public/editions/.locks/assets.lock` with the OCR wrapper.
 
 ### Dev proxy route
 
@@ -834,7 +829,7 @@ function runWithDbTimeout<T>(op, operation, timeoutMs, outerSignal) {
 }
 ```
 
-The signal is supplied to the real transaction fetch, while the race guarantees the caller returns even if a driver regression or test double ignores cancellation. The eight-second default protects the 30-second request budget. `DbTimeoutError` becomes HTTP 504/SSE stage `retrieve`, and no second fallback query starts after timeout or abort.
+The signal is supplied to the real transaction fetch, while the race guarantees the caller returns even if a driver regression or test double ignores cancellation. `/api/ask` passes a 10-second retrieval budget (`db.ts` falls back to 8 s) inside the 55-second request deadline (`maxDuration = 60`). `DbTimeoutError` becomes HTTP 504/SSE stage `retrieve`, and no second fallback query starts after timeout or abort.
 
 This pattern covers vector search, chunk FTS, edition listing for agent tools, and full-article reads used by the agent.
 
@@ -868,13 +863,13 @@ The gold edition at `gold/1960-01-13/gold-edition.json` is protected by `scripts
 
 Accepted tradeoffs. These are intentional, not TODOs.
 
-1. **Schema and online backfill are separate operations.** `db:migrate` and `db:backfill:rag-records` never call Google; `db:embed` is the explicit, resumable online step. During the gap, chunk FTS works while current-model vector coverage is incomplete.
+1. **Schema, seed, and serving vectors are separate operations.** `db:migrate` and `db:backfill:rag-records` never call Google, and `rag:index:build` is the explicit, resumable online step. Until a build containing them is activated, new editions are readable and keyword-searchable on the site but invisible to Ask, whose vector and keyword legs both filter on the active build.
 2. **Embedding fingerprints are intentionally exact.** A normalization or chunking change invalidates affected hashes. This may require a broad re-embed, but it prevents stale vectors from being silently reused.
 3. **Ads use SERIAL PK and can't be upserted.** Every re-seed does a DELETE + INSERT; ad IDs change across seeds. **Accepted because** the legacy tables give ads no cross-reference surface (no URLs, no deep links). The Phase 4 publisher now gives ads a versioned identity (`content_items` plus `'ad:{date}:{position}'` aliases — positional, regenerated per staging, unrelated to the SERIAL ids), but nothing in the runtime serves it yet; if legacy ad IDs ever grow a reference surface, this needs rethinking.
 4. **Per-instance rate-limit fallback under-counts across Vercel instances.** During Neon outages, effective per-IP limit is `N × instance_count`. **Accepted because** the primary path (Neon-backed) handles correctness; the fallback only fires during infrastructure failure.
 5. **Neon cancellation is HTTP-driver dependent.** Every hot-path transaction receives `fetchOptions.signal`, and the caller also races the abort event. This guarantees request completion; server-side cancellation still depends on Neon honoring the signal.
 6. **Gold edition `locked-editions.json` is the only dated-article protection mechanism.** Any other edition can be destroyed by `db:reset --unlock`. **Accepted because** all other editions are reproducible from `edition.json` on disk; only the gold regression baseline matters for verification.
-7. **Missing local images cannot be embedded.** The backfill records them as pending and continues. Their articles remain available through chunk vectors, FTS, and stored captions.
+7. **Image objects missing from R2 can't be embedded.** They fail per item, and `--finalize` doesn't wait on image coverage. Their articles remain available through chunk vectors, FTS, and stored captions.
 
 ---
 
@@ -892,48 +887,43 @@ npm run db:reset
 # vectors, embeds unembedded articles.
 # With --unlock: skips gold protection.
 # With --include-runtime: also truncates sessions/feedback/spend/rate-limit tables.
+# Refuses while a validated or active index build exists; --include-rag-builds
+# discards those paid vectors.
 ```
 
 If `gold/1960-01-13/gold-edition.json` is present locally, it's automatically restored. If not, the DB export mechanism (pre-truncate snapshot) handles it as long as the table had the data before truncation.
 
-### Migrate and backfill RAG v2
+### Build and activate a new index
 
-`db:migrate` owns all schema; the backfill is DML-only.
-
-```bash
-npm run db:migrate
-# Canonical, ledger-tracked schema; no model calls.
-
-npm run db:backfill:rag-records
-# Deterministic chunk/image metadata backfill; no DDL, no model calls.
-
-npm run db:embed -- --dry-run
-npm run db:embed
-# Resumable stable text-chunk and per-image backfill.
-```
-
-### Force a full re-embed after changing the canonical input format
-
-Bump the relevant input version in `src/lib/rag-model-config.ts` —
-`RAG_TEXT_EMBEDDING_INPUT_VERSION` (`article-chunk-v1`) or
-`RAG_IMAGE_EMBEDDING_INPUT_VERSION` (`article-image-v1`) — which marks every existing
-row stale, then run the ordinary incremental backfill:
+Needed after adding editions (Ask serves only the active build) or changing an embedding input version.
 
 ```bash
-npm run db:embed -- --dry-run   # confirm the pending count and cost first
-npm run db:embed
+npm run rag:index:build -- --dry-run --yes                       # plan and cost
+npm run rag:index:build -- --create --corpus <corpus-id> --yes   # prints <build-id>
+for step in populate embed-text embed-images finalize activate; do
+  npm run rag:index:build -- --$step <build-id> --yes
+done
 ```
 
-Do this only when the model, canonical input format, or source image bytes changed
-without a corresponding hash bump. The version bump _is_ the force switch; there is no
-`--force` flag.
+Then set `RAG_ACTIVE_INDEX_BUILD_ID` and `RAG_CORPUS_VERSION` in Vercel, redeploy, and run `npm run rag:health`.
+
+Choosing the corpus id:
+
+- **A new corpus id** activates without downtime, but `db:gc-index-builds` can never prune the old build (it only prunes a build whose corpus has another active one).
+- **The same corpus id** keeps the old build prunable, but `--activate` refuses while that corpus has an active build: `--rollback-activation` the old one first, and Ask's searches fail readiness until the new environment deploys.
+
+To build against a copy of the database and move the vectors, use `db:export-build-vectors` / `db:import-build-vectors`. The target must already list the corpus in `corpus_versions` and have a `legacy_content_aliases` row for every article (`backfill-identities.mjs`).
+
+### Change an embedding input version
+
+See [Embedding runs](#embedding-runs): bump the version on a branch, build from that branch, then ship the code and the new build ids together.
 
 ### Investigate a slow query
 
 1. **Confirm v2 indexes exist**. Use `\d article_chunks` and `\d article_images` in `psql` to verify both HNSW indexes.
 2. **Check the daily budget**. `SELECT * FROM ai_spend_by_scope WHERE day = CURRENT_DATE` (one row per environment). A request that looks stuck may be budget-blocked before the query reached the DB.
 3. **Check `api_rate_bucket`**. Look for IP-level throttling.
-4. **Query timeout**. Each retrieval query defaults to an 8-second budget (`HYBRID_SEARCH_TIMEOUT_MS`); a `DbTimeoutError` in logs means the DB exceeded it.
+4. **Query timeout**. `/api/ask` gives retrieval a 10-second budget (8 s default in `db.ts`); a `DbTimeoutError` in logs means the DB exceeded it.
 5. **Serving filter reaches no rows**. Run `npm run rag:health`. A `served.predicate` count of 0 means the configured filter matches nothing, so the vector leg returns zero rows without erroring — the retrieval log warns `vector signal returned 0 rows while full-text returned rows` when that happens in production.
 6. **Neon slow-query log**. Examine the Neon console for slow or repeatedly cancelled queries.
 
@@ -948,25 +938,14 @@ Alternatively, with gold files on disk, any `db:seed` triggers `ensureLockedEdit
 
 **Direct SQL restore is not supported** — it bypasses the adapter's filtering and dedup logic.
 
-### Run the RAG v2 deployment sequence
-
-```bash
-npm run db:migrate
-npm run db:backfill:rag-records
-npm run db:embed -- --dry-run
-npm run db:embed
-```
-
-Run in this order. The first two commands never call the model; the dry run reports the online work before it is authorized.
-
 ---
 
 ## Start here
 
 If you're new and need to make a change, read these in order:
 
-1. `scripts/db/migrations/` — the canonical DDL, eleven numbered files applied by `scripts/db/lib/migration-runner.ts`. Everything else is downstream of this.
+1. `scripts/db/migrations/` — the canonical DDL, twelve numbered files applied by `scripts/db/lib/migration-runner.ts`. Everything else is downstream of this.
 2. `ocr/src/transcript_ocr/contracts/content_models.py` — the `edition.json` contract, source of truth for everything that flows into the DB.
 3. `src/server/ocr-adapter/article-transform.ts` — where `edition.json` becomes DB rows. Every normalization rule lives here.
-4. `src/lib/db.ts` — every runtime read query. `raceWithTimeout` and `DbTimeoutError` patterns apply to every caller.
+4. `src/lib/db.ts` — every runtime read query. `runWithDbTimeout` / `DbTimeoutError` (`src/lib/db-timeout.ts`) bound every caller.
 5. `scripts/db/seed.mjs` — the end-to-end seed flow. The embedding fingerprint logic is the most non-obvious piece.
