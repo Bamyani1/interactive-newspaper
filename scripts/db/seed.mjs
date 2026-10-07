@@ -599,119 +599,6 @@ async function buildSearchVectors(scopedDate = "") {
   console.log("  Search vectors built.");
 }
 
-// ─── Embed article chunks (optional — uses Vertex ADC) ───────────
-
-async function embedArticles(scopedDate = "") {
-  // Lazy-import so a data-only seed can still run without local ADC.
-  let embedDocuments, buildEmbeddingInput, embeddingInputFingerprint;
-  let hasGoogleCredentials, QuotaExhaustedError, EMBEDDING_MODEL, EMBEDDING_INPUT_VERSION;
-  try {
-    const mod = await import("../../src/lib/embeddings.ts");
-    embedDocuments = mod.embedDocuments;
-    buildEmbeddingInput = mod.buildEmbeddingInput;
-    embeddingInputFingerprint = mod.embeddingInputFingerprint;
-    hasGoogleCredentials = mod.hasGoogleCredentials;
-    QuotaExhaustedError = mod.QuotaExhaustedError;
-    EMBEDDING_MODEL = mod.EMBEDDING_MODEL;
-    EMBEDDING_INPUT_VERSION = mod.EMBEDDING_INPUT_VERSION;
-  } catch (err) {
-    console.warn("Skipping embedding: could not load embeddings module.", err.message);
-    return;
-  }
-
-  if (!hasGoogleCredentials()) {
-    console.warn("Skipping embedding: GOOGLE_CLOUD_PROJECT is not set for Vertex ADC.");
-    return;
-  }
-
-  // Unversioned chunks only, the same scope embed.mjs keeps. Rows that
-  // belong to an index build are written by rag:index:build, which records
-  // and validates what it embeds; seed filling them in behind its back
-  // would leave a build holding vectors it never checked.
-  const unembedded = scopedDate
-    ? await sql`SELECT c.id, c.chunk_index, c.chunk_text, a.headline, a.byline, a.edition_date, a.category, a.summary
-                FROM article_chunks c JOIN articles a ON a.id = c.article_id
-                WHERE a.edition_date = ${scopedDate}
-                  AND c.index_build_id IS NULL
-                  AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
-                       OR c.embedding_input_version IS DISTINCT FROM ${EMBEDDING_INPUT_VERSION})
-                ORDER BY c.id`
-    : await sql`SELECT c.id, c.chunk_index, c.chunk_text, a.headline, a.byline, a.edition_date, a.category, a.summary
-                FROM article_chunks c JOIN articles a ON a.id = c.article_id
-                WHERE c.index_build_id IS NULL
-                  AND (c.embedding IS NULL OR c.embedding_model IS DISTINCT FROM ${EMBEDDING_MODEL}
-                       OR c.embedding_input_version IS DISTINCT FROM ${EMBEDDING_INPUT_VERSION})
-                ORDER BY c.id`;
-  if (unembedded.length === 0) {
-    console.log("All article chunks already embedded.");
-    return;
-  }
-
-  console.log(`Embedding ${unembedded.length} article chunks...`);
-
-  const BATCH = 50;
-  let done = 0;
-  let failedBatches = 0;
-  let quotaExhausted = false;
-  const totalBatches = Math.ceil(unembedded.length / BATCH);
-
-  for (let i = 0; i < unembedded.length; i += BATCH) {
-    const batch = unembedded.slice(i, i + BATCH);
-    const inputs = batch.map((chunk) =>
-      buildEmbeddingInput({
-        headline: chunk.headline,
-        byline: chunk.byline,
-        body_plain: chunk.chunk_text,
-        edition_date: chunk.edition_date,
-        category: chunk.category,
-        summary: chunk.chunk_index === 0 ? chunk.summary : null,
-      })
-    );
-
-    try {
-      const vectors = await embedDocuments(inputs, { op: "seed.embed-chunks" });
-      const updates = batch.map((chunk, idx) => {
-        const vecStr = `[${vectors[idx].join(",")}]`;
-        const inputHash = embeddingInputFingerprint(inputs[idx]);
-        return sql`UPDATE article_chunks
-                   SET embedding = ${vecStr}::vector,
-                       embedding_model = ${EMBEDDING_MODEL},
-                       embedding_input_version = ${EMBEDDING_INPUT_VERSION},
-                       embedding_input_hash = ${inputHash}
-                   WHERE id = ${chunk.id} AND index_build_id IS NULL`;
-      });
-      await sql.transaction(updates);
-      done += batch.length;
-      console.log(`  Embedded ${done}/${unembedded.length}`);
-    } catch (err) {
-      // Hard stop on quota exhaustion — every subsequent batch will 429
-      // anyway, so keep going wastes API calls and prolongs the run for
-      // no benefit. See docs/issues/0028.
-      if (QuotaExhaustedError && err instanceof QuotaExhaustedError) {
-        console.warn(
-          `  Quota exhausted at batch ${Math.floor(i / BATCH) + 1}/${totalBatches}; stopping early. Retry after quota reset.`
-        );
-        quotaExhausted = true;
-        break;
-      }
-      failedBatches++;
-      console.error(`  Embedding batch error:`, err.message || err);
-    }
-  }
-
-  console.log(`  Embedding complete: ${done} chunks.`);
-  if (quotaExhausted) {
-    throw new Error(
-      `Embedding stopped early due to Gemini quota exhaustion; ${done} of ${unembedded.length} article(s) embedded. Retry after the daily quota reset.`
-    );
-  }
-  if (failedBatches > 0) {
-    throw new Error(
-      `Embedding failed: ${failedBatches} of ${totalBatches} batch(es) errored; ${done} article(s) embedded.`
-    );
-  }
-}
-
 // ─── Ensure Locked Editions ─────────────────────────────────────
 // Copies gold-standard edition files into public/editions/ if missing.
 // Called before seeding so locked editions always survive a --reset.
@@ -812,7 +699,7 @@ async function main() {
     console.log(`Skipping weather/music seed in date-scoped mode (${targetDate}).`);
   }
   await buildSearchVectors(targetDate);
-  await embedArticles(targetDate);
+  // No embedding here: vectors come only from rag:index:build.
 
   // Run ANALYZE for query planner optimization
   await sql`ANALYZE editions`;

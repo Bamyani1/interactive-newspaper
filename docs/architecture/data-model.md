@@ -729,8 +729,10 @@ Online embedding is deliberately separate from schema migration so it can be cos
 5. **`seedWeather()`** — bulk insert weather records (batched 500), skipped if `--date` flag set.
 6. **`seedMusic()`** — bulk insert music records, skipped if `--date` flag set.
 7. **`buildSearchVectors(targetDate)`** — bulk `UPDATE articles SET search_vector = …`. Redundant with the trigger but ensures correctness on first seed when the trigger wasn't yet active.
-8. **`embedArticles(targetDate)`** — when `GOOGLE_CLOUD_PROJECT` is set, embeds the edition's unversioned chunks (`index_build_id IS NULL`): a paid call whose vectors no query reads.
-9. **`ANALYZE`** — updates planner statistics, including the v2 child tables.
+
+The seed never calls an embedding model. Vectors come only from `rag:index:build`, which is all Ask reads.
+
+8. **`ANALYZE`** — updates planner statistics, including the v2 child tables.
 
 ### Reset mode — `npm run db:reset`
 

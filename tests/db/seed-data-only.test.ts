@@ -24,17 +24,12 @@ describe("seed.mjs is data-only", () => {
     expect(source).not.toMatch(DDL_PATTERN);
   });
 
-  // Rows that belong to an index build are written by rag:index:build,
-  // which records and validates what it embeds. Without these filters seed
-  // filled in a pending build's chunks behind its back.
-  it("embeds only chunks outside any index build", () => {
+  // Ask serves only an activated index build, which rag:index:build embeds
+  // and validates. Vectors seed wrote outside a build were paid for on
+  // every OCR publish and never read.
+  it("never calls the embedding model", () => {
     const source = readFileSync(SEED_PATH, "utf8");
-    const selects = source.match(/SELECT c\.id, c\.chunk_index[\s\S]*?ORDER BY c\.id/g) ?? [];
-    expect(selects).toHaveLength(2);
-    for (const select of selects) expect(select).toContain("c.index_build_id IS NULL");
-    const updates = source.match(/UPDATE article_chunks[\s\S]*?`/g) ?? [];
-    expect(updates).toHaveLength(1);
-    expect(updates[0]).toContain("AND index_build_id IS NULL");
+    expect(source).not.toMatch(/embedDocuments|embedQuery|SET embedding\s*=/);
   });
 
   // Build rows carry `{buildId}:` ids that are never on the keep-list, so an
