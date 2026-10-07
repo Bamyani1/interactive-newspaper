@@ -29,9 +29,46 @@ load_dotenv(ROOT / ".env.local")
 from google import genai
 from google.genai import types
 from transcript_ocr.config.google_clients import create_genai_client
-from transcript_ocr.merging.continuation import _strip_continuation_markers
 
 EDITIONS_DIR = ROOT / "public" / "editions"
+
+# Copied from transcript_ocr.merging.continuation, which the pipeline
+# dropped in 88d7b27; this repair script is its only remaining user.
+_CONTINUATION_PATTERNS = [
+    re.compile(p, re.IGNORECASE)
+    for p in [
+        r"\(continued (?:on|from) page \w[\w-]*\)",
+        r"\bsee \w[\w\s]{0,40}, page \w[\w-]*\b",
+        r"\bsee \w[\w\s]{0,40} on page \w[\w-]*\b",
+        r"\b(?:please )?turn to page \w[\w-]*\b",
+        r"\bcontinued on next page\b",
+        r"\bcontinued from (?:previous|preceding) page\b",
+        r"\bcontinued (?:on|from) (?:page )?\w[\w-]*\b",
+        r"\bcon't\.?\s+on\s+(?:p(?:age)?\.?\s+)?\w[\w-]*\b",
+        r"\bcon't\.?\s+from\s+(?:p(?:age)?\.?\s+)?\w[\w-]*\b",
+        r"[\(-]\s*p\.?\s*\d+\s*\)?\s*$",
+        r"\bsee page \w[\w-]*\b",
+        # OCR-fuzzy: missing "p" in (p. X) — e.g. "(. 1)"
+        r"\(\.\s*\d+\s*\)",
+        # OCR-fuzzy: common typos of "Continued" — e.g. "Continuted from p. 1"
+        r"\b[Cc]ontin[a-z]*(?:ed|ued)\s+(?:on|from)\s+(?:p(?:age)?\.?\s+)?\w[\w-]*\b",
+        # Broader: parenthesized continuation reference with OCR corruption
+        r"\(\s*(?:Continued|Con't\.?|From)\s+(?:on|from)?\s*(?:p(?:age)?\.?\s+)?\w[\w-]*\s*\)",
+        # Textual page references (non-numeric — normalized to "?")
+        r"\bcontinued\s+on\s+(?:the\s+)?(?:back|last|final|next)\s+page\b",
+        r"\bcontinued\s+from\s+(?:the\s+)?(?:preceding|previous|last)\s+page\b",
+        r"\bsee\s+(?:the\s+)?(?:back|last|final|next)\s+page\b",
+    ]
+]
+
+
+def _strip_continuation_markers(text: str) -> str:
+    """Remove continuation markers (various newspaper styles) from article text."""
+    for pattern in _CONTINUATION_PATTERNS:
+        text = pattern.sub("", text)
+    text = re.sub(r"\(\s*(?:Page)?\s*\)", "", text, flags=re.IGNORECASE)
+    return re.sub(r" +", " ", text).strip()
+
 
 SAFETY_OFF = [
     types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF"),
