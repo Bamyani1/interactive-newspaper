@@ -14,7 +14,7 @@ describe("RAG model routing", () => {
     // every candidate for broad survey questions as tangential and writes
     // weaker prose than the previously served gemini-3-flash-preview.
     expect(RAG_GENERATION_MODEL).toBe("gemini-3.5-flash-lite");
-    expect(RAG_ANSWER_MODEL).toBe("gemini-3.6-flash");
+    expect(RAG_ANSWER_MODEL).toBe("gemini-3.8-flash");
     expect(RAG_MODEL_CONFIG.reformulate.model).toBe(RAG_GENERATION_MODEL);
     expect(RAG_MODEL_CONFIG.rerank.model).toBe(RAG_ANSWER_MODEL);
     expect(RAG_MODEL_CONFIG.answer.model).toBe(RAG_ANSWER_MODEL);
@@ -23,7 +23,7 @@ describe("RAG model routing", () => {
 
   it("reserves minimal/low thinking for grounded steps and medium for the agent loop", () => {
     expect(RAG_MODEL_CONFIG.reformulate.thinkingLevel).toBe("MINIMAL");
-    expect(RAG_MODEL_CONFIG.rerank.thinkingLevel).toBe("MINIMAL");
+    expect(RAG_MODEL_CONFIG.rerank.thinkingLevel).toBe("LOW");
     expect(RAG_MODEL_CONFIG.answer.thinkingLevel).toBe("LOW");
     expect(RAG_MODEL_CONFIG.agent.thinkingLevel).toBe("MEDIUM");
   });

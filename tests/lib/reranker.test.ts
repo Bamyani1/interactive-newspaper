@@ -160,7 +160,7 @@ describe("rerankArticles", () => {
     ]);
   });
 
-  it("uses Flash-Lite with minimal thinking and no sampling controls", async () => {
+  it("uses full Flash with low thinking and no sampling controls", async () => {
     generateContentMock.mockResolvedValue({ text: '{"scores":[7,6,5]}' });
     await rerankArticles("Which teams won?", [
       makeArticle({ id: "a" }),
@@ -169,8 +169,8 @@ describe("rerankArticles", () => {
     ]);
 
     const call = generateContentMock.mock.calls[0][0];
-    expect(call.model).toBe("gemini-3.6-flash");
-    expect(call.config.thinkingConfig.thinkingLevel).toBe("MINIMAL");
+    expect(call.model).toBe("gemini-3.8-flash");
+    expect(call.config.thinkingConfig.thinkingLevel).toBe("LOW");
     expect(call.config.responseMimeType).toBe("application/json");
     expect(call.config).not.toHaveProperty("temperature");
     expect(call.config).not.toHaveProperty("topP");

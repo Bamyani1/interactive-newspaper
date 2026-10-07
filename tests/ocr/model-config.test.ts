@@ -14,9 +14,9 @@ const config = JSON.parse(readFileSync(promptsPath, "utf-8")) as {
 };
 
 describe("OCR Gemini model routing", () => {
-  it("routes hard merge work to Gemini 3.6 Flash with medium thinking", () => {
+  it("routes hard merge work to Gemini 3.8 Flash with medium thinking", () => {
     expect(config.models.merge).toEqual({
-      name: "gemini-3.6-flash",
+      name: "gemini-3.8-flash",
       thinking: "medium",
     });
     expect(config.models.seam_repair).toEqual(config.models.merge);

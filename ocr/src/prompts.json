@@ -9,11 +9,11 @@
       "thinking": "medium"
     },
     "merge": {
-      "name": "gemini-3.6-flash",
+      "name": "gemini-3.8-flash",
       "thinking": "medium"
     },
     "seam_repair": {
-      "name": "gemini-3.6-flash",
+      "name": "gemini-3.8-flash",
       "thinking": "medium"
     },
     "ad_enrichment": {

@@ -93,11 +93,12 @@ def clean_captions_batch(client: genai.Client, captions: list[str]) -> list[str]
     prompt = CLEANUP_PROMPT + json.dumps(captions, indent=2)
 
     response = client.models.generate_content(
-        model="gemini-3-flash-preview",
+        model="gemini-3.8-flash",
         contents=[prompt],
         config=genai.types.GenerateContentConfig(
             response_mime_type="application/json",
             max_output_tokens=8192,
+            thinking_config=genai.types.ThinkingConfig(thinking_level="LOW"),
         ),
     )
 

@@ -21,7 +21,7 @@ def test_flash_lite_cost_counts_tool_input_and_thought_output():
 
 def test_flash_cost_uses_locked_global_rate():
     estimate = estimate_gemini_cost(
-        "gemini-3.6-flash",
+        "gemini-3.8-flash",
         TokenUsage(prompt_tokens=1_000_000, candidates_tokens=1_000_000),
     )
     assert estimate.usd == pytest.approx(9.0)

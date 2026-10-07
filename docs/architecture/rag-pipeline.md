@@ -7,9 +7,9 @@ This document describes the `/api/ask` pipeline and the versioned RAG-v2 index i
 | Work                                          | Model                   | Thinking  | Output                   |
 | --------------------------------------------- | ----------------------- | --------- | ------------------------ |
 | Query reformulation and intent classification | `gemini-3.5-flash-lite` | `MINIMAL` | Structured JSON          |
-| Candidate reranking                           | `gemini-3.6-flash`      | `MINIMAL` | Structured JSON          |
-| Grounded answer generation                    | `gemini-3.6-flash`      | `LOW`     | Structured JSON          |
-| Complex-question agent loop                   | `gemini-3.6-flash`      | `MEDIUM`  | Text plus function calls |
+| Candidate reranking                           | `gemini-3.8-flash`      | `LOW`     | Structured JSON          |
+| Grounded answer generation                    | `gemini-3.8-flash`      | `LOW`     | Structured JSON          |
+| Complex-question agent loop                   | `gemini-3.8-flash`      | `MEDIUM`  | Text plus function calls |
 | Text and image embeddings                     | `gemini-embedding-2`    | N/A       | 768-dimensional vectors  |
 
 Gemini runs only on Vertex AI (`src/lib/gemini-client.ts`). Local dev, the data pipeline, and the Vercel serving runtime (production and previews) all set `GOOGLE_CLOUD_PROJECT`, and clients use Vertex AI in `GOOGLE_CLOUD_LOCATION` (default `global`). Locally and offline, credentials come from ADC; Vercel has no ADC, so it supplies `GOOGLE_SERVICE_ACCOUNT_JSON` (key JSON, raw or base64), and a malformed value throws rather than falling back. Serving on Vertex also embeds queries on the endpoint that built the index. Without `GOOGLE_CLOUD_PROJECT` the client throws instead of using an API key: keys bill prepaid Gemini API credits, not the Cloud account, and production failed on 2026-09-09 when those ran out. Every client uses the stable `v1` endpoint. Gemini 3 requests omit `temperature`, `topP`, and `topK`. Reranking and answering deliberately run on the full Flash tier: the lite model consistently judged every candidate for broad survey questions as tangential (a total-veto that surfaced as false no-evidence refusals) and wrote weaker prose than the previously served `gemini-3-flash-preview`.
@@ -255,7 +255,7 @@ Standard global rates represented by `src/lib/cost-tracker.ts`:
 | Model                   |               Input | Output/reasoning |    Image input |
 | ----------------------- | ------------------: | ---------------: | -------------: |
 | `gemini-3.5-flash-lite` |      $0.30/M tokens |   $2.50/M tokens |            N/A |
-| `gemini-3.6-flash`      |      $1.50/M tokens |   $7.50/M tokens |            N/A |
+| `gemini-3.8-flash`      |      $1.50/M tokens |   $7.50/M tokens |            N/A |
 | `gemini-embedding-2`    | $0.20/M text tokens |              N/A | $0.00012/image |
 
 `toolUsePromptTokenCount` is counted as input and `thoughtsTokenCount` as output. Embedding telemetry uses per-embedding token statistics when available and billable-character estimation otherwise.

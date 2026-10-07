@@ -25,7 +25,7 @@ from ..shared.retry import gemini_generate_with_retry
 from ..shared.text import split_sentences
 
 
-_LOCKED_MERGE_MODEL = "gemini-3.6-flash"
+_LOCKED_MERGE_MODEL = "gemini-3.8-flash"
 _ANCHOR_SIMILARITY_MIN = 0.90
 _RAW_CONTEXT_CHARS = 600
 _SENTENCE_CONTEXT_CHARS = 800
