@@ -6,29 +6,29 @@ This package contains all OCR pipeline logic, organized by domain.
 
 ```
 config/         — Model, client, environment, and path configuration
-contracts/      — Data models (content, diagnostics, ads)
+contracts/      — Data models (content, ads, diagnostics) and canvas page states
 cli/            — Candidate build, validation, failure-log, and gold-score entry points
-application/    — Pipeline orchestration (edition_pipeline, page_pipeline, ad_enrichment)
-ingestion/      — File discovery, path resolution
-preprocessing/  — Image normalization, skew correction
+application/    — Orchestration (edition_pipeline, page_pipeline, ad_enrichment, content_rescue final review)
+ingestion/      — IIIF manifest inventory, downloads, file discovery, path resolution
+preprocessing/  — Lossless TIFF conversion, source/OCR image branches, deskew
 detection/      — American Stories plus DocLayout table detection
-recognition/    — DocAI & Gemini text extraction, prompts
+recognition/    — Document AI OCR, Gemini page structuring, prompts
 postprocessing/ — Text deduplication, byline cleanup, and page normalization
 merging/        — Model-decided grouping and batched seam review
 image_linking/  — Model-decided visual disposition (no spatial fallback)
 export/         — Candidate validation, atomic JSON, and provenance
 evaluation/     — Gold-edition accuracy scoring (gold_score)
 diagnostics/    — In-memory metrics and the metadata-only failure log
-shared/         — Console utilities, retry helpers
+shared/         — Console, retry, atomic file writes, text and timing helpers
 ```
 
 ## Call chain
 
 ```
-ocr/convert_scans.py  (thin wrapper, adds src/ to sys.path)
-  → cli/convert_scans.py::main()  (single arg parse, canonical paths)
-    → application/edition_pipeline.py::process_edition()  (validated candidate)
-      → scripts/ocr/process-edition.sh  (upload + atomic promotion)
+scripts/ocr/process-edition.sh  (preflight, locks, validate, upload, atomic promotion, optional seed)
+  → ocr/convert_scans.py  (thin wrapper, adds src/ to sys.path)
+    → cli/convert_scans.py::main()  (arg parse, manifest inventory, Gemini client)
+      → application/edition_pipeline.py::process_edition()  (validated candidate under --output-root)
 ```
 
 ## Rules

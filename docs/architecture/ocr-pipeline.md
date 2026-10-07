@@ -64,27 +64,37 @@ state but do not erase the content extracted from surviving pages.
 ## Transaction and ownership
 
 `application.edition_pipeline.process_edition()` builds one candidate under the
-root supplied by the caller. `scripts/ocr/process-edition.sh` creates that root
-on the same filesystem as `public/editions/`, holds an edition-specific lock,
-and performs the transaction:
+root supplied by the caller. `scripts/ocr/process-edition.sh` loads
+`.env.local`, activates `ocr/.venv`, forces Vertex `global` and
+`OCR_ENVIRONMENT=production`, and refuses to start without
+`GOOGLE_CLOUD_PROJECT`, `DOCUMENT_AI_PROCESSOR_ID`, `DOCUMENT_AI_LOCATION`, and
+`OCR_DETECTOR_LICENSES_ACCEPTED=true`. It creates the candidate root under
+`public/editions/.staging/` (the same filesystem as `public/editions/`), holds
+an edition-specific lock, and performs the transaction:
 
 1. Build the isolated OCR candidate.
 2. Structurally validate `edition.json` and every referenced local image.
-3. Optimize and upload only referenced assets.
-4. Prune failed image references while retaining text-bearing records.
-5. Validate the modified candidate again.
-6. Move the prior public edition into a temporary rollback directory.
-7. Rename the candidate to the public path.
-8. Validate the public result and delete the rollback directory.
+3. Take the shared asset lock; optimize and upload only referenced assets,
+   pruning failed image references while retaining text-bearing records.
+4. Validate the modified candidate again.
+5. Move the prior public edition into a temporary rollback directory, rename
+   the candidate to the public path, validate the public result, and delete the
+   rollback directory.
+6. Release the asset lock, then delete the source folder if it is under
+   `ocr/inbox/`. A run that fails earlier keeps its scans for a retry.
+7. With `--seed` only, run `npm run db:seed -- --date <date>`.
+
+Exit codes name the failed step: 2 arguments or preflight, 10 OCR, 20
+validation, 30 upload, 40 promotion, 50 seed, 75 lock.
 
 If promotion fails, the wrapper restores the previous public edition. Database
-seeding is a separate opt-in operation after promotion. So is the Phase 4
-versioned DB publication (`npm run db:publish-edition`), which stages the
-promoted artifact into immutable revision tables under a resumable publication
-run; see [data-model.md](data-model.md). A publication repair can re-run
-upload or seeding only from an already validated public artifact; there is no
-OCR-stage resume mode — the versioned publisher's `--resume` resumes only
-database-side publication runs.
+seeding is opt-in (`--seed`), and the wrapper never embeds: Ask reads only the
+active RAG index build, so a new edition becomes answerable only after a new
+build is created and activated (see [data-model.md](data-model.md#build-and-activate-a-new-index)).
+The versioned publisher (`npm run db:publish-edition`) is authorized for
+local/test databases only and is not part of this flow. A repair
+(`--repair-upload`, `--repair-seed`) works only from an already validated
+public artifact; there is no OCR-stage resume mode.
 
 ## Ingestion and image branches
 
@@ -152,16 +162,21 @@ The locked detector is `hybrid`:
 3. A table is added only when it does not overlap an American Stories region at
    or above the fixed IoU threshold.
 
-The American Stories model runs at 1280 square input, confidence `0.1`, and
+The American Stories model runs at 1280 square input, confidence `0.02` (low
+enough to keep a faint illustration in the 1990 gold edition), and
 class-agnostic NMS IoU `0.1`. Shared region policy rejects boxes below 15,000
 pixels, above 80% of page area, or outside the `0.25` to `4.0` aspect-ratio
 range. Detector source, class, confidence, and bounds remain available in the
 run's in-memory diagnostics.
 
 Hosted execution requires an explicit `OCR_DETECTOR_LICENSES_ACCEPTED=true`
-acknowledgement because American Stories and DocLayout have separate deployment
-license obligations. The detector route is fixed; environment overrides cannot
-bypass American Stories or its DocLayout table fallback.
+acknowledgement because American Stories and DocLayout-YOLO carry separate
+deployment license obligations. `process-edition.sh` checks it on every run, and
+the detector re-checks it whenever `OCR_ENVIRONMENT` is `production` or `hosted`
+(the wrapper always sets `production`). The American Stories checkpoint is
+SHA-256 pinned; `AMERICAN_STORIES_MODEL_PATH` may point at a local copy but
+cannot change the route. The detector route is fixed; environment overrides
+cannot bypass American Stories or its DocLayout table fallback.
 
 ## Gemini request policy
 
@@ -169,8 +184,9 @@ All OCR Gemini clients are created in `config.google_clients` with Vertex AI,
 ADC, project `GOOGLE_CLOUD_PROJECT`, location `global`, API `v1`, and SDK-level
 automatic retries set to one attempt so the pipeline owns retry behavior.
 
-Stage settings live in `ocr/src/prompts.json` and are normalized by
-`config.model_calls`:
+Each stage's model and thinking level live in `ocr/src/prompts.json`;
+timeouts, safety, seed, and media resolution are fixed in `config.model_calls`,
+and each stage module sets its own output cap:
 
 | Stage | Model | Thinking | Max output | Timeout | Media |
 |---|---|---|---:|---:|---|
@@ -194,8 +210,10 @@ Every request uses:
 Transient transport failures and the one allowed invalid-schema correction
 consume the same budget. Retries preserve the exact model, thinking level,
 media resolution, prompt, and response schema. There is no fallback model.
-Request starts are globally spaced by 0.5 seconds by default; responses may
-still overlap across page workers.
+Request starts are globally spaced by 0.5 seconds by default
+(`GEMINI_CALL_SPACING_S` overrides it); responses may still overlap across page
+workers. Retries wait for `Retry-After` when present, otherwise a full-jitter
+exponential delay (up to 2 s, then 4 s).
 
 ## Page structuring and historical text
 
@@ -348,11 +366,15 @@ second validation. An image-only standalone record is removed when its asset
 fails; printed text is retained even when its visual reference is lost.
 
 R2 cleanup is separate from edition publication. `scripts/db/gc-r2-assets.mjs`
-reads every current `asset-manifest.json`, tracks globally unreferenced object
-hashes in the private `ocr-assets-gc/unreferenced.json` state object, and
-deletes them only after they have remained unreferenced for a grace period of
-at least 30 days. Object modification time is not treated as the start of the
-unreferenced period. It is a dry run unless `--apply` is supplied.
+requires a self-verifying registry artifact from `npm run assets:bootstrap`
+(`--registry <path>`) and, when `DATABASE_URL` is set, unions it with live
+database references. It covers both `ocr-assets/<sha256>.webp` and legacy
+`<date>/images/` keys, records first-unreferenced times in the private
+`ocr-assets-gc/unreferenced.json` object, and deletes only after a grace period
+of at least 30 days. Object modification time is not treated as the start of the
+unreferenced period. It is a dry run by default; `--apply` also needs
+`--approval-token` matching `GC_APPROVAL_TOKEN`, and it shares the wrapper's
+asset lock. Edition JSON backups (`edition-backups/`) are never candidates.
 
 ## Durable artifacts and observability
 
@@ -413,8 +435,12 @@ below domain layers.
 The OCR tests live under `tests/ocr/`:
 
 ```bash
-python3 -m pytest -q tests/ocr
+source ocr/.venv/bin/activate
+python -m pip install pytest   # not in requirements.txt
+python -m pytest -q tests/ocr
 ```
+
+CI runs only `tests/ocr/architecture/`; the rest of the suite runs locally.
 
 They cover exact model/thinking/media routing, shared retry ceilings, token cost
 classification, manifest state accounting, pixel preservation, deskew policy,

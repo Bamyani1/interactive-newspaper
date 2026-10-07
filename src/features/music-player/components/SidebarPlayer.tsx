@@ -98,7 +98,7 @@ function TracksPlayer({
                     className="object-cover opacity-80 group-hover:opacity-100 transition-opacity"
                   />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    {/* Intentional YouTube brand red — affordance over the yt thumbnail. Do NOT replace with --color-accent. See docs/design/carve-outs.md item 2. */}
+                    {/* Intentional YouTube brand red — affordance over the yt thumbnail. Do NOT replace with --color-accent. See docs/design/carve-outs.md, "YouTube play-button red". */}
                     <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                       <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
                     </div>

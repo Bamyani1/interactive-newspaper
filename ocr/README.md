@@ -51,14 +51,14 @@ Create the Python environment:
 
 ```bash
 cd ocr
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cd ..
 ```
 
 The OCR pipeline locks the Python Google Gen AI SDK to
-`google-genai==2.16.0`.
+`google-genai==2.20.0`.
 
 Enable Vertex AI and Document AI in the intended Google Cloud project, then
 authenticate locally with ADC:
@@ -98,9 +98,7 @@ Use the existing IIIF downloader. It saves the source manifest and numbers every
 download with its four-digit canvas index:
 
 ```bash
-python scripts/iiif/download.py \
-  'https://example.org/iiif/manifest.json' \
-  --output-root ocr/inbox
+python scripts/iiif/download.py 'https://example.org/iiif/manifest.json'
 ```
 
 Downloads are staged through `.part` files and decoded before rename. Missing
@@ -179,9 +177,10 @@ under `ocr/models/`. Hosted execution is gated until both detector licenses are
 explicitly accepted:
 
 ```dotenv
-OCR_ENVIRONMENT=production
 OCR_DETECTOR_LICENSES_ACCEPTED=true
 ```
+
+The wrapper exports `OCR_ENVIRONMENT=production` itself.
 
 The detector is fixed to American Stories with the DocLayout table fallback;
 there is no runtime mode override.
@@ -217,14 +216,19 @@ directory under the canonical `ocr/inbox/` is removed by the wrapper only once
 the edition is published; a run that fails earlier keeps it for a retry. An
 externally supplied source directory is always preserved.
 
-R2 garbage collection is global and manifest-aware. It is dry-run by default
-and refuses a grace period below 30 days. First-unreferenced timestamps live in
-the private `ocr-assets-gc/unreferenced.json` state object, so an object's age
-is never mistaken for the length of time it has been unreferenced:
+R2 garbage collection is global and registry-driven. It requires a registry
+artifact from `assets:bootstrap`, unions it with live database references, is
+dry-run by default, and refuses a grace period below 30 days. First-unreferenced
+timestamps live in the private `ocr-assets-gc/unreferenced.json` state object,
+so an object's age is never mistaken for the length of time it has been
+unreferenced. `--apply` also needs `--approval-token` matching
+`GC_APPROVAL_TOKEN`:
 
 ```bash
-node scripts/db/gc-r2-assets.mjs
-node scripts/db/gc-r2-assets.mjs --apply --grace-days 30
+npm run assets:bootstrap -- --build --yes   # artifact under evaluation/assets/ by default
+node --import tsx scripts/db/gc-r2-assets.mjs --registry <artifact.json>
+node --import tsx scripts/db/gc-r2-assets.mjs --registry <artifact.json> \
+  --apply --grace-days 30 --approval-token "$GC_APPROVAL_TOKEN"
 ```
 
 ## Frozen-gold regression
@@ -248,11 +252,16 @@ the scans.
 
 ## Tests
 
-Run the OCR suite from the repository root:
+Run the OCR suite from the repository root (pytest is not in
+`requirements.txt`):
 
 ```bash
-python3 -m pytest -q tests/ocr
+source ocr/.venv/bin/activate
+python -m pip install pytest
+python -m pytest -q tests/ocr
 ```
+
+CI runs only `tests/ocr/architecture/`; the rest of the suite runs locally.
 
 The suite covers model routing, request settings, retries, cost accounting,
 manifest state accounting, source fidelity, visual dispositions, merge/seam

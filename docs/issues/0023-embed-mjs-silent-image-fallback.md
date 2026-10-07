@@ -1,12 +1,14 @@
 ---
 id: 0023
 title: embed.mjs silently degrades to text-only when local images missing
-status: fixed
+status: superseded
 severity: medium
 area: scripts
 opened: 2026-04-13
 closed: 2026-04-14
 ---
+
+> **Superseded (checked 2026-10-07).** RAG v2 (`a56e0fb`) separated image vectors; missing image files stay pending and are reported (`scripts/db/embed.mjs`). New vectors come from `rag:index:build`.
 
 > **Fix:** `scripts/db/embed.mjs` tracks `imagesExpected` and
 > `imagesMissing` counters inside `loadFirstImage` and emits a WARNING at

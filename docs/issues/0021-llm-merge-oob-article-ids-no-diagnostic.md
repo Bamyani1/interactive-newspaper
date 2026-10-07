@@ -1,12 +1,14 @@
 ---
 id: 0021
 title: llm_merge tolerates out-of-bounds article_ids with only a warning
-status: fixed
+status: superseded
 severity: medium
 area: ocr
 opened: 2026-04-13
 closed: 2026-04-14
 ---
+
+> **Superseded (checked 2026-10-07).** The OCR rewrite (`88d7b27`) validates string fragment ids as a full partition, with a singleton fallback (`llm_merge.py`).
 
 > **Fix:** `llm_merge.py` now tracks an aggregate `oob_ids_total` count
 > and `oob_groups_dropped` count across all merge groups, and appends a

@@ -1,12 +1,14 @@
 ---
 id: 0022
 title: flash-retry reads usage_metadata without chained None check
-status: fixed
+status: obsolete
 severity: medium
 area: ocr
 opened: 2026-04-13
 closed: 2026-04-14
 ---
+
+> **Obsolete (checked 2026-10-07).** The OCR rewrite (`88d7b27`) removed the Flash retry, and usage reads are `None`-safe (`llm_merge.py`).
 
 > **Fix:** `llm_merge.py` flash-retry path now uses
 > `getattr(response, "usage_metadata", None)` and inner

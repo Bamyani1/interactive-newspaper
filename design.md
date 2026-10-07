@@ -276,7 +276,7 @@ The Transcript Archive is a RAG-powered interactive archive of a student newspap
 3. **Brand red is scarce and meaningful.** Red carries weight precisely because it's rare. When it appears, it means something (the masthead, an accent, a citation, a warning).
 4. **8px grid, always.** Every margin, padding, and gap aligns to the spacing scale. No `px-[13px]`.
 5. **Custom properties over Tailwind arbitrary values.** Use the tokens or the `@theme`-exposed utilities. Arbitrary values are a signal the token set is missing something — extend the tokens first.
-6. **Respect the customizer.** `--owu-red`, `--owu-black`, `--owu-charcoal`, `--owu-white` are a user-facing contract. Never rename them.
+6. **Keep the legacy aliases inert.** `--owu-red`, `--owu-black`, `--owu-charcoal`, `--owu-white` stay as aliases so stale customizer writes do nothing harmful. Never rename them; never use them in new code.
 
 ## Colors
 
@@ -303,13 +303,17 @@ The Transcript Archive is a RAG-powered interactive archive of a student newspap
 ### Use rules
 
 - **`accent` (brand red)**: masthead, deck, section rules, hover states, citation chips, category labels. Use sparingly — if red appears more than 5 times on a screen, it's overused.
-- **`text-muted`** (AA-only, 5.4:1): ONLY for metadata, bylines, captions. Never for body text. Short text is acceptable per WCAG 1.4.6 exception for inactive / decorative / purely incidental text.
-- **`text-faint`** (3.3:1 — below AA body): ONLY for large-size (24px+) decorative elements or placeholder text. Never for prose.
-- **`accent-wash`** backgrounds pair only with `text-body` (13.1:1) or `accent-deep` (6.6:1 — acceptable for short uppercase labels).
+- **`text-muted`** (AA, 6.8:1 on paper): ONLY for metadata, bylines, captions. Never for body text. Short text is acceptable per WCAG 1.4.6 exception for inactive / decorative / purely incidental text.
+- **`text-faint`** (4.1:1 — below AA body): ONLY for large-size (24px+) decorative elements or placeholder text. Never for prose.
+- **`accent-wash`** backgrounds pair only with `text-body` (13.8:1) or `accent-deep` (6.4:1 — acceptable for short uppercase labels).
+
+### Dark mode
+
+`[data-mode="dark"]` in `src/styles/tokens/colors.css` remaps the same semantic names: paper surfaces become `ink-900`/`ink-800`/`ink-700`, text becomes the newsprint scale (`text-muted` is `newsprint-300`, 11.8:1), and hairlines become `ink-700`. `accent-text`, `focus-ring`, `rule-accent` and `warning` switch to `red-200` (11.0:1 on `ink-900`), because `red-600` is only 2.6:1 there. Filled `accent` surfaces keep `red-600`.
 
 ### WCAG contrast reference
 
-Summary: body text passes AAA, muted text passes AA with exception, accent links pass AA (hover lifts to AAA).
+Summary (light mode, on `bg-paper`): body text 15.6:1 (AAA), deck 12.9:1, muted 6.8:1 (AA), faint 4.1:1 (large or decorative text only), accent links 5.9:1 (AA) with hover at `accent-deep` 7.2:1 (AAA).
 
 ## Typography
 
@@ -319,7 +323,7 @@ Summary: body text passes AAA, muted text passes AA with exception, accent links
 - **Body (`--font-body`)**: Source Serif 4. Used for all prose, article text, inputs, captions. `onum + liga + kern` features on.
 - **Mono (`--font-mono`)**: JetBrains Mono. Used for metadata, bylines, timestamps, code, button labels. `tnum + lnum` features on.
 
-All three are loaded via `next/font/google` in `src/app/layout.tsx` with `display: swap`. See Phase 3 for the exact weight subsets needed.
+All three are loaded via `next/font/google` in `src/app/layout.tsx` with `display: swap`. Loaded weights: Playfair Display 400–700 and Source Serif 4 300–600 (both with italics), JetBrains Mono 400–600.
 
 ### Scale
 
@@ -334,7 +338,7 @@ All three are loaded via `next/font/google` in `src/app/layout.tsx` with `displa
 | `2xl` | 36px | 1.1 | Page / section title |
 | `3xl` | 48px | 1.1 | Masthead |
 
-**No sizes under 12px.** The `text-[8px]` through `text-[11px]` usages in the current app are a bug to be fixed in Phase 6, not a pattern to preserve.
+**No sizes under 12px.** The old `text-[8px]`–`text-[11px]` utilities are gone. A few stylesheets (`time-controls.css`, `cinema-landing.css`, `mock-stained-glass.css`) still set smaller sizes; treat those as bugs, not a pattern.
 
 ### Tracking
 
@@ -395,20 +399,20 @@ Authoritative styling specs live in the YAML frontmatter above. Prose here expla
 
 ### Button
 
-Five variants. Every button uses the same padding (0.5rem × 1rem) and radius (2px) so they align on shared baselines.
+Six variants. Text buttons share the same padding (0.5rem × 1rem), a 44px minimum height and a 2px radius so they align on shared baselines; labels are uppercase JetBrains Mono at 12px.
 
 - `primary` — filled ink on paper. Default CTA.
 - `secondary` — outlined ink. Alternate action on same page.
 - `accent` — filled red. Use only for the singular hero CTA.
-- `ghost` — low-key bordered. Tertiary.
-- `icon` — square, icon-only, for toolbars.
-- `link` — NOT a button: inline `<a>` convention.
+- `ghost` — hairline border, darkens on hover. Tertiary.
+- `icon` — 44px square, borderless, muted until hover. For toolbars.
+- `link` — no box: underlined `accent-text`, for inline actions.
 
-All have `focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2`. Never style a button without this.
+All share `focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus-ring)]`. Never style a button without it.
 
 ### Input
 
-One default style. Bg `paper-soft` sets it apart from the `paper` page background. Focus lifts the border to `accent` and adds a ring.
+One default style. Bg `paper-soft` sets it apart from the `paper` page background. Focus switches the border to `focus-ring` and adds a 2px outline at 2px offset; `aria-invalid` uses `warning` the same way.
 
 ### Card
 
@@ -416,7 +420,7 @@ One default style. Bg `paper-soft` sets it apart from the `paper` page backgroun
 
 ### Label
 
-Three sizes (`xs`, `sm`, `md`). The `md` variant is accent red, used for top-of-section tags ("Ask the archive", "Today in 1960"). `xs` and `sm` are muted.
+Three sizes (`xs`, `sm`, `md`), all 12px uppercase; they differ only in tracking. Color is a separate `tone`: `muted` (default), `accent` for top-of-section tags ("Ask the archive", "Today in 1960"), or `body`.
 
 ### Prose
 
@@ -466,10 +470,10 @@ Breakpoints (applied via Tailwind v4 utilities):
 
 | Breakpoint | Width | Notes |
 |---|---|---|
-| mobile | < 768px | 375px target. Body steps down to 15px. Headlines shrink by one step. Tables scroll horizontally. Sticky bottom "Ask" fab on article pages. |
+| mobile | < 768px | 375px target. Body stays 16px. Headlines shrink by one step. Tables scroll horizontally. Edition pages get a fixed bottom nav (sections, Search, Ask) below 1024px. |
 | tablet | 768–1023px | Body 16px, single-column prose, 2-column lists. |
 | desktop | 1024–1439px | Body 16px, 2-column grids, 672px reading measure. |
-| wide | 1440px+ | Same as desktop — no ultra-wide treatment. Content stays centered at `max-w-page` (76rem). |
+| wide | 1440px+ | Same as desktop — no ultra-wide treatment. Content stays centered. |
 
 ## Agent prompt guide
 
