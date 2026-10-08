@@ -327,6 +327,9 @@ describe("agent-loop", () => {
       expect(finalCall.contents).toHaveLength(1);
       expect(finalCall.contents[0].role).toBe("user");
       expect(finalCall.contents[0].parts[0].text).toContain("ARCHIVE EVIDENCE");
+      // Research rounds plan at MEDIUM; writing up the evidence needs less.
+      expect(modelCalls[0].config.thinkingConfig.thinkingLevel).toBe("MEDIUM");
+      expect(finalCall.config.thinkingConfig.thinkingLevel).toBe("LOW");
     });
 
     it("uses partial tool-round text if forced synthesis is empty", async () => {
@@ -399,6 +402,56 @@ describe("agent-loop", () => {
         expect(result.answer).toContain("Written before the deadline.");
       } finally {
         nowSpy.mockRestore();
+      }
+    });
+
+    it("cuts a stalled search where the writing reserve begins", async () => {
+      vi.useFakeTimers();
+      try {
+        const signals: AbortSignal[] = [];
+        (executeTool as ReturnType<typeof vi.fn>).mockImplementation(
+          async (_name: string, args: { query: string }, opts: { signal: AbortSignal }) => {
+            signals.push(opts.signal);
+            if (args.query !== "stalled") {
+              return {
+                results: [
+                  {
+                    id: "1965-03-15-4",
+                    headline: "H",
+                    editionDate: "1965-03-15",
+                    relevanceScore: 9,
+                  },
+                ],
+              };
+            }
+            return new Promise((resolve) =>
+              opts.signal.addEventListener("abort", () =>
+                resolve({ error: "This operation was aborted", kind: "failed" })
+              )
+            );
+          }
+        );
+        mockGenerateContent(
+          { functionCalls: [{ name: "search_archive", args: { query: "q0" } }] },
+          {
+            functionCalls: [
+              { name: "search_archive", args: { query: "q1" } },
+              { name: "search_archive", args: { query: "stalled" } },
+            ],
+          },
+          { text: "Answer from what arrived [1965-03-15-4]." }
+        );
+
+        // Research ends 25 s in, leaving the 20 s writing reserve.
+        const pending = runAgentLoop("hard question", { deadlineAt: Date.now() + 45_000 });
+        await vi.advanceTimersByTimeAsync(25_000);
+        const result = await pending;
+
+        expect(signals[2].aborted).toBe(true);
+        expect(result.answer).toContain("Answer from what arrived");
+        expect(result.degraded).toBe(true);
+      } finally {
+        vi.useRealTimers();
       }
     });
 
@@ -874,6 +927,27 @@ describe("agent-loop", () => {
       expect(lookup.get("a1")!.headline).toBe("H1");
       expect(lookup.get("a1")!.category).toBe("News");
       expect(lookup.get("a1")!.evidenceText).toBe("E");
+    });
+
+    it("takes the snippet from matched passages when a result has no excerpt", () => {
+      const lookup = new Map<string, ArticleMeta>();
+      accumulateArticleMeta(
+        "search_archive",
+        {
+          results: [
+            {
+              id: "a1",
+              headline: "H1",
+              editionDate: "1960-01-01",
+              summary: "S",
+              relevantPassages: ["Passage one.", "Passage two."],
+            },
+          ],
+        },
+        lookup
+      );
+      expect(lookup.get("a1")!.evidenceText).toBe("Passage one.\n\nPassage two.");
+      expect(lookup.get("a1")!.bodySnippet).toBe("Passage one.\n\nPassage two.");
     });
 
     it("accumulates from read_article result", () => {

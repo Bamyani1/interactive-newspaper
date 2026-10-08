@@ -304,10 +304,7 @@ export function accumulateArticleMeta(
           category: (rec.category as string) ?? "",
           summary: (rec.summary as string) ?? existing?.summary ?? "",
           byline: (rec.byline as string) ?? existing?.byline ?? null,
-          bodySnippet:
-            typeof rec.excerpt === "string"
-              ? rec.excerpt.slice(0, 300)
-              : (existing?.bodySnippet ?? ""),
+          bodySnippet: evidenceText ? evidenceText.slice(0, 300) : (existing?.bodySnippet ?? ""),
           imageUrls:
             Array.isArray(rec.imageUrls) && rec.imageUrls.length > 0
               ? (rec.imageUrls as string[])
@@ -695,6 +692,17 @@ export async function runAgentLoop(
 
       if (functionCalls && functionCalls.length > 0) {
         const toolStart = Date.now();
+        // Lookups stop where the writing reserve begins (round 0 excepted, as
+        // above). A round waits on its slowest search, and one stalled search
+        // used to run into the reserve and leave the answer no time.
+        const researchCutoff = new AbortController();
+        const cutoffTimer =
+          round > 0 && deadlineAt !== undefined
+            ? setTimeout(() => researchCutoff.abort(), deadlineAt - WRITING_RESERVE_MS - Date.now())
+            : undefined;
+        const toolSignal = signal
+          ? AbortSignal.any([signal, researchCutoff.signal])
+          : researchCutoff.signal;
         const results = await Promise.all(
           functionCalls.map(async (call, idx) => {
             onProgress?.({
@@ -705,7 +713,7 @@ export async function runAgentLoop(
             });
 
             const toolResult = await executeTool(call.name!, call.args ?? {}, {
-              signal,
+              signal: toolSignal,
               requestId,
               filters,
             });
@@ -754,8 +762,14 @@ export async function runAgentLoop(
               response: toolResult,
             };
           })
-        );
+        ).finally(() => clearTimeout(cutoffTimer));
         retrievalTimeMs += Date.now() - toolStart;
+        if (researchCutoff.signal.aborted && !signal?.aborted) {
+          // What the cut searches would have added is missing, so the answer
+          // is capped the same way a timed-out lookup caps it.
+          toolTimedOut = true;
+          logWarn(requestId, "searches cut short to leave time for the answer", { rounds: round });
+        }
 
         const allErrors = results.every(
           (r) => typeof (r.response as Record<string, unknown>).error === "string"
@@ -850,7 +864,7 @@ export async function runAgentLoop(
             },
             maxOutputTokens: MAX_OUTPUT_TOKENS,
             thinkingConfig: {
-              thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
+              thinkingLevel: RAG_MODEL_CONFIG.agent.finalThinkingLevel,
             },
             abortSignal: signal,
           },
