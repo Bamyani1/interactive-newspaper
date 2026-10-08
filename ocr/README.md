@@ -17,7 +17,7 @@ The detailed runtime design is in
 - IIIF manifest canvases are the page-count denominator.
 - Every canvas ends as `passed_content`, `passed_visual`, `confirmed_blank`, or
   `failed`.
-- Publication requires every canvas to pass. A failed cloud call is never
+- Publication requires at least 70% passing canvases. A failed cloud call is never
   reclassified as a blank page, and a page whose structured text still leaves
   out most of an OCR story block after one retry fails (blocks inside detected
   ads, tables and photos are not checked).
@@ -296,7 +296,7 @@ fallbacks, asset limits, publication behavior, and the no-debug-artifact rule.
   version alias.
 - **Detector startup error:** install `ocr/requirements.txt`, confirm
   `ocr/models/` is writable, and satisfy the hosted license gate.
-- **A canvas failed:** inspect the terminal summary and sanitized entries in
+- **Below 70%:** inspect the terminal summary and sanitized entries in
   `ocr/logs/failures.jsonl`. The pipeline deliberately does not save raw debug
   artifacts.
 - **Upload failure:** fix R2 configuration, then use `--repair-upload` against

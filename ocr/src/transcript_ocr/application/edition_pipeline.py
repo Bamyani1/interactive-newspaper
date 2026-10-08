@@ -451,8 +451,7 @@ def process_edition(
         report.page_diagnostics = [diagnostics[index] for index in sorted(diagnostics)]
         if not may_publish(outcomes, expected):
             raise EditionPipelineError(
-                f"only {report.pages_processed}/{expected} manifest canvases passed ({ratio:.1%}); "
-                "every manifest canvas must pass"
+                f"only {report.pages_processed}/{expected} manifest canvases passed ({ratio:.1%}); 70% required"
             )
 
         page_results = [page_results_by_canvas[index] for index in sorted(page_results_by_canvas)]
