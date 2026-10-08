@@ -79,7 +79,16 @@ def _is_gutter(tokens: list[Token], last: Token, token: Token, h: float) -> bool
     y1 = max(token.box[3], last.box[3])
     line_y = (_centre_y(last.box) + _centre_y(token.box)) / 2
     reach = _GUTTER_LINES * h
-    for top, bottom in ((y0 - reach, y1), (y0, y1 + reach)):
+    windows = [(y0 - reach, y1), (y0, y1 + reach)]
+    # A headline over the gap blocks those bands; also try the same
+    # height of band slid to start below (or end above) that headline.
+    for t in tokens:
+        if t.box[0] < x1 and t.box[2] > x0 and _height(t.box) > _TOKEN_SIZE_CHANGE * h:
+            if y0 - reach < t.box[3] <= y0:
+                windows.append((t.box[3], t.box[3] + reach + y1 - y0))
+            elif y1 <= t.box[1] < y1 + reach:
+                windows.append((t.box[1] - reach - (y1 - y0), t.box[1]))
+    for top, bottom in windows:
         if not _clear_band(tokens, x0, x1, top, bottom, min_width):
             continue
         flanking = [
