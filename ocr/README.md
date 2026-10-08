@@ -36,8 +36,8 @@ The detailed runtime design is in
 |---|---|---|---|
 | Page structuring | `gemini-3.5-flash-lite` | `HIGH` | page: `ULTRA_HIGH` |
 | Visual assignment | `gemini-3.5-flash-lite` | `MEDIUM` | full page and crops: `ULTRA_HIGH` |
-| Article grouping | `gemini-3.6-flash` | `MEDIUM` | none |
-| Seam review | `gemini-3.6-flash` | `MEDIUM` | none |
+| Article grouping | `gemini-3.8-flash` | `MEDIUM` | none |
+| Seam review | `gemini-3.8-flash` | `MEDIUM` | none |
 | Ad enrichment | `gemini-3.5-flash-lite` | `MINIMAL` | none |
 | Final content review | `gemini-3.5-flash-lite` | `MEDIUM` | none |
 
@@ -166,8 +166,8 @@ validation. OCR stage resumption and run IDs are intentionally unsupported.
    visual using the annotated page and 10%-padded crops. Batches contain at most
    40 regions. Invalid or failed assignments remain unresolved standalone
    evidence; there is no spatial semantic fallback.
-7. Group all available article fragments with one Gemini 3.6 Flash call. Review
-   all accepted adjacent seams in one additional Gemini 3.6 Flash call. Unsafe
+7. Group all available article fragments with one Gemini 3.8 Flash call. Review
+   all accepted adjacent seams in one additional Gemini 3.8 Flash call. Unsafe
    decisions fall back to the original fragments without losing text.
 8. Enrich ads in batches of at most 50, then run the narrow deterministic final
    type/category review. Either stage abstains safely on failure.

@@ -407,7 +407,7 @@ A representative sample of commits that each address a real failure mode discove
 | `9a3a3c1` | Scan safety             | The OCR wrapper deleted inbox scans even when a run failed before publishing. Scans are now removed only after the edition is promoted.                       |
 | `e28f60e` | Index-build safety      | A full seed or backfill deleted chunk and image rows that belonged to the active index build. Both now touch only rows outside any build.                     |
 
-Every pipeline step has a timeout and a typed error envelope with a `kind` discriminator. Answers and reranking run on Gemini 3.6 Flash; only query reformulation uses Flash-Lite, and retries never change the stage model.
+Every pipeline step has a timeout and a typed error envelope with a `kind` discriminator. Answers and reranking run on Gemini 3.8 Flash; only query reformulation uses Flash-Lite, and retries never change the stage model.
 
 ---
 
