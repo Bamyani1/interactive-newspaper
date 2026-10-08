@@ -38,6 +38,11 @@ export const RAG_MODEL_CONFIG = {
   agent: {
     model: RAG_ANSWER_MODEL,
     thinkingLevel: "MEDIUM" as ThinkingLevel,
+    // The no-tools turn that writes up evidence already gathered. At MEDIUM
+    // it thought 1.6-2.4k tokens (10-19s) before its first word, the main
+    // cause of broad questions timing out; LOW starts in ~2s with as many
+    // grounded citations on the same evidence (A/B, 2026-10-08).
+    finalThinkingLevel: "LOW" as ThinkingLevel,
   },
 } as const;
 

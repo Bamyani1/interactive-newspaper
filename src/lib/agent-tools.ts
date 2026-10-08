@@ -180,7 +180,9 @@ async function executeSearchArchive(
       summary: article.summary,
       byline: article.byline,
       relevantPassages: article.matchedPassages ?? [],
-      excerpt: article.matchedPassages?.join("\n\n") || article.summary || article.bodyPlain,
+      // Only when no passage matched: an excerpt joined from the passages
+      // repeated them, and every later round re-read both copies.
+      ...(article.matchedPassages?.length ? {} : { excerpt: article.summary || article.bodyPlain }),
       relevanceScore: article.relevanceScore,
       contentRevisionId: article.contentRevisionId,
       imageUrls: mdSafeUrls(article.imageUrls),

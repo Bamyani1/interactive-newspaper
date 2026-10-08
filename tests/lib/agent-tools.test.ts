@@ -99,7 +99,6 @@ describe("agent-tools", () => {
           summary: article.summary,
           byline: null,
           relevantPassages: ["The exact relevant paragraph."],
-          excerpt: "The exact relevant paragraph.",
           relevanceScore: 8,
           imageUrls: [],
           imageCaptions: [],
@@ -171,8 +170,24 @@ describe("agent-tools", () => {
     });
     const result = await executeTool("search_archive", { query: "show photo" });
     const item = (result.results as Array<Record<string, unknown>>)[0];
-    expect(item.excerpt).toBe(longPassage);
+    expect(item.relevantPassages).toEqual([longPassage]);
     expect(item.imageUrls).toEqual(["https://cdn/Page%203.webp"]);
+  });
+
+  // Each passage used to go out twice, as relevantPassages and again joined
+  // into excerpt: 43% of every search result, re-read by every later round.
+  it("sends matched passages once, and an excerpt only when none matched", async () => {
+    searchAndRankArchiveMock.mockResolvedValue({
+      articles: [article, { ...article, id: "1965-03-15-5", matchedPassages: [] }],
+      candidates: 2,
+      method: "hybrid",
+      mode: "text",
+      retrievalTimeMs: 10,
+    });
+    const result = await executeTool("search_archive", { query: "test" });
+    const [matched, unmatched] = result.results as Array<Record<string, unknown>>;
+    expect(matched).not.toHaveProperty("excerpt");
+    expect(unmatched.excerpt).toBe("Test summary");
   });
 
   it.each([

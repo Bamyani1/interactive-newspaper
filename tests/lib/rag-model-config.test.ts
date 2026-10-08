@@ -26,6 +26,7 @@ describe("RAG model routing", () => {
     expect(RAG_MODEL_CONFIG.rerank.thinkingLevel).toBe("LOW");
     expect(RAG_MODEL_CONFIG.answer.thinkingLevel).toBe("LOW");
     expect(RAG_MODEL_CONFIG.agent.thinkingLevel).toBe("MEDIUM");
+    expect(RAG_MODEL_CONFIG.agent.finalThinkingLevel).toBe("LOW");
   });
 
   it("uses the stable embedding model and versioned pipeline", () => {
