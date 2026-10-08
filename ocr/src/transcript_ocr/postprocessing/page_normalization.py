@@ -8,14 +8,14 @@ from ..contracts.content_models import PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer
 from .byline_cleanup import _dedup_byline_from_body, _normalize_byline
 
-_LONE_NEWLINE = re.compile(r"(?<!\n)\n(?!\n)")
+_NEWLINES = re.compile(r"\n+")
 _SENTENCE_END = tuple(".!?:;\"')]\u201d\u2019")
 
 
 def _paragraph_breaks(body: str) -> str:
     """Make each paragraph break a blank line, which later stages and the site
-    split on. A lone newline inside a sentence is a leftover line wrap; one
-    after a hyphen stays for dehyphenation."""
+    split on. A line break inside a sentence, blank or not, is a leftover line
+    wrap; one after a hyphen stays a single newline for the site to rejoin."""
 
     def replace(match: re.Match[str]) -> str:
         before = body[: match.start()].rstrip()
@@ -26,7 +26,7 @@ def _paragraph_breaks(body: str) -> str:
             return " "
         return "\n\n"
 
-    return _LONE_NEWLINE.sub(replace, body)
+    return _NEWLINES.sub(replace, body)
 
 
 def postprocess_page_content(

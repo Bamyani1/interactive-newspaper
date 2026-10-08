@@ -12,6 +12,22 @@ AMERICAN_STORIES_INPUT_SIZE = 1280
 AMERICAN_STORIES_CONF_THRESHOLD = 0.02
 AMERICAN_STORIES_NMS_IOU_THRESHOLD = 0.1
 AMERICAN_STORIES_VISUAL_CLASS_IDS = {2, 8}  # cartoon/ad, photograph
+# Every class, as boxes that keep text blocks inside one story column,
+# headline, caption or ad. Checked by eye on 1983-11-03 p7 and 1989-11-29 p3/p7.
+AMERICAN_STORIES_LAYOUT_CONF_THRESHOLD = 0.3
+AMERICAN_STORIES_LAYOUT_NMS_IOU_THRESHOLD = 0.3
+AMERICAN_STORIES_CLASS_NAMES = {
+    0: "article",
+    1: "byline",
+    2: "ad or cartoon",
+    3: "headline",
+    4: "caption",
+    5: "masthead",
+    6: "page header",
+    7: "page number",
+    8: "photo",
+    9: "table",
+}
 HYBRID_FALLBACK_IOU_THRESHOLD = 0.1
 
 MIN_REGION_AREA_PIXELS = 15000

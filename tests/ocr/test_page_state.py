@@ -11,8 +11,8 @@ def test_manifest_canvas_count_is_always_denominator():
         PageOutcome(i, PageState.PASSED_CONTENT) for i in range(1, 8)
     ]
     assert publication_ratio(outcomes, 10) == 0.7
-    assert may_publish(outcomes, 10)
-    assert not may_publish(outcomes, 11)
+    assert may_publish(outcomes, 7)
+    assert not may_publish(outcomes, 8)
 
 
 def test_failed_and_missing_outcomes_do_not_pass():

@@ -67,6 +67,13 @@ def test_generation_config_is_deterministic_without_sampling_controls():
     assert all(setting.threshold.value == "OFF" for setting in config.safety_settings)
 
 
+def test_a_deliberate_second_sample_can_change_only_the_seed():
+    config = build_generation_config("page_structuring", max_output_tokens=1024, seed=1)
+
+    assert config.seed == 1
+    assert config.temperature is None
+
+
 def test_ultra_high_is_applied_to_each_image_part():
     part = image_part_ultra_high(Image.new("RGB", (8, 8), "white"))
     assert part.media_resolution.level.value == "MEDIA_RESOLUTION_ULTRA_HIGH"

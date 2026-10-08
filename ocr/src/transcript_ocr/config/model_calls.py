@@ -43,11 +43,13 @@ def build_generation_config(
     response_mime_type: str | None = None,
     system_instruction: str | None = None,
     max_output_tokens: int,
+    seed: int = 0,
 ) -> types.GenerateContentConfig:
     """Build the deterministic generation config locked for an OCR stage.
 
     Sampling controls are intentionally absent.  Callers should not append
-    temperature, top-p, or top-k overrides after using this helper.
+    temperature, top-p, or top-k overrides after using this helper.  A fixed
+    seed repeats the same answer, so a deliberate second sample needs a new one.
     """
     model_config = MODELS[stage]
     thinking = types.ThinkingConfig(
@@ -60,7 +62,7 @@ def build_generation_config(
         response_schema=response_schema,
         safety_settings=SAFETY_OFF,
         candidate_count=1,
-        seed=0,
+        seed=seed,
         max_output_tokens=max_output_tokens,
         thinking_config=thinking,
     )

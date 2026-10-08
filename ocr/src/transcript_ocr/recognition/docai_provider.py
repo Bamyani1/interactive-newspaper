@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import os
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from PIL import Image
@@ -14,7 +15,7 @@ from ..config.constants import (
     DOCAI_MAX_BYTES,
 )
 from ..shared.console import warning
-from .docai_columns import Token, column_blocks
+from .docai_columns import Token, _in_region, column_blocks
 
 
 class DocAIError(Exception):
@@ -38,6 +39,12 @@ class DocAIParagraph:
 
     text: str
     bounds: tuple[float, float, float, float] | None = None
+    # Layout class around the block, for the page text check; never sent to the model.
+    label: str = ""
+
+
+# (class name, normalized left, top, right, bottom) from the layout detector
+LayoutBox = tuple[str, tuple[float, float, float, float]]
 
 
 # Lazy-loaded Document AI client singleton
@@ -91,8 +98,12 @@ def _prepare_image_for_docai(image: Image.Image) -> bytes:
     return png_bytes
 
 
-def _column_regions(document) -> list[DocAIParagraph]:
-    """Column-pure blocks rebuilt from token geometry; empty if any geometry is missing."""
+def _column_regions(document, layout: Sequence[LayoutBox] = ()) -> list[DocAIParagraph]:
+    """Column-pure blocks rebuilt from token geometry; empty if any geometry is missing.
+
+    Layout boxes, when given, keep every block inside one detected story column,
+    headline, caption or ad.
+    """
     page = document.pages[0]
     dimension = getattr(page, "dimension", None)
     width = float(getattr(dimension, "width", 0) or 0)
@@ -124,15 +135,26 @@ def _column_regions(document) -> list[DocAIParagraph]:
                 end=spans[-1][1],
             )
         )
-    return [
-        DocAIParagraph(
-            text=text, bounds=(x0 / width, y0 / height, x1 / width, y1 / height)
-        )
-        for text, (x0, y0, x1, y1) in column_blocks(tokens)
+    walls = [
+        (box[0] * width, box[1] * height, box[2] * width, box[3] * height)
+        for _, box in layout
     ]
+    blocks = []
+    for text, box in column_blocks(tokens, walls):
+        region = _in_region(box, walls)
+        blocks.append(
+            DocAIParagraph(
+                text=text,
+                bounds=(box[0] / width, box[1] / height, box[2] / width, box[3] / height),
+                label=layout[region][0] if region is not None else "",
+            )
+        )
+    return blocks
 
 
-def _extract_paragraph_regions(document) -> list[DocAIParagraph]:
+def _extract_paragraph_regions(
+    document, layout: Sequence[LayoutBox] = ()
+) -> list[DocAIParagraph]:
     """Extract paragraph text and normalized geometry without persisting OCR.
 
     Prefers column blocks rebuilt from tokens, since Document AI paragraphs
@@ -141,7 +163,7 @@ def _extract_paragraph_regions(document) -> list[DocAIParagraph]:
     paragraphs: list[DocAIParagraph] = []
     if not document.pages:
         return paragraphs
-    columns = _column_regions(document)
+    columns = _column_regions(document, layout)
     if columns:
         return columns
 
@@ -247,7 +269,11 @@ def _is_transient_docai_error(exc: Exception) -> bool:
     )
 
 
-def extract_page_text(image: Image.Image) -> DocAIResult:
+def extract_page_text(
+    image: Image.Image,
+    layout: Sequence[LayoutBox] = (),
+    response_path: str | None = None,
+) -> DocAIResult:
     """
     Run Document AI Enterprise OCR on a preprocessed page image.
 
@@ -256,6 +282,9 @@ def extract_page_text(image: Image.Image) -> DocAIResult:
 
     Args:
         image: Grayscale PIL Image (output of preprocess_image())
+        layout: Layout-detector boxes found on this same image
+        response_path: If set, the full Document AI response is saved there as
+            JSON, so block building can be re-checked offline
 
     Returns:
         DocAIResult with raw text, column blocks, continuation markers,
@@ -313,8 +342,11 @@ def extract_page_text(image: Image.Image) -> DocAIResult:
 
     document = result.document
     raw_text = document.text or ""
+    if response_path:
+        with open(response_path, "w", encoding="utf-8") as handle:
+            handle.write(documentai.Document.to_json(document))
 
-    paragraph_regions = _extract_paragraph_regions(document)
+    paragraph_regions = _extract_paragraph_regions(document, layout)
     paragraphs = [paragraph.text for paragraph in paragraph_regions]
     low_confidence_words, mean_confidence = _extract_token_confidences(document)
 
@@ -331,6 +363,7 @@ __all__ = [
     "DocAIError",
     "DocAIParagraph",
     "DocAIResult",
+    "LayoutBox",
     "_prepare_image_for_docai",
     "extract_page_text",
 ]

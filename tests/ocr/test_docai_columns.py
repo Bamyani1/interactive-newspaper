@@ -154,6 +154,52 @@ def test_gutter_splits_under_a_headline_that_dips_into_the_first_line():
     assert texts == ["Rugby club", "\n".join(LEFT), "\n".join(RIGHT)]
 
 
+def _stretched_gutter_page():
+    """Columns 38px apart whose last word on every third line has a box
+    reaching 5px short of the next column, as noisy Document AI boxes do."""
+    tokens = _page([(100.0, LEFT), (420.0, RIGHT)])
+    for row in (1, 4, 7):
+        y = 100.0 + row * 36.0
+        last = max(
+            (t for t in tokens if t.box[1] == y and t.box[0] < 420.0),
+            key=lambda t: t.box[2],
+        )
+        tokens[tokens.index(last)] = Token(
+            last.text, (last.box[0], y, 415.0, y + 44.0), last.start, last.end
+        )
+    return tokens
+
+
+def test_layout_regions_split_columns_the_gutter_test_misses():
+    tokens = _stretched_gutter_page()
+    columns = ["\n".join(LEFT), "\n".join(RIGHT)]
+    assert [text for text, _ in column_blocks(tokens)] != columns
+
+    regions = [(90.0, 90.0, 417.0, 450.0), (418.0, 90.0, 800.0, 450.0)]
+
+    assert [text for text, _ in column_blocks(tokens, regions)] == columns
+
+
+def test_token_outside_every_region_still_joins_its_line():
+    # The left region stops short of the longest lines' last words.
+    regions = [(90.0, 90.0, 300.0, 450.0), (418.0, 90.0, 800.0, 450.0)]
+
+    blocks = column_blocks(_page([(100.0, LEFT), (420.0, RIGHT)]), regions)
+
+    assert [text for text, _ in blocks] == ["\n".join(LEFT), "\n".join(RIGHT)]
+
+
+def test_word_returned_twice_as_overlapping_tokens_is_kept_once():
+    tokens = _page([(100.0, LEFT)])
+    first = tokens[0]
+    # Document AI sometimes repeats a word as a second, slightly shifted token.
+    tokens.append(
+        Token("the\n", (first.box[0] - 2.0, first.box[1] + 3.0, first.box[2] + 1.0, first.box[3] + 3.0), 900, 904)
+    )
+
+    assert [text for text, _ in column_blocks(tokens)] == ["\n".join(LEFT)]
+
+
 def test_headline_beside_body_text_is_not_joined_to_it():
     headline = [Token("Theta\n", (100.0, 100.0, 300.0, 190.0), 0, 6)]
     body = _page([(330.0, LEFT)], top=118.0)
@@ -178,9 +224,7 @@ def _vertex(x, y):
     return SimpleNamespace(x=x, y=y)
 
 
-def test_provider_builds_regions_from_token_geometry():
-    width, height = 1000.0, 2000.0
-    tokens = _page([(100.0, LEFT), (500.0, RIGHT)])
+def _docai_document(tokens, width, height):
     text = "".join(t.text for t in sorted(tokens, key=lambda t: t.start))
     page_tokens = [
         SimpleNamespace(
@@ -207,7 +251,13 @@ def test_provider_builds_regions_from_token_geometry():
         tokens=page_tokens,
         paragraphs=[],
     )
-    document = SimpleNamespace(text=text, pages=[page])
+    return SimpleNamespace(text=text, pages=[page])
+
+
+def test_provider_builds_regions_from_token_geometry():
+    width, height = 1000.0, 2000.0
+    tokens = _page([(100.0, LEFT), (500.0, RIGHT)])
+    document = _docai_document(tokens, width, height)
 
     regions = _extract_paragraph_regions(document)
 
@@ -216,3 +266,16 @@ def test_provider_builds_regions_from_token_geometry():
     assert left_bounds is not None
     assert left_bounds[0] == 0.1
     assert left_bounds[1] == 100.0 / height
+
+
+def test_each_block_carries_the_layout_class_around_it():
+    width, height = 1000.0, 2000.0
+    document = _docai_document(_page([(100.0, LEFT), (500.0, RIGHT)]), width, height)
+    layout = [("article", (0.05, 0.0, 0.45, 1.0)), ("ad or cartoon", (0.45, 0.0, 0.95, 1.0))]
+
+    regions = _extract_paragraph_regions(document, layout)
+
+    assert [(r.text, r.label) for r in regions] == [
+        ("\n".join(LEFT), "article"),
+        ("\n".join(RIGHT), "ad or cartoon"),
+    ]
