@@ -21,7 +21,7 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync } from "node:fs
 import pg from "pg";
 import { GoogleGenAI } from "@google/genai";
 
-const DIGEST_MODEL = "gemini-3.6-flash";
+const DIGEST_MODEL = "gemini-3.8-flash";
 
 function parseArgs(argv) {
   const args = {

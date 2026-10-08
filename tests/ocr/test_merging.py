@@ -69,7 +69,7 @@ def _response(parsed):
     return SimpleNamespace(parsed=parsed, text=parsed.model_dump_json(), usage_metadata=None)
 
 
-def test_locked_calls_use_36_flash_with_medium_thinking():
+def test_locked_calls_use_38_flash_with_medium_thinking():
     client = MagicMock()
     response = SimpleNamespace(parsed=None, text="", usage_metadata=None)
     with patch(
@@ -83,7 +83,7 @@ def test_locked_calls_use_36_flash_with_medium_thinking():
         )
 
     kwargs = transport.call_args.kwargs
-    assert kwargs["model"] == "gemini-3.6-flash"
+    assert kwargs["model"] == "gemini-3.8-flash"
     assert kwargs["config"].thinking_config.thinking_level == types.ThinkingLevel.MEDIUM
     assert kwargs["config"].response_schema is EditionGroupingResponse
     assert kwargs["stage"] == "merge"

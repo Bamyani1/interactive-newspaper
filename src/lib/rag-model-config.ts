@@ -12,7 +12,7 @@ export const RAG_GENERATION_MODEL = "gemini-3.5-flash-lite";
  * tangential and writes weaker prose than the previously served
  * gemini-3-flash-preview.
  */
-export const RAG_ANSWER_MODEL = "gemini-3.6-flash";
+export const RAG_ANSWER_MODEL = "gemini-3.8-flash";
 export const RAG_EMBEDDING_MODEL = "gemini-embedding-2";
 export const RAG_QUERY_EMBEDDING_INPUT_VERSION = "query-qa-v1";
 export const RAG_TEXT_EMBEDDING_INPUT_VERSION = "article-chunk-v1";
@@ -24,8 +24,9 @@ export const RAG_MODEL_CONFIG = {
     thinkingLevel: "MINIMAL" as ThinkingLevel,
   },
   rerank: {
+    // LOW is the floor on gemini-3.8-flash: it rejects MINIMAL with a 400.
     model: RAG_ANSWER_MODEL,
-    thinkingLevel: "MINIMAL" as ThinkingLevel,
+    thinkingLevel: "LOW" as ThinkingLevel,
   },
   answer: {
     // LOW, not MEDIUM: grounded single-hop QA over pre-retrieved

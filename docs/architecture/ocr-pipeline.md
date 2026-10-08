@@ -192,8 +192,8 @@ and each stage module sets its own output cap:
 |---|---|---|---:|---:|---|
 | Page structuring | `gemini-3.5-flash-lite` | `HIGH` | 65,536 | 240 s | OCR page `ULTRA_HIGH` |
 | Visual assignment | `gemini-3.5-flash-lite` | `MEDIUM` | 65,536 | 180 s | annotated page and crops `ULTRA_HIGH` |
-| Article grouping | `gemini-3.6-flash` | `MEDIUM` | 65,536 | 240 s | none |
-| Seam review | `gemini-3.6-flash` | `MEDIUM` | 65,536 | 240 s | none |
+| Article grouping | `gemini-3.8-flash` | `MEDIUM` | 65,536 | 240 s | none |
+| Seam review | `gemini-3.8-flash` | `MEDIUM` | 65,536 | 240 s | none |
 | Ad enrichment | `gemini-3.5-flash-lite` | `MINIMAL` | 65,536 | 120 s | none |
 | Final content review | `gemini-3.5-flash-lite` | `MEDIUM` | 16,384 | 120 s | none |
 
@@ -285,7 +285,7 @@ an ad, or preserved as standalone content.
 ### Grouping call
 
 Each available article fragment gets an immutable run-local ID. One
-edition-level Gemini 3.6 Flash call receives every fragment with page,
+edition-level Gemini 3.8 Flash call receives every fragment with page,
 headline/byline fields, structured continuation fields, first and last two
 sentence-like units, and bounded raw head/tail fallbacks. It must return a
 complete partition of all IDs, including singleton groups, in merge order. It
@@ -301,7 +301,7 @@ make semantic grouping decisions. An invalid partition becomes all singletons.
 ### Seam call
 
 Every adjacent boundary in every accepted multi-fragment group is included in
-one edition-level Gemini 3.6 Flash request, regardless of punctuation or
+one edition-level Gemini 3.8 Flash request, regardless of punctuation or
 capitalization. A three-piece article contributes two boundary records, but not
 two API calls. Each boundary returns:
 
@@ -406,7 +406,7 @@ Gemini cost accounting uses global standard rates:
 | Model | Input / 1M tokens | Output / 1M tokens |
 |---|---:|---:|
 | `gemini-3.5-flash-lite` | $0.30 | $2.50 |
-| `gemini-3.6-flash` | $1.50 | $7.50 |
+| `gemini-3.8-flash` | $1.50 | $7.50 |
 
 `toolUsePromptTokenCount` is input; `thoughtsTokenCount` is output. Cached-token
 fields remain separate in telemetry.

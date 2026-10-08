@@ -220,7 +220,7 @@ def _estimate_report_cost(
                 "gemini-3.5-flash-lite", page.visual_matching.tokens
             ).usd
     if report.merge_pass is not None:
-        total += estimate_gemini_cost("gemini-3.6-flash", report.merge_pass.tokens).usd
+        total += estimate_gemini_cost("gemini-3.8-flash", report.merge_pass.tokens).usd
     for event in extra_model_events or []:
         total += estimate_gemini_cost(
             str(event["model"]),
@@ -470,7 +470,7 @@ def process_edition(
                 edition_date,
                 "article_grouping_or_seam",
                 exc,
-                model="gemini-3.6-flash",
+                model="gemini-3.8-flash",
                 config_id="merge-seam-v1",
             )
             merged = None

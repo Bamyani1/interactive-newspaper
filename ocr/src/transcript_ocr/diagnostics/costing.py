@@ -8,7 +8,7 @@ from ..contracts.diagnostics_models import TokenUsage
 
 MODEL_RATES_PER_MILLION = {
     "gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50},
-    "gemini-3.6-flash": {"input": 1.50, "output": 7.50},
+    "gemini-3.8-flash": {"input": 1.50, "output": 7.50},
 }
 
 

@@ -101,7 +101,7 @@ const evaluationReservations = new Map<
 >();
 
 // The generation models we bill against accept at most 1,048,576 context
-// tokens (gemini-3.6-flash and gemini-3.5-flash-lite alike). Usage
+// tokens (gemini-3.8-flash and gemini-3.5-flash-lite alike). Usage
 // metadata exposes tool-use and thought counters separately, and our billing
 // policy deliberately adds them, so reserve twice the documented input and
 // configured output ceilings. The reservation is intentionally conservative:

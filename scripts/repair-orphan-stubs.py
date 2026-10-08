@@ -239,12 +239,13 @@ def repair_edition(date, client, dry_run=False):
 
     try:
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model="gemini-3.8-flash",
             contents=[prompt],
             config=types.GenerateContentConfig(
                 safety_settings=SAFETY_OFF,
                 response_mime_type="application/json",
                 max_output_tokens=8192,
+                thinking_config=types.ThinkingConfig(thinking_level="LOW"),
             ),
         )
         raw = (response.text or "").strip()
