@@ -261,8 +261,9 @@ python ocr/check_blocks.py ocr/runs/eval/<date>/<run>/work \
 
 The run keeps each page's Document AI response, so block-building changes can be
 compared on the same OCR without new API calls. `score.md` has word error rates,
-paragraph-break precision/recall and the worst items; `diff.md` lists every word
-difference.
+paragraph-break precision/recall, the worst items and an edition-wide count of
+gold words missing from every item (text filed under a different item is not
+missing); `diff.md` lists every word difference.
 
 > Note: the `gold/` and `gold-candidates/` reference editions are gitignored and
 > not shipped in the public repo, so these commands run only where that curated

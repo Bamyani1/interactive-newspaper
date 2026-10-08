@@ -7,6 +7,7 @@ import difflib
 import json
 import re
 import unicodedata
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -192,6 +193,18 @@ def _paragraph_break_counts(gold_body: str, candidate_body: str) -> tuple[int, i
     )
 
 
+def _edition_words(edition: dict[str, Any]) -> Counter:
+    """Every printed word in the edition, whichever item it is filed under."""
+    words = Counter(_normalized_words(str(edition.get("publication_info") or "")))
+    for collection in _COLLECTIONS:
+        for item in edition.get(collection) or []:
+            texts = [item.get(_IDENTITY_FIELD[collection]), item.get("body")]
+            texts += [image.get("caption") for image in item.get("images") or []]
+            for text in texts:
+                words.update(_normalized_words(str(text or "")))
+    return words
+
+
 def _rate(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 6) if denominator else 1.0
 
@@ -356,6 +369,21 @@ def score_editions(
             ),
         },
         "collections": collections,
+        "edition_words": _edition_word_coverage(gold, candidate),
+    }
+
+
+def _edition_word_coverage(gold: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    gold_words, candidate_words = _edition_words(gold), _edition_words(candidate)
+    total = sum(gold_words.values())
+    missing = sum((gold_words - candidate_words).values())
+    extra = sum((candidate_words - gold_words).values())
+    return {
+        "gold": total,
+        "missing": missing,
+        "extra": extra,
+        "missing_rate": _rate(missing, total),
+        "extra_rate": _rate(extra, total),
     }
 
 
@@ -366,6 +394,11 @@ def _markdown(report: dict[str, Any]) -> str:
         f"- Edition: `{report['edition_date']}`",
         f"- Mapping: `{report['mapping_method']}`",
         f"- Publication metadata exact: `{report['publication_info_exact']}`",
+        (
+            f"- Edition words (any item): {report['edition_words']['missing']} of "
+            f"{report['edition_words']['gold']} gold words missing, "
+            f"{report['edition_words']['extra']} extra"
+        ),
         "",
         "| Collection | Gold | Candidate | Matched | Precision | Recall | F1 | WER | CER |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|",

@@ -70,3 +70,17 @@ def test_paragraph_breaks_are_scored_against_gold():
     assert breaks["found"] == 1
     assert breaks["recall"] == pytest.approx(0.5)
     assert breaks["precision"] == pytest.approx(1.0)
+
+
+def test_edition_words_count_text_lost_but_not_text_filed_elsewhere():
+    gold = _edition("Story text.")
+    gold["ads"] = [{"business_name": "Shop", "body": "Open late daily"}]
+    candidate = _edition("Story text.")
+    candidate["ads"] = [{"business_name": "Shop", "body": "Open late"}]
+    candidate["other_content"] = [{"title": "", "body": "daily"}]
+
+    assert score_editions(gold, candidate, auto_map=True)["edition_words"]["missing"] == 0
+
+    candidate["other_content"] = []
+    words = score_editions(gold, candidate, auto_map=True)["edition_words"]
+    assert (words["missing"], words["extra"]) == (1, 0)
