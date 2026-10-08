@@ -61,9 +61,7 @@ def check_page(document, layout, gold: set[tuple[str, str]] | None) -> dict:
             ),
         }
     before = {block.text for block in plain}
-    result["changed"] = [
-        f"[{block.label or '-'}] {block.text}" for block in walled if block.text not in before
-    ]
+    result["changed"] = [block.text for block in walled if block.text not in before]
     return result
 
 

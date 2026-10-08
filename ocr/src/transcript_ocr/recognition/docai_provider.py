@@ -39,7 +39,6 @@ class DocAIParagraph:
 
     text: str
     bounds: tuple[float, float, float, float] | None = None
-    label: str = ""  # layout class of the box holding most of the block
 
 
 # (class name, normalized left, top, right, bottom) from the layout detector
@@ -97,23 +96,11 @@ def _prepare_image_for_docai(image: Image.Image) -> bytes:
     return png_bytes
 
 
-def _layout_label(bounds: tuple[float, float, float, float], layout: Sequence[LayoutBox]) -> str:
-    """Class of the layout box covering most of the block, if it covers at least half."""
-    area = (bounds[2] - bounds[0]) * (bounds[3] - bounds[1])
-    best, label = 0.0, ""
-    for name, box in layout:
-        width = min(bounds[2], box[2]) - max(bounds[0], box[0])
-        height = min(bounds[3], box[3]) - max(bounds[1], box[1])
-        if width > 0 and height > 0 and width * height > best:
-            best, label = width * height, name
-    return label if area > 0 and best >= 0.5 * area else ""
-
-
 def _column_regions(document, layout: Sequence[LayoutBox] = ()) -> list[DocAIParagraph]:
     """Column-pure blocks rebuilt from token geometry; empty if any geometry is missing.
 
     Layout boxes, when given, keep every block inside one detected story column,
-    headline, caption or ad, and name the block's class.
+    headline, caption or ad.
     """
     page = document.pages[0]
     dimension = getattr(page, "dimension", None)
@@ -150,13 +137,12 @@ def _column_regions(document, layout: Sequence[LayoutBox] = ()) -> list[DocAIPar
         (box[0] * width, box[1] * height, box[2] * width, box[3] * height)
         for _, box in layout
     ]
-    blocks = []
-    for text, (x0, y0, x1, y1) in column_blocks(tokens, walls):
-        bounds = (x0 / width, y0 / height, x1 / width, y1 / height)
-        blocks.append(
-            DocAIParagraph(text=text, bounds=bounds, label=_layout_label(bounds, layout))
+    return [
+        DocAIParagraph(
+            text=text, bounds=(x0 / width, y0 / height, x1 / width, y1 / height)
         )
-    return blocks
+        for text, (x0, y0, x1, y1) in column_blocks(tokens, walls)
+    ]
 
 
 def _extract_paragraph_regions(

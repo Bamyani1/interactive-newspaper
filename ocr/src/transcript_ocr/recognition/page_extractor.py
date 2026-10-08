@@ -29,10 +29,7 @@ def _format_docai_text(docai_result) -> str:
             "NON-HISTORICAL OCR LAYOUT METADATA — NEVER COPY THESE LABELS OR "
             "COORDINATES INTO OUTPUT. Bounds are normalized "
             "[left, top, right, bottom] and exist only to reconstruct columns "
-            "and paragraph reading order. LAYOUT, when present, is a layout "
-            "detector's guess at the block's role (article column, headline, "
-            "byline, caption, ad or cartoon, table, ...); confirm it against "
-            "the page image."
+            "and paragraph reading order."
         ]
         for index, paragraph in enumerate(paragraph_regions, start=1):
             bounds = getattr(paragraph, "bounds", None)
@@ -40,11 +37,8 @@ def _format_docai_text(docai_result) -> str:
                 bounds_label = "unknown"
             else:
                 bounds_label = ", ".join(f"{value:.5f}" for value in bounds)
-            label = getattr(paragraph, "label", "")
-            layout_label = f" LAYOUT {label}" if label else ""
             blocks.append(
-                f"OCR BLOCK {index:04d}{layout_label} BOUNDS [{bounds_label}]\n"
-                f"{paragraph.text}"
+                f"OCR BLOCK {index:04d} BOUNDS [{bounds_label}]\n{paragraph.text}"
             )
         return "\n\n".join(blocks)
     if docai_result.paragraphs:
