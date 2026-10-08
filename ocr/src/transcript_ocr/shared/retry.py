@@ -39,6 +39,11 @@ _RETRYABLE_EXCEPTION_NAMES = {
     "WriteTimeout",
 }
 _MAX_ATTEMPTS = 3
+# Rate limits and overload clear on Google's side: wait longer, try more often.
+_RATE_LIMIT_STATUS_CODES = {429, 503}
+_RATE_LIMIT_MAX_ATTEMPTS = 8
+_RATE_LIMIT_BASE_DELAY_S = 5.0
+_MAX_DELAY_S = 60.0
 _MAX_SCHEMA_RETRIES = 1
 _BASE_DELAY_S = 2.0
 _CALL_SPACING_S = float(os.getenv("GEMINI_CALL_SPACING_S", "0.5"))
@@ -151,7 +156,8 @@ def gemini_generate_with_retry(
     """Generate with one shared three-attempt budget.
 
     Transient transport failures and contract-correction retries consume the
-    same budget.  At most one completed but invalid response is retried.  The
+    same budget; rate limits (429/503) may use up to eight attempts with
+    5-60 s waits.  At most one completed but invalid response is retried.  The
     requested model and complete generation config are preserved on every
     attempt; there is no fallback model.
     """
@@ -160,7 +166,7 @@ def gemini_generate_with_retry(
     last_response: genai.types.GenerateContentResponse | None = None
     attempt_contents = contents
 
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
+    for attempt in range(1, _RATE_LIMIT_MAX_ATTEMPTS + 1):
         attempt_started = time.monotonic()
         try:
             response = _generate_content(
@@ -186,12 +192,13 @@ def gemini_generate_with_retry(
                     "error": str(exc),
                 }
             )
-            if not _is_retryable(exc) or attempt >= _MAX_ATTEMPTS:
+            limit = _RATE_LIMIT_MAX_ATTEMPTS if _is_rate_limited(exc) else _MAX_ATTEMPTS
+            if not _is_retryable(exc) or attempt >= limit:
                 raise
             delay = _retry_delay_seconds(exc, attempt)
             _console_warning(
                 f"Gemini {stage} transient error ({exc}); retrying the same "
-                f"model/config in {delay:.1f}s (attempt {attempt + 1}/{_MAX_ATTEMPTS})"
+                f"model/config in {delay:.1f}s (attempt {attempt + 1}/{limit})"
             )
             time.sleep(delay)
             continue
@@ -282,6 +289,23 @@ def _is_retryable(exc: Exception) -> bool:
     )
 
 
+def _is_rate_limited(exc: Exception) -> bool:
+    """429 or 503: Google is short of capacity, the request itself is fine."""
+    code = _status_code(exc)
+    if code is not None:
+        return code in _RATE_LIMIT_STATUS_CODES
+    if type(exc).__name__ in {
+        "ResourceExhausted",
+        "ServiceUnavailable",
+        "TooManyRequests",
+    }:
+        return True
+    text = str(exc).lower()
+    return any(
+        term in text for term in ("429", "resource exhausted", "resource_exhausted")
+    )
+
+
 def _retry_after_seconds(exc: Exception) -> float | None:
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", None) or getattr(exc, "headers", None)
@@ -306,6 +330,9 @@ def _retry_delay_seconds(exc: Exception, attempt: int) -> float:
     retry_after = _retry_after_seconds(exc)
     if retry_after is not None:
         return retry_after
+    if _is_rate_limited(exc):
+        ceiling = min(_MAX_DELAY_S, _RATE_LIMIT_BASE_DELAY_S * (2 ** (attempt - 1)))
+        return random.uniform(ceiling / 2, ceiling)
     ceiling = _BASE_DELAY_S * (2 ** (attempt - 1))
     return random.uniform(0.0, ceiling)
 

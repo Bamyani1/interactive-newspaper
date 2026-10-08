@@ -140,6 +140,20 @@ def test_narrow_gutter_between_headlines_still_splits():
     ]
 
 
+def test_gutter_splits_under_a_headline_that_dips_into_the_first_line():
+    # The headline box ends 4px inside the first body line, as Document AI
+    # boxes often do; the first line must still split at the gutter.
+    headline = [
+        Token("Rugby ", (100.0, 100.0, 300.0, 204.0), 0, 6),
+        Token("club\n", (340.0, 100.0, 700.0, 204.0), 6, 11),
+    ]
+    body = _page([(100.0, LEFT), (420.0, RIGHT)], top=200.0)
+
+    texts = [text for text, _ in column_blocks(headline + body)]
+
+    assert texts == ["Rugby club", "\n".join(LEFT), "\n".join(RIGHT)]
+
+
 def test_headline_beside_body_text_is_not_joined_to_it():
     headline = [Token("Theta\n", (100.0, 100.0, 300.0, 190.0), 0, 6)]
     body = _page([(330.0, LEFT)], top=118.0)
