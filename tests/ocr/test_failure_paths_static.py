@@ -164,7 +164,7 @@ def test_docai_failure_below_threshold_aborts_without_debug_artifacts(tmp_path, 
         public_output_root=str(public_root),
         work_root=str(tmp_path / "work"),
     )
-    with pytest.raises(EditionPipelineError, match="every manifest canvas must pass"):
+    with pytest.raises(EditionPipelineError, match="70% required"):
         process_edition(settings=None, client=object(), paths=paths)
 
     assert not (public_root / "1970-01-01").exists()
