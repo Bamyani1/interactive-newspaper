@@ -259,6 +259,58 @@ def test_retry_exhausts_after_exactly_three_timeouts(monkeypatch):
     assert calls == 3
 
 
+class _RateLimited(RuntimeError):
+    status_code = 429
+
+
+def _rate_limited_models(failures_before_success):
+    calls = []
+
+    class Models:
+        def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            if failures_before_success is None or len(calls) <= failures_before_success:
+                raise _RateLimited("429 RESOURCE_EXHAUSTED")
+            return SimpleNamespace(parsed={"ok": True})
+
+    return SimpleNamespace(models=Models()), calls
+
+
+def test_rate_limit_waits_longer_and_retries_past_three_attempts(monkeypatch):
+    client, calls = _rate_limited_models(5)
+    sleeps = []
+    monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
+    monkeypatch.setattr(retry.time, "sleep", sleeps.append)
+    monkeypatch.setattr(retry.random, "uniform", lambda _low, high: high)
+
+    response = retry.gemini_generate_with_retry(
+        client,
+        model="locked-model",
+        contents=["x"],
+        config=build_generation_config("page_structuring", max_output_tokens=128),
+    )
+
+    assert response.parsed == {"ok": True}
+    assert len(calls) == 6
+    assert sleeps == [5.0, 10.0, 20.0, 40.0, 60.0]
+
+
+def test_rate_limit_gives_up_after_its_own_budget(monkeypatch):
+    client, calls = _rate_limited_models(None)
+    monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
+    monkeypatch.setattr(retry, "_retry_delay_seconds", lambda *_: 0)
+
+    with pytest.raises(_RateLimited):
+        retry.gemini_generate_with_retry(
+            client,
+            model="locked-model",
+            contents=["x"],
+            config=build_generation_config("page_structuring", max_output_tokens=128),
+        )
+
+    assert len(calls) == 8
+
+
 @pytest.mark.parametrize(
     "response_schema",
     [
