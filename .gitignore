@@ -133,6 +133,8 @@ __pycache__/
 
 # OCR run artifacts and diagnostics
 ocr/runs/
+# onnxruntime telemetry session id, written to the working directory
+:memory:.ses
 ocr/logs/
 
 # OCR scan staging (large TIFFs)
