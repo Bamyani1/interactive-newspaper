@@ -15,7 +15,7 @@ from ..config.constants import (
     DOCAI_MAX_BYTES,
 )
 from ..shared.console import warning
-from .docai_columns import Token, column_blocks
+from .docai_columns import Token, _in_region, column_blocks
 
 
 class DocAIError(Exception):
@@ -39,6 +39,8 @@ class DocAIParagraph:
 
     text: str
     bounds: tuple[float, float, float, float] | None = None
+    # Layout class around the block, for the page text check; never sent to the model.
+    label: str = ""
 
 
 # (class name, normalized left, top, right, bottom) from the layout detector
@@ -137,12 +139,17 @@ def _column_regions(document, layout: Sequence[LayoutBox] = ()) -> list[DocAIPar
         (box[0] * width, box[1] * height, box[2] * width, box[3] * height)
         for _, box in layout
     ]
-    return [
-        DocAIParagraph(
-            text=text, bounds=(x0 / width, y0 / height, x1 / width, y1 / height)
+    blocks = []
+    for text, box in column_blocks(tokens, walls):
+        region = _in_region(box, walls)
+        blocks.append(
+            DocAIParagraph(
+                text=text,
+                bounds=(box[0] / width, box[1] / height, box[2] / width, box[3] / height),
+                label=layout[region][0] if region is not None else "",
+            )
         )
-        for text, (x0, y0, x1, y1) in column_blocks(tokens, walls)
-    ]
+    return blocks
 
 
 def _extract_paragraph_regions(

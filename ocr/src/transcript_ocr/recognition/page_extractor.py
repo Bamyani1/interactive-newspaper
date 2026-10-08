@@ -61,6 +61,7 @@ def process_page_with_docai(
     preprocessed_image: Image.Image,
     regions: list[tuple[int, int, int, int]],
     diag: PageDiagnostics | None = None,
+    seed: int = 0,
 ) -> tuple[PageContent, Image.Image, list[tuple[int, int, int, int]]]:
     """
     Send a preprocessed page image to Gemini for structuring, with OCR text pre-extracted
@@ -92,6 +93,7 @@ def process_page_with_docai(
         response_mime_type="application/json",
         response_schema=PageContent,
         max_output_tokens=65536,
+        seed=seed,
     )
 
     gemini_timer = StageTimer().start()

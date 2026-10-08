@@ -22,6 +22,8 @@ from ..recognition.docai_provider import extract_page_text
 from ..recognition.page_extractor import _extract_page_number_from_filename, process_page_with_docai
 from ..shared.console import error, info, status, substep, warning
 
+_UNCHECKED_LAYOUT = {"ad or cartoon", "table", "photo"}
+
 
 def extract_page_docai(
     image_path: str,
@@ -126,8 +128,11 @@ def structure_and_link_page(
     status(f"Structuring {base_name}...")
 
     try:
+        # Ads and tables are restructured by design; only story text is held to the check.
         block_texts = [
-            block.text for block in getattr(docai_result, "paragraph_regions", []) or []
+            block.text
+            for block in getattr(docai_result, "paragraph_regions", []) or []
+            if getattr(block, "label", "") not in _UNCHECKED_LAYOUT
         ]
         page_content, _gemini_image, _gemini_regions = process_page_with_docai(
             client,
@@ -139,7 +144,7 @@ def structure_and_link_page(
         )
         missing = uncovered_blocks(block_texts, page_content)
         if missing:
-            # Structuring varies run to run; one fresh call often keeps the text.
+            # Generation is seeded, so the retry asks for a different sample.
             warning(
                 f"{base_name}: {len(missing)} OCR block(s) mostly missing from the "
                 "structured page; structuring once more"
@@ -151,6 +156,7 @@ def structure_and_link_page(
                 preprocessed_image,
                 regions,
                 diag=diag,
+                seed=1,
             )
             retry_missing = uncovered_blocks(block_texts, retry_content)
             if len(retry_missing) <= len(missing):

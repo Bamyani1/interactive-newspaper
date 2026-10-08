@@ -19,7 +19,8 @@ The detailed runtime design is in
   `failed`.
 - Publication requires every canvas to pass. A failed cloud call is never
   reclassified as a blank page, and a page whose structured text still leaves
-  out most of an OCR block after one retry fails.
+  out most of an OCR story block after one retry fails (blocks inside detected
+  ads, tables and photos are not checked).
 - Document AI supplies OCR text. Gemini structures that text and may use images
   for layout or visual association, but it may not invent historical wording.
 - Visual detection and crops use a native-resolution color source master;
@@ -40,7 +41,8 @@ The detailed runtime design is in
 | Ad enrichment | `gemini-3.5-flash-lite` | `MINIMAL` | none |
 | Final content review | `gemini-3.5-flash-lite` | `MEDIUM` | none |
 
-Every call requests one candidate with seed `0`, disabled safety filters, and
+Every call requests one candidate with seed `0` (the page text check's one
+retry uses seed `1`), disabled safety filters, and
 `include_thoughts=false`. Gemini 3 sampling controls (`temperature`, `topP`, and
 `topK`) and thinking budgets are intentionally absent. A logical stage has at
 most three total attempts; transient and schema-correction retries share that

@@ -224,9 +224,7 @@ def _vertex(x, y):
     return SimpleNamespace(x=x, y=y)
 
 
-def test_provider_builds_regions_from_token_geometry():
-    width, height = 1000.0, 2000.0
-    tokens = _page([(100.0, LEFT), (500.0, RIGHT)])
+def _docai_document(tokens, width, height):
     text = "".join(t.text for t in sorted(tokens, key=lambda t: t.start))
     page_tokens = [
         SimpleNamespace(
@@ -253,7 +251,13 @@ def test_provider_builds_regions_from_token_geometry():
         tokens=page_tokens,
         paragraphs=[],
     )
-    document = SimpleNamespace(text=text, pages=[page])
+    return SimpleNamespace(text=text, pages=[page])
+
+
+def test_provider_builds_regions_from_token_geometry():
+    width, height = 1000.0, 2000.0
+    tokens = _page([(100.0, LEFT), (500.0, RIGHT)])
+    document = _docai_document(tokens, width, height)
 
     regions = _extract_paragraph_regions(document)
 
@@ -262,3 +266,16 @@ def test_provider_builds_regions_from_token_geometry():
     assert left_bounds is not None
     assert left_bounds[0] == 0.1
     assert left_bounds[1] == 100.0 / height
+
+
+def test_each_block_carries_the_layout_class_around_it():
+    width, height = 1000.0, 2000.0
+    document = _docai_document(_page([(100.0, LEFT), (500.0, RIGHT)]), width, height)
+    layout = [("article", (0.05, 0.0, 0.45, 1.0)), ("ad or cartoon", (0.45, 0.0, 0.95, 1.0))]
+
+    regions = _extract_paragraph_regions(document, layout)
+
+    assert [(r.text, r.label) for r in regions] == [
+        ("\n".join(LEFT), "article"),
+        ("\n".join(RIGHT), "ad or cartoon"),
+    ]

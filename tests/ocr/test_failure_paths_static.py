@@ -34,25 +34,27 @@ class _OneBlockDocAI:
     mean_confidence = 0.95
     low_confidence_words: list[str] = []
     paragraphs = [_KEPT]
-    paragraph_regions = [type("Block", (), {"text": _KEPT})()]
+
+    def __init__(self, label=""):
+        self.paragraph_regions = [type("Block", (), {"text": _KEPT, "label": label})()]
 
 
-def _structure_with_bodies(tmp_path, monkeypatch, bodies):
+def _structure_with_bodies(tmp_path, monkeypatch, bodies, label=""):
     img_path = tmp_path / "Page 03.jpg"
     Image.new("L", (300, 300), color=255).save(img_path)
     preprocessed = Image.new("L", (300, 300), color=255)
     calls = []
 
-    def structure(*_args, **_kwargs):
+    def structure(*_args, **kwargs):
         body = bodies[len(calls)]
-        calls.append(body)
+        calls.append(kwargs.get("seed", 0))
         page = PageContent(articles=[Article(headline="Center", body=body)])
         return page, preprocessed, []
 
     monkeypatch.setattr("transcript_ocr.application.page_pipeline.process_page_with_docai", structure)
     diag = PageDiagnostics()
     result = structure_and_link_page(
-        object(), str(img_path), _OneBlockDocAI(), preprocessed, [], str(tmp_path), diag=diag
+        object(), str(img_path), _OneBlockDocAI(label), preprocessed, [], str(tmp_path), diag=diag
     )
     return result, calls, diag
 
@@ -60,7 +62,8 @@ def _structure_with_bodies(tmp_path, monkeypatch, bodies):
 def test_page_missing_ocr_text_is_structured_again(tmp_path, monkeypatch):
     result, calls, _ = _structure_with_bodies(tmp_path, monkeypatch, ["Too short.", _KEPT])
 
-    assert len(calls) == 2
+    # Generation is seeded, so the retry must ask for a different sample.
+    assert calls == [0, 1]
     assert result is not None
     assert result.articles[0].body == _KEPT
 
@@ -71,6 +74,16 @@ def test_page_still_missing_ocr_text_after_one_retry_fails(tmp_path, monkeypatch
     assert len(calls) == 2
     assert result is None
     assert "OCR block" in diag.error
+
+
+def test_ad_text_restructured_by_the_model_is_not_a_missing_block(tmp_path, monkeypatch):
+    # Ad tables are rewritten row by row; only story text is held to the check.
+    result, calls, _ = _structure_with_bodies(
+        tmp_path, monkeypatch, ["Too short."], label="ad or cartoon"
+    )
+
+    assert calls == [0]
+    assert result is not None
 
 
 def test_visual_match_failure_preserves_unresolved_region_without_spatial_fallback(tmp_path, monkeypatch):

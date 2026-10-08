@@ -285,7 +285,7 @@ For the stage-by-stage design, manifest accounting, Gemini request and retry pol
 ### Gotchas worth knowing
 
 - **Retry identity**: OCR retries keep the same stage model and configuration; see the OCR architecture document for its independently locked routing.
-- **All-pages publication gate**: every IIIF canvas ends `passed_content`, `passed_visual`, `confirmed_blank`, or `failed`; an edition publishes only if every canvas passes, a failed cloud call is never counted as blank, and a page whose structured text still leaves out most of an OCR block after one retry fails.
+- **All-pages publication gate**: every IIIF canvas ends `passed_content`, `passed_visual`, `confirmed_blank`, or `failed`; an edition publishes only if every canvas passes, a failed cloud call is never counted as blank, and a page whose structured text still leaves out most of an OCR story block after one reseeded retry fails (ad, table and photo blocks are not checked).
 - **Atomic writes and locks**: every candidate file is written to a temp file and committed with `os.replace`; the wrapper holds a per-date lock and a shared asset lock (also taken by R2 GC), so two runs never touch the same edition.
 - **Scans are kept until publication**: the wrapper deletes an inbox folder only after the edition is promoted, so a failed run can simply be retried.
 
