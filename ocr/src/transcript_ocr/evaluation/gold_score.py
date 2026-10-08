@@ -198,7 +198,7 @@ def _edition_words(edition: dict[str, Any]) -> Counter:
     words = Counter(_normalized_words(str(edition.get("publication_info") or "")))
     for collection in _COLLECTIONS:
         for item in edition.get(collection) or []:
-            texts = [item.get(_IDENTITY_FIELD[collection]), item.get("body")]
+            texts = [item.get(field) for field in (_IDENTITY_FIELD[collection], "author", "writer_position", "body")]
             texts += [image.get("caption") for image in item.get("images") or []]
             for text in texts:
                 words.update(_normalized_words(str(text or "")))

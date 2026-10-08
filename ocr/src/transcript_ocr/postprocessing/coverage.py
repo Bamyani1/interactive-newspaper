@@ -21,7 +21,7 @@ def _words(text: str) -> list[str]:
 def _page_text(content: PageContent) -> str:
     parts = [content.publication_info]
     for article in content.articles:
-        parts += [article.headline, article.author, article.body]
+        parts += [article.headline, article.author, article.writer_position, article.body]
         parts += [image.caption for image in article.images]
     for ad in content.ads:
         parts += [ad.business_name, ad.body]

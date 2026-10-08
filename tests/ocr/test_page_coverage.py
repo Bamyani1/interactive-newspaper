@@ -57,3 +57,12 @@ def test_ad_text_counts_as_covered():
     page = _page("Unrelated story text.", ads=[Ad(business_name="Fork & Fingers", body=ad)])
 
     assert uncovered_blocks([ad], page) == []
+
+
+def test_signature_moved_into_the_byline_fields_counts_as_covered():
+    signature = "Bernard Murchland Department of Philosophy Coeditor, The Civic Arts Review"
+    page = _page("Letter text.")
+    page.articles[0].author = "Bernard Murchland"
+    page.articles[0].writer_position = "Department of Philosophy, Coeditor, The Civic Arts Review"
+
+    assert uncovered_blocks([signature], page) == []
