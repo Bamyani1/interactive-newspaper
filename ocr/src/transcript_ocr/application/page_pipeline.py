@@ -11,10 +11,12 @@ from PIL import Image
 from ..config.constants import MIN_AD_IMAGE_AREA_PIXELS
 from ..contracts.content_models import ArticleImage, OtherContent, PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer
+from ..detection.american_stories_provider import detect_layout_boxes
 from ..detection.visual_provider import detect_image_regions
 from ..image_linking.assignment_applier import _apply_visual_assignments
 from ..image_linking.cropper import crop_and_save_images, crop_regions, draw_region_annotations
 from ..image_linking.visual_matcher import match_images_visual
+from ..postprocessing.coverage import uncovered_blocks
 from ..preprocessing.image_preprocessor import check_page_quality, prepare_page_image_paths
 from ..recognition.docai_provider import extract_page_text
 from ..recognition.page_extractor import _extract_page_number_from_filename, process_page_with_docai
@@ -60,7 +62,18 @@ def extract_page_docai(
     if quality.message:
         warning(f"{base_name}: {quality.message}; cloud processing will still run")
 
-    docai_result = extract_page_text(ocr_derivative)
+    # Found on the OCR derivative itself, so boxes share Document AI's geometry.
+    layout = detect_layout_boxes(ocr_derivative)
+    substep(f"Layout: {len(layout)} box(es)")
+    response_path = None
+    if owned_temp is None and os.getenv("OCR_SAVE_DOCAI_JSON", "").strip().lower() in {
+        "1",
+        "true",
+    }:
+        response_path = os.path.join(work_dir, f"{Path(image_path).stem}.docai.json")
+    docai_result = extract_page_text(
+        ocr_derivative, layout=layout, response_path=response_path
+    )
     substep(
         f"DocAI: {len(docai_result.raw_text)} chars, "
         f"mean_conf={docai_result.mean_confidence:.2f}"
@@ -113,6 +126,9 @@ def structure_and_link_page(
     status(f"Structuring {base_name}...")
 
     try:
+        block_texts = [
+            block.text for block in getattr(docai_result, "paragraph_regions", []) or []
+        ]
         page_content, _gemini_image, _gemini_regions = process_page_with_docai(
             client,
             image_path,
@@ -121,6 +137,30 @@ def structure_and_link_page(
             regions,
             diag=diag,
         )
+        missing = uncovered_blocks(block_texts, page_content)
+        if missing:
+            # Structuring varies run to run; one fresh call often keeps the text.
+            warning(
+                f"{base_name}: {len(missing)} OCR block(s) mostly missing from the "
+                "structured page; structuring once more"
+            )
+            retry_content, _gemini_image, _gemini_regions = process_page_with_docai(
+                client,
+                image_path,
+                docai_result,
+                preprocessed_image,
+                regions,
+                diag=diag,
+            )
+            retry_missing = uncovered_blocks(block_texts, retry_content)
+            if len(retry_missing) <= len(missing):
+                page_content, missing = retry_content, retry_missing
+        if missing:
+            preview = "; ".join(" ".join(text.split())[:80] for text in missing[:3])
+            raise RuntimeError(
+                f"{len(missing)} OCR block(s) mostly missing from the structured page "
+                f"after a retry: {preview}"
+            )
 
         original_caption_slots = [
             image.model_copy()

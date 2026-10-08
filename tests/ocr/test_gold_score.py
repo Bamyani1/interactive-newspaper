@@ -45,3 +45,28 @@ def test_manual_mapping_scores_word_and_character_fidelity():
     assert articles["word_fidelity"]["substitutions"] == 1
     assert articles["word_fidelity"]["wer"] == pytest.approx(1 / 3, abs=1e-6)
     assert articles["character_fidelity"]["cer"] > 0
+
+
+def test_auto_map_pairs_changed_text_by_similarity_and_says_so():
+    report = score_editions(
+        _edition("One exact body of several words."),
+        _edition("One changed body of several words."),
+        auto_map=True,
+    )
+    articles = report["collections"]["articles"]
+    assert report["mapping_method"] == "similarity_auto"
+    assert articles["matched_count"] == 1
+    assert articles["word_fidelity"]["substitutions"] == 1
+
+
+def test_paragraph_breaks_are_scored_against_gold():
+    gold = _edition("First part here.\n\nSecond part here.\n\nThird part here.")
+    candidate = _edition("First part here.\n\nSecond part here. Third part here.")
+
+    report = score_editions(gold, candidate, {"articles": [[0, 0]], "ads": [], "other_content": []})
+
+    breaks = report["collections"]["articles"]["paragraph_breaks"]
+    assert breaks["gold"] == 2
+    assert breaks["found"] == 1
+    assert breaks["recall"] == pytest.approx(0.5)
+    assert breaks["precision"] == pytest.approx(1.0)

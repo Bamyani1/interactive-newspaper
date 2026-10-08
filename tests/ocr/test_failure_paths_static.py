@@ -23,6 +23,55 @@ from transcript_ocr.contracts.diagnostics_models import PageDiagnostics  # noqa:
 from transcript_ocr.image_linking.visual_matcher import _unresolved_assignments  # noqa: E402
 from transcript_ocr.ingestion.pathing import RunPaths  # noqa: E402
 
+_KEPT = (
+    "The campus center will open within two years, said the president of the "
+    "board on Tuesday after a long vote in the main hall."
+)
+
+
+class _OneBlockDocAI:
+    raw_text = _KEPT
+    mean_confidence = 0.95
+    low_confidence_words: list[str] = []
+    paragraphs = [_KEPT]
+    paragraph_regions = [type("Block", (), {"text": _KEPT})()]
+
+
+def _structure_with_bodies(tmp_path, monkeypatch, bodies):
+    img_path = tmp_path / "Page 03.jpg"
+    Image.new("L", (300, 300), color=255).save(img_path)
+    preprocessed = Image.new("L", (300, 300), color=255)
+    calls = []
+
+    def structure(*_args, **_kwargs):
+        body = bodies[len(calls)]
+        calls.append(body)
+        page = PageContent(articles=[Article(headline="Center", body=body)])
+        return page, preprocessed, []
+
+    monkeypatch.setattr("transcript_ocr.application.page_pipeline.process_page_with_docai", structure)
+    diag = PageDiagnostics()
+    result = structure_and_link_page(
+        object(), str(img_path), _OneBlockDocAI(), preprocessed, [], str(tmp_path), diag=diag
+    )
+    return result, calls, diag
+
+
+def test_page_missing_ocr_text_is_structured_again(tmp_path, monkeypatch):
+    result, calls, _ = _structure_with_bodies(tmp_path, monkeypatch, ["Too short.", _KEPT])
+
+    assert len(calls) == 2
+    assert result is not None
+    assert result.articles[0].body == _KEPT
+
+
+def test_page_still_missing_ocr_text_after_one_retry_fails(tmp_path, monkeypatch):
+    result, calls, diag = _structure_with_bodies(tmp_path, monkeypatch, ["Too short.", "Still short."])
+
+    assert len(calls) == 2
+    assert result is None
+    assert "OCR block" in diag.error
+
 
 def test_visual_match_failure_preserves_unresolved_region_without_spatial_fallback(tmp_path, monkeypatch):
     img_path = tmp_path / "Page 02.jpg"
@@ -102,7 +151,7 @@ def test_docai_failure_below_threshold_aborts_without_debug_artifacts(tmp_path, 
         public_output_root=str(public_root),
         work_root=str(tmp_path / "work"),
     )
-    with pytest.raises(EditionPipelineError, match="70% required"):
+    with pytest.raises(EditionPipelineError, match="every manifest canvas must pass"):
         process_edition(settings=None, client=object(), paths=paths)
 
     assert not (public_root / "1970-01-01").exists()

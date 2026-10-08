@@ -3,12 +3,16 @@
 Document AI's own lines and paragraphs splice words from neighbouring narrow
 newspaper columns. Here tokens are regrouped: same-line runs that never cross
 a gutter, runs chained down one column, chains split at paragraph indents.
+Layout regions, when given, are walls: no line or chain crosses from one
+region into another.
 """
 
 from __future__ import annotations
 
 import statistics
-from dataclasses import dataclass
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 
 Box = tuple[float, float, float, float]
 
@@ -32,6 +36,7 @@ class Token:
     box: Box
     start: int
     end: int
+    region: int | None = None  # index of the smallest layout region holding its centre
 
 
 def _height(box: Box) -> float:
@@ -49,6 +54,48 @@ def _union(boxes: list[Box]) -> Box:
         max(b[2] for b in boxes),
         max(b[3] for b in boxes),
     )
+
+
+def _drop_repeats(tokens: list[Token]) -> list[Token]:
+    """Document AI sometimes returns one printed word twice, as two tokens with
+    the same text whose boxes mostly overlap; keep the first."""
+    kept: list[Token] = []
+    seen: dict[str, list[Box]] = {}
+    for token in sorted(tokens, key=lambda t: t.start):
+        word = token.text.strip()
+        a = token.box
+        repeat = False
+        for b in seen.get(word, []):
+            width = min(a[2], b[2]) - max(a[0], b[0])
+            height = min(a[3], b[3]) - max(a[1], b[1])
+            smaller = min((a[2] - a[0]) * _height(a), (b[2] - b[0]) * _height(b))
+            if width > 0 and height > 0 and width * height > 0.5 * smaller:
+                repeat = True
+                break
+        if not repeat:
+            kept.append(token)
+            seen.setdefault(word, []).append(a)
+    return kept
+
+
+def _in_region(box: Box, regions: Sequence[Box]) -> int | None:
+    cx, cy = (box[0] + box[2]) / 2, _centre_y(box)
+    inside = [
+        ((r[2] - r[0]) * (r[3] - r[1]), i)
+        for i, r in enumerate(regions)
+        if r[0] <= cx <= r[2] and r[1] <= cy <= r[3]
+    ]
+    return min(inside)[1] if inside else None
+
+
+def _walled(a: int | None, b: int | None) -> bool:
+    """Text in two different layout regions never joins; text outside every region may."""
+    return a is not None and b is not None and a != b
+
+
+def _run_region(run: list[Token]) -> int | None:
+    counts = Counter(t.region for t in run if t.region is not None)
+    return counts.most_common(1)[0][0] if counts else None
 
 
 def _clear_band(
@@ -133,6 +180,8 @@ def _lines(tokens: list[Token], line_height: float) -> list[list[Token]]:
         best: tuple[float, list[Token], float] | None = None
         for run in runs:
             last = run[-1]
+            if _walled(token.region, last.region):
+                continue
             h = max(_height(token.box), _height(last.box), line_height)
             gap = token.box[0] - last.box[2]
             if gap < -0.3 * h or gap > _MAX_WORD_GAP * h:
@@ -178,6 +227,7 @@ def _chains(runs: list[list[Token]], line_height: float) -> list[Chain]:
         ((_run_box(run), run, _run_size(run, line_height)) for run in runs),
         key=lambda item: (_centre_y(item[0]), item[0][0]),
     )
+    regions = [_run_region(run) for _, run, _ in items]
     following: dict[int, int] = {}
     linked: set[int] = set()
     for i, (a, _, ha) in enumerate(items):
@@ -188,6 +238,8 @@ def _chains(runs: list[list[Token]], line_height: float) -> list[Chain]:
             if dy > _MAX_LINE_STEP * ha:
                 break
             if dy < 0.4 * min(ha, hb) or j in linked:
+                continue
+            if _walled(regions[i], regions[j]):
                 continue
             overlap = min(a[2], b[2]) - max(a[0], b[0])
             if overlap < 0.5 * min(a[2] - a[0], b[2] - b[0]):
@@ -233,6 +285,8 @@ def _merge_orphans(chains: list[Chain], line_height: float) -> list[Chain]:
             if ob[0] < left or ob[2] > right:
                 continue
             for run in column:
+                if _walled(_run_region(orphan), _run_region(run)):
+                    continue
                 rb = _run_box(run)
                 h = max(size, _run_size(run, line_height))
                 if abs(_centre_y(rb) - _centre_y(ob)) > _SAME_LINE * h:
@@ -294,10 +348,19 @@ def _line_text(run: list[Token]) -> str:
     return "".join(parts).strip()
 
 
-def column_blocks(tokens: list[Token]) -> list[tuple[str, Box]]:
-    """Return (text, pixel box) blocks, one per paragraph of one column, in page order."""
+def column_blocks(
+    tokens: list[Token], regions: Sequence[Box] = ()
+) -> list[tuple[str, Box]]:
+    """Return (text, pixel box) blocks, one per paragraph of one column, in page order.
+
+    ``regions`` are layout-detector boxes in page pixels (one per story column,
+    headline, caption, ad...); blocks never cross from one into another.
+    """
     if not tokens:
         return []
+    tokens = _drop_repeats(tokens)
+    if regions:
+        tokens = [replace(t, region=_in_region(t.box, regions)) for t in tokens]
     line_height = statistics.median(_height(t.box) for t in tokens)
     chains = _chains(_lines(tokens, line_height), line_height)
     blocks = []

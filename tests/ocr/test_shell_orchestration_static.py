@@ -11,6 +11,7 @@ PROCESS = ROOT / "scripts/ocr/process-edition.sh"
 BATCH = ROOT / "scripts/ocr/process-unprocessed.sh"
 AUDIT = ROOT / "scripts/ocr/run-audit-editions.sh"
 GOLD = ROOT / "scripts/ocr/run-gold-regression.sh"
+EVAL = ROOT / "scripts/ocr/eval-edition.sh"
 
 
 def _text(path: Path) -> str:
@@ -18,7 +19,7 @@ def _text(path: Path) -> str:
 
 
 def test_shell_scripts_parse():
-    for script in (PROCESS, BATCH, AUDIT, GOLD):
+    for script in (PROCESS, BATCH, AUDIT, GOLD, EVAL):
         subprocess.run(["bash", "-n", str(script)], check=True)
 
 
@@ -31,6 +32,21 @@ def test_gold_regression_cannot_publish_or_seed():
         "upload-images.mjs",
         "db:seed",
         "public/editions",
+    ):
+        assert forbidden not in source
+
+
+def test_eval_edition_cannot_publish_seed_or_touch_the_inbox():
+    source = _text(EVAL)
+    assert "ocr/convert_scans.py" in source
+    assert "ocr/runs/eval" in source
+    for forbidden in (
+        "process-edition.sh",
+        "upload-images.mjs",
+        "db:seed",
+        "public/editions",
+        "rm -",
+        "mv ",
     ):
         assert forbidden not in source
 

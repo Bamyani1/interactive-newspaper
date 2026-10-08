@@ -276,7 +276,7 @@ For the stage-by-stage design, manifest accounting, Gemini request and retry pol
 | 0       | IIIF manifest inventory; lossless TIFF → PNG, every frame pixel-verified                    | one expected entry per canvas                          |
 | 1       | Per page: color source master + grayscale OCR derivative; Document AI OCR; hybrid detection | paragraphs + token confidence; visual regions          |
 | 2       | Per page: Gemini page structuring + visual assignment                                       | articles, ads, other content; a disposition per region |
-| gate    | At least 70% of manifest canvases must pass                                                 | publish or abort                                       |
+| gate    | Every manifest canvas must pass                                                             | publish or abort                                       |
 | 3       | Edition-wide article grouping + all-boundary seam review                                    | lossless cross-page merges; candidate `edition.json`   |
 | 4       | Ad enrichment + targeted final type/category review                                         | source-grounded ad fields; high-confidence fixes only  |
 | 5       | Validate, write provenance, summary                                                         | `edition.json` + `provenance.json` candidate           |
@@ -285,7 +285,7 @@ For the stage-by-stage design, manifest accounting, Gemini request and retry pol
 ### Gotchas worth knowing
 
 - **Retry identity**: OCR retries keep the same stage model and configuration; see the OCR architecture document for its independently locked routing.
-- **70% publication gate**: every IIIF canvas ends `passed_content`, `passed_visual`, `confirmed_blank`, or `failed`; an edition publishes only if at least 70% pass, and a failed cloud call is never counted as blank.
+- **All-pages publication gate**: every IIIF canvas ends `passed_content`, `passed_visual`, `confirmed_blank`, or `failed`; an edition publishes only if every canvas passes, a failed cloud call is never counted as blank, and a page whose structured text still leaves out most of an OCR block after one retry fails.
 - **Atomic writes and locks**: every candidate file is written to a temp file and committed with `os.replace`; the wrapper holds a per-date lock and a shared asset lock (also taken by R2 GC), so two runs never touch the same edition.
 - **Scans are kept until publication**: the wrapper deletes an inbox folder only after the edition is promoted, so a failed run can simply be retried.
 
@@ -603,6 +603,7 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 | `scripts/ocr/process-edition.sh <folder>`                     | OCR, upload, and promote one edition                                                                                                                |
 | `scripts/ocr/process-unprocessed.sh`                          | Batch-process every edition folder in `ocr/inbox/`                                                                                                  |
 | `scripts/ocr/run-gold-regression.sh`                          | Extraction-only regression on the frozen gold source set                                                                                            |
+| `scripts/ocr/eval-edition.sh <date>`                          | Extraction-only run of one inbox edition, scored against `gold/<date>/`                                                                             |
 | **Weather**                                                   |                                                                                                                                                     |
 | `npm run weather:build:ohio`                                  | Build the 1950–2000 Ohio archive, then verify it                                                                                                    |
 | `npm run weather:verify:ohio`                                 | Verify archive integrity                                                                                                                            |
@@ -773,7 +774,7 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 - Google Document AI Enterprise OCR integration with per-page parallelization
 - Hybrid visual detection: American Stories newspaper-layout model plus DocLayout-YOLO, with class/area filtering and NMS
 - Gemini visual assignment that decides what each detected region is and which article it belongs to
-- Lossless TIFF conversion with per-frame pixel verification and a manifest-accounted 70% publication gate
+- Lossless TIFF conversion with per-frame pixel verification and a manifest-accounted all-pages publication gate
 
 </details>
 

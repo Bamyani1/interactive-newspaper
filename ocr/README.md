@@ -17,8 +17,9 @@ The detailed runtime design is in
 - IIIF manifest canvases are the page-count denominator.
 - Every canvas ends as `passed_content`, `passed_visual`, `confirmed_blank`, or
   `failed`.
-- Publication requires at least 70% passing canvases. A failed cloud call is
-  never reclassified as a blank page.
+- Publication requires every canvas to pass. A failed cloud call is never
+  reclassified as a blank page, and a page whose structured text still leaves
+  out most of an OCR block after one retry fails.
 - Document AI supplies OCR text. Gemini structures that text and may use images
   for layout or visual association, but it may not invent historical wording.
 - Visual detection and crops use a native-resolution color source master;
@@ -244,7 +245,22 @@ python ocr/score_gold.py \
 
 The scorer never performs fuzzy pairing implicitly. Provide `--mapping-json`
 only after its gold/candidate index pairs have been manually checked against
-the scans.
+the scans, or pass `--auto-map` to pair items by text similarity (the report
+says so and lists unmatched items).
+
+For any edition with `gold/<date>/gold-edition.json` and its scans in
+`ocr/inbox/`, one command runs extraction, validates, and scores:
+
+```bash
+scripts/ocr/eval-edition.sh 1989-11-29      # writes ocr/runs/eval/<date>/<time>-<commit>/
+python ocr/check_blocks.py ocr/runs/eval/<date>/<run>/work \
+  --gold-edition gold/<date>/gold-edition.json -v   # re-check block building offline
+```
+
+The run keeps each page's Document AI response, so block-building changes can be
+compared on the same OCR without new API calls. `score.md` has word error rates,
+paragraph-break precision/recall and the worst items; `diff.md` lists every word
+difference.
 
 > Note: the `gold/` and `gold-candidates/` reference editions are gitignored and
 > not shipped in the public repo, so these commands run only where that curated
@@ -277,7 +293,7 @@ fallbacks, asset limits, publication behavior, and the no-debug-artifact rule.
   version alias.
 - **Detector startup error:** install `ocr/requirements.txt`, confirm
   `ocr/models/` is writable, and satisfy the hosted license gate.
-- **Below 70%:** inspect the terminal summary and sanitized entries in
+- **A canvas failed:** inspect the terminal summary and sanitized entries in
   `ocr/logs/failures.jsonl`. The pipeline deliberately does not save raw debug
   artifacts.
 - **Upload failure:** fix R2 configuration, then use `--repair-upload` against
