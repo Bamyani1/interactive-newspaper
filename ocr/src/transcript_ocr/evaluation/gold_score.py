@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import re
 import unicodedata
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 _WORD_RE = re.compile(r"\w+(?:[\u2019'\-]\w+)*", re.UNICODE)
 _COLLECTIONS = ("articles", "ads", "other_content")
+_AUTO_MAP_MIN_SIMILARITY = 0.30
 _IDENTITY_FIELD = {
     "articles": "headline",
     "ads": "business_name",
@@ -32,7 +35,9 @@ _STRUCTURED_FIELDS = {
 
 
 def _normalized_words(text: str) -> list[str]:
-    normalized = unicodedata.normalize("NFKC", text or "").casefold()
+    # Rejoin line-break hyphens the way the site does (src/server/ocr-adapter/text-cleaning.ts).
+    text = re.sub(r"(\w)-\n+\s*([a-z])", r"\1\2", text or "")
+    normalized = unicodedata.normalize("NFKC", text).casefold()
     return [match.group(0) for match in _WORD_RE.finditer(normalized)]
 
 
@@ -132,6 +137,76 @@ def _manual_pairs(
     return pairs
 
 
+def _similarity_pairs(
+    gold_items: list[dict], candidate_items: list[dict], collection: str
+) -> list[tuple[int, int]]:
+    """Greedy best-first pairing on the opening 150 words of identity + body."""
+    identity = _IDENTITY_FIELD[collection]
+
+    def opening(item: dict) -> list[str]:
+        return _normalized_words(f"{item.get(identity, '')} {item.get('body', '')}")[:150]
+
+    candidates = [opening(item) for item in candidate_items]
+    scores = []
+    for gold_index, item in enumerate(gold_items):
+        gold_words = opening(item)
+        for candidate_index, candidate_words in enumerate(candidates):
+            ratio = difflib.SequenceMatcher(None, gold_words, candidate_words, autojunk=False).ratio()
+            scores.append((ratio, gold_index, candidate_index))
+    pairs, used_gold, used_candidate = [], set(), set()
+    for ratio, gold_index, candidate_index in sorted(scores, reverse=True):
+        if ratio < _AUTO_MAP_MIN_SIMILARITY or gold_index in used_gold or candidate_index in used_candidate:
+            continue
+        used_gold.add(gold_index)
+        used_candidate.add(candidate_index)
+        pairs.append((gold_index, candidate_index))
+    return sorted(pairs)
+
+
+def _break_positions(body: str) -> tuple[list[str], set[int]]:
+    """Words of a body and the word indexes that open a new paragraph."""
+    words: list[str] = []
+    starts: set[int] = set()
+    for index, paragraph in enumerate(re.split(r"\n\s*\n", body or "")):
+        paragraph_words = _normalized_words(paragraph)
+        if index and paragraph_words:
+            starts.add(len(words))
+        words += paragraph_words
+    return words, starts
+
+
+def _paragraph_break_counts(gold_body: str, candidate_body: str) -> tuple[int, int, int, int]:
+    """(correct found, found, correct of gold, gold) over words both texts share."""
+    gold_words, gold_starts = _break_positions(gold_body)
+    candidate_words, candidate_starts = _break_positions(candidate_body)
+    to_gold: dict[int, int] = {}
+    matcher = difflib.SequenceMatcher(None, gold_words, candidate_words, autojunk=False)
+    for gold_at, candidate_at, size in matcher.get_matching_blocks():
+        for offset in range(size):
+            to_gold[candidate_at + offset] = gold_at + offset
+    to_candidate = {gold: candidate for candidate, gold in to_gold.items()}
+    found = [start for start in candidate_starts if start in to_gold]
+    expected = [start for start in gold_starts if start in to_candidate]
+    return (
+        sum(to_gold[start] in gold_starts for start in found),
+        len(found),
+        sum(to_candidate[start] in candidate_starts for start in expected),
+        len(expected),
+    )
+
+
+def _edition_words(edition: dict[str, Any]) -> Counter:
+    """Every printed word in the edition, whichever item it is filed under."""
+    words = Counter(_normalized_words(str(edition.get("publication_info") or "")))
+    for collection in _COLLECTIONS:
+        for item in edition.get(collection) or []:
+            texts = [item.get(field) for field in (_IDENTITY_FIELD[collection], "author", "writer_position", "body")]
+            texts += [image.get("caption") for image in item.get("images") or []]
+            for text in texts:
+                words.update(_normalized_words(str(text or "")))
+    return words
+
+
 def _rate(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 6) if denominator else 1.0
 
@@ -155,6 +230,7 @@ def _collection_score(
         field: {"matches": 0, "compared": len(pairs)}
         for field in _STRUCTURED_FIELDS[collection]
     }
+    breaks = [0, 0, 0, 0]
     pair_details = []
     for gold_index, candidate_index in pairs:
         gold = gold_items[gold_index]
@@ -169,6 +245,11 @@ def _collection_score(
         candidate_characters = _strict_chars(str(candidate.get("body") or ""))
         character_reference += len(gold_characters)
         character_errors += _edit_distance(gold_characters, candidate_characters)
+        if collection == "articles":
+            counts = _paragraph_break_counts(
+                str(gold.get("body") or ""), str(candidate.get("body") or "")
+            )
+            breaks = [total + count for total, count in zip(breaks, counts)]
         exact_fields = {}
         for field in _STRUCTURED_FIELDS[collection]:
             exact = gold.get(field, "") == candidate.get(field, "")
@@ -180,6 +261,7 @@ def _collection_score(
                 "candidate_index": candidate_index,
                 "gold_label": gold.get(_IDENTITY_FIELD[collection], ""),
                 "candidate_label": candidate.get(_IDENTITY_FIELD[collection], ""),
+                "gold_words": len(gold_words),
                 "word_edits": edits,
                 "exact_fields": exact_fields,
             }
@@ -192,7 +274,7 @@ def _collection_score(
     for totals in field_totals.values():
         totals["accuracy"] = _rate(totals["matches"], totals["compared"])
 
-    return {
+    score = {
         "gold_count": len(gold_items),
         "candidate_count": len(candidate_items),
         "matched_count": len(pairs),
@@ -218,26 +300,43 @@ def _collection_score(
         ],
         "pairs": pair_details,
     }
+    if collection == "articles":
+        score["paragraph_breaks"] = {
+            "found": breaks[1],
+            "gold": breaks[3],
+            "precision": _rate(breaks[0], breaks[1]),
+            "recall": _rate(breaks[2], breaks[3]),
+        }
+    return score
 
 
 def score_editions(
     gold: dict[str, Any],
     candidate: dict[str, Any],
     mapping: dict[str, Any] | None = None,
+    auto_map: bool = False,
 ) -> dict[str, Any]:
-    """Score final artifacts; fuzzy matching is never used implicitly."""
+    """Score final artifacts; fuzzy matching is used only when asked for."""
     if gold.get("edition_date") != candidate.get("edition_date"):
         raise ValueError("gold and candidate edition dates differ")
-    mapping_method = "manual_reviewed_indices" if mapping is not None else "exact_normalized_fingerprint"
+    if mapping is not None and auto_map:
+        raise ValueError("pass a reviewed mapping or auto_map, not both")
+    if mapping is not None:
+        mapping_method = "manual_reviewed_indices"
+    elif auto_map:
+        mapping_method = "similarity_auto"
+    else:
+        mapping_method = "exact_normalized_fingerprint"
     collections = {}
     for collection in _COLLECTIONS:
         gold_items = list(gold.get(collection) or [])
         candidate_items = list(candidate.get(collection) or [])
-        pairs = (
-            _manual_pairs(mapping or {}, collection, len(gold_items), len(candidate_items))
-            if mapping is not None
-            else _exact_pairs(gold_items, candidate_items, collection)
-        )
+        if mapping is not None:
+            pairs = _manual_pairs(mapping, collection, len(gold_items), len(candidate_items))
+        elif auto_map:
+            pairs = _similarity_pairs(gold_items, candidate_items, collection)
+        else:
+            pairs = _exact_pairs(gold_items, candidate_items, collection)
         collections[collection] = _collection_score(
             gold_items, candidate_items, collection, pairs
         )
@@ -246,11 +345,17 @@ def score_editions(
         "schema_version": 1,
         "edition_date": gold.get("edition_date"),
         "mapping_method": mapping_method,
-        "mapping_warning": (
-            "Indices must have been manually reviewed against source scans."
-            if mapping is not None
-            else "Only exact normalized identity+body matches are scored; unmatched items are not fuzzily paired."
-        ),
+        "mapping_warning": {
+            "manual_reviewed_indices": "Indices must have been manually reviewed against source scans.",
+            "similarity_auto": (
+                f"Items were auto-paired by text similarity (>= {_AUTO_MAP_MIN_SIMILARITY}); "
+                "check the unmatched lists before trusting precision and recall."
+            ),
+            "exact_normalized_fingerprint": (
+                "Only exact normalized identity+body matches are scored; "
+                "unmatched items are not fuzzily paired."
+            ),
+        }[mapping_method],
         "publication_info_exact": gold.get("publication_info", "")
         == candidate.get("publication_info", ""),
         "visual_file_counts": {
@@ -266,6 +371,21 @@ def score_editions(
             ),
         },
         "collections": collections,
+        "edition_words": _edition_word_coverage(gold, candidate),
+    }
+
+
+def _edition_word_coverage(gold: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    gold_words, candidate_words = _edition_words(gold), _edition_words(candidate)
+    total = sum(gold_words.values())
+    missing = sum((gold_words - candidate_words).values())
+    extra = sum((candidate_words - gold_words).values())
+    return {
+        "gold": total,
+        "missing": missing,
+        "extra": extra,
+        "missing_rate": _rate(missing, total),
+        "extra_rate": _rate(extra, total),
     }
 
 
@@ -276,6 +396,11 @@ def _markdown(report: dict[str, Any]) -> str:
         f"- Edition: `{report['edition_date']}`",
         f"- Mapping: `{report['mapping_method']}`",
         f"- Publication metadata exact: `{report['publication_info_exact']}`",
+        (
+            f"- Edition words (any item): {report['edition_words']['missing']} of "
+            f"{report['edition_words']['gold']} gold words missing, "
+            f"{report['edition_words']['extra']} extra"
+        ),
         "",
         "| Collection | Gold | Candidate | Matched | Precision | Recall | F1 | WER | CER |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
@@ -289,8 +414,57 @@ def _markdown(report: dict[str, Any]) -> str:
             f"{score['word_fidelity']['wer']:.3f} | "
             f"{score['character_fidelity']['cer']:.3f} |"
         )
+    breaks = report["collections"]["articles"]["paragraph_breaks"]
+    lines.extend(
+        [
+            "",
+            f"Article paragraph breaks: precision {breaks['precision']:.3f} "
+            f"({breaks['found']} found), recall {breaks['recall']:.3f} ({breaks['gold']} in gold)",
+            "",
+            "| Worst items | Word errors | Gold words |",
+            "|---|---:|---:|",
+        ]
+    )
+    worst = []
+    for name in _COLLECTIONS:
+        for pair in report["collections"][name]["pairs"]:
+            edits = pair["word_edits"]
+            errors = edits["substitutions"] + edits["deletions"] + edits["insertions"]
+            if errors:
+                worst.append((errors, name, pair["gold_label"], pair["gold_words"]))
+    for errors, name, label, words in sorted(worst, reverse=True)[:12]:
+        lines.append(f"| {name}: {label} | {errors} | {words} |")
+    for name in _COLLECTIONS:
+        score = report["collections"][name]
+        for side in ("unmatched_gold", "unmatched_candidate"):
+            if score[side]:
+                labels = "; ".join(item["label"] or "(untitled)" for item in score[side])
+                lines.append(f"\n{name} {side.replace('_', ' ')}: {labels}")
     lines.extend(["", report["mapping_warning"], ""])
     return "\n".join(lines)
+
+
+def word_diff(gold: dict[str, Any], candidate: dict[str, Any], report: dict[str, Any]) -> str:
+    """Every word-level difference of every scored pair, with four words of context."""
+    lines = []
+    for name in _COLLECTIONS:
+        gold_items = list(gold.get(name) or [])
+        candidate_items = list(candidate.get(name) or [])
+        for pair in report["collections"][name]["pairs"]:
+            gold_words = str(gold_items[pair["gold_index"]].get("body") or "").split()
+            candidate_words = str(candidate_items[pair["candidate_index"]].get("body") or "").split()
+            matcher = difflib.SequenceMatcher(None, gold_words, candidate_words, autojunk=False)
+            changes = [op for op in matcher.get_opcodes() if op[0] != "equal"]
+            if not changes:
+                continue
+            lines.append(f"\n## {name} [{pair['gold_index']}<->{pair['candidate_index']}] {pair['gold_label']}")
+            for op, g0, g1, c0, c1 in changes:
+                context = " ".join(gold_words[max(0, g0 - 4) : g0])
+                lines.append(
+                    f"- {op}: ...{context} [GOLD: {' '.join(gold_words[g0:g1])}] "
+                    f"-> [PIPE: {' '.join(candidate_words[c0:c1])}]"
+                )
+    return "\n".join(lines).lstrip() + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -300,8 +474,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--gold-edition", required=True)
     parser.add_argument("--candidate-edition", required=True)
     parser.add_argument("--mapping-json")
+    parser.add_argument(
+        "--auto-map",
+        action="store_true",
+        help="pair items by text similarity instead of a reviewed mapping",
+    )
     parser.add_argument("--output-json")
     parser.add_argument("--output-md")
+    parser.add_argument("--output-diff", help="write every word difference of scored pairs")
     args = parser.parse_args(argv)
 
     gold = json.loads(Path(args.gold_edition).read_text(encoding="utf-8"))
@@ -311,7 +491,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.mapping_json
         else None
     )
-    report = score_editions(gold, candidate, mapping)
+    report = score_editions(gold, candidate, mapping, auto_map=args.auto_map)
     encoded = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
     if args.output_json:
         Path(args.output_json).write_text(encoded, encoding="utf-8")
@@ -319,6 +499,8 @@ def main(argv: list[str] | None = None) -> int:
         print(encoded, end="")
     if args.output_md:
         Path(args.output_md).write_text(_markdown(report), encoding="utf-8")
+    if args.output_diff:
+        Path(args.output_diff).write_text(word_diff(gold, candidate, report), encoding="utf-8")
     return 0
 
 

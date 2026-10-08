@@ -16,8 +16,11 @@ import numpy as np
 from PIL import Image
 
 from ..config.constants import (
+    AMERICAN_STORIES_CLASS_NAMES,
     AMERICAN_STORIES_CONF_THRESHOLD,
     AMERICAN_STORIES_INPUT_SIZE,
+    AMERICAN_STORIES_LAYOUT_CONF_THRESHOLD,
+    AMERICAN_STORIES_LAYOUT_NMS_IOU_THRESHOLD,
     AMERICAN_STORIES_NMS_IOU_THRESHOLD,
     AMERICAN_STORIES_VISUAL_CLASS_IDS,
     MAX_ASPECT_RATIO,
@@ -204,11 +207,9 @@ def _decode_predictions(
     return [(boxes[index], float(scores[index]), int(class_ids[index])) for index in kept]
 
 
-def detect_american_stories_regions(image: Image.Image) -> AmericanStoriesDetection:
-    """Detect newspaper ads, cartoons/illustrations, and photographs."""
-    rgb = np.asarray(image.convert("RGB"))
-    page_height, page_width = rgb.shape[:2]
-    model_image, ratio, (pad_x, pad_y) = _letterbox(rgb, AMERICAN_STORIES_INPUT_SIZE)
+def _predict(rgb: np.ndarray) -> tuple[np.ndarray, float, tuple[float, float]]:
+    """Raw model output for an RGB page, with the letterbox scale and padding."""
+    model_image, ratio, pad = _letterbox(rgb, AMERICAN_STORIES_INPUT_SIZE)
     tensor = np.expand_dims(model_image.transpose(2, 0, 1), axis=0).astype(np.float32) / 255.0
     tensor = np.ascontiguousarray(tensor)
 
@@ -216,6 +217,38 @@ def detect_american_stories_regions(image: Image.Image) -> AmericanStoriesDetect
     input_name = session.get_inputs()[0].name
     with _session_lock:
         output = session.run(None, {input_name: tensor})[0]
+    return output, ratio, pad
+
+
+def detect_layout_boxes(
+    image: Image.Image,
+) -> list[tuple[str, tuple[float, float, float, float]]]:
+    """Every layout box on the page as (class name, normalized left, top, right, bottom)."""
+    rgb = np.asarray(image.convert("RGB"))
+    page_height, page_width = rgb.shape[:2]
+    output, ratio, (pad_x, pad_y) = _predict(rgb)
+    boxes = []
+    for box, _confidence, class_id in _decode_predictions(
+        output,
+        AMERICAN_STORIES_LAYOUT_CONF_THRESHOLD,
+        AMERICAN_STORIES_LAYOUT_NMS_IOU_THRESHOLD,
+    ):
+        left = min(max((box[0] - pad_x) / ratio / page_width, 0.0), 1.0)
+        top = min(max((box[1] - pad_y) / ratio / page_height, 0.0), 1.0)
+        right = min(max((box[2] - pad_x) / ratio / page_width, 0.0), 1.0)
+        bottom = min(max((box[3] - pad_y) / ratio / page_height, 0.0), 1.0)
+        if right > left and bottom > top:
+            boxes.append(
+                (AMERICAN_STORIES_CLASS_NAMES[class_id], (left, top, right, bottom))
+            )
+    return boxes
+
+
+def detect_american_stories_regions(image: Image.Image) -> AmericanStoriesDetection:
+    """Detect newspaper ads, cartoons/illustrations, and photographs."""
+    rgb = np.asarray(image.convert("RGB"))
+    page_height, page_width = rgb.shape[:2]
+    output, ratio, (pad_x, pad_y) = _predict(rgb)
     detections = _decode_predictions(
         output,
         AMERICAN_STORIES_CONF_THRESHOLD,
@@ -283,4 +316,5 @@ __all__ = [
     "_get_american_stories_session",
     "_letterbox",
     "detect_american_stories_regions",
+    "detect_layout_boxes",
 ]
