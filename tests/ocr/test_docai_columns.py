@@ -117,6 +117,29 @@ def test_columns_read_left_to_right_under_a_wide_headline():
     assert texts == ["Club rugby", "\n".join(LEFT), "\n".join(RIGHT)]
 
 
+def test_narrow_gutter_between_headlines_still_splits():
+    left, right = LEFT + LEFT[:4], RIGHT + RIGHT[:4]
+    above = [
+        Token("Ohio ", (100.0, 100.0, 300.0, 190.0), 0, 5),
+        Token("prospects\n", (340.0, 100.0, 700.0, 190.0), 5, 15),
+    ]
+    below = [
+        Token("Dining ", (100.0, 660.0, 330.0, 750.0), 900, 907),
+        Token("room\n", (370.0, 660.0, 600.0, 750.0), 907, 912),
+    ]
+    # A 38px gutter; both 7-line bands from mid-story reach a spanning headline.
+    body = _page([(100.0, left), (420.0, right)], top=200.0)
+
+    texts = [text for text, _ in column_blocks(above + body + below)]
+
+    assert texts == [
+        "Ohio prospects",
+        "\n".join(left),
+        "\n".join(right),
+        "Dining room",
+    ]
+
+
 def test_headline_beside_body_text_is_not_joined_to_it():
     headline = [Token("Theta\n", (100.0, 100.0, 300.0, 190.0), 0, 6)]
     body = _page([(330.0, LEFT)], top=118.0)
