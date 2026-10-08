@@ -35,7 +35,9 @@ _STRUCTURED_FIELDS = {
 
 
 def _normalized_words(text: str) -> list[str]:
-    normalized = unicodedata.normalize("NFKC", text or "").casefold()
+    # Rejoin line-break hyphens the way the site does (src/server/ocr-adapter/text-cleaning.ts).
+    text = re.sub(r"(\w)-\n+\s*([a-z])", r"\1\2", text or "")
+    normalized = unicodedata.normalize("NFKC", text).casefold()
     return [match.group(0) for match in _WORD_RE.finditer(normalized)]
 
 

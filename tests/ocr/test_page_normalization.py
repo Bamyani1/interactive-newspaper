@@ -45,6 +45,14 @@ def test_line_wrap_inside_a_sentence_becomes_a_space():
     )
 
 
+def test_blank_line_wraps_inside_a_sentence_are_rejoined():
+    body = "it could not fit in the\n\nexhibit. He was surprised it was ac-\n\ncepted."
+
+    assert _body_after(body) == (
+        "it could not fit in the exhibit. He was surprised it was ac-\ncepted."
+    )
+
+
 def test_hyphen_line_break_and_existing_blank_lines_are_kept():
     body = "the admis-\nsions office.\n\nA second paragraph."
 

@@ -59,6 +59,16 @@ def test_auto_map_pairs_changed_text_by_similarity_and_says_so():
     assert articles["word_fidelity"]["substitutions"] == 1
 
 
+def test_line_break_hyphens_are_rejoined_as_the_site_shows_them():
+    report = score_editions(
+        _edition("The work was accepted."),
+        _edition("The work was ac-\ncepted."),
+        {"articles": [[0, 0]], "ads": [], "other_content": []},
+    )
+
+    assert report["collections"]["articles"]["word_fidelity"]["wer"] == 0
+
+
 def test_paragraph_breaks_are_scored_against_gold():
     gold = _edition("First part here.\n\nSecond part here.\n\nThird part here.")
     candidate = _edition("First part here.\n\nSecond part here. Third part here.")
