@@ -98,6 +98,7 @@ export function useSearch(options: UseSearchOptions = {}): UseSearchResult {
   // Debounced search on query/filter changes
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new query restarts paging
     setOffset(0);
 
     timerRef.current = setTimeout(() => {
