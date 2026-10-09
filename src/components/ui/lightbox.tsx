@@ -92,6 +92,7 @@ export function Lightbox(props: LightboxProps) {
   });
 
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- portal waits for the client mount
     setMounted(true);
   }, []);
 
@@ -108,6 +109,7 @@ export function Lightbox(props: LightboxProps) {
   const imagesKey = isGallery ? props.images : props.src;
   React.useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-anchor on open, as described above
     setIndex(initialIndex);
   }, [open, imagesKey, initialIndex]);
 

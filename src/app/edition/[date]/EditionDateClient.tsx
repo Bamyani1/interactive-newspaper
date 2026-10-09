@@ -148,7 +148,6 @@ export function EditionDateClient({
   const prevDateRef = useRef<string | null>(null);
   useEffect(() => {
     if (prevDateRef.current && currentDate) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- derives direction from previous vs current date
       setDirection(currentDate > prevDateRef.current ? 1 : -1);
     }
     prevDateRef.current = currentDate;

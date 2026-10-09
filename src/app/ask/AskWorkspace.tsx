@@ -76,7 +76,7 @@ export default function AskWorkspace({ suggestionDate = "2000-01-01", corpus }: 
             id: activeThreadId,
             firstQuestion: turns[0].question,
             turnCount: turns.length,
-            lastUpdatedAt: lastTurn?.createdAt ?? Date.now(),
+            lastUpdatedAt: lastTurn.createdAt,
           },
           ...threads,
         ]
