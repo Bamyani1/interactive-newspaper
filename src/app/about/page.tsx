@@ -42,10 +42,10 @@ export default function AboutPage() {
           <p className="text-base text-[var(--color-text-secondary)] leading-relaxed mb-4">
             A Python OCR pipeline converts each raw scan into structured articles, advertisements,
             and cropped images. A TypeScript retrieval system then indexes that content as
-            768-dimension multimodal embeddings in Postgres with pgvector, and answers questions
-            using hybrid search &mdash; combining vector similarity with full-text relevance &mdash;
-            an agent loop for more complex queries, and answers that are grounded in cited source
-            articles rather than invented.
+            1024-dimension Voyage AI embeddings of article text and photos in Postgres with
+            pgvector, and answers questions using hybrid search &mdash; combining vector similarity
+            with full-text relevance &mdash; an agent loop for more complex queries, and answers
+            that are grounded in cited source articles rather than invented.
           </p>
           <p className="text-base text-[var(--color-text-secondary)] leading-relaxed mb-4">
             Today the archive holds 351 fully ingested editions (1950&ndash;2006), 11,705 articles
@@ -57,8 +57,8 @@ export default function AboutPage() {
           <p className="text-base text-[var(--color-text-secondary)] leading-relaxed">
             The stack: Next.js 16 and React 19 on the front end; TypeScript throughout; a Python
             3.12 OCR pipeline; Neon Postgres with pgvector for storage and retrieval; Cloudflare R2
-            for image assets; Google Gemini for embeddings and generation; and Vercel for
-            deployment. Deeper write-ups of each subsystem live in the{" "}
+            for image assets; Anthropic&rsquo;s Claude for OCR and answers, Voyage AI for
+            embeddings; and Vercel for deployment. Deeper write-ups of each subsystem live in the{" "}
             <a
               href="https://github.com/Bamyani1/interactive-newspaper/tree/main/docs/architecture"
               target="_blank"

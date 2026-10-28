@@ -11,16 +11,16 @@ import {
   computeCostUsd,
   executeTrackedGenerationCall,
   recordUsage,
-  releaseEvaluationGoogleCall,
-  reserveEvaluationGoogleCall,
-  settleEvaluationGoogleCall,
+  releaseEvaluationModelCall,
+  reserveEvaluationModelCall,
+  settleEvaluationModelCall,
 } from "@/src/lib/cost-tracker";
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import type { RetrievedArticle } from "@/src/lib/db";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { AnswerOutcome, AskErrorKind, Citation } from "@/src/types";
 import { QuotaExhaustedError } from "@/src/lib/embeddings";
-import { isAbortError, isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
+import { isAbortError, isQuotaError, retryOnQuota } from "@/src/lib/model-errors";
 import { groundPipelineAnswer } from "@/src/lib/answer-grounding";
 import { AnswerFieldExtractor } from "@/src/lib/answer-stream-extractor";
 import {
@@ -35,9 +35,8 @@ const GENERATION_MODEL = RAG_MODEL_CONFIG.answer.model;
 // truncated the JSON envelope; the answer profiles think at medium or
 // xhigh, so leave the agent's room for both reasoning and the answer.
 const MAX_ANSWER_TOKENS = 16_384;
-// gemini-3.6-flash regularly needed 15-25s for survey-style answers at
-// the LOW thinking level this stage uses (see rag-model-config); the route's
-// global deadline bounds the request either way.
+// Survey-style answers can need 15-25s; the route's global deadline bounds
+// the request either way.
 const GENERATION_TIMEOUT_MS = 30_000;
 const MAX_SOURCE_CHARS = 5000;
 
@@ -629,7 +628,7 @@ export async function* generateAnswerStream(
   // of the same chunks for incremental delta emission.
   const extractor = new AnswerFieldExtractor();
   let fullText = "";
-  const budgetReservation = reserveEvaluationGoogleCall({
+  const budgetReservation = reserveEvaluationModelCall({
     model: GENERATION_MODEL,
     maxOutputTokens: MAX_ANSWER_TOKENS,
     requestId: opts.requestId,
@@ -676,7 +675,7 @@ export async function* generateAnswerStream(
     clearTimeout(timeout);
 
     if (budgetReservation) {
-      settleEvaluationGoogleCall(budgetReservation, computeCostUsd(GENERATION_MODEL, finalUsage));
+      settleEvaluationModelCall(budgetReservation, computeCostUsd(GENERATION_MODEL, finalUsage));
       budgetSettled = true;
     }
     void recordUsage(GENERATION_MODEL, finalUsage, {
@@ -725,7 +724,7 @@ export async function* generateAnswerStream(
     };
   } catch (err) {
     clearTimeout(timeout);
-    if (!budgetSettled) releaseEvaluationGoogleCall(budgetReservation);
+    if (!budgetSettled) releaseEvaluationModelCall(budgetReservation);
 
     // See generateAnswer: a spent quota leaves as a typed error so the route
     // can offer a wait instead of an apology.

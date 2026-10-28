@@ -171,11 +171,11 @@ function currentEvaluationReservedUsd(runId: string): number {
 }
 
 /**
- * Reserve the maximum billable amount before dispatching a Google call.
+ * Reserve the maximum billable amount before dispatching a model call.
  * This is a synchronous operation, so parallel tool calls cannot race past
  * the aggregate evaluation ceiling on Node's event loop.
  */
-export function reserveEvaluationGoogleCall(options: {
+export function reserveEvaluationModelCall(options: {
   model: string;
   op: string;
   requestId?: string;
@@ -212,12 +212,12 @@ export function reserveEvaluationGoogleCall(options: {
   return { id, runId, reservedUsd };
 }
 
-export function releaseEvaluationGoogleCall(reservation: EvaluationBudgetReservation | null): void {
+export function releaseEvaluationModelCall(reservation: EvaluationBudgetReservation | null): void {
   if (!reservation) return;
   evaluationReservations.delete(reservation.id);
 }
 
-export function settleEvaluationGoogleCall(
+export function settleEvaluationModelCall(
   reservation: EvaluationBudgetReservation | null,
   actualCostUsd: number
 ): void {
@@ -228,7 +228,7 @@ export function settleEvaluationGoogleCall(
   }
   if (actualCostUsd > active.reservedUsd + 1e-9) {
     throw new Error(
-      `Google call cost $${actualCostUsd.toFixed(6)} exceeded its conservative $${active.reservedUsd.toFixed(6)} reservation.`
+      `Model call cost $${actualCostUsd.toFixed(6)} exceeded its conservative $${active.reservedUsd.toFixed(6)} reservation.`
     );
   }
   evaluationReservations.delete(reservation.id);
@@ -330,11 +330,11 @@ export async function executeTrackedGenerationCall<T extends { usage?: Generatio
   op: string;
   call: () => Promise<T>;
 }): Promise<T> {
-  const reservation = reserveEvaluationGoogleCall(options);
+  const reservation = reserveEvaluationModelCall(options);
   try {
     const response = await options.call();
     if (reservation) {
-      settleEvaluationGoogleCall(reservation, computeCostUsd(options.model, response.usage));
+      settleEvaluationModelCall(reservation, computeCostUsd(options.model, response.usage));
     }
     void recordUsage(options.model, response.usage, {
       requestId: options.requestId,
@@ -343,7 +343,7 @@ export async function executeTrackedGenerationCall<T extends { usage?: Generatio
     });
     return response;
   } catch (error) {
-    releaseEvaluationGoogleCall(reservation);
+    releaseEvaluationModelCall(reservation);
     throw error;
   }
 }
@@ -355,7 +355,7 @@ export async function executeTrackedEmbeddingCall<T extends { usage?: VoyageUsag
   op: string;
   call: () => Promise<T>;
 }): Promise<T> {
-  const reservation = reserveEvaluationGoogleCall({
+  const reservation = reserveEvaluationModelCall({
     model: options.model,
     requestId: options.requestId,
     op: options.op,
@@ -364,7 +364,7 @@ export async function executeTrackedEmbeddingCall<T extends { usage?: VoyageUsag
   try {
     const response = await options.call();
     if (reservation) {
-      settleEvaluationGoogleCall(
+      settleEvaluationModelCall(
         reservation,
         computeEmbeddingCostUsd(options.model, response.usage)
       );
@@ -376,7 +376,7 @@ export async function executeTrackedEmbeddingCall<T extends { usage?: VoyageUsag
     });
     return response;
   } catch (error) {
-    releaseEvaluationGoogleCall(reservation);
+    releaseEvaluationModelCall(reservation);
     throw error;
   }
 }
