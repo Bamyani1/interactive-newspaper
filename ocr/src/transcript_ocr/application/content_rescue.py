@@ -10,11 +10,11 @@ from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
-from ..config.model_calls import build_generation_config, model_name
+from ..config.model_calls import GenerationConfig, model_name
 from ..contracts.content_models import ContentReviewResponse
 from ..recognition.rescue_prompts import TRIAGE_SYSTEM_PROMPT, TRIAGE_USER_TEMPLATE
 from ..shared.console import error, file_written, info, status, substep, warning
-from ..shared.retry import gemini_generate_with_retry
+from ..shared.retry import generate_with_retry
 from ..shared.text import normalize_whitespace
 
 
@@ -388,8 +388,7 @@ def triage_edition(
         other_json="[]",
         headlines_json=json.dumps(headlines, indent=2),
     )
-    generation_config = build_generation_config(
-        "content_triage",
+    generation_config = GenerationConfig(
         system_instruction=TRIAGE_SYSTEM_PROMPT,
         response_mime_type="application/json",
         response_schema=ContentReviewResponse,
@@ -402,7 +401,7 @@ def triage_edition(
 
     call_start = time.time()
     try:
-        response = gemini_generate_with_retry(
+        response = generate_with_retry(
             client,
             model=model_name("content_triage"),
             contents=[user_message],

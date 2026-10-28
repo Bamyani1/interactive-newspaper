@@ -9,10 +9,9 @@ import unicodedata
 from collections import Counter
 from typing import Literal
 
-from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..config.model_calls import CLAUDE_MODELS, build_generation_config, model_name, uses_claude
+from ..config.model_calls import GenerationConfig, model_name
 from ..contracts.content_models import (
     EditionContent,
     MergedArticle,
@@ -21,11 +20,10 @@ from ..contracts.content_models import (
 from ..contracts.diagnostics_models import MergePassDiagnostics, PipelineReport, StageTimer, TokenUsage
 from ..postprocessing.deduplication import _deduplicate_ads, _deduplicate_other_content
 from ..shared.console import info, substep, warning
-from ..shared.retry import gemini_generate_with_retry
+from ..shared.retry import generate_with_retry
 from ..shared.text import split_sentences
 
 
-_LOCKED_MERGE_MODEL = "gemini-3.8-flash"
 _ANCHOR_SIMILARITY_MIN = 0.90
 _RAW_CONTEXT_CHARS = 600
 _SENTENCE_CONTEXT_CHARS = 800
@@ -148,7 +146,7 @@ def _response_as(response, model_type):
     raw = getattr(response, "text", None)
     if isinstance(raw, str) and raw.strip():
         return model_type.model_validate_json(raw)
-    raise ValueError("Gemini returned no parseable structured response")
+    raise ValueError("Claude returned no parseable structured response")
 
 
 def _generate_locked_content(
@@ -159,21 +157,14 @@ def _generate_locked_content(
     response_validator=None,
     schema_retry_instruction=None,
 ):
-    """Make one logical request with the locked model and thinking level.
+    """Make one logical request with the stage's model and effort.
 
     The shared retry wrapper preserves the requested model and complete config
     on every transport/schema attempt. Those attempts remain one logical stage
     call; exhausted failures are handled losslessly by the caller.
     """
     stage = "merge" if response_schema is EditionGroupingResponse else "seam_repair"
-    configured_model = model_name(stage)
-    locked_model = CLAUDE_MODELS[stage]["name"] if uses_claude() else _LOCKED_MERGE_MODEL
-    if configured_model != locked_model:
-        raise RuntimeError(
-            f"Locked {stage} model must be {locked_model}, got {configured_model}"
-        )
-    config = build_generation_config(
-        stage,
+    config = GenerationConfig(
         system_instruction=(
             _GROUPING_SYSTEM_PROMPT
             if response_schema is EditionGroupingResponse
@@ -183,15 +174,9 @@ def _generate_locked_content(
         response_schema=response_schema,
         max_output_tokens=65536,
     )
-    if config.thinking_config is None or config.thinking_config.thinking_level not in (
-        types.ThinkingLevel.MEDIUM,
-        "medium",
-        "MEDIUM",
-    ):
-        raise RuntimeError(f"Locked {stage} thinking level must be MEDIUM")
-    return gemini_generate_with_retry(
+    return generate_with_retry(
         client,
-        model=configured_model,
+        model=model_name(stage),
         contents=contents,
         config=config,
         stage=stage,
@@ -311,7 +296,7 @@ def _normalized_page_reference(value: object) -> str:
 
 
 def _has_structured_continuation_edge(left: dict, right: dict) -> bool:
-    """Require continuation roles while leaving route semantics to Gemini.
+    """Require continuation roles while leaving route semantics to the model.
 
     Historic newspapers sometimes print the wrong destination/source folio.
     Requiring those digits to equal manifest canvas labels would veto a model's

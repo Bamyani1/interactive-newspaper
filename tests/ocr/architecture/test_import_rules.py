@@ -119,20 +119,24 @@ def test_evaluation_does_not_import_runtime_layers():
         _assert_no_import_prefixes(path, forbidden_prefixes)
 
 
-def test_docai_provider_does_not_import_gemini_or_page_extractor():
-    """
-    docai_provider.py must stay cleanly separated from Gemini and page_extractor.
-    Document AI (deterministic OCR) and Gemini (semantic structuring) must not be coupled.
-    """
-    docai_path = PKG_ROOT / "recognition" / "docai_provider.py"
-    if not docai_path.exists():
-        return  # Skip if file not yet created
-    forbidden_prefixes = (
-        "transcript_ocr.recognition.page_extractor",
-        "google.genai",
-        "transcript_ocr.shared.retry",
+def test_no_ocr_module_imports_google():
+    """OCR runs on Claude only: no Gemini, Document AI or other Google package."""
+    paths = [*PKG_ROOT.rglob("*.py"), *OCR_ROOT.glob("*.py")]
+    for path in paths:
+        _assert_no_import_prefixes(path, ("google",))
+
+
+def test_the_ocr_cli_imports_with_google_packages_blocked():
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; sys.modules['google'] = None; "
+        f"sys.path.insert(0, {str(PKG_ROOT.parent)!r}); "
+        "import transcript_ocr.cli.convert_scans, transcript_ocr.application.edition_pipeline"
     )
-    _assert_no_import_prefixes(docai_path, forbidden_prefixes)
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
 
 
 def test_top_level_wrappers_import_cli_only():

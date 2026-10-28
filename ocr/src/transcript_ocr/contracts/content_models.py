@@ -188,7 +188,7 @@ class ImageRegionAssignment(ContractModel):
     ] | None = None
 
     # Compatibility properties for the current assignment applier.  They are
-    # deliberately absent from the model schema, so Gemini cannot generate a
+    # deliberately absent from the model schema, so the model cannot generate a
     # caption or collapse visual type and attachment back into one decision.
     @property
     def content_type(self) -> str:

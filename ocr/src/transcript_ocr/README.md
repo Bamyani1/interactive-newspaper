@@ -27,7 +27,7 @@ shared/         — Console, retry, atomic file writes, text and timing helpers
 ```
 scripts/ocr/process-edition.sh  (preflight, locks, validate, upload, atomic promotion, optional seed)
   → ocr/convert_scans.py  (thin wrapper, adds src/ to sys.path)
-    → cli/convert_scans.py::main()  (arg parse, manifest inventory, Gemini client)
+    → cli/convert_scans.py::main()  (arg parse, manifest inventory, Claude client)
       → application/edition_pipeline.py::process_edition()  (validated candidate under --output-root)
 ```
 

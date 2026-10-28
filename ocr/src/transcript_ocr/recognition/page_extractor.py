@@ -6,24 +6,20 @@ import os
 
 from PIL import Image
 
-from ..config.model_calls import (
-    build_generation_config,
-    image_part_ultra_high,
-    model_name,
-)
+from ..config.model_calls import GenerationConfig, image_part, model_name
 from ..contracts.content_models import PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer, TokenUsage
 from ..postprocessing.page_normalization import postprocess_page_content
 from ..postprocessing.deduplication import deduplicate_articles
 from ..postprocessing.null_sanitizer import _sanitize_null_strings
-from ..shared.retry import gemini_generate_with_retry, require_parsed
-from .prompts import DOCAI_SYSTEM_PROMPT, PAGE_LAYOUT_SUPPLEMENT
+from ..shared.retry import generate_with_retry, require_parsed
+from .prompts import PAGE_LAYOUT_SUPPLEMENT, PAGE_STRUCTURING_PROMPT
 from ..shared.console import substep
 
 
-def _format_docai_text(docai_result) -> str:
-    """Expose paragraph geometry to Gemini without changing archival output."""
-    paragraph_regions = list(getattr(docai_result, "paragraph_regions", []) or [])
+def _format_page_text(page_text) -> str:
+    """Expose paragraph geometry to the model without changing archival output."""
+    paragraph_regions = list(getattr(page_text, "paragraph_regions", []) or [])
     if paragraph_regions:
         blocks = [
             "NON-HISTORICAL OCR LAYOUT METADATA — NEVER COPY THESE LABELS OR "
@@ -40,13 +36,13 @@ def _format_docai_text(docai_result) -> str:
             header = f"OCR BLOCK {index:04d} BOUNDS [{bounds_label}]"
             indented = getattr(paragraph, "indented", None)
             if indented is not None:
-                # Claude reader only: paragraph breaks follow the printed indent.
+                # Paragraph breaks follow the printed indent.
                 header += " FIRST LINE INDENTED" if indented else " FIRST LINE FLUSH"
             blocks.append(f"{header}\n{paragraph.text}")
         return "\n\n".join(blocks)
-    if docai_result.paragraphs:
-        return "\n\n".join(docai_result.paragraphs)
-    return docai_result.raw_text
+    if page_text.paragraphs:
+        return "\n\n".join(page_text.paragraphs)
+    return page_text.raw_text
 
 
 def _extract_page_number_from_filename(filename: str) -> str:
@@ -57,59 +53,54 @@ def _extract_page_number_from_filename(filename: str) -> str:
     return match.group(1) if match else ""
 
 
-def process_page_with_docai(
+def structure_page(
     client,
     image_path: str,
-    docai_result,
+    page_text,
     preprocessed_image: Image.Image,
     regions: list[tuple[int, int, int, int]],
     diag: PageDiagnostics | None = None,
-    seed: int = 0,
 ) -> tuple[PageContent, Image.Image, list[tuple[int, int, int, int]]]:
     """
-    Send a preprocessed page image to Gemini for structuring, with OCR text pre-extracted
-    by Document AI. Gemini structures the provided text into articles/ads — it does not
-    re-read characters off the image.
+    Send a preprocessed page image to Claude for structuring, with the page text
+    already read. Claude structures the provided text into articles/ads — it does
+    not re-read characters off the image.
 
     Uses the preprocessed image and regions from Phase 1 — does NOT reprocess.
     """
     image = preprocessed_image
 
-    # Format DocAI text for the prompt
-    ocr_text = _format_docai_text(docai_result)
+    ocr_text = _format_page_text(page_text)
 
     known_continuations = (
         "No local continuation decision is supplied; inspect the complete "
         "transcript and page for printed continuation evidence."
     )
 
-    system_prompt = DOCAI_SYSTEM_PROMPT.format(
+    system_prompt = PAGE_STRUCTURING_PROMPT.format(
         ocr_text=ocr_text,
         known_continuations=known_continuations,
     )
     system_prompt = f"{system_prompt}\n\n{PAGE_LAYOUT_SUPPLEMENT}"
 
-    image_part = image_part_ultra_high(image)
-    generation_config = build_generation_config(
-        "page_structuring",
+    generation_config = GenerationConfig(
         system_instruction=system_prompt,
         response_mime_type="application/json",
         response_schema=PageContent,
         max_output_tokens=65536,
-        seed=seed,
     )
 
-    gemini_timer = StageTimer().start()
-    response = gemini_generate_with_retry(
+    structuring_timer = StageTimer().start()
+    response = generate_with_retry(
         client,
         model=model_name("page_structuring"),
-        contents=[image_part, "Structure this pre-extracted OCR text into articles, ads, and other content."],
+        contents=[image_part(image), "Structure this pre-extracted OCR text into articles, ads, and other content."],
         config=generation_config,
         stage="page_structuring",
         response_validator=lambda candidate: getattr(candidate, "parsed", None) is not None,
         max_schema_retries=1,
     )
-    gemini_elapsed = gemini_timer.stop()
+    structuring_elapsed = structuring_timer.stop()
 
     parsed: PageContent = require_parsed(response, stage="page_structuring")
     usage = response.usage_metadata
@@ -120,8 +111,8 @@ def process_page_with_docai(
 
     if diag is not None and usage:
         # Added, not replaced: a page that is structured twice pays for both calls.
-        diag.gemini_tokens = diag.gemini_tokens + TokenUsage.from_metadata(usage)
-        diag.timings["gemini"] = gemini_elapsed
+        diag.structuring_tokens = diag.structuring_tokens + TokenUsage.from_metadata(usage)
+        diag.timings["structuring"] = structuring_elapsed
 
     _sanitize_null_strings(parsed)
     page_content = deduplicate_articles(parsed, diag=diag)
@@ -136,6 +127,6 @@ def process_page_with_docai(
 
 __all__ = [
     "_extract_page_number_from_filename",
-    "_format_docai_text",
-    "process_page_with_docai",
+    "_format_page_text",
+    "structure_page",
 ]

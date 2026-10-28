@@ -1,4 +1,4 @@
-"""Bounded Gemini request, deadline, rate-limit, and retry helpers."""
+"""Bounded model request, deadline, rate-limit, and retry helpers."""
 
 from __future__ import annotations
 
@@ -14,11 +14,8 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Iterator
 
-from google import genai
-from google.genai import types
-
-from ..config.claude_client import ClaudeOCRClient
-from ..config.model_calls import stage_timeout_seconds
+from ..config.claude_client import ClaudeOCRClient, ClaudeResponse
+from ..config.model_calls import GenerationConfig, stage_timeout_seconds
 from .console import warning as _console_warning
 
 logger = logging.getLogger(__name__)
@@ -50,23 +47,23 @@ _RATE_LIMIT_BASE_DELAY_S = 5.0
 _MAX_DELAY_S = 60.0
 _MAX_SCHEMA_RETRIES = 1
 _BASE_DELAY_S = 2.0
-_CALL_SPACING_S = float(os.getenv("GEMINI_CALL_SPACING_S", "0.5"))
+_CALL_SPACING_S = float(os.getenv("OCR_CALL_SPACING_S", "0.5"))
 
 _rate_lock = threading.Lock()
 _last_call_started_at = 0.0
 FailureObserver = Callable[[dict[str, Any]], None]
 _failure_observer: ContextVar[FailureObserver | None] = ContextVar(
-    "gemini_failure_observer",
+    "model_failure_observer",
     default=None,
 )
 
 
-class GeminiResponseError(RuntimeError):
-    """Raised when Gemini completes but never returns the required contract."""
+class ModelResponseError(RuntimeError):
+    """Raised when the model completes but never returns the required contract."""
 
 
 @contextmanager
-def observe_gemini_failures(observer: FailureObserver) -> Iterator[None]:
+def observe_model_failures(observer: FailureObserver) -> Iterator[None]:
     """Attach metadata-only retry diagnostics to the current execution context."""
     token = _failure_observer.set(observer)
     try:
@@ -100,7 +97,7 @@ def _emit_failure(event: dict[str, Any]) -> None:
     try:
         observer(event)
     except Exception as exc:
-        logger.warning("Gemini failure observer failed: %s", exc)
+        logger.warning("Model failure observer failed: %s", exc)
 
 
 def _wait_for_global_call_slot() -> None:
@@ -116,67 +113,47 @@ def _wait_for_global_call_slot() -> None:
         _last_call_started_at = time.monotonic()
 
 
-def _config_with_deadline(
-    config: types.GenerateContentConfig,
-    timeout_seconds: int,
-) -> types.GenerateContentConfig:
-    """Apply an SDK/HTTP deadline; do not use a thread that keeps running."""
-    return config.model_copy(
-        update={
-            "http_options": types.HttpOptions(timeout=timeout_seconds * 1000),
-        }
-    )
-
-
 def _generate_content(
-    client: genai.Client,
+    client: ClaudeOCRClient,
     *,
     model: str,
     contents: list,
-    config: types.GenerateContentConfig,
+    config: GenerationConfig,
     stage: str,
     timeout_seconds: int,
-) -> genai.types.GenerateContentResponse:
+) -> ClaudeResponse:
     _wait_for_global_call_slot()
-    if isinstance(client, ClaudeOCRClient):
-        return client.generate_content(
-            model=model,
-            contents=contents,
-            config=config,
-            stage=stage,
-            timeout_seconds=timeout_seconds,
-        )
-    return client.models.generate_content(
+    return client.generate_content(
         model=model,
         contents=contents,
-        config=_config_with_deadline(config, timeout_seconds),
+        config=config,
+        stage=stage,
+        timeout_seconds=timeout_seconds,
     )
 
 
-def gemini_generate_with_retry(
-    client: genai.Client,
+def generate_with_retry(
+    client: ClaudeOCRClient,
     *,
     model: str,
     contents: list,
-    config: types.GenerateContentConfig,
+    config: GenerationConfig,
     stage: str = "page_structuring",
-    response_validator: Callable[[genai.types.GenerateContentResponse], bool] | None = None,
-    schema_retry_instruction: (
-        Callable[[genai.types.GenerateContentResponse], str] | None
-    ) = None,
+    response_validator: Callable[[ClaudeResponse], bool] | None = None,
+    schema_retry_instruction: Callable[[ClaudeResponse], str] | None = None,
     max_schema_retries: int = _MAX_SCHEMA_RETRIES,
-) -> genai.types.GenerateContentResponse:
+) -> ClaudeResponse:
     """Generate with one shared three-attempt budget.
 
     Transient transport failures and contract-correction retries consume the
-    same budget; rate limits (429/503) may use up to eight attempts with
+    same budget; rate limits (429/503/529) may use up to eight attempts with
     5-60 s waits.  At most one completed but invalid response is retried.  The
     requested model and complete generation config are preserved on every
     attempt; there is no fallback model.
     """
     timeout_seconds = stage_timeout_seconds(stage)
     schema_retries = 0
-    last_response: genai.types.GenerateContentResponse | None = None
+    last_response: ClaudeResponse | None = None
     attempt_contents = contents
 
     for attempt in range(1, _RATE_LIMIT_MAX_ATTEMPTS + 1):
@@ -211,7 +188,7 @@ def gemini_generate_with_retry(
                 raise
             delay = _retry_delay_seconds(exc, attempt)
             _console_warning(
-                f"Gemini {stage} transient error ({exc}); retrying the same "
+                f"Claude {stage} transient error ({exc}); retrying the same "
                 f"model/config in {delay:.1f}s (attempt {attempt + 1}/{limit})"
             )
             time.sleep(delay)
@@ -252,14 +229,14 @@ def gemini_generate_with_retry(
                     ),
                 ]
         _console_warning(
-            f"Gemini {stage} returned an invalid structured response "
+            f"Claude {stage} returned an invalid structured response "
             f"({failure_reason}); retrying the same "
             f"model/config (attempt {attempt + 1}/{_MAX_ATTEMPTS})"
         )
 
     if last_response is not None:
         return last_response
-    raise RuntimeError(f"Gemini {stage} exhausted its request attempts")
+    raise RuntimeError(f"Claude {stage} exhausted its request attempts")
 
 
 def _status_code(exc: Exception) -> int | None:
@@ -304,7 +281,7 @@ def _is_retryable(exc: Exception) -> bool:
 
 
 def _is_rate_limited(exc: Exception) -> bool:
-    """429 or 503: Google is short of capacity, the request itself is fine."""
+    """429, 503 or 529: the provider is short of capacity, the request itself is fine."""
     code = _status_code(exc)
     if code is not None:
         return code in _RATE_LIMIT_STATUS_CODES
@@ -363,20 +340,20 @@ def _response_failure_reason(response: object) -> str:
     return f"finish_reason={','.join(reasons)}" if reasons else "parsed output missing"
 
 
-def require_parsed(response: genai.types.GenerateContentResponse, *, stage: str):
+def require_parsed(response: ClaudeResponse, *, stage: str):
     """Return parsed content or raise a sanitized stage failure."""
     parsed = getattr(response, "parsed", None)
     if parsed is None:
-        raise GeminiResponseError(
-            f"Gemini {stage} response invalid after retries: "
+        raise ModelResponseError(
+            f"Claude {stage} response invalid after retries: "
             f"{_response_failure_reason(response)}"
         )
     return parsed
 
 
 __all__ = [
-    "GeminiResponseError",
-    "gemini_generate_with_retry",
-    "observe_gemini_failures",
+    "ModelResponseError",
+    "generate_with_retry",
+    "observe_model_failures",
     "require_parsed",
 ]

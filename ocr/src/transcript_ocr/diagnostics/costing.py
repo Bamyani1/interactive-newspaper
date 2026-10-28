@@ -1,4 +1,4 @@
-"""Locked global-standard Gemini OCR cost accounting."""
+"""Locked OCR model cost accounting."""
 
 from __future__ import annotations
 
@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from ..contracts.diagnostics_models import TokenUsage
 
 MODEL_RATES_PER_MILLION = {
-    "gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50},
-    "gemini-3.8-flash": {"input": 1.50, "output": 7.50},
     # Haiku's base tier; prompts over 100K tokens cost $0.50/$2.50, and OCR
     # prompts stay well under that.
     "claude-haiku-5-5": {"input": 0.10, "output": 0.50},
@@ -23,7 +21,7 @@ class CostEstimate:
     usd: float
 
 
-def estimate_gemini_cost(model: str, usage: TokenUsage) -> CostEstimate:
+def estimate_cost(model: str, usage: TokenUsage) -> CostEstimate:
     try:
         rates = MODEL_RATES_PER_MILLION[model]
     except KeyError as exc:
@@ -37,4 +35,4 @@ def estimate_gemini_cost(model: str, usage: TokenUsage) -> CostEstimate:
     return CostEstimate(input_tokens=input_tokens, output_tokens=output_tokens, usd=usd)
 
 
-__all__ = ["CostEstimate", "MODEL_RATES_PER_MILLION", "estimate_gemini_cost"]
+__all__ = ["CostEstimate", "MODEL_RATES_PER_MILLION", "estimate_cost"]

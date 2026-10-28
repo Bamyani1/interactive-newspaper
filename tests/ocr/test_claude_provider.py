@@ -23,16 +23,14 @@ OCR_SRC = ROOT / "ocr" / "src"
 if str(OCR_SRC) not in sys.path:
     sys.path.insert(0, str(OCR_SRC))
 
-import transcript_ocr.recognition.docai_provider as docai_provider  # noqa: E402
-from transcript_ocr.config import google_clients  # noqa: E402
 from transcript_ocr.config.claude_client import (  # noqa: E402
     ClaudeOCRClient,
     fit_image_size,
     to_claude_content,
 )
 from transcript_ocr.config.model_calls import (  # noqa: E402
-    build_generation_config,
-    image_part_ultra_high,
+    GenerationConfig,
+    image_part,
     model_name,
 )
 from transcript_ocr.application.edition_pipeline import (  # noqa: E402
@@ -44,7 +42,8 @@ from transcript_ocr.contracts.diagnostics_models import (  # noqa: E402
     PipelineReport,
     TokenUsage,
 )
-from transcript_ocr.diagnostics.costing import estimate_gemini_cost  # noqa: E402
+from transcript_ocr.contracts.page_text import PageParagraph, PageText  # noqa: E402
+from transcript_ocr.diagnostics.costing import estimate_cost  # noqa: E402
 from transcript_ocr.export.provenance import write_provenance  # noqa: E402
 from transcript_ocr.merging import llm_merge  # noqa: E402
 from transcript_ocr.recognition.claude_reader import (  # noqa: E402
@@ -55,7 +54,7 @@ from transcript_ocr.recognition.claude_reader import (  # noqa: E402
     read_page_text,
     render_strip,
 )
-from transcript_ocr.recognition.page_extractor import _format_docai_text  # noqa: E402
+from transcript_ocr.recognition.page_extractor import _format_page_text  # noqa: E402
 from transcript_ocr.shared import retry  # noqa: E402
 
 
@@ -106,9 +105,8 @@ def _message(text: str, stop_reason: str = "end_turn"):
     )
 
 
-def _config(stage: str = "page_structuring"):
-    return build_generation_config(
-        stage,
+def _config():
+    return GenerationConfig(
         system_instruction="sys",
         response_mime_type="application/json",
         response_schema=_Answer,
@@ -129,11 +127,11 @@ def test_page_images_fit_claude_vision_limits():
 
 def test_contents_translate_in_order_and_cap_many_images():
     page = Image.new("L", (3400, 4020), 255)
-    blocks = to_claude_content(["Annotated page:", image_part_ultra_high(page), "", "Prompt"])
+    blocks = to_claude_content(["Annotated page:", image_part(page), "", "Prompt"])
     assert [block["type"] for block in blocks] == ["text", "image", "text"]
     assert _decoded_size(blocks[1]) == fit_image_size(3400, 4020, max_long_edge=2576)
 
-    crop = image_part_ultra_high(Image.new("L", (2400, 600), 255))
+    crop = image_part(Image.new("L", (2400, 600), 255))
     assert all(max(_decoded_size(block)) <= 2000 for block in to_claude_content([crop] * 21))
 
 
@@ -142,7 +140,7 @@ def test_request_maps_system_schema_effort_and_usage():
     response = ClaudeOCRClient(fake).generate_content(
         model="claude-sonnet-5-5",
         contents=["x"],
-        config=_config("merge"),
+        config=_config(),
         stage="merge",
         timeout_seconds=5,
     )
@@ -249,11 +247,10 @@ def test_a_base_exception_in_the_reader_reaches_the_caller():
 
 
 def test_retry_routes_claude_client_with_claude_model_and_timeout(monkeypatch):
-    monkeypatch.setenv("OCR_LLM_PROVIDER", "claude")
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
     fake = _FakeAnthropic([_message("not json"), _message('{"value": "ok"}')])
 
-    response = retry.gemini_generate_with_retry(
+    response = retry.generate_with_retry(
         ClaudeOCRClient(fake),
         model=model_name("page_structuring"),
         contents=["Structure this."],
@@ -279,13 +276,12 @@ def test_claude_overload_and_connection_errors_are_retried():
     assert retry._is_retryable(anthropic.APIConnectionError(request=request))
 
 
-def test_claude_provider_routes_models_costs_and_merge_lock(monkeypatch):
-    monkeypatch.setenv("OCR_LLM_PROVIDER", "claude")
+def test_models_costs_and_merge_route_to_claude(monkeypatch):
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
     assert model_name("page_structuring") == "claude-haiku-5-5"
     assert model_name("merge") == model_name("seam_repair") == "claude-sonnet-5-5"
     usage = TokenUsage(prompt_tokens=1_000_000, candidates_tokens=100_000)
-    assert estimate_gemini_cost("claude-sonnet-5-5", usage).usd == pytest.approx(3.0)
+    assert estimate_cost("claude-sonnet-5-5", usage).usd == pytest.approx(3.0)
 
     fake = _FakeAnthropic([_message("{}")])
     llm_merge._generate_locked_content(
@@ -295,20 +291,6 @@ def test_claude_provider_routes_models_costs_and_merge_lock(monkeypatch):
         response_validator=lambda _candidate: True,
     )
     assert fake.requests[0]["model"] == "claude-sonnet-5-5"
-
-    monkeypatch.delenv("OCR_LLM_PROVIDER")
-    assert model_name("merge") == "claude-sonnet-5-5"
-    monkeypatch.setenv("OCR_LLM_PROVIDER", "gemini")
-    assert model_name("merge") == "gemini-3.8-flash"
-
-
-def test_forbid_google_blocks_both_google_clients(monkeypatch):
-    monkeypatch.setenv("OCR_FORBID_GOOGLE", "1")
-    with pytest.raises(RuntimeError, match="forbidden"):
-        google_clients.create_genai_client()
-    monkeypatch.setattr(docai_provider, "_docai_client", None)
-    with pytest.raises(RuntimeError, match="forbidden"):
-        docai_provider._get_docai_client()
 
 
 def test_strips_cover_the_page_once_at_the_width_limit():
@@ -336,7 +318,7 @@ def test_reading_uses_straight_quotes_like_the_archive():
 
 
 def test_seam_line_read_by_both_strips_is_kept_once():
-    paragraph = docai_provider.DocAIParagraph
+    paragraph = PageParagraph
     upper = [paragraph("had to\nreceive compliance from\nthe Delaware city council", (0.09, 0.6, 0.25, 0.668))]
     lower = [
         paragraph(
@@ -355,7 +337,6 @@ def test_seam_line_read_by_both_strips_is_kept_once():
 
 
 def test_reading_splits_blocks_at_marked_paragraph_starts(monkeypatch):
-    monkeypatch.setenv("OCR_LLM_PROVIDER", "claude")
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
     lines = ["devoted directly", "to her needs.", '¶"The fact that we know', "her helps.", "¶ Senior Melissa"]
     block = {"lines": lines, "left": 0, "top": 0, "right": 100, "bottom": 500}
@@ -377,7 +358,7 @@ def test_reading_splits_blocks_at_marked_paragraph_starts(monkeypatch):
 
 
 def test_flush_mark_is_kept_only_where_a_column_or_strip_begins():
-    paragraph = docai_provider.DocAIParagraph
+    paragraph = PageParagraph
     blocks = [
         paragraph("fraternities in a letter\nto Warren.", (0.1, 0.40, 0.25, 0.50), indented=True),
         # Directly under a block of its column: the reader's block break wins.
@@ -394,9 +375,9 @@ def test_flush_mark_is_kept_only_where_a_column_or_strip_begins():
 
 
 def test_structuring_sees_whether_each_block_starts_indented():
-    paragraph = docai_provider.DocAIParagraph
+    paragraph = PageParagraph
     bounds = (0.0, 0.0, 1.0, 1.0)
-    result = docai_provider.DocAIResult(
+    result = PageText(
         raw_text="",
         paragraph_regions=[
             paragraph("New", bounds, indented=True),
@@ -405,7 +386,7 @@ def test_structuring_sees_whether_each_block_starts_indented():
         ],
     )
 
-    formatted = _format_docai_text(result)
+    formatted = _format_page_text(result)
 
     assert "1.00000] FIRST LINE INDENTED\nNew" in formatted
     assert "1.00000] FIRST LINE FLUSH\ncarried on" in formatted
@@ -413,7 +394,6 @@ def test_structuring_sees_whether_each_block_starts_indented():
 
 
 def test_reading_maps_blocks_to_page_positions(monkeypatch, tmp_path):
-    monkeypatch.setenv("OCR_LLM_PROVIDER", "claude")
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
     block = '{"blocks": [{"lines": ["OWU ON", "ICE"], "left": 0, "top": 0, "right": 1288, "bottom": 50}, '
     block += '{"lines": [" "], "left": 0, "top": 0, "right": 1, "bottom": 1}]}'
@@ -441,9 +421,8 @@ def test_reading_maps_blocks_to_page_positions(monkeypatch, tmp_path):
 
 
 def test_edition_cost_counts_page_reading_and_every_structuring_call(monkeypatch):
-    monkeypatch.setenv("OCR_LLM_PROVIDER", "claude")
     call = TokenUsage(prompt_tokens=1_000_000, candidates_tokens=100_000)
-    page = PageDiagnostics(gemini_tokens=call + call, reading_tokens=call)
+    page = PageDiagnostics(structuring_tokens=call + call, reading_tokens=call)
     report = PipelineReport(page_diagnostics=[page])
     report.finalize()
 
@@ -453,7 +432,6 @@ def test_edition_cost_counts_page_reading_and_every_structuring_call(monkeypatch
 
 
 def test_provenance_names_anthropic_and_no_google_project(monkeypatch, tmp_path):
-    monkeypatch.setenv("OCR_LLM_PROVIDER", "claude")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "some-project")
     target = tmp_path / "provenance.json"
     write_provenance(

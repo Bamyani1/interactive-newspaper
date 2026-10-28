@@ -1,7 +1,5 @@
 """Centralized OCR constants."""
 
-import os
-
 YOLO_CONF_THRESHOLD = 0.3
 YOLO_NMS_IOU_THRESHOLD = 0.3
 YOLO_TABLE_CLASSES = {"table"}
@@ -39,6 +37,3 @@ MIN_AD_IMAGE_AREA_PIXELS = 40000
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tif", ".tiff")
 TIF_EXTENSIONS = (".tif", ".tiff")
-
-DOCAI_CONFIDENCE_THRESHOLD = float(os.getenv("DOCAI_CONFIDENCE_THRESHOLD", "0.8"))
-DOCAI_MAX_BYTES = 18 * 1024 * 1024  # 18MB — buffer under Document AI's 20MB hard limit
