@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { Playfair_Display, Source_Serif_4, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { ArchiveProvider } from "@/features/archive";
@@ -11,28 +11,44 @@ import { getEditionsList } from "@/src/lib/editions-server";
 
 const isVercelDeployment = process.env.VERCEL === "1";
 
-const playfairDisplay = Playfair_Display({
+// Self-hosted variable fonts (latin subset, from Fontsource; OFL licences
+// beside them), so builds fetch nothing from Google Fonts.
+const playfairDisplay = localFont({
   variable: "--font-playfair-display",
-  subsets: ["latin"],
   display: "swap",
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
+  src: [
+    {
+      path: "./fonts/playfair-display-latin-wght-normal.woff2",
+      weight: "400 900",
+      style: "normal",
+    },
+    {
+      path: "./fonts/playfair-display-latin-wght-italic.woff2",
+      weight: "400 900",
+      style: "italic",
+    },
+  ],
+  adjustFontFallback: "Times New Roman",
 });
 
-const sourceSerif = Source_Serif_4({
+const sourceSerif = localFont({
   variable: "--font-source-serif",
-  subsets: ["latin"],
   display: "swap",
-  adjustFontFallback: true,
-  weight: ["300", "400", "500", "600"],
-  style: ["normal", "italic"],
+  src: [
+    { path: "./fonts/source-serif-4-latin-wght-normal.woff2", weight: "200 900", style: "normal" },
+    { path: "./fonts/source-serif-4-latin-wght-italic.woff2", weight: "200 900", style: "italic" },
+  ],
+  adjustFontFallback: "Times New Roman",
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const jetbrainsMono = localFont({
   variable: "--font-jetbrains",
-  subsets: ["latin"],
   display: "swap",
-  weight: ["400", "500", "600"],
+  src: [
+    { path: "./fonts/jetbrains-mono-latin-wght-normal.woff2", weight: "100 800", style: "normal" },
+  ],
+  fallback: ["monospace"],
+  adjustFontFallback: false,
 });
 
 export const metadata: Metadata = {

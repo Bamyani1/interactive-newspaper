@@ -108,10 +108,12 @@ describe("canonical design tokens", () => {
     expect(theme).not.toContain("--font-ui");
     expect(layout).not.toMatch(/\bInter\b/);
 
-    const monoConfig = layout.match(
-      /const jetbrainsMono = JetBrains_Mono\(\{([\s\S]*?)\n\}\);/
-    )?.[1];
-    expect(monoConfig).toContain('weight: ["400", "500", "600"]');
+    // Self-hosted variable fonts: no build-time fetch from Google Fonts.
+    expect(layout).not.toContain("next/font/google");
+    const monoConfig = layout.match(/const jetbrainsMono = localFont\(\{([\s\S]*?)\n\}\);/)?.[1];
+    const [min, max] = (monoConfig?.match(/weight: "(\d+) (\d+)"/) ?? []).slice(1).map(Number);
+    expect(min).toBeLessThanOrEqual(400);
+    expect(max).toBeGreaterThanOrEqual(600);
   });
 
   it("keeps one primitive geometry contract and a wrapping mobile gallery", () => {
