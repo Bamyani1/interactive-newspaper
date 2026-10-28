@@ -69,7 +69,10 @@ describe("pruneUnpinned", () => {
        VALUES (1, 'build-3-current', 'corpus-a', 'build-2-previous', 'corpus-a')`
     );
     const pinned = Object.fromEntries(
-      (await listBuilds(db.executor)).map((row) => [row.id, row.pinned])
+      (await listBuilds(db.executor)).map((row: { id: string; pinned: string | null }) => [
+        row.id,
+        row.pinned,
+      ])
     );
     expect(pinned).toMatchObject({
       "build-1-old": null,
