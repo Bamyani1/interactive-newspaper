@@ -12,16 +12,16 @@
  *       [--out digests.jsonl] [--dry-run]
  *   node scripts/db/generate-year-digests.mjs --import-file digests.jsonl --db-url <url>
  *
- * Generation needs GOOGLE_CLOUD_PROJECT and ADC (Vertex AI). --import-file
+ * Generation needs ANTHROPIC_API_KEY. --import-file
  * applies a previously generated JSONL without any model
  * calls (used for the production import).
  */
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
 import pg from "pg";
-import { GoogleGenAI } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 
-const DIGEST_MODEL = "gemini-3.8-flash";
+const DIGEST_MODEL = "claude-sonnet-5-5";
 
 function parseArgs(argv) {
   const args = {
@@ -47,18 +47,9 @@ function parseArgs(argv) {
   return args;
 }
 
-// Vertex only, like src/lib/gemini-client.ts: an API key bills a different account.
 function getClient() {
-  const project = process.env.GOOGLE_CLOUD_PROJECT;
-  if (!project) {
-    throw new Error("GOOGLE_CLOUD_PROJECT is not set. Gemini runs only on Vertex AI (ADC).");
-  }
-  return new GoogleGenAI({
-    vertexai: true,
-    project,
-    location: process.env.GOOGLE_CLOUD_LOCATION || "global",
-    apiVersion: "v1",
-  });
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set.");
+  return new Anthropic();
 }
 
 const DIGEST_PROMPT = `You are compiling an internal editorial digest of one year of a university newspaper (The Transcript, Ohio Wesleyan University).
@@ -72,31 +63,28 @@ Write a chronological digest of the year's coverage:
 - Plain text/markdown, no preamble, at most ~700 words.`;
 
 async function generateDigest(client, year, lines) {
-  const response = await client.models.generateContent({
+  const response = await client.messages.create({
     model: DIGEST_MODEL,
-    contents: [
+    max_tokens: 4096,
+    system: DIGEST_PROMPT,
+    messages: [
       {
         role: "user",
-        parts: [
-          {
-            text: `YEAR: ${year}\nARTICLES (${lines.length}):\n${lines.join("\n")}`,
-          },
-        ],
+        content: `YEAR: ${year}\nARTICLES (${lines.length}):\n${lines.join("\n")}`,
       },
     ],
-    config: {
-      systemInstruction: DIGEST_PROMPT,
-      maxOutputTokens: 4096,
-      thinkingConfig: { thinkingLevel: "LOW" },
-    },
+    output_config: { effort: "low" },
   });
-  const text = response.text?.trim();
+  const text = response.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("")
+    .trim();
   if (!text) throw new Error(`empty digest for ${year}`);
-  const usage = response.usageMetadata ?? {};
   return {
     digest: text,
-    promptTokens: usage.promptTokenCount ?? 0,
-    outputTokens: (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0),
+    promptTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
   };
 }
 
@@ -168,7 +156,7 @@ async function main() {
         `${year}: ${lines.length} articles -> ${digest.length} chars (in ${promptTokens}, out ${outputTokens})`
       );
     }
-    const cost = (totalIn * 1.5 + totalOut * 7.5) / 1_000_000;
+    const cost = (totalIn * 2 + totalOut * 10) / 1_000_000;
     console.log(
       `Done: ${byYear.size} years, ~$${cost.toFixed(3)} (${totalIn} in / ${totalOut} out tokens)`
     );

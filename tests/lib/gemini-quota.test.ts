@@ -1,6 +1,8 @@
+import { APIConnectionTimeoutError, APIUserAbortError } from "@anthropic-ai/sdk";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  isAbortError,
   isQuotaError,
   isQuotaFailure,
   kindForQuota,
@@ -115,5 +117,31 @@ describe("quota classification helpers", () => {
     expect(retryAfterSecFromQuotaError(err)).toBe(23);
     expect(kindForQuota(23)).toBe("rate_limit");
     expect(kindForQuota(3600)).toBe("budget");
+  });
+
+  it("recognises Claude's 429 and 529 and reads its retry-after header", () => {
+    const rateLimited = Object.assign(new Error("429 rate_limit_error"), {
+      status: 429,
+      headers: new Headers({ "retry-after": "42" }),
+    });
+    expect(isQuotaError(rateLimited)).toBe(true);
+    expect(isQuotaError(Object.assign(new Error("529 overloaded"), { status: 529 }))).toBe(true);
+    expect(isQuotaError(Object.assign(new Error("500"), { status: 500 }))).toBe(false);
+    expect(retryAfterSecFromQuotaError(rateLimited)).toBe(42);
+    // The pipeline wraps the SDK error; the header is still found.
+    const wrapped = Object.assign(new Error("quota exhausted (rerank)"), {
+      name: "QuotaExhaustedError",
+      cause: rateLimited,
+    });
+    expect(retryAfterSecFromQuotaError(wrapped)).toBe(42);
+  });
+});
+
+describe("isAbortError", () => {
+  it("treats the SDK's abort and timeout errors like a platform AbortError", () => {
+    expect(isAbortError(new APIUserAbortError())).toBe(true);
+    expect(isAbortError(new APIConnectionTimeoutError())).toBe(true);
+    expect(isAbortError(Object.assign(new Error("aborted"), { name: "AbortError" }))).toBe(true);
+    expect(isAbortError(new Error("server exploded"))).toBe(false);
   });
 });

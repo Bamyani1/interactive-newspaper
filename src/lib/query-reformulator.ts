@@ -1,17 +1,17 @@
 /**
  * Query Reformulator
  *
- * Uses Gemini Flash to expand modern user queries into 1960s-era newspaper
+ * Uses Claude Haiku to expand modern user queries into 1960s-era newspaper
  * language. Produces separate queries optimized for semantic (embedding) and
  * keyword (FTS) retrieval paths.
  *
  * Graceful fallback: returns the original question on any error or timeout.
  */
 
-import { getGeminiClient } from "@/src/lib/gemini-client";
+import { getClaudeClient, jsonOutputFormat, messageText } from "@/src/lib/claude-client";
 import { executeTrackedGenerationCall } from "@/src/lib/cost-tracker";
 import { QuotaExhaustedError } from "@/src/lib/embeddings";
-import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
+import { isAbortError, isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import { formatHistoryForPrompt } from "@/src/lib/conversation-store";
 import type { ConversationTurn } from "@/src/lib/conversation-store";
@@ -254,7 +254,7 @@ export async function reformulateQuery(
   };
 
   try {
-    const client = getGeminiClient();
+    const client = getClaudeClient();
 
     const response = await retryOnQuota(
       "reformulate",
@@ -276,37 +276,34 @@ export async function reformulateQuery(
           requestId: opts.requestId,
           op: "reformulate",
           call: () =>
-            client.models.generateContent({
-              model: REFORMULATION_MODEL,
-              contents: [
-                {
-                  role: "user",
-                  parts: [
-                    { text: buildReformulatorInput(originalQuestion, opts.conversationHistory) },
-                  ],
+            client.messages.create(
+              {
+                model: REFORMULATION_MODEL,
+                max_tokens: REFORMULATION_MAX_TOKENS,
+                system: REFORMULATION_PROMPT,
+                messages: [
+                  {
+                    role: "user",
+                    content: buildReformulatorInput(originalQuestion, opts.conversationHistory),
+                  },
+                ],
+                thinking: RAG_MODEL_CONFIG.reformulate.thinking,
+                output_config: {
+                  effort: RAG_MODEL_CONFIG.reformulate.effort,
+                  format: jsonOutputFormat(REFORMULATION_SCHEMA),
                 },
-              ],
-              config: {
-                systemInstruction: REFORMULATION_PROMPT,
-                maxOutputTokens: REFORMULATION_MAX_TOKENS,
-                thinkingConfig: {
-                  thinkingLevel: RAG_MODEL_CONFIG.reformulate.thinkingLevel,
-                },
-                responseMimeType: "application/json",
-                responseJsonSchema: REFORMULATION_SCHEMA,
-                abortSignal: combinedSignal,
               },
-            }),
+              { signal: combinedSignal }
+            ),
         }).finally(() => clearTimeout(timeout));
       },
       { signal: opts.signal, requestId: opts.requestId }
     );
 
-    const text = response.text?.trim() ?? "";
-    return parseReformulationResponse(text, fallback);
+    return parseReformulationResponse(messageText(response), fallback);
   } catch (err) {
     const quota = isQuotaError(err);
-    const isTimeout = err instanceof Error && err.name === "AbortError";
+    const isTimeout = isAbortError(err);
     console.warn(
       JSON.stringify({
         level: "warn",

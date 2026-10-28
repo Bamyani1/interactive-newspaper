@@ -41,7 +41,12 @@ import {
   type AskErrorStage,
   type AskStreamEvent,
 } from "@/src/lib/ask-stream-events";
-import { isQuotaError, kindForQuota, retryAfterSecFromQuotaError } from "@/src/lib/gemini-quota";
+import {
+  isAbortError,
+  isQuotaError,
+  kindForQuota,
+  retryAfterSecFromQuotaError,
+} from "@/src/lib/gemini-quota";
 import { getClientIp } from "@/src/lib/rate-limit";
 import {
   checkDailyBudget,
@@ -613,7 +618,7 @@ function askStreamErrorKind(err: unknown): {
   if (err instanceof DeadlineExceededError || err instanceof DbTimeoutError) {
     return { kind: "timeout" };
   }
-  if (err instanceof Error && err.name === "AbortError") return { kind: "timeout" };
+  if (isAbortError(err)) return { kind: "timeout" };
   return { kind: "server" };
 }
 

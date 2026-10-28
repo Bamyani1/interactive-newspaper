@@ -1,12 +1,12 @@
 /**
  * Answer Generator
  *
- * Uses Gemini Flash to synthesize a grounded answer from retrieved articles.
+ * Uses Claude Sonnet to synthesize a grounded answer from retrieved articles.
  * Every factual claim must cite a source article. If the sources don't contain
  * enough information, the model is instructed to say so honestly.
  */
 
-import { getGeminiClient } from "@/src/lib/gemini-client";
+import { getClaudeClient, jsonOutputFormat, messageText } from "@/src/lib/claude-client";
 import {
   computeCostUsd,
   executeTrackedGenerationCall,
@@ -20,7 +20,7 @@ import type { RetrievedArticle } from "@/src/lib/db";
 import type { RankedArticle } from "@/src/lib/reranker";
 import type { AnswerOutcome, AskErrorKind, Citation } from "@/src/types";
 import { QuotaExhaustedError } from "@/src/lib/embeddings";
-import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
+import { isAbortError, isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
 import { groundPipelineAnswer } from "@/src/lib/answer-grounding";
 import { AnswerFieldExtractor } from "@/src/lib/answer-stream-extractor";
 import {
@@ -342,7 +342,7 @@ function logNonStopFinishReason(
   requestId: string | undefined,
   op: "generate" | "generate.stream"
 ): void {
-  if (!finishReason || finishReason === "STOP") return;
+  if (!finishReason || finishReason === "end_turn") return;
   console.warn(
     JSON.stringify({
       level: "warn",
@@ -416,7 +416,7 @@ export async function generateAnswer(
     };
   }
 
-  const client = getGeminiClient();
+  const client = getClaudeClient();
   const systemPrompt = buildSystemPrompt();
   const userPrompt = buildUserPrompt(
     question,
@@ -443,20 +443,19 @@ export async function generateAnswer(
           requestId: opts.requestId,
           op: "generate",
           call: () =>
-            client.models.generateContent({
-              model: GENERATION_MODEL,
-              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-              config: {
-                systemInstruction: systemPrompt,
-                maxOutputTokens: MAX_ANSWER_TOKENS,
-                thinkingConfig: {
-                  thinkingLevel: RAG_MODEL_CONFIG.answer.thinkingLevel,
+            client.messages.create(
+              {
+                model: GENERATION_MODEL,
+                max_tokens: MAX_ANSWER_TOKENS,
+                system: systemPrompt,
+                messages: [{ role: "user", content: userPrompt }],
+                output_config: {
+                  effort: RAG_MODEL_CONFIG.answer.effort,
+                  format: jsonOutputFormat(ANSWER_SCHEMA),
                 },
-                responseMimeType: "application/json",
-                responseJsonSchema: ANSWER_SCHEMA,
-                abortSignal: combinedSignal,
               },
-            }),
+              { signal: combinedSignal }
+            ),
         }),
       // One controller spans the retries on purpose: the 30s budget is what
       // the route's deadline math assumes, and a 429 rejects in well under a
@@ -466,9 +465,9 @@ export async function generateAnswer(
 
     clearTimeout(timeout);
 
-    logNonStopFinishReason(response.candidates?.[0]?.finishReason, opts.requestId, "generate");
+    logNonStopFinishReason(response.stop_reason ?? undefined, opts.requestId, "generate");
 
-    const rawText = response.text?.trim() ?? "";
+    const rawText = messageText(response);
     const { answer: parsedAnswer, followUps } = parseAnswerResponse(rawText);
 
     // Backward compatibility for responses recorded before structured output
@@ -516,7 +515,7 @@ export async function generateAnswer(
     // an HTTP 200 whose body is an apology.
     if (isQuotaError(err)) throw new QuotaExhaustedError("generate", err);
 
-    if (err instanceof Error && err.name === "AbortError") {
+    if (isAbortError(err)) {
       return {
         answer: "The answer took too long to generate. Please try a simpler question.",
         citations: [],
@@ -549,7 +548,7 @@ export async function generateAnswer(
 }
 
 /**
- * Streaming version of `generateAnswer`. Yields `delta` events as Gemini
+ * Streaming version of `generateAnswer`. Yields `delta` events as Claude
  * produces tokens (so the client can render a typing effect), followed by
  * a single `done` event with the cleaned answer and parsed citations.
  *
@@ -608,7 +607,7 @@ export async function* generateAnswerStream(
     return;
   }
 
-  const client = getGeminiClient();
+  const client = getClaudeClient();
   const systemPrompt = buildSystemPrompt();
   const userPrompt = buildUserPrompt(
     question,
@@ -629,10 +628,6 @@ export async function* generateAnswerStream(
   // of the same chunks for incremental delta emission.
   const extractor = new AnswerFieldExtractor();
   let fullText = "";
-  // usageMetadata typically lands in the final streamed chunk; record
-  // the last non-empty one so our counters reflect the whole call.
-  let finalUsageMetadata: import("@google/genai").GenerateContentResponseUsageMetadata | undefined;
-  let finalFinishReason: string | undefined;
   const budgetReservation = reserveEvaluationGoogleCall({
     model: GENERATION_MODEL,
     maxOutputTokens: MAX_ANSWER_TOKENS,
@@ -646,50 +641,49 @@ export async function* generateAnswerStream(
     // chunk, so no text can be emitted twice; retrying mid-stream could.
     const stream = await retryOnQuota(
       "generate.stream",
-      () =>
-        client.models.generateContentStream({
-          model: GENERATION_MODEL,
-          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-          config: {
-            systemInstruction: systemPrompt,
-            maxOutputTokens: MAX_ANSWER_TOKENS,
-            thinkingConfig: {
-              thinkingLevel: RAG_MODEL_CONFIG.answer.thinkingLevel,
+      async () => {
+        const attempt = client.messages.stream(
+          {
+            model: GENERATION_MODEL,
+            max_tokens: MAX_ANSWER_TOKENS,
+            system: systemPrompt,
+            messages: [{ role: "user", content: userPrompt }],
+            output_config: {
+              effort: RAG_MODEL_CONFIG.answer.effort,
+              format: jsonOutputFormat(ANSWER_SCHEMA),
             },
-            responseMimeType: "application/json",
-            responseJsonSchema: ANSWER_SCHEMA,
-            abortSignal: combinedSignal,
           },
-        }),
+          { signal: combinedSignal }
+        );
+        // Wait for the response headers, so a 429 rejects here.
+        await attempt.withResponse();
+        return attempt;
+      },
       { signal: combinedSignal, requestId: opts.requestId }
     );
 
-    for await (const chunk of stream) {
-      if (chunk.usageMetadata) finalUsageMetadata = chunk.usageMetadata;
-      const finishReason = chunk.candidates?.[0]?.finishReason;
-      if (finishReason) finalFinishReason = finishReason;
-      const chunkText = typeof chunk.text === "string" ? chunk.text : "";
-      if (!chunkText) continue;
+    for await (const event of stream) {
+      if (event.type !== "content_block_delta" || event.delta.type !== "text_delta") continue;
+      const chunkText = event.delta.text;
       fullText += chunkText;
       const decoded = extractor.push(chunkText);
       if (decoded) yield { type: "delta", text: decoded };
     }
+    const finalMessage = await stream.finalMessage();
+    const finalUsage = finalMessage.usage;
 
     clearTimeout(timeout);
 
     if (budgetReservation) {
-      settleEvaluationGoogleCall(
-        budgetReservation,
-        computeCostUsd(GENERATION_MODEL, finalUsageMetadata)
-      );
+      settleEvaluationGoogleCall(budgetReservation, computeCostUsd(GENERATION_MODEL, finalUsage));
       budgetSettled = true;
     }
-    void recordUsage(GENERATION_MODEL, finalUsageMetadata, {
+    void recordUsage(GENERATION_MODEL, finalUsage, {
       requestId: opts.requestId,
       op: "generate.stream",
       evaluationCostAlreadyRecorded: Boolean(budgetReservation),
     });
-    logNonStopFinishReason(finalFinishReason, opts.requestId, "generate.stream");
+    logNonStopFinishReason(finalMessage.stop_reason ?? undefined, opts.requestId, "generate.stream");
 
     const { answer: parsedAnswer, followUps } = parseAnswerResponse(fullText);
 
@@ -736,7 +730,7 @@ export async function* generateAnswerStream(
     // can offer a wait instead of an apology.
     if (isQuotaError(err)) throw new QuotaExhaustedError("generate.stream", err);
 
-    if (err instanceof Error && err.name === "AbortError") {
+    if (isAbortError(err)) {
       yield {
         type: "done",
         answer: "The answer took too long to generate. Please try a simpler question.",

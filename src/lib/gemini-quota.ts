@@ -7,26 +7,29 @@
  * generator returned a canned apology that was then persisted as an
  * answer. None of them told the reader to try again later.
  *
- * These helpers are deliberately pure and dependency-free so both the
- * request path and the embedding batch path can classify an error the
- * same way. `QuotaExhaustedError` itself stays in embeddings.ts, which
+ * These helpers are deliberately pure and import nothing from the
+ * pipeline, so both the request path and the embedding batch path can
+ * classify an error the same way. `QuotaExhaustedError` itself stays in embeddings.ts, which
  * owns the retry loop and is the module tests mock.
  */
 
+import { APIConnectionTimeoutError, APIUserAbortError } from "@anthropic-ai/sdk";
 import type { AskErrorKind } from "@/src/types";
 
 /**
- * Detect a Gemini RESOURCE_EXHAUSTED / 429 error across the various shapes
- * the SDK might surface (raw fetch error, JSON-stringified error body,
- * structured object). Returns true if any signal matches.
+ * Detect a quota error: Claude's 429 (rate limit) or 529 (overloaded), or
+ * Gemini's RESOURCE_EXHAUSTED / 429 across the various shapes its SDK might
+ * surface (raw fetch error, JSON-stringified error body, structured
+ * object). Returns true if any signal matches.
  */
 export function isQuotaError(err: unknown): boolean {
   if (!err) return false;
   const e = err as {
     code?: number;
-    status?: string;
+    status?: number | string;
     error?: { code?: number; status?: string };
   };
+  if (e.status === 429 || e.status === 529) return true;
   if (e.code === 429) return true;
   if (e.status === "RESOURCE_EXHAUSTED") return true;
   if (e.error?.code === 429) return true;
@@ -120,15 +123,27 @@ const MAX_RETRY_AFTER_SEC = 3600;
 const DEFAULT_RETRY_AFTER_SEC = 30;
 
 /**
- * Pull a retry delay out of a quota error. Vertex reports it as a
- * `retryDelay: "23s"` field inside the error details, but the SDK
- * surfaces that in several shapes (nested object, JSON string in the
- * message), so this reads whichever it finds and clamps the result.
+ * Pull a retry delay out of a quota error. Claude sends a `retry-after`
+ * header. Vertex reports it as a `retryDelay: "23s"` field inside the
+ * error details, but its SDK surfaces that in several shapes (nested
+ * object, JSON string in the message), so this reads whichever it finds
+ * and clamps the result.
  */
 export function retryAfterSecFromQuotaError(
   err: unknown,
   fallback = DEFAULT_RETRY_AFTER_SEC
 ): number {
+  // The pipeline wraps the SDK error in QuotaExhaustedError, so look at the
+  // cause too.
+  for (const candidate of [err, (err as { cause?: unknown } | null)?.cause]) {
+    const header = (candidate as { headers?: { get?: (name: string) => string | null } } | null)
+      ?.headers?.get?.("retry-after");
+    const seconds = Math.ceil(Number(header));
+    if (header && Number.isFinite(seconds) && seconds > 0) {
+      return Math.min(MAX_RETRY_AFTER_SEC, Math.max(MIN_RETRY_AFTER_SEC, seconds));
+    }
+  }
+
   const haystacks: string[] = [];
   if (err instanceof Error) haystacks.push(err.message);
   const withCause = err as { cause?: unknown };
@@ -163,4 +178,14 @@ export function kindForQuota(
   retryAfterSec: number
 ): Extract<AskErrorKind, "rate_limit" | "budget"> {
   return retryAfterSec >= 600 ? "budget" : "rate_limit";
+}
+
+/**
+ * A model call cut off by its timer or the request deadline. Claude's SDK
+ * throws its own error classes for an aborted signal and for its timeout
+ * instead of the platform AbortError.
+ */
+export function isAbortError(err: unknown): boolean {
+  if (err instanceof APIUserAbortError || err instanceof APIConnectionTimeoutError) return true;
+  return err instanceof Error && err.name === "AbortError";
 }

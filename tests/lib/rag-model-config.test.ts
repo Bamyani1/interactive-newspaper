@@ -8,25 +8,22 @@ import {
 } from "@/src/lib/rag-model-config";
 
 describe("RAG model routing", () => {
-  it("routes mechanical steps to Flash-Lite and judging/answering to full Flash", () => {
-    // Reformulation is a cheap mechanical step; relevance judging and
-    // answer writing need the full Flash tier — the lite model scores
-    // every candidate for broad survey questions as tangential and writes
-    // weaker prose than the previously served gemini-3-flash-preview.
-    expect(RAG_GENERATION_MODEL).toBe("gemini-3.5-flash-lite");
-    expect(RAG_ANSWER_MODEL).toBe("gemini-3.8-flash");
+  it("routes rewriting and judging to Haiku and answering to Sonnet", () => {
+    expect(RAG_GENERATION_MODEL).toBe("claude-haiku-5-5");
+    expect(RAG_ANSWER_MODEL).toBe("claude-sonnet-5-5");
     expect(RAG_MODEL_CONFIG.reformulate.model).toBe(RAG_GENERATION_MODEL);
-    expect(RAG_MODEL_CONFIG.rerank.model).toBe(RAG_ANSWER_MODEL);
+    expect(RAG_MODEL_CONFIG.rerank.model).toBe(RAG_GENERATION_MODEL);
     expect(RAG_MODEL_CONFIG.answer.model).toBe(RAG_ANSWER_MODEL);
     expect(RAG_MODEL_CONFIG.agent.model).toBe(RAG_ANSWER_MODEL);
   });
 
-  it("reserves minimal/low thinking for grounded steps and medium for the agent loop", () => {
-    expect(RAG_MODEL_CONFIG.reformulate.thinkingLevel).toBe("MINIMAL");
-    expect(RAG_MODEL_CONFIG.rerank.thinkingLevel).toBe("LOW");
-    expect(RAG_MODEL_CONFIG.answer.thinkingLevel).toBe("LOW");
-    expect(RAG_MODEL_CONFIG.agent.thinkingLevel).toBe("MEDIUM");
-    expect(RAG_MODEL_CONFIG.agent.finalThinkingLevel).toBe("LOW");
+  it("keeps effort low for grounded steps and medium for the agent's research rounds", () => {
+    expect(RAG_MODEL_CONFIG.reformulate.thinking).toEqual({ type: "disabled" });
+    expect(RAG_MODEL_CONFIG.reformulate.effort).toBe("low");
+    expect(RAG_MODEL_CONFIG.rerank.effort).toBe("low");
+    expect(RAG_MODEL_CONFIG.answer.effort).toBe("low");
+    expect(RAG_MODEL_CONFIG.agent.effort).toBe("medium");
+    expect(RAG_MODEL_CONFIG.agent.finalEffort).toBe("low");
   });
 
   it("uses the stable embedding model and versioned pipeline", () => {
