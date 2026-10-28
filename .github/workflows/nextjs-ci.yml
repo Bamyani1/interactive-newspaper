@@ -38,40 +38,36 @@ jobs:
       - name: Vitest
         run: npm run test:run
 
-      # next build runs in the e2e job below. Every page's layout reads the
-      # editions table, so the production server needs a database, which
-      # fork PRs and a repository without the secret don't have.
-
-  # Secrets can't be read in a job-level `if`, so whether the browser tests
-  # can run is decided here. Dependabot PRs read Dependabot secrets, not
-  # Actions secrets, so they skip too unless the secret is added there.
-  e2e-gate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      enabled: ${{ steps.check.outputs.enabled }}
-    steps:
-      - id: check
-        env:
-          CI_DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
-        run: |
-          if [ -n "$CI_DATABASE_URL" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Browser tests skipped::Add a CI_DATABASE_URL repository secret (a Neon branch of the production database) to run them."
-          fi
+      # next build runs in the e2e job below, which has its own database.
 
   # Production build, then the Chromium desktop and mobile specs against it.
   # Firefox and WebKit smoke stay local. The specs mock the /api calls they
-  # exercise, so no AI key is needed; the pages still read the database.
+  # exercise, so no AI key is needed; the pages still read the database: a
+  # throwaway Postgres seeded with the three editions the specs visit, so the
+  # job needs no secret and runs on fork and Dependabot PRs too.
   e2e:
-    needs: [verify, e2e-gate]
-    if: needs.e2e-gate.outputs.enabled == 'true'
+    needs: [verify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        # pgvector/pgvector:pg17, pinned by digest like the actions above.
+        image: pgvector/pgvector@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: transcript
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d transcript"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     env:
-      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      # localhost URLs reach Postgres through the neon-http-shim, which the
+      # db scripts and scripts/dev/with-local-db.mjs start (src/lib/sql.ts).
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/transcript
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -85,15 +81,20 @@ jobs:
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
 
+      - name: Database
+        run: |
+          npm run db:migrate
+          npm run db:seed -- --editions-dir tests/fixtures/ci-editions
+
       - name: Production build
-        run: npm run build
+        run: node scripts/dev/with-local-db.mjs npm run build
 
       - name: Browser tests
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
           PLAYWRIGHT_SERVER_MODE: production
         run: |
-          npm run start -- --hostname 127.0.0.1 --port 3000 > next-start.log 2>&1 &
+          node scripts/dev/with-local-db.mjs npm run start -- --hostname 127.0.0.1 --port 3000 > next-start.log 2>&1 &
           for _ in $(seq 1 60); do
             curl -sf -o /dev/null http://127.0.0.1:3000/ && break
             sleep 1
