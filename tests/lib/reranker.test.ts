@@ -200,6 +200,15 @@ describe("rerankArticles", () => {
     expect(call).not.toHaveProperty("top_k");
   });
 
+  // With thinking on, Haiku spent the whole score budget thinking on about
+  // one question in sixteen (stop_reason max_tokens, no text), and those
+  // answers came from unjudged search results.
+  it("turns thinking off so the score budget goes to scores", async () => {
+    createMock.mockResolvedValue(reply('{"scores":[7]}'));
+    await rerankArticles("Which teams won?", [makeArticle({ id: "a" })]);
+    expect(createMock.mock.calls[0][0].thinking).toEqual({ type: "disabled" });
+  });
+
   it("uses matched chunks instead of the beginning of a long article", async () => {
     createMock.mockResolvedValue(reply('{"scores":[7]}'));
     await rerankArticles("late detail", [
@@ -307,6 +316,17 @@ describe("rerankArticles", () => {
     else createMock.mockResolvedValue(reply("not-json"));
     const result = await rerankArticles("test", [makeArticle({ id: "a" })]);
     expect(result[0].rerankDegraded).toBe(true);
+  });
+
+  it("logs the stop reason when the judge returns no usable scores", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    createMock.mockResolvedValue({ content: [], stop_reason: "refusal" });
+    await rerankArticles("test", [makeArticle({ id: "a" })]);
+    const logged = warn.mock.calls
+      .map(([line]) => JSON.parse(String(line)))
+      .find((entry) => entry.msg?.startsWith("failed to parse reranker scores"));
+    expect(logged?.stopReason).toBe("refusal");
+    warn.mockRestore();
   });
 
   it("does not mark genuinely judged articles as unvetted", async () => {

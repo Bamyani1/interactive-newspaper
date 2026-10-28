@@ -23,8 +23,11 @@ export const RAG_MODEL_CONFIG = {
     thinking: { type: "disabled" } as Anthropic.ThinkingConfigParam,
   },
   rerank: {
+    // The score budget is sized for the JSON array alone: thinking spent it
+    // and left no scores.
     model: RAG_GENERATION_MODEL,
     effort: "low" as Effort,
+    thinking: { type: "disabled" } as Anthropic.ThinkingConfigParam,
   },
   answer: {
     // Grounded single-hop QA over pre-retrieved context needs little

@@ -260,6 +260,7 @@ async function judgeScores(
               max_tokens: maxScoreTokens,
               system: RERANKER_PROMPT,
               messages: [{ role: "user", content: userPrompt }],
+              thinking: RAG_MODEL_CONFIG.rerank.thinking,
               output_config: {
                 effort: RAG_MODEL_CONFIG.rerank.effort,
                 format: jsonOutputFormat(RERANKER_SCHEMA),
@@ -288,6 +289,7 @@ async function judgeScores(
         // for as long as it did.
         articleCount: articles.length,
         maxOutputTokens: maxScoreTokens,
+        stopReason: response.stop_reason,
         responseChars: text.length,
         responseHead: text.slice(0, 200),
       })
