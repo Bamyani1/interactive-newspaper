@@ -442,7 +442,7 @@ About 125 Vitest files:
 
 ### CI
 
-- `.github/workflows/nextjs-ci.yml` (Node 24) — **verify:** `npm ci`, `tsc --noEmit`, `npm run test:typecheck`, ESLint, Vitest on every PR and push to `main`. **e2e** (only when the `CI_DATABASE_URL` secret exists; fork and Dependabot PRs skip it): a production build, then the Playwright specs on `chromium-desktop` and `chromium-mobile` against a frozen copy of the database. The specs mock the `/api` calls they exercise, so no AI credentials are needed.
+- `.github/workflows/nextjs-ci.yml` (Node 24) — **verify:** `npm ci`, `tsc --noEmit`, `npm run test:typecheck`, ESLint, Vitest on every PR and push to `main`. **e2e:** a throwaway Postgres service (pgvector) is migrated and seeded with the three editions in `tests/fixtures/ci-editions/`, then a production build and the Playwright specs on `chromium-desktop` and `chromium-mobile` run against it. It needs no secret, so fork and Dependabot PRs run it too. The specs mock the `/api` calls they exercise, so no AI credentials are needed.
 - `.github/workflows/ocr-architecture.yml` (Python 3.12) — AST import-boundary, wrapper-entrypoint, and runtime-cutover tests in `tests/ocr/architecture/`, plus a check that the OCR entry scripts and shell wrappers exist.
 
 ---
