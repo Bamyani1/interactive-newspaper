@@ -78,6 +78,8 @@ interface RerankOptions {
   minScore?: number;
   maxArticles?: number;
   mode?: "text" | "visual";
+  /** Overrides RAG_RERANKER for this call (the retrieval eval runs every ranking). */
+  ranking?: RerankerMode;
   signal?: AbortSignal;
   requestId?: string;
 }
@@ -145,7 +147,7 @@ const VOYAGE_DOCUMENT_BODY_CHARS = 4_000;
  */
 const VOYAGE_CASCADE_CANDIDATES = 20;
 
-type RerankerMode = "claude" | "voyage" | "voyage+claude";
+export type RerankerMode = "claude" | "voyage" | "voyage+claude";
 
 /**
  * RAG_RERANKER picks the ranking: the Claude judge (default), rerank-3
@@ -153,8 +155,8 @@ type RerankerMode = "claude" | "voyage" | "voyage+claude";
  * also need VOYAGE_API_KEY; the key serves embeddings too, so its presence
  * alone never switches ranking to an unmeasured path.
  */
-function rerankerMode(): RerankerMode {
-  const mode = process.env.RAG_RERANKER?.trim();
+function rerankerMode(requested?: RerankerMode): RerankerMode {
+  const mode = requested ?? process.env.RAG_RERANKER?.trim();
   if ((mode === "voyage" || mode === "voyage+claude") && process.env.VOYAGE_API_KEY?.trim()) {
     return mode;
   }
@@ -337,7 +339,7 @@ export async function rerankArticles(
   // Nothing to rerank
   if (articles.length === 0) return [];
 
-  const mode = rerankerMode();
+  const mode = rerankerMode(options.ranking);
   let candidates = articles;
   if (mode !== "claude") {
     const voyageRanked = await voyageRerank(question, articles, options);

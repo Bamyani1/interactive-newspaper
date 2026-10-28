@@ -174,6 +174,20 @@ describe("voyage rerank path", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
+  // The retrieval eval runs every ranking side by side in one process.
+  it("lets a caller pick the ranking over RAG_RERANKER", async () => {
+    vi.stubEnv("RAG_RERANKER", "voyage");
+    vi.stubEnv("VOYAGE_API_KEY", "test-voyage-key");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    createMock.mockResolvedValue(reply('{"scores":[7]}'));
+
+    await rerankArticles("question", [makeArticle()], { minScore: 4, ranking: "claude" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
   // The key also serves embeddings; having it must not move reranking.
   it("ignores the Voyage key unless RAG_RERANKER=voyage", async () => {
     vi.stubEnv("VOYAGE_API_KEY", "test-voyage-key");
