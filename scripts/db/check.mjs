@@ -1,4 +1,5 @@
-import { neon } from "@neondatabase/serverless";
+import { createSql } from "../../src/lib/sql.ts";
+import { ensureLocalShim } from "./lib/local-shim.mjs";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -12,7 +13,8 @@ if (existsSync(envPath)) {
   }
 }
 
-const sql = neon(process.env.DATABASE_URL);
+await ensureLocalShim(process.env.DATABASE_URL);
+const sql = createSql(process.env.DATABASE_URL);
 
 async function main() {
   const result = await sql`SELECT date, article_count, page_count FROM editions ORDER BY date;`;

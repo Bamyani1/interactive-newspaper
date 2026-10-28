@@ -18,7 +18,8 @@
  *   npm run db:seed -- --date 1960-05-11 --editions-dir public/editions --summary-path ocr/runs/1960-05-11/seed-summary.json
  */
 
-import { neon } from "@neondatabase/serverless";
+import { createSql } from "../../src/lib/sql.ts";
+import { ensureLocalShim } from "./lib/local-shim.mjs";
 import { readdir, readFile, mkdir, copyFile } from "fs/promises";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
@@ -95,7 +96,8 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-const sql = neon(process.env.DATABASE_URL);
+await ensureLocalShim(process.env.DATABASE_URL);
+const sql = createSql(process.env.DATABASE_URL);
 
 // ─── Helpers ─────────────────────────────────────────────────────
 

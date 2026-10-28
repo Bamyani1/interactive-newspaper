@@ -31,7 +31,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { neonConfig } from "@neondatabase/serverless";
+import { ensureLocalShim } from "../db/lib/local-shim.mjs";
 import {
   computeRunTotals,
   finalizeRunFile,
@@ -467,14 +467,9 @@ async function main(): Promise<void> {
   // The in-process route reads DATABASE_URL; evaluation runs point it at
   // the dedicated evaluation database. Guarded main()-only usage.
   process.env.DATABASE_URL = evalDatabaseUrl;
-  // Local eval bridge: neonConfig must come from the SAME module instance
-  // the app code resolves (static import → CJS build under tsx). A dynamic
-  // import() here loads the driver's ESM copy, whose neonConfig the app's
-  // clients never read — the setting would silently not apply.
-  const shimUrl = process.env.NEON_HTTP_SHIM_URL?.trim();
-  if (shimUrl) {
-    neonConfig.fetchEndpoint = shimUrl;
-  }
+  // createSql (src/lib/sql.ts) routes the eval bridge host (neon-local-shim
+  // + NEON_HTTP_SHIM_URL) and localhost; a localhost URL needs its shim up.
+  await ensureLocalShim(evalDatabaseUrl);
   process.env.RAG_RETRIEVAL_MODE = args.mode;
   if (args.build) process.env.RAG_ACTIVE_INDEX_BUILD_ID = args.build;
 
