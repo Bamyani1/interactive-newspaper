@@ -17,7 +17,7 @@
  * output; cache reads and writes as discounted and surcharged input.
  */
 
-import { neon } from "@neondatabase/serverless";
+import { createSql } from "@/src/lib/sql";
 import {
   RAG_ANSWER_PROFILES,
   RAG_EMBEDDING_MODEL,
@@ -241,12 +241,12 @@ export function settleEvaluationGoogleCall(
 
 // Lazy init — importing this module without DATABASE_URL (e.g. in the
 // test runner when DB-dependent tests are mocked out) must not throw.
-let _sql: ReturnType<typeof neon> | null = null;
+let _sql: ReturnType<typeof createSql> | null = null;
 function getSql() {
   if (_sql !== null) return _sql;
   const url = process.env.DATABASE_URL;
   if (!url) return null;
-  _sql = neon(url);
+  _sql = createSql(url);
   return _sql;
 }
 

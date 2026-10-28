@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { sqlMock } = vi.hoisted(() => ({ sqlMock: vi.fn() }));
 
 vi.mock("@neondatabase/serverless", () => ({
+  neonConfig: {},
   neon: () => sqlMock,
 }));
 

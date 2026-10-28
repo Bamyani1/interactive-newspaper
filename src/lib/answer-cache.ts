@@ -17,7 +17,7 @@
  */
 
 import { createHash } from "crypto";
-import { neon } from "@neondatabase/serverless";
+import { createSql } from "@/src/lib/sql";
 import type { AskResponse } from "@/src/types";
 import {
   RAG_ANSWER_MODEL,
@@ -42,12 +42,12 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
-let _sql: ReturnType<typeof neon> | null = null;
+let _sql: ReturnType<typeof createSql> | null = null;
 function getSql() {
   if (_sql !== null) return _sql;
   const url = process.env.DATABASE_URL;
   if (!url) return null;
-  _sql = neon(url);
+  _sql = createSql(url);
   return _sql;
 }
 

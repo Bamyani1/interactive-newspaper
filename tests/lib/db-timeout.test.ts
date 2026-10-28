@@ -12,6 +12,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@neondatabase/serverless", () => ({
+  neonConfig: {},
   neon: vi.fn(() => {
     const fn = vi.fn() as ReturnType<typeof vi.fn> & {
       transaction: ReturnType<typeof vi.fn>;

@@ -127,3 +127,22 @@ def test_inbox_source_is_removed_only_after_publication():
     final_promotion = source.rindex('promote_candidate || fail 40 "promotion"')
     assert len(arming) == 1
     assert arming[0] > final_promotion
+
+
+def test_env_local_never_overrides_variables_the_caller_set(tmp_path):
+    # `npm run with-prod --` sets DATABASE_URL to production; .env.local's
+    # local DATABASE_URL must not replace it, or a production seed lands locally.
+    source = _text(PROCESS)
+    match = re.search(r"# Load simple KEY=VALUE.*?\nfi\n", source, re.S)
+    assert match, "env loader block not found"
+    env_file = tmp_path / ".env.local"
+    env_file.write_text("DATABASE_URL=postgresql://local/db\nONLY_IN_FILE=from-file\n")
+    script = match.group(0).replace('"$ROOT_DIR/.env.local"', f'"{env_file}"')
+    out = subprocess.run(
+        ["bash", "-c", script + 'echo "$DATABASE_URL|$ONLY_IN_FILE"'],
+        env={"PATH": "/usr/bin:/bin", "DATABASE_URL": "postgresql://prod/db"},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert out.stdout.strip() == "postgresql://prod/db|from-file"

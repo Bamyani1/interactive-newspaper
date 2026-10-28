@@ -14,7 +14,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { neon } from "@neondatabase/serverless";
+import { createSql } from "@/src/lib/sql";
 import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 // The recall window lives in retention.ts, which is driver-free: one constant
 // for the read below, the write-side sweep, and the nightly cron.
@@ -54,18 +54,18 @@ function liveEvaluationTurns(sessionId: string): ConversationTurn[] {
   return turns;
 }
 
-let _sql: ReturnType<typeof neon> | null = null;
+let _sql: ReturnType<typeof createSql> | null = null;
 let citationSnapshotColumn: { value: boolean; checkedAt: number } | null = null;
 const SCHEMA_PROBE_TTL_MS = 30_000;
-function getSql(): ReturnType<typeof neon> | null {
+function getSql(): ReturnType<typeof createSql> | null {
   if (_sql !== null) return _sql;
   const url = process.env.DATABASE_URL;
   if (!url) return null;
-  _sql = neon(url);
+  _sql = createSql(url);
   return _sql;
 }
 
-async function hasCitationSnapshotColumn(sql: ReturnType<typeof neon>): Promise<boolean> {
+async function hasCitationSnapshotColumn(sql: ReturnType<typeof createSql>): Promise<boolean> {
   if (
     citationSnapshotColumn &&
     Date.now() - citationSnapshotColumn.checkedAt < SCHEMA_PROBE_TTL_MS

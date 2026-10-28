@@ -9,6 +9,7 @@ const { sqlMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@neondatabase/serverless", () => ({
+  neonConfig: {},
   neon: () => sqlMock,
 }));
 

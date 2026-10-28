@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { neon } from "@neondatabase/serverless";
+import { createSql } from "../../src/lib/sql";
+import { ensureLocalShim } from "../db/lib/local-shim.mjs";
 import { loadLocalEnv } from "../lib/local-env";
 import { RAG_EMBEDDING_MODEL } from "../../src/lib/rag-model-config";
 
@@ -304,7 +305,8 @@ function writeJsonAtomic(outputPath: string, value: unknown): "created" | "reuse
 async function main(): Promise<void> {
   loadLocalEnv();
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
-  const sql = neon(process.env.DATABASE_URL);
+  await ensureLocalShim(process.env.DATABASE_URL);
+  const sql = createSql(process.env.DATABASE_URL);
   const tableRows = (await sql`
     SELECT table_name
     FROM information_schema.tables
