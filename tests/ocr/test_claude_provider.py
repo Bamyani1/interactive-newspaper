@@ -200,6 +200,54 @@ def test_a_stream_that_never_ends_times_out_at_the_deadline():
     assert time.monotonic() - started < 5
 
 
+def test_a_timed_out_stream_is_closed_so_its_reader_stops():
+    released = threading.Event()
+    finished = threading.Event()
+
+    class _ClosableStalledStream(_FakeStream):
+        def get_final_message(self):
+            released.wait()
+            finished.set()
+            raise ConnectionError("stream closed")
+
+        def close(self):
+            released.set()
+
+    fake = _FakeAnthropic([None])
+    fake.messages = SimpleNamespace(stream=lambda **_request: _ClosableStalledStream(None))
+
+    with pytest.raises(TimeoutError):
+        ClaudeOCRClient(fake).generate_content(
+            model="claude-haiku-5-5",
+            contents=["x"],
+            config=_config(),
+            stage="page_structuring",
+            timeout_seconds=1,
+        )
+    assert finished.wait(2)
+
+
+def test_a_base_exception_in_the_reader_reaches_the_caller():
+    class _Halt(BaseException):
+        pass
+
+    class _HaltingStream(_FakeStream):
+        def get_final_message(self):
+            raise _Halt()
+
+    fake = _FakeAnthropic([None])
+    fake.messages = SimpleNamespace(stream=lambda **_request: _HaltingStream(None))
+
+    with pytest.raises(_Halt):
+        ClaudeOCRClient(fake).generate_content(
+            model="claude-haiku-5-5",
+            contents=["x"],
+            config=_config(),
+            stage="page_structuring",
+            timeout_seconds=5,
+        )
+
+
 def test_retry_routes_claude_client_with_claude_model_and_timeout(monkeypatch):
     monkeypatch.setenv("OCR_LLM_PROVIDER", "claude")
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)

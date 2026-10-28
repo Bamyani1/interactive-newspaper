@@ -185,7 +185,7 @@ class ClaudeOCRClient:
                 with self._client.messages.stream(**request) as stream:
                     outcome["stream"] = stream
                     outcome["message"] = stream.get_final_message()
-            except Exception as error:  # re-raised on the caller's thread
+            except BaseException as error:  # re-raised on the caller's thread
                 outcome["error"] = error
             finally:
                 done.set()
