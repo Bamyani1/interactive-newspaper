@@ -12,6 +12,8 @@
  * means a NEW build id; builds are immutable once out of 'building'):
  *   --create --corpus <id>       mint a 'building' build, print its id
  *   --populate <buildId>         deterministic chunk/image records (no model calls)
+ *   --reuse <buildId> [--from <id>]  copy vectors + context lines of unchanged
+ *                                articles from the serving (or named) build
  *   --contextualize <buildId>    Claude-written keyword-search context per chunk
  *                                (Batch API; --batch <id> collects a submitted batch)
  *   --embed-text <buildId>       voyage-context-4 chunk embeddings, one list per
@@ -1044,6 +1046,117 @@ export async function rollbackActivation(executor, buildId) {
   return { buildId, status: "validated" };
 }
 
+const REUSE_IDENTITY_COLUMNS = [
+  "embedding_model",
+  "image_embedding_model",
+  "embedding_dims",
+  "text_embedding_input_version",
+  "image_embedding_input_version",
+];
+
+/**
+ * Copy vectors into a 'building' build from an older one (the serving build
+ * by default) so --embed-text and --embed-images only pay for what changed.
+ * voyage-context-4 embeds an article's chunks together, so an article is
+ * reused whole or not at all: its (chunk_index, embedding_input_hash) list
+ * must equal the source's, and every source chunk must carry a vector.
+ * Context lines are copied with the vectors. A photo is reused when its
+ * article is and its index, URL (content-addressed) and caption match.
+ * Run it after --populate and before --contextualize; it is idempotent.
+ */
+export async function reuseFromBuild(executor, buildId, { fromBuildId } = {}) {
+  const build = await requireBuildingBuild(executor, buildId);
+  const sourceId = fromBuildId ?? (await getServingPointer(executor))?.indexBuildId;
+  if (!sourceId) {
+    throw new Error("No serving pointer to reuse from; name a source build with --from <buildId>.");
+  }
+  const source = await getBuild(executor, sourceId);
+  if (!source) throw new Error(`Unknown index build ${sourceId}.`);
+  for (const column of REUSE_IDENTITY_COLUMNS) {
+    if (String(source[column]) !== String(build[column])) {
+      throw new Error(
+        `Build ${sourceId} has ${column}=${source[column]}, ${buildId} has ${build[column]}; ` +
+          `its vectors cannot be reused.`
+      );
+    }
+  }
+
+  const sameArticles = `
+    same_articles AS (
+      SELECT t.article_id
+      FROM (SELECT article_id,
+                   array_agg(chunk_index || ':' || embedding_input_hash ORDER BY chunk_index) AS sig
+            FROM article_chunks WHERE index_build_id = $1 GROUP BY article_id) t
+      JOIN (SELECT article_id,
+                   array_agg(chunk_index || ':' || embedding_input_hash ORDER BY chunk_index) AS sig,
+                   bool_and(embedding_1024 IS NOT NULL AND embedding_model = $3
+                            AND embedding_input_version = $4) AS complete
+            FROM article_chunks WHERE index_build_id = $2 GROUP BY article_id) s
+        USING (article_id)
+      WHERE t.sig = s.sig AND s.complete
+    )`;
+  const [text] = await executor.query({
+    text: `WITH ${sameArticles},
+           copied AS (
+             UPDATE article_chunks AS c
+             SET embedding_1024 = s.embedding_1024,
+                 embedding_model = s.embedding_model,
+                 embedding_input_version = s.embedding_input_version,
+                 context_text = COALESCE(c.context_text, s.context_text)
+             FROM article_chunks AS s
+             WHERE c.index_build_id = $1 AND s.index_build_id = $2
+               AND c.article_id = s.article_id AND c.chunk_index = s.chunk_index
+               AND c.embedding_1024 IS NULL
+               AND c.article_id IN (SELECT article_id FROM same_articles)
+             RETURNING c.article_id)
+           SELECT count(*)::int AS chunks, count(DISTINCT article_id)::int AS articles FROM copied`,
+    params: [buildId, sourceId, build.embedding_model, build.text_embedding_input_version],
+  });
+  const [images] = await executor.query({
+    text: `WITH ${sameArticles},
+           copied AS (
+             UPDATE article_images AS i
+             SET embedding_1024 = s.embedding_1024,
+                 embedding_model = s.embedding_model,
+                 embedding_input_version = s.embedding_input_version,
+                 embedding_input_hash = s.embedding_input_hash
+             FROM article_images AS s
+             WHERE i.index_build_id = $1 AND s.index_build_id = $2
+               AND i.article_id = s.article_id AND i.image_index = s.image_index
+               AND i.image_url = s.image_url AND i.caption IS NOT DISTINCT FROM s.caption
+               AND i.embedding_1024 IS NULL AND s.embedding_1024 IS NOT NULL
+               AND s.embedding_model = $5 AND s.embedding_input_version = $6
+               AND s.embedding_input_hash IS NOT NULL
+               AND i.article_id IN (SELECT article_id FROM same_articles)
+             RETURNING i.id)
+           SELECT count(*)::int AS images FROM copied`,
+    params: [
+      buildId,
+      sourceId,
+      build.embedding_model,
+      build.text_embedding_input_version,
+      build.image_embedding_model,
+      build.image_embedding_input_version,
+    ],
+  });
+  const [pending] = await executor.query({
+    text: `SELECT
+             (SELECT count(DISTINCT article_id)::int FROM article_chunks
+              WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS articles,
+             (SELECT count(*)::int FROM article_chunks
+              WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS chunks,
+             (SELECT count(*)::int FROM article_images
+              WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS images`,
+    params: [buildId],
+  });
+  return {
+    sourceBuildId: sourceId,
+    articles: { reused: Number(text.articles), toEmbed: Number(pending.articles) },
+    chunks: { reused: Number(text.chunks), toEmbed: Number(pending.chunks) },
+    images: { reused: Number(images.images), toEmbed: Number(pending.images) },
+  };
+}
+
 export async function getServingPointer(executor) {
   const [row] = await executor.query({
     text: `SELECT index_build_id, corpus_version, previous_build_id, previous_corpus_version,
@@ -1253,6 +1366,13 @@ async function main() {
     return;
   }
 
+  const reuseId = argValue("--reuse");
+  if (reuseId) {
+    const result = await reuseFromBuild(executor, reuseId, { fromBuildId: argValue("--from") });
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   const contextualizeId = argValue("--contextualize");
   if (contextualizeId) {
     if (!process.env.ANTHROPIC_API_KEY) fail("ANTHROPIC_API_KEY is required.");
@@ -1426,7 +1546,7 @@ async function main() {
   }
 
   fail(
-    "One of --create, --populate, --contextualize, --embed-text, --embed-images, --finalize, " +
+    "One of --create, --populate, --reuse, --contextualize, --embed-text, --embed-images, --finalize, " +
       "--register-corpus, --activate, --rollback-activation, --switch, --switch-back, --pointer, " +
       "--dry-run, --status is required."
   );
