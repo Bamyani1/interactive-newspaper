@@ -45,7 +45,6 @@ export PYTHONPATH="$ROOT_DIR/ocr/src"
 export MPLCONFIGDIR="$WORK_ROOT/matplotlib"
 export YOLO_CONFIG_DIR="$WORK_ROOT/ultralytics"
 export OCR_ENVIRONMENT=development
-export GOOGLE_CLOUD_LOCATION=global
 mkdir -p "$MPLCONFIGDIR" "$YOLO_CONFIG_DIR"
 
 "$ROOT_DIR/ocr/.venv/bin/dotenv" -f "$ROOT_DIR/.env.local" run -- \

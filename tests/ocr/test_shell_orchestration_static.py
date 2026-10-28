@@ -67,12 +67,12 @@ def test_process_script_has_no_legacy_resume_or_debug_artifacts():
         assert forbidden not in source
 
 
-def test_process_script_is_adc_only_and_database_is_seed_gated():
+def test_process_script_is_claude_only_and_database_is_seed_gated():
     source = _text(PROCESS)
-    assert "export GOOGLE_GENAI_USE_VERTEXAI=true" in source
-    assert "export GOOGLE_CLOUD_LOCATION=global" in source
+    assert 'export OCR_LLM_PROVIDER="${OCR_LLM_PROVIDER:-claude}"' in source
+    assert "export OCR_FORBID_GOOGLE=1" in source
     assert "export OCR_ENVIRONMENT=production" in source
-    assert "GOOGLE_CLOUD_PROJECT is required for Vertex AI ADC" in source
+    assert "ANTHROPIC_API_KEY is required for OCR" in source
     assert "OCR_DETECTOR_LICENSES_ACCEPTED=true is required for hosted OCR" in source
     seed_guard = 'if [[ "$SEED_AFTER_PUBLISH" == "true" || "$MODE" == "repair-seed" ]]'
     assert seed_guard in source

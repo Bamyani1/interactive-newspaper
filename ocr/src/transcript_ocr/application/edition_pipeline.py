@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..config.prompts_loader import MODELS
+from ..config.model_calls import model_name, model_routes, uses_claude
 from ..contracts.content_models import (
     EditionContent,
     MergedArticle,
@@ -208,19 +208,37 @@ def _usage_from_event(event: dict[str, Any]) -> TokenUsage:
     )
 
 
+def _provider_provenance() -> dict[str, str]:
+    if uses_claude():
+        # Claude reads the page text itself; no Document AI.
+        return {"name": "anthropic", "api": "messages", "text_reading": "claude"}
+    return {
+        "name": "google_vertex",
+        "auth": "application_default_credentials",
+        "project": os.getenv("GOOGLE_CLOUD_PROJECT", ""),
+        "location": "global",
+        "api_version": "v1",
+        "document_ai_processor_version": "stable",
+    }
+
+
 def _estimate_report_cost(
     report: PipelineReport,
     extra_model_events: list[dict[str, Any]] | None = None,
 ) -> float:
     total = 0.0
     for page in report.page_diagnostics:
-        total += estimate_gemini_cost("gemini-3.5-flash-lite", page.gemini_tokens).usd
+        total += estimate_gemini_cost(
+            model_name("page_structuring"), page.gemini_tokens
+        ).usd
+        if page.reading_tokens.prompt_tokens:
+            total += estimate_gemini_cost(model_name("text_reading"), page.reading_tokens).usd
         if page.visual_matching.attempted:
             total += estimate_gemini_cost(
-                "gemini-3.5-flash-lite", page.visual_matching.tokens
+                model_name("image_matching"), page.visual_matching.tokens
             ).usd
     if report.merge_pass is not None:
-        total += estimate_gemini_cost("gemini-3.8-flash", report.merge_pass.tokens).usd
+        total += estimate_gemini_cost(model_name("merge"), report.merge_pass.tokens).usd
     for event in extra_model_events or []:
         total += estimate_gemini_cost(
             str(event["model"]),
@@ -349,6 +367,7 @@ def process_edition(
                 page.local_path or "",
                 diag=diag,
                 work_dir=str(page_work),
+                client=client,
             )
             return page.index, diag, result
 
@@ -419,7 +438,7 @@ def process_edition(
                         reason,
                         canvas=canvas,
                         page=str(canvas),
-                        model="gemini-3.5-flash-lite",
+                        model=model_name("page_structuring"),
                         config_id="page-visual-v1",
                     )
                     continue
@@ -469,7 +488,7 @@ def process_edition(
                 edition_date,
                 "article_grouping_or_seam",
                 exc,
-                model="gemini-3.8-flash",
+                model=model_name("merge"),
                 config_id="merge-seam-v1",
             )
             merged = None
@@ -504,7 +523,7 @@ def process_edition(
         except Exception as exc:
             warning(f"Discarding failed or invalid enrichment result: {exc}")
             write_edition_json(str(edition_json_path), before_enrichment)
-            _log_failure(edition_date, "ad_enrichment", exc, model="gemini-3.5-flash-lite")
+            _log_failure(edition_date, "ad_enrichment", exc, model=model_name("ad_enrichment"))
 
         before_review = copy.deepcopy(
             json.loads(edition_json_path.read_text(encoding="utf-8"))
@@ -521,7 +540,7 @@ def process_edition(
         except Exception as exc:
             warning(f"Discarding failed or invalid final-review result: {exc}")
             write_edition_json(str(edition_json_path), before_review)
-            _log_failure(edition_date, "final_content_review", exc, model="gemini-3.5-flash-lite")
+            _log_failure(edition_date, "final_content_review", exc, model=model_name("content_triage"))
 
         validate_candidate_file(edition_json_path, expected_date=edition_date)
         report.total_time_seconds = time.time() - started
@@ -533,14 +552,13 @@ def process_edition(
             edition_dir=edition_dir,
             manifest_path=inventory.manifest_path,
             outcomes=outcomes,
-            project=os.getenv("GOOGLE_CLOUD_PROJECT", ""),
-            location="global",
-            model_routes=MODELS,
+            provider=_provider_provenance(),
+            model_routes=model_routes(),
         )
         stage("Candidate summary", 5, 5)
         success(
             f"{report.pages_processed}/{expected} canvases passed ({ratio:.1%}); "
-            f"estimated Gemini cost captured so far: ${estimated_cost:.4f}"
+            f"estimated model cost captured so far: ${estimated_cost:.4f}"
         )
         succeeded = True
         return EditionRunResult(

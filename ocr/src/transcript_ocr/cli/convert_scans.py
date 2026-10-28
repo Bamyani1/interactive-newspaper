@@ -56,9 +56,21 @@ def main(argv: list[str] | None = None) -> int:
 
     output_dir = os.path.abspath(cli.output_root) if cli.output_root else ""
 
-    from ..config.google_clients import create_genai_client
+    from ..config.google_clients import _load_repo_env
+    from ..config.model_calls import uses_claude
 
-    client = create_genai_client()
+    # .env.local may set the provider, so load it before choosing one.
+    _load_repo_env()
+    if uses_claude():
+        from ..config.claude_client import create_claude_client
+
+        # A Claude run makes no Google call at all.
+        os.environ["OCR_FORBID_GOOGLE"] = "1"
+        client = create_claude_client()
+    else:
+        from ..config.google_clients import create_genai_client
+
+        client = create_genai_client()
     path = cli.path
 
     def _inventory_for(directory: str, explicit_manifest: str = ""):

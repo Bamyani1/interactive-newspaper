@@ -37,9 +37,12 @@ def _format_docai_text(docai_result) -> str:
                 bounds_label = "unknown"
             else:
                 bounds_label = ", ".join(f"{value:.5f}" for value in bounds)
-            blocks.append(
-                f"OCR BLOCK {index:04d} BOUNDS [{bounds_label}]\n{paragraph.text}"
-            )
+            header = f"OCR BLOCK {index:04d} BOUNDS [{bounds_label}]"
+            indented = getattr(paragraph, "indented", None)
+            if indented is not None:
+                # Claude reader only: paragraph breaks follow the printed indent.
+                header += " FIRST LINE INDENTED" if indented else " FIRST LINE FLUSH"
+            blocks.append(f"{header}\n{paragraph.text}")
         return "\n\n".join(blocks)
     if docai_result.paragraphs:
         return "\n\n".join(docai_result.paragraphs)
@@ -116,14 +119,8 @@ def process_page_with_docai(
         substep("Tokens: unavailable")
 
     if diag is not None and usage:
-        diag.gemini_tokens = TokenUsage(
-            prompt_tokens=getattr(usage, "prompt_token_count", 0) or 0,
-            candidates_tokens=getattr(usage, "candidates_token_count", 0) or 0,
-            thoughts_tokens=getattr(usage, "thoughts_token_count", 0) or 0,
-            tool_use_prompt_tokens=getattr(usage, "tool_use_prompt_token_count", 0) or 0,
-            cached_content_tokens=getattr(usage, "cached_content_token_count", 0) or 0,
-            total_tokens=getattr(usage, "total_token_count", 0) or 0,
-        )
+        # Added, not replaced: a page that is structured twice pays for both calls.
+        diag.gemini_tokens = diag.gemini_tokens + TokenUsage.from_metadata(usage)
         diag.timings["gemini"] = gemini_elapsed
 
     _sanitize_null_strings(parsed)

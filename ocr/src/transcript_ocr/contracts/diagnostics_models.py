@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, astuple, dataclass, field
 
 
 @dataclass
@@ -29,6 +29,21 @@ class TokenUsage:
     tool_use_prompt_tokens: int = 0
     cached_content_tokens: int = 0
     total_tokens: int = 0
+
+    def __add__(self, other: TokenUsage) -> TokenUsage:
+        return TokenUsage(*(a + b for a, b in zip(astuple(self), astuple(other))))
+
+    @classmethod
+    def from_metadata(cls, usage) -> TokenUsage:
+        """Read a response's usage_metadata (Gemini's, or the Claude client's copy)."""
+        return cls(
+            prompt_tokens=getattr(usage, "prompt_token_count", 0) or 0,
+            candidates_tokens=getattr(usage, "candidates_token_count", 0) or 0,
+            thoughts_tokens=getattr(usage, "thoughts_token_count", 0) or 0,
+            tool_use_prompt_tokens=getattr(usage, "tool_use_prompt_token_count", 0) or 0,
+            cached_content_tokens=getattr(usage, "cached_content_token_count", 0) or 0,
+            total_tokens=getattr(usage, "total_token_count", 0) or 0,
+        )
 
 
 @dataclass
@@ -84,6 +99,8 @@ class PageDiagnostics:
     docai_mean_confidence: float = 0.0
     cv_info: CVRegionInfo = field(default_factory=CVRegionInfo)
     gemini_tokens: TokenUsage = field(default_factory=TokenUsage)
+    # Claude reads the page text itself, strip by strip.
+    reading_tokens: TokenUsage = field(default_factory=TokenUsage)
     dedup_info: DeduplicationInfo = field(default_factory=DeduplicationInfo)
     image_matching: ImageMatchingInfo = field(default_factory=ImageMatchingInfo)
     visual_matching: VisualMatchingInfo = field(default_factory=VisualMatchingInfo)
@@ -127,8 +144,8 @@ class PipelineReport:
         prompt = 0
         cand = 0
         for pd in self.page_diagnostics:
-            prompt += pd.gemini_tokens.prompt_tokens or 0
-            cand += pd.gemini_tokens.candidates_tokens or 0
+            prompt += pd.gemini_tokens.prompt_tokens + pd.reading_tokens.prompt_tokens
+            cand += pd.gemini_tokens.candidates_tokens + pd.reading_tokens.candidates_tokens
             if pd.visual_matching.attempted:
                 prompt += pd.visual_matching.tokens.prompt_tokens or 0
                 cand += pd.visual_matching.tokens.candidates_tokens or 0

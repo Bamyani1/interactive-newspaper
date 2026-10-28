@@ -389,8 +389,8 @@ ocr/logs/failures.jsonl
 ```
 
 `provenance.json` records the source manifest reference, per-canvas terminal
-state and source hash, Google Cloud project/location/API mode, Document AI
-`stable`, and model routing.
+state and source hash, the model provider (Anthropic; Claude reads the page
+text itself), and model routing.
 
 The append-only failure log contains sanitized metadata fields such as edition,
 canvas/page, stage, attempt, model/config ID, finish reason, latency, token
