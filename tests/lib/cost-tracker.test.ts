@@ -38,58 +38,70 @@ import {
   reserveEvaluationGoogleCall,
   settleEvaluationGoogleCall,
 } from "@/src/lib/cost-tracker";
+import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 
 const ORIGINAL_BUDGET = 0.5;
 
 describe("computeCostUsd", () => {
   it("returns 0 when usage is undefined", () => {
-    expect(computeCostUsd("gemini-3.5-flash-lite", undefined)).toBe(0);
+    expect(computeCostUsd("claude-haiku-5-5", undefined)).toBe(0);
   });
 
   it("returns 0 for an unknown model", () => {
     expect(
       computeCostUsd("some-other-model", {
-        promptTokenCount: 1_000,
-        candidatesTokenCount: 500,
+        input_tokens: 1_000,
+        output_tokens: 500,
       })
     ).toBe(0);
   });
 
+  // An unpriced model costs $0, which would silently switch off the daily
+  // budget stop for every call it makes.
+  it.each(Object.entries(RAG_MODEL_CONFIG))("prices the %s model", (_stage, { model }) => {
+    expect(computeCostUsd(model, { input_tokens: 1_000, output_tokens: 1_000 })).toBeGreaterThan(0);
+  });
+
   it("multiplies tokens by the model's input+output rate", () => {
-    // 1M input at $0.30/M + 1M output/reasoning at $2.50/M.
-    const cost = computeCostUsd("gemini-3.5-flash-lite", {
-      promptTokenCount: 1_000_000,
-      candidatesTokenCount: 1_000_000,
+    // 1M input at $2/M + 1M output (thinking included) at $10/M.
+    const cost = computeCostUsd("claude-sonnet-5-5", {
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
     });
-    expect(cost).toBeCloseTo(2.8, 6);
+    expect(cost).toBeCloseTo(12, 6);
   });
 
   it("handles embedding model with zero output price", () => {
     const cost = computeCostUsd("gemini-embedding-2", {
-      promptTokenCount: 1_000_000,
-      candidatesTokenCount: 0,
+      input_tokens: 1_000_000,
+      output_tokens: 0,
     });
     expect(cost).toBeCloseTo(0.2, 6);
   });
 
-  it("treats missing token counts as 0", () => {
+  it("bills cache reads at a tenth and cache writes at 1.25 times the input rate", () => {
     expect(
-      computeCostUsd("gemini-3.5-flash-lite", {
-        promptTokenCount: undefined,
-        candidatesTokenCount: undefined,
+      computeCostUsd("claude-sonnet-5-5", {
+        input_tokens: 1_000_000,
+        cache_read_input_tokens: 1_000_000,
+        cache_creation_input_tokens: 1_000_000,
+        output_tokens: 1_000_000,
       })
-    ).toBe(0);
+    ).toBeCloseTo(2 + 0.2 + 2.5 + 10, 6);
   });
 
-  it("bills tool-use prompt tokens as input and thought tokens as output", () => {
+  it("bills a Haiku prompt over 100K tokens at the long-prompt rate", () => {
     expect(
-      computeCostUsd("gemini-3.5-flash-lite", {
-        promptTokenCount: 1_000_000,
-        toolUsePromptTokenCount: 1_000_000,
-        candidatesTokenCount: 1_000_000,
-        thoughtsTokenCount: 1_000_000,
+      computeCostUsd("claude-haiku-5-5", { input_tokens: 100_000, output_tokens: 1_000 })
+    ).toBeCloseTo(0.0105, 8);
+    // Cached tokens count toward the threshold.
+    expect(
+      computeCostUsd("claude-haiku-5-5", {
+        input_tokens: 50_000,
+        cache_read_input_tokens: 60_000,
+        output_tokens: 1_000,
       })
-    ).toBeCloseTo(5.6, 6);
+    ).toBeCloseTo((56_000 * 0.5 + 1_000 * 2.5) / 1_000_000, 8);
   });
 });
 
@@ -214,8 +226,8 @@ describe("checkDailyBudget", () => {
     try {
       sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
       await recordUsage(
-        "gemini-3.5-flash-lite",
-        { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 }, // $2.80
+        "claude-haiku-5-5",
+        { input_tokens: 1_000_000, output_tokens: 1_000_000 }, // $3.00
         { op: "outage.large" }
       );
       sqlMock.mockImplementationOnce(() => new Promise(() => {}));
@@ -247,7 +259,7 @@ describe("recordUsage", () => {
   it("skips the INSERT when computed cost is 0", async () => {
     await recordUsage(
       "unknown-model",
-      { promptTokenCount: 100 },
+      { input_tokens: 100, output_tokens: 0 },
       {
         op: "test",
       }
@@ -258,8 +270,8 @@ describe("recordUsage", () => {
   it("emits an INSERT ... ON CONFLICT with the day + cost", async () => {
     sqlMock.mockResolvedValueOnce(undefined);
     await recordUsage(
-      "gemini-3.5-flash-lite",
-      { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 },
+      "claude-haiku-5-5",
+      { input_tokens: 1_000_000, output_tokens: 1_000_000 },
       { op: "test.route", requestId: "r1" }
     );
     expect(sqlMock).toHaveBeenCalledTimes(1);
@@ -269,7 +281,7 @@ describe("recordUsage", () => {
     // passed — the exact SQL text is an implementation detail.
     const call = sqlMock.mock.calls[0];
     const substitutions = call.slice(1);
-    expect(substitutions).toContain(2.8); // cost in USD
+    expect(substitutions).toContain(3); // cost in USD
     // day string is YYYY-MM-DD
     expect(substitutions.some((v: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(v)))).toBe(true);
   });
@@ -278,8 +290,8 @@ describe("recordUsage", () => {
     vi.stubEnv("VERCEL_ENV", "production");
     sqlMock.mockResolvedValueOnce(undefined);
     await recordUsage(
-      "gemini-3.5-flash-lite",
-      { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 },
+      "claude-haiku-5-5",
+      { input_tokens: 1_000_000, output_tokens: 1_000_000 },
       { op: "test.scope" }
     );
     const [strings, ...values] = sqlMock.mock.calls[0];
@@ -294,8 +306,8 @@ describe("recordUsage", () => {
     vi.stubEnv("VERCEL_ENV", "");
     sqlMock.mockResolvedValueOnce(undefined);
     await recordUsage(
-      "gemini-3.5-flash-lite",
-      { promptTokenCount: 100, candidatesTokenCount: 50 },
+      "claude-haiku-5-5",
+      { input_tokens: 100, output_tokens: 50 },
       { op: "test.scope" }
     );
     const values = sqlMock.mock.calls[0].slice(1);
@@ -307,8 +319,8 @@ describe("recordUsage", () => {
     sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
     await expect(
       recordUsage(
-        "gemini-3.5-flash-lite",
-        { promptTokenCount: 100, candidatesTokenCount: 50 },
+        "claude-haiku-5-5",
+        { input_tokens: 100, output_tokens: 50 },
         { op: "test" }
       )
     ).resolves.toBeUndefined();
@@ -321,12 +333,12 @@ describe("recordUsage", () => {
     vi.stubEnv("RAG_EVALUATION_SPEND_CAP_USD", "5");
 
     await recordUsage(
-      "gemini-3.5-flash-lite",
-      { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 },
+      "claude-haiku-5-5",
+      { input_tokens: 1_000_000, output_tokens: 1_000_000 },
       { op: "evaluation.test" }
     );
 
-    expect(_getEvaluationSpendForTests()).toBeCloseTo(2.8, 6);
+    expect(_getEvaluationSpendForTests()).toBeCloseTo(3, 6);
     expect(sqlMock).not.toHaveBeenCalled();
   });
 
@@ -336,11 +348,11 @@ describe("recordUsage", () => {
     vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
     vi.stubEnv("RAG_EVALUATION_SPEND_CAP_USD", "5");
     const usage = {
-      promptTokenCount: 1_000_000,
-      candidatesTokenCount: 1_000_000,
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
     };
-    await recordUsage("gemini-3.5-flash-lite", usage, { op: "evaluation.one" });
-    await recordUsage("gemini-3.5-flash-lite", usage, { op: "evaluation.two" });
+    await recordUsage("claude-haiku-5-5", usage, { op: "evaluation.one" });
+    await recordUsage("claude-haiku-5-5", usage, { op: "evaluation.two" });
 
     try {
       await checkDailyBudget();
@@ -354,7 +366,7 @@ describe("recordUsage", () => {
 });
 
 describe("bounded fail-open during a DB outage", () => {
-  const usage = { promptTokenCount: 1_000_000, candidatesTokenCount: 1_000_000 }; // $2.80
+  const usage = { input_tokens: 1_000_000, output_tokens: 1_000_000 }; // $3.00
   beforeEach(() => {
     vi.unstubAllEnvs();
     _resetEvaluationSpendForTests();
@@ -367,11 +379,11 @@ describe("bounded fail-open during a DB outage", () => {
     // A failed write accrues a tiny amount, well under $0.50.
     sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
     await recordUsage(
-      "gemini-3.5-flash-lite",
-      { promptTokenCount: 100, candidatesTokenCount: 50 },
+      "claude-haiku-5-5",
+      { input_tokens: 100, output_tokens: 50 },
       { op: "outage.small" }
     );
-    expect(_getOutageSpendForTests()).toBeCloseTo(0.000155, 8);
+    expect(_getOutageSpendForTests()).toBeCloseTo(0.000035, 8);
     // The budget read also fails, but under the ceiling we don't block.
     sqlMock.mockRejectedValueOnce(new Error("neon unreachable"));
     await expect(checkDailyBudget()).resolves.toBeUndefined();
@@ -379,8 +391,8 @@ describe("bounded fail-open during a DB outage", () => {
 
   it("refuses (429) once blind outage spend crosses the ceiling", async () => {
     sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
-    await recordUsage("gemini-3.5-flash-lite", usage, { op: "outage.large" });
-    expect(_getOutageSpendForTests()).toBeCloseTo(2.8, 6);
+    await recordUsage("claude-haiku-5-5", usage, { op: "outage.large" });
+    expect(_getOutageSpendForTests()).toBeCloseTo(3, 6);
     sqlMock.mockRejectedValueOnce(new Error("neon unreachable"));
     try {
       await checkDailyBudget();
@@ -388,14 +400,14 @@ describe("bounded fail-open during a DB outage", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(DailyBudgetExceededError);
       expect((err as DailyBudgetExceededError).budgetUsd).toBe(0.5);
-      expect((err as DailyBudgetExceededError).spentUsd).toBeCloseTo(2.8, 6);
+      expect((err as DailyBudgetExceededError).spentUsd).toBeCloseTo(3, 6);
     }
   });
 
   it("resets the accumulator once the DB is reachable again", async () => {
     sqlMock.mockRejectedValueOnce(new Error("neon write failed"));
-    await recordUsage("gemini-3.5-flash-lite", usage, { op: "outage.large" });
-    expect(_getOutageSpendForTests()).toBeCloseTo(2.8, 6);
+    await recordUsage("claude-haiku-5-5", usage, { op: "outage.large" });
+    expect(_getOutageSpendForTests()).toBeCloseTo(3, 6);
     // A successful budget read means Neon recovered; the accumulator clears
     // and the request is allowed again.
     sqlMock.mockResolvedValueOnce([{ spent_usd: "0.000000" }]);
@@ -412,20 +424,20 @@ describe("hard evaluation reservations", () => {
     vi.stubEnv("RAG_EVALUATION_MODE", "1");
     vi.stubEnv("RAG_EVALUATION_RUN_ID", "reservation-test");
     vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
-    vi.stubEnv("RAG_EVALUATION_SPEND_CAP_USD", "1");
+    vi.stubEnv("RAG_EVALUATION_SPEND_CAP_USD", "2");
   });
 
   it("rejects parallel calls before their conservative maxima can cross the cap", () => {
     const first = reserveEvaluationGoogleCall({
-      model: "gemini-3.5-flash-lite",
+      model: "claude-haiku-5-5",
       op: "first",
       maxOutputTokens: 8192,
     });
     expect(first).not.toBeNull();
-    expect(_getEvaluationReservedForTests()).toBeGreaterThan(0.6);
+    expect(_getEvaluationReservedForTests()).toBeGreaterThan(1);
     expect(() =>
       reserveEvaluationGoogleCall({
-        model: "gemini-3.5-flash-lite",
+        model: "claude-haiku-5-5",
         op: "second",
         maxOutputTokens: 8192,
       })
@@ -436,7 +448,7 @@ describe("hard evaluation reservations", () => {
 
   it("atomically replaces a reservation with actual usage", () => {
     const reservation = reserveEvaluationGoogleCall({
-      model: "gemini-3.5-flash-lite",
+      model: "claude-haiku-5-5",
       op: "settle",
       maxOutputTokens: 8192,
     });
@@ -447,33 +459,33 @@ describe("hard evaluation reservations", () => {
 
   it("tracked generation records evaluation cost exactly once", async () => {
     const response = await executeTrackedGenerationCall({
-      model: "gemini-3.5-flash-lite",
+      model: "claude-haiku-5-5",
       op: "tracked",
       maxOutputTokens: 350,
       call: async () => ({
-        usageMetadata: {
-          promptTokenCount: 1000,
-          candidatesTokenCount: 100,
+        usage: {
+          input_tokens: 1000,
+          output_tokens: 100,
         },
       }),
     });
-    expect(response.usageMetadata.promptTokenCount).toBe(1000);
+    expect(response.usage.input_tokens).toBe(1000);
     expect(_getEvaluationReservedForTests()).toBe(0);
-    expect(_getEvaluationSpendForTests()).toBeCloseTo(0.00055, 8);
+    expect(_getEvaluationSpendForTests()).toBeCloseTo(0.00015, 8);
     expect(sqlMock).not.toHaveBeenCalled();
   });
 
-  it("releases the reservation when Google rejects the call", async () => {
+  it("releases the reservation when the model call fails", async () => {
     await expect(
       executeTrackedGenerationCall({
-        model: "gemini-3.5-flash-lite",
+        model: "claude-haiku-5-5",
         op: "failure",
         maxOutputTokens: 350,
         call: async () => {
-          throw new Error("google unavailable");
+          throw new Error("model unavailable");
         },
       })
-    ).rejects.toThrow("google unavailable");
+    ).rejects.toThrow("model unavailable");
     expect(_getEvaluationReservedForTests()).toBe(0);
     expect(_getEvaluationSpendForTests()).toBe(0);
   });

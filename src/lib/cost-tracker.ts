@@ -1,7 +1,7 @@
 /**
  * AI Cost Tracker
  *
- * Reads usageMetadata from Gemini responses, converts token counts to USD,
+ * Reads usage from Claude responses, converts token counts to USD,
  * and accumulates today's total in the Neon `ai_spend_by_scope` table, one
  * row per UTC day per environment (see spendScope()).
  * checkDailyBudget() throws DailyBudgetExceededError once the day crosses
@@ -13,12 +13,12 @@
  * caller. That way a transient DB outage doesn't escalate into a
  * user-facing RAG failure.
  *
- * Prices are standard global online-request rates. Reasoning tokens are
- * billed as output and tool-use prompt tokens as input.
+ * Prices are standard online-request rates. Thinking tokens are billed as
+ * output; cache reads and writes as discounted and surcharged input.
  */
 
 import { neon } from "@neondatabase/serverless";
-import type { EmbedContentResponse, GenerateContentResponseUsageMetadata } from "@google/genai";
+import type { EmbedContentResponse } from "@google/genai";
 import {
   RAG_ANSWER_MODEL,
   RAG_EMBEDDING_MODEL,
@@ -27,12 +27,31 @@ import {
 import { getRagEvaluationConfig } from "@/src/lib/rag-evaluation";
 import { runWithDbTimeout } from "@/src/lib/db-timeout";
 
-// USD per 1,000,000 tokens for standard online requests at global.
-const PRICE_PER_MTOKEN: Record<string, { input: number; output: number }> = {
-  [RAG_GENERATION_MODEL]: { input: 0.3, output: 2.5 },
-  [RAG_ANSWER_MODEL]: { input: 1.5, output: 7.5 },
+interface TokenPrice {
+  input: number;
+  output: number;
+}
+
+// USD per 1,000,000 tokens for standard online requests. Haiku 5.5 bills a
+// prompt over 100K tokens at a higher rate for the whole call.
+const PRICE_PER_MTOKEN: Record<string, TokenPrice & { longPrompt?: TokenPrice }> = {
+  [RAG_GENERATION_MODEL]: { input: 0.1, output: 0.5, longPrompt: { input: 0.5, output: 2.5 } },
+  [RAG_ANSWER_MODEL]: { input: 2, output: 10 },
   [RAG_EMBEDDING_MODEL]: { input: 0.2, output: 0 },
 };
+const LONG_PROMPT_TOKENS = 100_000;
+// Claude bills cache reads at a tenth of the input rate and 5-minute cache
+// writes at 1.25 times it.
+const CACHE_READ_RATE = 0.1;
+const CACHE_WRITE_RATE = 1.25;
+
+/** The token counters on a Claude response (the SDK's `Usage`). */
+export interface GenerationUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}
 const GEMINI_EMBEDDING_2_IMAGE_USD = 0.00012;
 
 // The daily cap comes from RAG_DAILY_BUDGET_USD so it can be raised for a
@@ -100,12 +119,11 @@ const evaluationReservations = new Map<
   { runId: string; reservedUsd: number; model: string; op: string }
 >();
 
-// The generation models we bill against accept at most 1,048,576 context
-// tokens (gemini-3.8-flash and gemini-3.5-flash-lite alike). Usage
-// metadata exposes tool-use and thought counters separately, and our billing
-// policy deliberately adds them, so reserve twice the documented input and
-// configured output ceilings. The reservation is intentionally conservative:
-// it is replaced atomically by actual usage after a successful call.
+// The generation models we bill against accept at most 1M context tokens
+// (Haiku 5.5 and Sonnet 5.5 alike). Reserve twice that and the configured
+// output ceiling at the highest rate, which also covers every input token
+// being a cache write. The reservation is intentionally conservative: it is
+// replaced atomically by actual usage after a successful call.
 const MAX_GENERATION_CONTEXT_TOKENS = 1_048_576;
 const BILLING_COUNTER_SAFETY_MULTIPLIER = 2;
 
@@ -152,10 +170,11 @@ export function reserveEvaluationGoogleCall(options: {
 }): EvaluationBudgetReservation | null {
   const evaluation = getRagEvaluationConfig();
   if (!evaluation.enabled) return null;
-  const price = PRICE_PER_MTOKEN[options.model];
-  if (!price) {
+  const priced = PRICE_PER_MTOKEN[options.model];
+  if (!priced) {
     throw new Error(`Cannot reserve evaluation budget for unpriced model ${options.model}.`);
   }
+  const price = priced.longPrompt ?? priced;
   const maxInputTokens = MAX_GENERATION_CONTEXT_TOKENS * BILLING_COUNTER_SAFETY_MULTIPLIER;
   const maxOutputTokens =
     Math.max(0, options.maxOutputTokens ?? 0) * BILLING_COUNTER_SAFETY_MULTIPLIER;
@@ -260,16 +279,19 @@ export function secondsUntilBudgetReset(now: Date = new Date()): number {
   return Math.max(1, Math.ceil((nextMidnightUtc - now.getTime()) / 1000));
 }
 
-export function computeCostUsd(
-  model: string,
-  usage: GenerateContentResponseUsageMetadata | undefined
-): number {
+export function computeCostUsd(model: string, usage: GenerationUsage | undefined): number {
   if (!usage) return 0;
-  const price = PRICE_PER_MTOKEN[model];
-  if (!price) return 0;
-  const inputTokens = (usage.promptTokenCount ?? 0) + (usage.toolUsePromptTokenCount ?? 0);
-  const outputTokens = (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
-  return (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
+  const priced = PRICE_PER_MTOKEN[model];
+  if (!priced) return 0;
+  const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+  const promptTokens = usage.input_tokens + cacheRead + cacheWrite;
+  const price =
+    priced.longPrompt && promptTokens > LONG_PROMPT_TOKENS ? priced.longPrompt : priced;
+  const inputUsd =
+    (usage.input_tokens + cacheRead * CACHE_READ_RATE + cacheWrite * CACHE_WRITE_RATE) *
+    price.input;
+  return (inputUsd + usage.output_tokens * price.output) / 1_000_000;
 }
 
 export function embeddingTokenCount(response: EmbedContentResponse): number {
@@ -300,9 +322,7 @@ export function computeEmbeddingCostUsd(
 }
 
 /** Execute, reserve, settle, and record one non-streaming generation call. */
-export async function executeTrackedGenerationCall<
-  T extends { usageMetadata?: GenerateContentResponseUsageMetadata },
->(options: {
+export async function executeTrackedGenerationCall<T extends { usage?: GenerationUsage }>(options: {
   model: string;
   maxOutputTokens: number;
   requestId?: string;
@@ -313,12 +333,9 @@ export async function executeTrackedGenerationCall<
   try {
     const response = await options.call();
     if (reservation) {
-      settleEvaluationGoogleCall(
-        reservation,
-        computeCostUsd(options.model, response.usageMetadata)
-      );
+      settleEvaluationGoogleCall(reservation, computeCostUsd(options.model, response.usage));
     }
-    void recordUsage(options.model, response.usageMetadata, {
+    void recordUsage(options.model, response.usage, {
       requestId: options.requestId,
       op: options.op,
       evaluationCostAlreadyRecorded: Boolean(reservation),
@@ -388,7 +405,7 @@ export async function checkDailyBudget(): Promise<void> {
   const day = today();
   let spent = 0;
   try {
-    // Raced against a timer: this is the last await before the first Gemini
+    // Raced against a timer: this is the last await before the first model
     // call, and Neon's serverless driver has no AbortSignal support, so a
     // hung read would otherwise stall /api/ask indefinitely. A timeout is
     // treated exactly like any other DB error — bounded fail-open below.
@@ -427,13 +444,13 @@ export async function checkDailyBudget(): Promise<void> {
 }
 
 /**
- * Record one Gemini call's cost. Fire-and-forget from the route; a DB
+ * Record one model call's cost. Fire-and-forget from the route; a DB
  * failure logs a warning but doesn't propagate (the user's request
  * shouldn't fail because accounting fell behind).
  */
 export async function recordUsage(
   model: string,
-  usage: GenerateContentResponseUsageMetadata | undefined,
+  usage: GenerationUsage | undefined,
   context: {
     requestId?: string;
     op: string;
@@ -487,10 +504,10 @@ export async function recordUsage(
       op: context.op,
       requestId: context.requestId,
       model,
-      promptTokens: usage?.promptTokenCount ?? 0,
-      toolUsePromptTokens: usage?.toolUsePromptTokenCount ?? 0,
-      candidatesTokens: usage?.candidatesTokenCount ?? 0,
-      thoughtsTokens: usage?.thoughtsTokenCount ?? 0,
+      inputTokens: usage?.input_tokens ?? 0,
+      cacheReadTokens: usage?.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: usage?.cache_creation_input_tokens ?? 0,
+      outputTokens: usage?.output_tokens ?? 0,
       costUsd: cost,
       evaluationRunId: evaluation.runId ?? undefined,
       evaluationTotalUsd,

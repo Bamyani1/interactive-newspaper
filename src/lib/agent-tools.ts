@@ -1,4 +1,4 @@
-import { Type } from "@google/genai";
+import type Anthropic from "@anthropic-ai/sdk";
 import { DbTimeoutError, fetchArticleForRag, queryEditions } from "@/src/lib/db";
 import { isQuotaFailure, retryAfterSecFromQuotaError } from "@/src/lib/gemini-quota";
 import { searchAndRankArchive } from "@/src/lib/retrieval";
@@ -22,25 +22,24 @@ function mdSafeUrls(urls: string[]): string[] {
   return urls.map((url) => url.replace(/ /g, "%20"));
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const AGENT_TOOL_DECLARATIONS: any[] = [
+export const AGENT_TOOL_DECLARATIONS: Anthropic.Tool[] = [
   {
     name: "search_archive",
     description:
       "Search the Ohio Wesleyan Transcript newspaper archive (1950-2006). " +
       "Uses the same reformulation, chunk/image retrieval, reranking, and corrective retry as the main RAG path.",
-    parameters: {
-      type: Type.OBJECT,
+    input_schema: {
+      type: "object",
       properties: {
-        query: { type: Type.STRING, description: "Natural-language search query" },
-        startDate: { type: Type.STRING, description: "Earliest edition date (YYYY-MM-DD)" },
-        endDate: { type: Type.STRING, description: "Latest edition date (YYYY-MM-DD)" },
+        query: { type: "string", description: "Natural-language search query" },
+        startDate: { type: "string", description: "Earliest edition date (YYYY-MM-DD)" },
+        endDate: { type: "string", description: "Latest edition date (YYYY-MM-DD)" },
         category: {
-          type: Type.STRING,
+          type: "string",
           description: "Filter by article category",
           enum: [...CATEGORIES],
         },
-        limit: { type: Type.NUMBER, description: "Maximum results (1-20, default 10)" },
+        limit: { type: "number", description: "Maximum results (1-20, default 10)" },
       },
       required: ["query"],
     },
@@ -48,10 +47,10 @@ export const AGENT_TOOL_DECLARATIONS: any[] = [
   {
     name: "read_article",
     description: "Retrieve the complete text of an article returned by search_archive.",
-    parameters: {
-      type: Type.OBJECT,
+    input_schema: {
+      type: "object",
       properties: {
-        articleId: { type: Type.STRING, description: "Article ID returned by search_archive" },
+        articleId: { type: "string", description: "Article ID returned by search_archive" },
       },
       required: ["articleId"],
     },
@@ -59,13 +58,13 @@ export const AGENT_TOOL_DECLARATIONS: any[] = [
   {
     name: "list_editions",
     description: "List archive edition dates with pagination and article counts.",
-    parameters: {
-      type: Type.OBJECT,
+    input_schema: {
+      type: "object",
       properties: {
-        startDate: { type: Type.STRING, description: "Earliest date (YYYY-MM-DD)" },
-        endDate: { type: Type.STRING, description: "Latest date (YYYY-MM-DD)" },
-        offset: { type: Type.NUMBER, description: "Pagination offset (default 0)" },
-        limit: { type: Type.NUMBER, description: "Page size (1-100, default 50)" },
+        startDate: { type: "string", description: "Earliest date (YYYY-MM-DD)" },
+        endDate: { type: "string", description: "Latest date (YYYY-MM-DD)" },
+        offset: { type: "number", description: "Pagination offset (default 0)" },
+        limit: { type: "number", description: "Page size (1-100, default 50)" },
       },
     },
   },

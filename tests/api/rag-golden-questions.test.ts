@@ -3,7 +3,7 @@
  *
  * RAG golden regression suite
  *
- * Hits the REAL /api/ask pipeline (real Gemini, real Neon) with a
+ * Hits the REAL /api/ask pipeline (real Claude, real Gemini embeddings, real Neon) with a
  * previously used development catalog of questions and asserts source/fact, security,
  * citation, mode, and deadline invariants. Historical count/confidence drift is
  * printed as telemetry, not treated as an accuracy oracle.
@@ -121,6 +121,10 @@ describe.skipIf(!process.env.RUN_RAG_GOLDEN)("RAG golden regression suite", () =
     if (!process.env.DATABASE_URL) {
       throw new Error("Golden suite requires DATABASE_URL (via .env.local or shell env)");
     }
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("Golden suite requires ANTHROPIC_API_KEY");
+    }
+    // Query embeddings still run on Gemini.
     if (!process.env.GOOGLE_CLOUD_PROJECT) {
       throw new Error("Golden suite requires GOOGLE_CLOUD_PROJECT and working ADC");
     }

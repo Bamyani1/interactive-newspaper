@@ -1,22 +1,14 @@
 /**
  * Agent Loop
  *
- * Constrained Gemini function-calling loop for complex RAG questions.
+ * Constrained Claude tool-use loop for complex RAG questions.
  * The model iteratively searches the newspaper archive, reads articles,
  * and synthesises a cited answer. Capped at three tool rounds plus one
  * mandatory no-tools synthesis call, with AbortSignal deadline support.
  */
 
-import { FunctionCallingConfigMode } from "@google/genai";
-import type {
-  Content,
-  FunctionCall,
-  FunctionDeclaration,
-  GenerateContentParameters,
-  GenerateContentResponseUsageMetadata,
-  Part,
-} from "@google/genai";
-import { getGeminiClient } from "@/src/lib/gemini-client";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getClaudeClient, messageText } from "@/src/lib/claude-client";
 import type { AskAgentProgressEvent } from "@/src/lib/ask-stream-events";
 import {
   computeCostUsd,
@@ -31,6 +23,7 @@ import type { RetrievalFilters } from "@/src/lib/retrieval";
 import type { RetrievalMethod } from "@/src/lib/db";
 import type { AnswerOutcome, AskErrorKind, Citation } from "@/src/types";
 import {
+  isAbortError,
   isQuotaFailure,
   kindForQuota,
   retryAfterSecFromQuotaError,
@@ -63,6 +56,13 @@ const WRITING_RESERVE_MS = 20_000;
  * the simple path writes ~800 tokens under an 8,192 budget.
  */
 const MAX_OUTPUT_TOKENS = 16_384;
+/**
+ * Text a turn may write before it is streamed. Claude can open a research
+ * round with a sentence ("I'll search for…") before its tool calls; holding
+ * this much back keeps that from reaching the reader as answer prose.
+ * Longer notes between tool calls come back as thinking blocks.
+ */
+const PREAMBLE_HOLDBACK_CHARS = 280;
 const MAX_FINAL_ARTICLES = 12;
 const MAX_FINAL_EVIDENCE_CHARS = 8_000;
 
@@ -458,10 +458,11 @@ function logError(requestId: string | undefined, msg: string, err: unknown): voi
   );
 }
 
-function textFromParts(parts: Part[] | undefined): string {
-  return (parts ?? [])
-    .filter((part): part is Part & { text: string } => typeof part.text === "string")
-    .map((part) => part.text)
+function textFromContent(content: Anthropic.MessageParam["content"] | undefined): string {
+  if (typeof content === "string") return content.trim();
+  return (content ?? [])
+    .filter((block): block is Anthropic.TextBlockParam => block.type === "text")
+    .map((block) => block.text)
     .join("")
     .trim();
 }
@@ -476,8 +477,8 @@ function combinedRetrievalMethod(methods: Set<RetrievalMethod>): RetrievalMethod
 
 /** One model turn, in the shape the loop consumes regardless of transport. */
 interface ModelTurn {
-  parts: Part[];
-  functionCalls: FunctionCall[];
+  content: Anthropic.ContentBlock[];
+  toolUses: Anthropic.ToolUseBlock[];
   text: string;
   finishReason?: string;
 }
@@ -486,25 +487,20 @@ interface ModelTurn {
  * A model turn whose text is forwarded as it arrives, so a complex question
  * shows prose instead of "Researching…" for the whole synthesis wait.
  *
- * Deltas are held back for as long as the turn has produced a function
- * call: a round that is choosing archive lookups is not writing the answer,
- * and streaming its planning text as prose would be a lie. Only the initial
- * await is retried on quota — a 429 rejects before the first chunk, so no
- * text can be emitted twice.
+ * Deltas stop once the turn calls a tool, and its first few sentences wait
+ * until it is clear none is coming: a round that is choosing archive lookups
+ * is not writing the answer, and streaming its planning text as prose would
+ * be a lie. Only the connection is retried on quota — a 429 rejects before
+ * the first event, so no text can be emitted twice.
  */
 async function generateStreamedTurn(params: {
-  request: GenerateContentParameters;
+  request: Anthropic.MessageCreateParamsNonStreaming;
   op: string;
   requestId?: string;
   signal?: AbortSignal;
   onDelta?: (text: string) => void;
 }): Promise<ModelTurn> {
-  const client = getGeminiClient();
-  const parts: Part[] = [];
-  const functionCalls: FunctionCall[] = [];
-  let text = "";
-  let finishReason: string | undefined;
-  let usage: GenerateContentResponseUsageMetadata | undefined;
+  const client = getClaudeClient();
   const reservation = reserveEvaluationGoogleCall({
     model: AGENT_MODEL,
     maxOutputTokens: MAX_OUTPUT_TOKENS,
@@ -516,39 +512,61 @@ async function generateStreamedTurn(params: {
   try {
     const stream = await retryOnQuota(
       params.op,
-      () => client.models.generateContentStream(params.request),
+      async () => {
+        const attempt = client.messages.stream(params.request, { signal: params.signal });
+        // Wait for the response headers, so a 429 rejects here.
+        await attempt.withResponse();
+        return attempt;
+      },
       { signal: params.signal, requestId: params.requestId }
     );
 
-    for await (const chunk of stream) {
-      if (chunk.usageMetadata) usage = chunk.usageMetadata;
-      const chunkFinish = chunk.candidates?.[0]?.finishReason;
-      if (chunkFinish) finishReason = chunkFinish;
-      if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-        functionCalls.push(...chunk.functionCalls);
+    let held = "";
+    let streaming = false;
+    let calledTool = false;
+    for await (const event of stream) {
+      if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+        calledTool = true;
+        held = "";
       }
-      for (const part of chunk.candidates?.[0]?.content?.parts ?? []) parts.push(part);
-      const chunkText = typeof chunk.text === "string" ? chunk.text : "";
-      if (!chunkText) continue;
-      text += chunkText;
-      if (functionCalls.length === 0) params.onDelta?.(chunkText);
+      if (calledTool || event.type !== "content_block_delta" || event.delta.type !== "text_delta") {
+        continue;
+      }
+      if (streaming) {
+        params.onDelta?.(event.delta.text);
+        continue;
+      }
+      held += event.delta.text;
+      if (held.length > PREAMBLE_HOLDBACK_CHARS) {
+        streaming = true;
+        params.onDelta?.(held);
+      }
     }
+    const message = await stream.finalMessage();
+    if (!calledTool && !streaming && held) params.onDelta?.(held);
 
     if (reservation) {
-      settleEvaluationGoogleCall(reservation, computeCostUsd(AGENT_MODEL, usage));
+      settleEvaluationGoogleCall(reservation, computeCostUsd(AGENT_MODEL, message.usage));
       settled = true;
     }
-    void recordUsage(AGENT_MODEL, usage, {
+    void recordUsage(AGENT_MODEL, message.usage, {
       requestId: params.requestId,
       op: params.op,
       evaluationCostAlreadyRecorded: Boolean(reservation),
     });
+
+    return {
+      content: message.content,
+      toolUses: message.content.filter(
+        (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
+      ),
+      text: messageText(message),
+      finishReason: message.stop_reason ?? undefined,
+    };
   } catch (err) {
     if (!settled) releaseEvaluationGoogleCall(reservation);
     throw err;
   }
-
-  return { parts, functionCalls, text: text.trim(), finishReason };
 }
 
 // ─── Main Loop ──────────────────────────────────────────────────
@@ -581,7 +599,7 @@ export async function runAgentLoop(
   const coverageBlock = buildCoveragePromptBlock(coverage);
   const userText = `${historyBlock}${filterBlock}${coverageBlock ? `${coverageBlock}\n\n` : ""}USER QUESTION (JSON string): ${JSON.stringify(question)}`;
 
-  const contents: Content[] = [{ role: "user", parts: [{ text: userText }] }];
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: userText }];
 
   let round = 0;
   let toolCallCount = 0;
@@ -605,7 +623,11 @@ export async function runAgentLoop(
    * ever learns about it is if the loop says so here.
    */
   const noteFinishReason = (turn: ModelTurn, op: string): void => {
-    if (turn.finishReason !== "MAX_TOKENS") return;
+    if (turn.finishReason === "refusal") {
+      logWarn(requestId, "model declined the turn", { op });
+      return;
+    }
+    if (turn.finishReason !== "max_tokens") return;
     answerTruncated = true;
     logWarn(requestId, "answer truncated at the output token cap", {
       op,
@@ -653,18 +675,16 @@ export async function runAgentLoop(
       }
 
       const modelStart = Date.now();
-      const roundRequest: GenerateContentParameters = {
+      const roundRequest: Anthropic.MessageCreateParamsNonStreaming = {
         model: AGENT_MODEL,
-        contents,
-        config: {
-          systemInstruction: AGENT_SYSTEM_PROMPT,
-          tools: [{ functionDeclarations: AGENT_TOOL_DECLARATIONS as FunctionDeclaration[] }],
-          maxOutputTokens: MAX_OUTPUT_TOKENS,
-          thinkingConfig: {
-            thinkingLevel: RAG_MODEL_CONFIG.agent.thinkingLevel,
-          },
-          abortSignal: signal,
-        },
+        max_tokens: MAX_OUTPUT_TOKENS,
+        system: AGENT_SYSTEM_PROMPT,
+        tools: AGENT_TOOL_DECLARATIONS,
+        messages,
+        output_config: { effort: RAG_MODEL_CONFIG.agent.effort },
+        // Each round resends the system prompt, tools, and every earlier
+        // round; caching the conversation so far lets the next round read it.
+        cache_control: { type: "ephemeral" },
       };
       const turnOpts = { op: `agent.round${round}`, requestId, signal };
       // Every round streams, because any round can be the one that writes
@@ -673,8 +693,7 @@ export async function runAgentLoop(
       // the first round and the forced synthesis left that dominant path
       // silent for the whole generation, which is the wait the reader
       // actually feels. generateStreamedTurn withholds deltas from any
-      // turn that produces a function call, so a planning round still
-      // sends nothing.
+      // turn that calls a tool, so a planning round still sends nothing.
       const response = await generateStreamedTurn({
         ...turnOpts,
         request: roundRequest,
@@ -683,14 +702,20 @@ export async function runAgentLoop(
       generationTimeMs += Date.now() - modelStart;
       noteFinishReason(response, `agent.round${round}`);
 
-      const functionCalls = response.functionCalls;
+      const toolUses = response.toolUses;
 
-      if (functionCalls && functionCalls.length > 0 && outOfResearchTime()) {
+      if (toolUses.length > 0 && response.finishReason === "max_tokens") {
+        // A tool call cut off at the cap has incomplete arguments.
+        logWarn(requestId, "tool call cut off at the output cap; writing up", { rounds: round });
+        break;
+      }
+
+      if (toolUses.length > 0 && outOfResearchTime()) {
         logWarn(requestId, "searches skipped to leave time for the answer", { rounds: round });
         break;
       }
 
-      if (functionCalls && functionCalls.length > 0) {
+      if (toolUses.length > 0) {
         const toolStart = Date.now();
         // Lookups stop where the writing reserve begins (round 0 excepted, as
         // above). A round waits on its slowest search, and one stalled search
@@ -704,21 +729,22 @@ export async function runAgentLoop(
           ? AbortSignal.any([signal, researchCutoff.signal])
           : researchCutoff.signal;
         const results = await Promise.all(
-          functionCalls.map(async (call, idx) => {
+          toolUses.map(async (call) => {
+            const args = (call.input ?? {}) as Record<string, unknown>;
             onProgress?.({
               type: "tool_call",
-              tool: call.name!,
+              tool: call.name,
               round,
-              args: call.args as Record<string, unknown> | undefined,
+              args,
             });
 
-            const toolResult = await executeTool(call.name!, call.args ?? {}, {
+            const toolResult = await executeTool(call.name, args, {
               signal: toolSignal,
               requestId,
               filters,
             });
 
-            accumulateArticleMeta(call.name!, toolResult, articleLookup);
+            accumulateArticleMeta(call.name, toolResult, articleLookup);
 
             if (toolResult.error) {
               toolErrorCount += 1;
@@ -748,17 +774,17 @@ export async function runAgentLoop(
               }
             }
 
-            const summary = summarizeToolResult(call.name!, toolResult);
+            const summary = summarizeToolResult(call.name, toolResult);
             onProgress?.({
               type: "tool_result",
-              tool: call.name!,
+              tool: call.name,
               round,
               summary,
             });
 
             return {
-              id: call.id ?? `${call.name}-${round}-${idx}`,
-              name: call.name!,
+              id: call.id,
+              name: call.name,
               response: toolResult,
             };
           })
@@ -778,7 +804,7 @@ export async function runAgentLoop(
           logError(requestId, "all tools in round returned errors", `round ${round}`);
         }
 
-        toolCallCount += functionCalls.length;
+        toolCallCount += toolUses.length;
 
         if (quotaStop) {
           logWarn(requestId, "archive lookup hit the model quota; stopping the loop", {
@@ -797,18 +823,16 @@ export async function runAgentLoop(
           answerText = response.text;
         }
 
-        if (response.parts.length > 0) {
-          contents.push({ role: "model", parts: response.parts });
-        }
-
-        contents.push({
+        // The turn goes back verbatim, thinking blocks included, followed by
+        // one result per tool call.
+        messages.push({ role: "assistant", content: response.content });
+        messages.push({
           role: "user",
-          parts: results.map((r) => ({
-            functionResponse: {
-              id: r.id,
-              name: r.name,
-              response: r.response,
-            },
+          content: results.map((r) => ({
+            type: "tool_result" as const,
+            tool_use_id: r.id,
+            content: JSON.stringify(r.response),
+            ...(typeof r.response.error === "string" ? { is_error: true } : {}),
           })),
         });
 
@@ -836,38 +860,23 @@ export async function runAgentLoop(
         onDelta: (text) => onProgress?.({ type: "delta", text }),
         request: {
           model: AGENT_MODEL,
-          // Start a fresh synthesis turn. Replaying prior model
-          // function-call parts conditions Flash-Lite to emit another
-          // call even when function calling is explicitly NONE.
-          contents: [
+          max_tokens: MAX_OUTPUT_TOKENS,
+          system: AGENT_FINAL_SYSTEM_PROMPT,
+          // A fresh synthesis turn with no tools: the evidence gathered so
+          // far goes in the prompt instead of the replayed rounds.
+          messages: [
             {
               role: "user",
-              parts: [
-                {
-                  text: buildFinalSynthesisInput({
-                    question,
-                    filters,
-                    conversationContext,
-                    coverage,
-                    articles: articleLookup,
-                  }),
-                },
-              ],
+              content: buildFinalSynthesisInput({
+                question,
+                filters,
+                conversationContext,
+                coverage,
+                articles: articleLookup,
+              }),
             },
           ],
-          config: {
-            systemInstruction: AGENT_FINAL_SYSTEM_PROMPT,
-            toolConfig: {
-              functionCallingConfig: {
-                mode: FunctionCallingConfigMode.NONE,
-              },
-            },
-            maxOutputTokens: MAX_OUTPUT_TOKENS,
-            thinkingConfig: {
-              thinkingLevel: RAG_MODEL_CONFIG.agent.finalThinkingLevel,
-            },
-            abortSignal: signal,
-          },
+          output_config: { effort: RAG_MODEL_CONFIG.agent.finalEffort },
         },
       });
       generationTimeMs += Date.now() - finalStart;
@@ -877,10 +886,7 @@ export async function runAgentLoop(
       if (!finalAnswerProduced) {
         logWarn(requestId, "forced synthesis returned no text", {
           finishReason: finalResponse.finishReason,
-          functionCalls: finalResponse.functionCalls.map((call) => call.name),
-          partKinds: finalResponse.parts.map((part) =>
-            part.functionCall ? "functionCall" : typeof part.text === "string" ? "text" : "other"
-          ),
+          blockTypes: finalResponse.content.map((block) => block.type),
         });
       }
     }
@@ -891,8 +897,8 @@ export async function runAgentLoop(
         toolCallCount,
       });
 
-      const lastModelContent = [...contents].reverse().find((c) => c.role === "model");
-      const partialText = textFromParts(lastModelContent?.parts);
+      const lastModelContent = [...messages].reverse().find((m) => m.role === "assistant");
+      const partialText = textFromContent(lastModelContent?.content);
 
       answerText = partialText
         ? `${partialText.trim()}\n\n(Note: This answer may be incomplete as the research process was cut short.)`
@@ -920,7 +926,7 @@ export async function runAgentLoop(
       ...resultBase(),
     };
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
+    if (isAbortError(err)) {
       logWarn(requestId, "agent loop aborted by signal", { rounds: round, toolCallCount });
       return failed(TIMED_OUT_ANSWER, "timeout");
     }

@@ -1,7 +1,7 @@
 /**
  * LLM-Based Re-Ranker
  *
- * Uses Gemini Flash to score each retrieved article's relevance to the
+ * Uses Claude Haiku to score each retrieved article's relevance to the
  * user's question on a 0-10 scale. Filters out low-relevance articles
  * and caps the number sent to the answer generator.
  *
@@ -11,10 +11,10 @@
  * answer generator would fail on the same quota a moment later.
  */
 
-import { getGeminiClient } from "@/src/lib/gemini-client";
+import { getClaudeClient, jsonOutputFormat, messageText } from "@/src/lib/claude-client";
 import { executeTrackedGenerationCall } from "@/src/lib/cost-tracker";
 import { QuotaExhaustedError } from "@/src/lib/embeddings";
-import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
+import { isAbortError, isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import type { RetrievedArticle } from "@/src/lib/db";
 
@@ -100,26 +100,21 @@ Judge whether a source helps answer the question, not whether it confirms the qu
 Return a JSON object with a "scores" array in the same order as the articles. Example: {"scores":[8,2,6,0,9]}`;
 
 /**
- * Pinned to the article count in both directions. Left unbounded, the
- * judge returned about half the scores often enough to degrade one
- * request in six; the schema is the only place that constraint can be
- * enforced rather than asked for.
+ * One schema for every article count. Claude does not enforce array
+ * lengths, so a per-count schema would only add a first-use compile for
+ * each count; the prompt states the count and `parseScores` checks it.
  */
-function rerankerSchema(articleCount: number) {
-  return {
-    type: "object",
-    properties: {
-      scores: {
-        type: "array",
-        items: { type: "number", minimum: 0, maximum: 10 },
-        minItems: articleCount,
-        maxItems: articleCount,
-      },
+const RERANKER_SCHEMA = {
+  type: "object",
+  properties: {
+    scores: {
+      type: "array",
+      items: { type: "number", minimum: 0, maximum: 10 },
     },
-    required: ["scores"],
-    additionalProperties: false,
-  };
-}
+  },
+  required: ["scores"],
+  additionalProperties: false,
+};
 
 function articleDocument(a: RetrievedArticle, index: number | null, bodyChars: number): string {
   const relevantText =
@@ -142,8 +137,9 @@ const VOYAGE_TIMEOUT_MS = 5_000;
 
 /**
  * Dedicated cross-encoder reranking via Voyage. Active only when
- * VOYAGE_API_KEY is set; any failure falls back to the LLM judge, so this
- * path can never make results worse than the previous behavior. Voyage
+ * RAG_RERANKER=voyage and VOYAGE_API_KEY are both set: the key also serves
+ * embeddings, and its presence alone must not switch reranking to an
+ * unmeasured path. Any failure falls back to the LLM judge. Voyage
  * relevance scores (0..1) are mapped onto the pipeline's 0-10 scale.
  */
 async function voyageRerank(
@@ -154,7 +150,7 @@ async function voyageRerank(
   options: RerankOptions
 ): Promise<RankedArticle[] | null> {
   const apiKey = process.env.VOYAGE_API_KEY;
-  if (!apiKey) return null;
+  if (process.env.RAG_RERANKER !== "voyage" || !apiKey) return null;
   const started = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), VOYAGE_TIMEOUT_MS);
@@ -225,16 +221,16 @@ async function voyageRerank(
 }
 
 /**
- * One Gemini judge call: scores for `articles` in order, or null when the
+ * One judge call: scores for `articles` in order, or null when the
  * response can't be parsed. Throws on quota, timeout, and API errors.
  */
-async function geminiScores(
+async function judgeScores(
   question: string,
   articles: RetrievedArticle[],
   bodyChars: number,
   options: RerankOptions
 ): Promise<number[] | null> {
-  const client = getGeminiClient();
+  const client = getClaudeClient();
   const maxScoreTokens = scoreTokenBudget(articles.length);
   const articleSummaries = articles.map((a, i) => articleDocument(a, i, bodyChars)).join("\n\n");
 
@@ -258,26 +254,25 @@ async function geminiScores(
         requestId: options.requestId,
         op: "rerank",
         call: () =>
-          client.models.generateContent({
-            model: RERANKER_MODEL,
-            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-            config: {
-              systemInstruction: RERANKER_PROMPT,
-              maxOutputTokens: maxScoreTokens,
-              thinkingConfig: {
-                thinkingLevel: RAG_MODEL_CONFIG.rerank.thinkingLevel,
+          client.messages.create(
+            {
+              model: RERANKER_MODEL,
+              max_tokens: maxScoreTokens,
+              system: RERANKER_PROMPT,
+              messages: [{ role: "user", content: userPrompt }],
+              output_config: {
+                effort: RAG_MODEL_CONFIG.rerank.effort,
+                format: jsonOutputFormat(RERANKER_SCHEMA),
               },
-              responseMimeType: "application/json",
-              responseJsonSchema: rerankerSchema(articles.length),
-              abortSignal: combinedSignal,
             },
-          }),
+            { signal: combinedSignal }
+          ),
       }).finally(() => clearTimeout(timeout));
     },
     { signal: options.signal, requestId: options.requestId }
   );
 
-  const text = response.text?.trim() ?? "";
+  const text = messageText(response);
   const scores = parseScores(text, articles.length);
 
   if (!scores) {
@@ -320,11 +315,10 @@ export async function rerankArticles(
     let judged = articles;
     let scores: number[] | null;
     try {
-      scores = await geminiScores(question, judged, bodyChars, options);
+      scores = await judgeScores(question, judged, bodyChars, options);
     } catch (err) {
       // Only the judge's own timer, not the request's deadline.
-      const judgeTimedOut =
-        err instanceof Error && err.name === "AbortError" && !options.signal?.aborted;
+      const judgeTimedOut = isAbortError(err) && !options.signal?.aborted;
       if (!judgeTimedOut) throw err;
       // Ask once more about the top of the fused order at the same excerpt
       // length, so the retry prompt is half the size instead of the same
@@ -344,7 +338,7 @@ export async function rerankArticles(
           retryCount: judged.length,
         })
       );
-      scores = await geminiScores(question, judged, bodyChars, options);
+      scores = await judgeScores(question, judged, bodyChars, options);
     }
 
     if (!scores) return failOpen(articles, maxArticles);
@@ -357,7 +351,7 @@ export async function rerankArticles(
       .slice(0, maxArticles);
   } catch (err) {
     const quota = isQuotaError(err);
-    const isTimeout = err instanceof Error && err.name === "AbortError";
+    const isTimeout = isAbortError(err);
     console.warn(
       JSON.stringify({
         level: "warn",
