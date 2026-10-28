@@ -1,5 +1,5 @@
 /**
- * gemini-quota — recognising and describing Gemini quota exhaustion.
+ * model-errors — recognising and describing model quota exhaustion and aborts.
  *
  * Every model call in the pipeline can come back RESOURCE_EXHAUSTED, and
  * each one used to swallow it into its own fallback: the reformulator
@@ -17,10 +17,10 @@ import { APIConnectionTimeoutError, APIUserAbortError } from "@anthropic-ai/sdk"
 import type { AskErrorKind } from "@/src/types";
 
 /**
- * Detect a quota error: Claude's 429 (rate limit) or 529 (overloaded), or
- * Gemini's RESOURCE_EXHAUSTED / 429 across the various shapes its SDK might
- * surface (raw fetch error, JSON-stringified error body, structured
- * object). Returns true if any signal matches.
+ * Detect a quota error: a 429 (rate limit) or 529 (overloaded), or a
+ * RESOURCE_EXHAUSTED / 429 in the other shapes an SDK might surface (raw
+ * fetch error, JSON-stringified error body, structured object). Returns
+ * true if any signal matches.
  */
 export function isQuotaError(err: unknown): boolean {
   if (!err) return false;
@@ -101,7 +101,7 @@ export async function retryOnQuota<T>(
       console.warn(
         JSON.stringify({
           level: "warn",
-          module: "gemini-quota",
+          module: "model-errors",
           requestId: opts.requestId,
           op,
           msg: "quota exhausted, backing off",

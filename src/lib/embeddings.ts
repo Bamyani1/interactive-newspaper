@@ -15,7 +15,7 @@
  * Voyage takes `input_type` ("query" / "document") instead of text prefixes.
  */
 
-import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
+import { isQuotaError, retryOnQuota } from "@/src/lib/model-errors";
 import { executeTrackedEmbeddingCall, type VoyageUsage } from "@/src/lib/cost-tracker";
 import {
   RAG_EMBEDDING_DIMS,
@@ -229,7 +229,7 @@ interface MultimodalResponse {
 }
 
 // ─── Quota Retry Helper ───────────────────────────────────────
-// The loop itself lives in gemini-quota so every live model call in the
+// The loop itself lives in model-errors so every live model call in the
 // pipeline backs off the same way. Re-exported here because this is the
 // module callers and test mocks already reach for. The batch delays stay
 // longer than the live ones: an index build has no request deadline.

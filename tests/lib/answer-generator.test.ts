@@ -17,9 +17,9 @@ vi.mock("@/src/lib/cost-tracker", () => ({
   computeCostUsd: vi.fn(() => 0),
   executeTrackedGenerationCall: (options: { call: () => Promise<unknown> }) => options.call(),
   recordUsage: vi.fn(),
-  reserveEvaluationGoogleCall: vi.fn(() => null),
-  releaseEvaluationGoogleCall: vi.fn(),
-  settleEvaluationGoogleCall: vi.fn(),
+  reserveEvaluationModelCall: vi.fn(() => null),
+  releaseEvaluationModelCall: vi.fn(),
+  settleEvaluationModelCall: vi.fn(),
 }));
 
 import {
