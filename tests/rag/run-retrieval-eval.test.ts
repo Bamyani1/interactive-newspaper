@@ -33,6 +33,32 @@ describe("scoreRuns", () => {
     expect(scored.claude.ndcg[0]).toBeCloseTo(3 / (3 + 1 / Math.log2(3)), 10);
   });
 
+  it("scores the list's precision, its grade-0 items and whether its top item answers", () => {
+    const scored = scoreRuns(
+      [run({ claude: ranked(["a", "b"]), voyage: ranked(["c", "a", "b"]) })],
+      grades,
+      ["claude", "voyage"]
+    );
+    expect(scored.claude.precision).toEqual([0.5]);
+    expect(scored.voyage.precision[0]).toBeCloseTo(2 / 3, 12);
+    expect(scored.claude.noise).toEqual([1]);
+    expect(scored.voyage.noise).toEqual([1]);
+    expect(scored.claude.top1).toEqual([1]);
+    expect(scored.voyage.top1).toEqual([0]);
+  });
+
+  it("leaves precision and top-1 unscored when there is nothing to judge", () => {
+    const onlyPartial = new Map([[gradeKey("Q?", "c", "grade-v1"), 1]]);
+    const scored = scoreRuns([run({ claude: ranked([]), voyage: ranked(["c"]) })], onlyPartial, [
+      "claude",
+      "voyage",
+    ]);
+    // An empty list has no precision; a pool with no grade-2 article has no top-1 target.
+    expect(scored.claude.precision).toEqual([null]);
+    expect(scored.claude.noise).toEqual([0]);
+    expect(scored.voyage.top1).toEqual([null]);
+  });
+
   it("scores a failed variant as missing, not zero", () => {
     const scored = scoreRuns(
       [run({ claude: ranked(["a"]), voyage: { ...ranked([]), error: "timeout" } })],

@@ -8,7 +8,9 @@
  * are pooled per question and Claude Haiku grades each pooled article 0-2,
  * cached by (question, article, prompt version) so reruns and new variants
  * only grade what is new. Reports Recall@12 (grade >= 1), graded nDCG@12,
- * rerank latency, and a paired bootstrap 95% interval for every pair of
+ * the list's precision, grade-0 items and top-1 grade-2 share (pooled recall
+ * favours long lists; these show what the answer step is handed), rerank
+ * latency, and a paired bootstrap 95% interval for every pair of
  * variants, plus a 50-grade spot-check sheet for the owner.
  *
  *   node --import tsx scripts/rag/run-retrieval-eval.ts --yes \
@@ -140,13 +142,27 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** Per-question metric for each variant, null where the pool has nothing relevant. */
+const SCORES = ["recall", "ndcg", "precision", "noise", "top1"] as const;
+type Score = (typeof SCORES)[number];
+
+/**
+ * Per question and variant: pool-relative recall and nDCG at K, plus what the
+ * answer step is handed — precision of the top-K list (grade >= 1), its
+ * grade-0 items, and whether its first item answers (grade 2; null when the
+ * pool has no grade-2 article).
+ */
 export function scoreRuns(
   runs: QuestionRun[],
   grades: Map<string, number>,
   variants: RerankerMode[]
-): Record<RerankerMode, { recall: (number | null)[]; ndcg: (number | null)[] }> {
-  const scored = {} as Record<RerankerMode, { recall: (number | null)[]; ndcg: (number | null)[] }>;
-  for (const variant of variants) scored[variant] = { recall: [], ndcg: [] };
+): Record<RerankerMode, Record<Score, (number | null)[]>> {
+  const scored = {} as Record<RerankerMode, Record<Score, (number | null)[]>>;
+  for (const variant of variants) {
+    scored[variant] = Object.fromEntries(SCORES.map((s) => [s, []])) as unknown as Record<
+      Score,
+      (number | null)[]
+    >;
+  }
   for (const run of runs) {
     const pool = new Map<string, number>();
     for (const variant of variants) {
@@ -158,8 +174,15 @@ export function scoreRuns(
     for (const variant of variants) {
       const ids = run.variants[variant]?.ids;
       const failed = !ids || run.error !== undefined || run.variants[variant]?.error !== undefined;
+      const top = failed ? [] : ids.slice(0, K).map((id) => pool.get(id) ?? 0);
+      const hasAnswer = [...pool.values()].some((grade) => grade === 2);
       scored[variant].recall.push(failed ? null : recallAt(ids, pool, K));
       scored[variant].ndcg.push(failed ? null : ndcgAt(ids, pool, K));
+      scored[variant].precision.push(
+        failed || top.length === 0 ? null : top.filter((g) => g >= 1).length / top.length
+      );
+      scored[variant].noise.push(failed ? null : top.filter((g) => g === 0).length);
+      scored[variant].top1.push(failed || !hasAnswer ? null : top[0] === 2 ? 1 : 0);
     }
   }
   return scored;
@@ -191,9 +214,9 @@ function report(
   for (const [key, value] of Object.entries(meta)) lines.push(`- ${key}: ${value}`);
   lines.push(
     "",
-    `| Variant | Recall@${K} | nDCG@${K} | rerank p50 ms | rerank p95 ms | degraded | errors |`
+    `| Variant | Recall@${K} | nDCG@${K} | precision | grade-0 / q | top-1 answers | rerank p50 ms | rerank p95 ms | degraded | errors |`
   );
-  lines.push("|---|---:|---:|---:|---:|---:|---:|");
+  lines.push("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
   const metrics: Record<string, unknown> = { meta, variants: {}, pairs: [], decades: {} };
   for (const variant of variants) {
     const results = runs.map((r) => r.variants[variant]).filter((v): v is VariantResult => !!v);
@@ -201,6 +224,9 @@ function report(
     const summary = {
       recall: meanOf(scored[variant].recall),
       ndcg: meanOf(scored[variant].ndcg),
+      precision: meanOf(scored[variant].precision),
+      noise: meanOf(scored[variant].noise),
+      top1: meanOf(scored[variant].top1),
       p50: latencies.length ? percentile(latencies, 50) : null,
       p95: latencies.length ? percentile(latencies, 95) : null,
       degraded: results.filter((r) => r.degraded).length,
@@ -208,7 +234,7 @@ function report(
     };
     (metrics.variants as Record<string, unknown>)[variant] = summary;
     lines.push(
-      `| ${variant} | ${fmt(summary.recall)} | ${fmt(summary.ndcg)} | ${summary.p50 ?? "—"} | ${summary.p95 ?? "—"} | ${summary.degraded} | ${summary.errors} |`
+      `| ${variant} | ${fmt(summary.recall)} | ${fmt(summary.ndcg)} | ${fmt(summary.precision)} | ${fmt(summary.noise, 2)} | ${fmt(summary.top1)} | ${summary.p50 ?? "—"} | ${summary.p95 ?? "—"} | ${summary.degraded} | ${summary.errors} |`
     );
   }
 
@@ -219,7 +245,7 @@ function report(
   );
   for (let i = 0; i < variants.length; i += 1) {
     for (let j = i + 1; j < variants.length; j += 1) {
-      for (const metric of ["recall", "ndcg"] as const) {
+      for (const metric of SCORES) {
         const diffs = pairedDiffs(scored[variants[i]][metric], scored[variants[j]][metric]);
         if (diffs.length === 0) continue;
         const ci = pairedBootstrap(diffs, { seed: SEED });
