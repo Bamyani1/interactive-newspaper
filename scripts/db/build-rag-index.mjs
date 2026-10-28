@@ -20,6 +20,10 @@
  *   --finalize <buildId>         coverage check -> 'validated' or 'failed'
  *   --register-corpus <id>       add a corpus version to corpus_versions (idempotent);
  *                                imports require it on the target
+ *   --switch <buildId>           serve this build: activate it and move the
+ *                                rag_serving_pointer row (0014), in one transaction
+ *   --switch-back                serve the pointer's previous build again
+ *   --pointer                    print the serving pointer
  *   --dry-run [--corpus <id>]    read-only cost/plan report, no writes
  *   --status <buildId>           build row + pending counts
  *
@@ -1040,6 +1044,92 @@ export async function rollbackActivation(executor, buildId) {
   return { buildId, status: "validated" };
 }
 
+export async function getServingPointer(executor) {
+  const [row] = await executor.query({
+    text: `SELECT index_build_id, corpus_version, previous_build_id, previous_corpus_version,
+                  switched_at
+           FROM rag_serving_pointer WHERE id = 1`,
+  });
+  if (!row) return null;
+  return {
+    indexBuildId: String(row.index_build_id),
+    corpusVersion: String(row.corpus_version),
+    previousBuildId: row.previous_build_id ? String(row.previous_build_id) : null,
+    previousCorpusVersion: row.previous_corpus_version ? String(row.previous_corpus_version) : null,
+    switchedAt: row.switched_at,
+  };
+}
+
+/**
+ * Point Ask at a build. One transaction demotes the corpus's other active
+ * build, activates this one and moves the pointer, keeping the old pair as
+ * `previous_*` for --switch-back. A build whose chunks are not all embedded
+ * (a half-finished import, say) is refused: Ask would serve a partial index.
+ */
+export async function switchServingBuild(executor, buildId) {
+  const build = await getBuild(executor, buildId);
+  if (!build) throw new Error(`Unknown index build ${buildId}.`);
+  if (build.status !== "validated" && build.status !== "active") {
+    throw new Error(
+      `Index build ${buildId} is '${build.status}'; only 'validated' or 'active' builds can serve.`
+    );
+  }
+  const [counts] = await executor.query({
+    text: `SELECT count(*)::int AS chunks,
+                  count(*) FILTER (WHERE embedding_1024 IS NULL)::int AS missing
+           FROM article_chunks WHERE index_build_id = $1`,
+    params: [buildId],
+  });
+  if (Number(counts.chunks) === 0) throw new Error(`Index build ${buildId} has no chunks.`);
+  if (Number(counts.missing) > 0) {
+    throw new Error(
+      `Index build ${buildId} has ${counts.missing} chunk(s) without vectors; ` +
+        `finish embedding or importing it first.`
+    );
+  }
+
+  const current = await getServingPointer(executor);
+  const unchanged = current?.indexBuildId === buildId;
+  const previousBuildId = unchanged ? current.previousBuildId : (current?.indexBuildId ?? null);
+  const previousCorpus = unchanged
+    ? current.previousCorpusVersion
+    : (current?.corpusVersion ?? null);
+  await executor.transactionBatch([
+    {
+      text: `UPDATE rag_index_builds SET status = 'validated'
+             WHERE corpus_version = $1 AND status = 'active' AND id <> $2`,
+      params: [build.corpus_version, buildId],
+    },
+    {
+      text: `UPDATE rag_index_builds SET status = 'active', activated_at = now()
+             WHERE id = $1 AND status = 'validated'`,
+      params: [buildId],
+    },
+    {
+      text: `INSERT INTO rag_serving_pointer
+               (id, index_build_id, corpus_version, previous_build_id, previous_corpus_version)
+             VALUES (1, $1, $2, $3, $4)
+             ON CONFLICT (id) DO UPDATE SET
+               index_build_id = EXCLUDED.index_build_id,
+               corpus_version = EXCLUDED.corpus_version,
+               previous_build_id = EXCLUDED.previous_build_id,
+               previous_corpus_version = EXCLUDED.previous_corpus_version,
+               switched_at = now()`,
+      params: [buildId, build.corpus_version, previousBuildId, previousCorpus],
+    },
+  ]);
+  return { buildId, corpusVersion: String(build.corpus_version), previousBuildId };
+}
+
+/** Point Ask back at the previous build; running it again flips forward. */
+export async function switchBack(executor) {
+  const current = await getServingPointer(executor);
+  if (!current?.previousBuildId) {
+    throw new Error("The serving pointer has no previous build to switch back to.");
+  }
+  return switchServingBuild(executor, current.previousBuildId);
+}
+
 /**
  * Read-only build plan and cost estimate: NO writes, NO model calls.
  * chunkChars sums the exact embedding input per article: the header once,
@@ -1287,6 +1377,22 @@ async function main() {
     return;
   }
 
+  const switchId = argValue("--switch");
+  if (switchId) {
+    console.log(JSON.stringify(await switchServingBuild(executor, switchId), null, 2));
+    return;
+  }
+
+  if (process.argv.includes("--switch-back")) {
+    console.log(JSON.stringify(await switchBack(executor), null, 2));
+    return;
+  }
+
+  if (process.argv.includes("--pointer")) {
+    console.log(JSON.stringify(await getServingPointer(executor), null, 2));
+    return;
+  }
+
   if (process.argv.includes("--dry-run")) {
     const report = await dryRunReport(executor, { corpusVersion: argValue("--corpus") });
     console.log(JSON.stringify(report, null, 2));
@@ -1321,7 +1427,8 @@ async function main() {
 
   fail(
     "One of --create, --populate, --contextualize, --embed-text, --embed-images, --finalize, " +
-      "--register-corpus, --activate, --rollback-activation, --dry-run, --status is required."
+      "--register-corpus, --activate, --rollback-activation, --switch, --switch-back, --pointer, " +
+      "--dry-run, --status is required."
   );
 }
 
