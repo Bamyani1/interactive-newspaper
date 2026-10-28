@@ -12,19 +12,27 @@
  * means a NEW build id; builds are immutable once out of 'building'):
  *   --create --corpus <id>       mint a 'building' build, print its id
  *   --populate <buildId>         deterministic chunk/image records (no model calls)
- *   --embed-text <buildId>       batch text embeddings (resumable by exact hash)
- *   --embed-images <buildId>     one-at-a-time image embeddings from R2
+ *   --contextualize <buildId>    Claude-written keyword-search context per chunk
+ *                                (Batch API; --batch <id> collects a submitted batch)
+ *   --embed-text <buildId>       voyage-context-4 chunk embeddings, one list per
+ *                                article (resumable by exact hash)
+ *   --embed-images <buildId>     one-at-a-time voyage-multimodal-3.5 photo embeddings from R2
  *   --finalize <buildId>         coverage check -> 'validated' or 'failed'
+ *   --register-corpus <id>       add a corpus version to corpus_versions (idempotent);
+ *                                imports require it on the target
  *   --dry-run [--corpus <id>]    read-only cost/plan report, no writes
  *   --status <buildId>           build row + pending counts
  *
  * All commands require DATABASE_URL and an explicit --yes (this phase
  * authorizes LOCAL/TEST databases only; production access is a later,
  * separately approved step). Exported functions are executor-injectable and
- * take embedFn/fetchObject params so tests drive them against PGlite with
- * fakes; main() wires the real embedDocuments and an R2 GetObject client.
+ * take embedFn/fetchObject/runBatch params so tests drive them against PGlite
+ * with fakes; main() wires the real Voyage and Claude calls and an R2
+ * GetObject client. Vectors land in the 1024-dimension columns (0013);
+ * builds made before them cannot be continued by this tool.
  */
 
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -88,6 +96,11 @@ async function readArticlesPaged(executor, columns, pageSize, onPage) {
  * }} QueryExecutorLike
  * @typedef {{ text: string, imageBase64?: string, imageMimeType?: string }} EmbedInputLike
  * @typedef {(inputs: EmbedInputLike[], opts?: { op?: string }) => Promise<number[][]>} EmbedFnLike
+ * @typedef {{ header: string, chunks: string[] }} ChunkedDocumentLike
+ * @typedef {(documents: ChunkedDocumentLike[], opts?: { op?: string }) => Promise<number[][][]>} EmbedChunksFnLike
+ * @typedef {{ custom_id: string, params: Record<string, unknown> }} BatchRequestLike
+ * @typedef {{ custom_id: string, text: string | null, usage?: Record<string, number> }} BatchResultLike
+ * @typedef {(requests: BatchRequestLike[]) => Promise<BatchResultLike[]>} RunBatchLike
  * @typedef {(key: string) => Promise<unknown>} FetchObjectLike
  */
 
@@ -100,12 +113,16 @@ async function loadDeps() {
   const chunkingMod = await import("../../src/lib/article-chunking.ts");
   const { buildArticleChunkRecords } = chunkingMod.default ?? chunkingMod;
   const embeddingsMod = await import("../../src/lib/embeddings.ts");
-  const { buildEmbeddingInput, embeddingInputFingerprint } = embeddingsMod.default ?? embeddingsMod;
+  const { buildChunkHeader, buildEmbeddingInput, embeddingInputFingerprint } =
+    embeddingsMod.default ?? embeddingsMod;
   const costMod = await import("../../src/lib/cost-tracker.ts");
-  const { computeEmbeddingCostUsd } = costMod.default ?? costMod;
+  const { computeCostUsd, computeEmbeddingCostUsd } = costMod.default ?? costMod;
   const configMod = await import("../../src/lib/rag-model-config.ts");
   const {
+    RAG_EMBEDDING_DIMS,
     RAG_EMBEDDING_MODEL,
+    RAG_GENERATION_MODEL,
+    RAG_IMAGE_EMBEDDING_MODEL,
     RAG_PIPELINE_VERSION,
     RAG_TEXT_EMBEDDING_INPUT_VERSION,
     RAG_IMAGE_EMBEDDING_INPUT_VERSION,
@@ -114,10 +131,15 @@ async function loadDeps() {
   const { ulid } = ulidMod.default ?? ulidMod;
   _deps = {
     buildArticleChunkRecords,
+    buildChunkHeader,
     buildEmbeddingInput,
     embeddingInputFingerprint,
+    computeCostUsd,
     computeEmbeddingCostUsd,
+    RAG_EMBEDDING_DIMS,
     RAG_EMBEDDING_MODEL,
+    RAG_GENERATION_MODEL,
+    RAG_IMAGE_EMBEDDING_MODEL,
     RAG_PIPELINE_VERSION,
     RAG_TEXT_EMBEDDING_INPUT_VERSION,
     RAG_IMAGE_EMBEDDING_INPUT_VERSION,
@@ -148,10 +170,19 @@ function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Synthetic EmbedContentResponse so pricing always flows through the cost tracker. */
-function syntheticEmbeddingResponse(tokenCount) {
-  return { embeddings: [{ statistics: { tokenCount } }] };
+/** Synthetic Voyage usage so pricing always flows through the cost tracker. */
+function syntheticUsage(tokenCount, imagePixels) {
+  return imagePixels === undefined
+    ? { total_tokens: tokenCount }
+    : { total_tokens: tokenCount, text_tokens: tokenCount, image_pixels: imagePixels };
 }
+
+/**
+ * Photo sizes are not known before the bytes are read, so estimates assume
+ * this many pixels a photo (about 1000 x 1500). Real calls are priced from
+ * Voyage's usage block by the cost tracker.
+ */
+const ESTIMATED_PIXELS_PER_IMAGE = 1_500_000;
 
 export async function getBuild(executor, buildId) {
   const rows = await executor.query({
@@ -173,17 +204,51 @@ async function requireBuildingBuild(executor, buildId) {
   return build;
 }
 
+/** Embedding steps write the 1024-dimension columns, so they need a build made for them. */
+async function requireEmbeddableBuild(executor, buildId) {
+  const deps = await loadDeps();
+  const build = await requireBuildingBuild(executor, buildId);
+  if (Number(build.embedding_dims) !== deps.RAG_EMBEDDING_DIMS) {
+    throw new Error(
+      `Index build ${buildId} was created for ${build.embedding_dims ?? 768}-dimension ` +
+        `vectors; this tool writes ${deps.RAG_EMBEDDING_DIMS}. Create a new build.`
+    );
+  }
+  return build;
+}
+
 /**
  * Mint a new immutable index-build identity in status 'building'.
  * Default id is `build-<ULID>`. Duplicate ids throw (no upsert): identity
  * rows are immutable, so re-creating means minting a NEW id.
  */
+/**
+ * Register a corpus version so builds for it can be imported elsewhere.
+ * Idempotent: an existing row is left as it is.
+ *
+ * @param {QueryExecutorLike} executor
+ * @param {string} corpusVersion
+ * @returns {Promise<{ id: string, inserted: boolean }>}
+ */
+export async function registerCorpus(executor, corpusVersion) {
+  if (!corpusVersion) throw new Error("registerCorpus requires a corpus version.");
+  const inserted = await executor.query({
+    text: `INSERT INTO corpus_versions (id, description)
+               VALUES ($1, 'Registered by build-rag-index')
+               ON CONFLICT (id) DO NOTHING RETURNING id`,
+    params: [corpusVersion],
+  });
+  return { id: corpusVersion, inserted: inserted.length > 0 };
+}
+
 export async function createIndexBuild(executor, options = {}) {
   const {
     buildId,
     corpusVersion,
     pipelineVersion,
     embeddingModel,
+    imageEmbeddingModel,
+    embeddingDims,
     textInputVersion,
     imageInputVersion,
   } = options;
@@ -191,6 +256,8 @@ export async function createIndexBuild(executor, options = {}) {
     ["corpusVersion", corpusVersion],
     ["pipelineVersion", pipelineVersion],
     ["embeddingModel", embeddingModel],
+    ["imageEmbeddingModel", imageEmbeddingModel],
+    ["embeddingDims", embeddingDims],
     ["textInputVersion", textInputVersion],
     ["imageInputVersion", imageInputVersion],
   ]) {
@@ -198,16 +265,20 @@ export async function createIndexBuild(executor, options = {}) {
   }
   const deps = await loadDeps();
   const id = buildId ?? `build-${deps.ulid()}`;
+  await registerCorpus(executor, corpusVersion);
   await executor.query({
     text: `INSERT INTO rag_index_builds
                    (id, corpus_version, status, pipeline_version, embedding_model,
+                    image_embedding_model, embedding_dims,
                     text_embedding_input_version, image_embedding_input_version)
-               VALUES ($1, $2, 'building', $3, $4, $5, $6)`,
+               VALUES ($1, $2, 'building', $3, $4, $5, $6, $7, $8)`,
     params: [
       id,
       corpusVersion,
       pipelineVersion,
       embeddingModel,
+      imageEmbeddingModel,
+      embeddingDims,
       textInputVersion,
       imageInputVersion,
     ],
@@ -349,40 +420,148 @@ export async function populateBuildRecords(
   return { articles: articleCount, chunks: chunkCount, images: imageCount };
 }
 
+const CONTEXT_MAX_ARTICLE_CHARS = 12_000;
+const CONTEXT_MAX_TOKENS = 200;
+const CONTEXT_UPDATE_ROWS = 100;
+// The Batch API bills half the online rate.
+const BATCH_PRICE_FACTOR = 0.5;
+
+const CONTEXT_SYSTEM_PROMPT = `You write search context for chunks of articles from The Transcript, Ohio Wesleyan University's student newspaper (1950-2006). Your line is indexed for keyword search together with the chunk, so a reader's search finds the chunk even when it never uses the reader's words.`;
+
+/** Batch custom_ids allow only [A-Za-z0-9_-]{1,64}; chunk ids contain colons. */
+export function contextCustomId(chunkId) {
+  return createHash("sha256").update(String(chunkId)).digest("hex").slice(0, 48);
+}
+
+/** One Batch API request asking Claude to place a chunk in its article. */
+export function contextRequest(deps, row) {
+  const article = String(row.body_plain ?? "").slice(0, CONTEXT_MAX_ARTICLE_CHARS);
+  return {
+    custom_id: contextCustomId(row.id),
+    params: {
+      model: deps.RAG_GENERATION_MODEL,
+      max_tokens: CONTEXT_MAX_TOKENS,
+      thinking: { type: "disabled" },
+      output_config: { effort: "low" },
+      system: CONTEXT_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content:
+            `<article>\nEdition: ${row.edition_date}\nSection: ${row.category}\n` +
+            `Headline: ${row.headline}\n\n${article}\n</article>\n\n` +
+            `<chunk>\n${row.chunk_text}\n</chunk>\n\n` +
+            "In one or two sentences, under 50 words, situate this chunk in the article: " +
+            "what it is about, the people and places involved, and the year. Add the plain " +
+            "present-day words a searcher would use for period terms in the chunk. Answer " +
+            "with the context only.",
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * Claude-written context lines for one build's chunks, for keyword search
+ * (migration 0013 indexes context_text with chunk_text). Resumable: only
+ * chunks still without a line are sent, and each UPDATE re-checks that.
+ * runBatch submits the requests and returns each one's text (null when it
+ * failed); a chunk left without a line is reported, never fatal, and a
+ * re-run picks it up.
+ *
+ * @param {QueryExecutorLike} executor
+ * @param {string} buildId
+ * @param {{ runBatch?: RunBatchLike }} [options]
+ */
+export async function contextualizeBuildChunks(executor, buildId, { runBatch } = {}) {
+  if (typeof runBatch !== "function") {
+    throw new Error("contextualizeBuildChunks requires a runBatch.");
+  }
+  const deps = await loadDeps();
+  await requireBuildingBuild(executor, buildId);
+
+  const pending = [];
+  let lastPendingId = null;
+  for (;;) {
+    const pageRows = await executor.query({
+      text: `SELECT c.id, c.chunk_text, a.headline, a.edition_date, a.category, a.body_plain
+                   FROM article_chunks c JOIN articles a ON a.id = c.article_id
+                   WHERE c.index_build_id = $1 AND c.context_text IS NULL
+                     ${lastPendingId === null ? "" : "AND c.id > $2"}
+                   ORDER BY c.id
+                   LIMIT ${PENDING_CHUNK_PAGE_SIZE}`,
+      params: lastPendingId === null ? [buildId] : [buildId, lastPendingId],
+    });
+    pending.push(...pageRows);
+    if (pageRows.length < PENDING_CHUNK_PAGE_SIZE) break;
+    lastPendingId = String(pageRows[pageRows.length - 1].id);
+  }
+  if (pending.length === 0) return { planned: 0, written: 0, failed: [], costUsd: 0 };
+
+  const chunkIdByCustomId = new Map(pending.map((row) => [contextCustomId(row.id), row.id]));
+  const results = await runBatch(pending.map((row) => contextRequest(deps, row)));
+
+  const failed = [];
+  const updates = [];
+  let costUsd = 0;
+  for (const result of results) {
+    const chunkId = chunkIdByCustomId.get(result.custom_id);
+    if (!chunkId) continue; // a request from another run of the same batch
+    if (result.usage) {
+      costUsd += deps.computeCostUsd(deps.RAG_GENERATION_MODEL, result.usage) * BATCH_PRICE_FACTOR;
+    }
+    const text = result.text?.trim();
+    if (!text) {
+      failed.push({ id: String(chunkId), reason: "no context returned" });
+      continue;
+    }
+    updates.push({
+      text: `UPDATE article_chunks SET context_text = $1
+                   WHERE id = $2 AND index_build_id = $3 AND context_text IS NULL`,
+      params: [text, chunkId, buildId],
+    });
+  }
+  let written = 0;
+  for (const group of chunkArray(updates, CONTEXT_UPDATE_ROWS)) {
+    await executor.transactionBatch(group);
+    written += group.length;
+  }
+  return { planned: pending.length, written, failed, costUsd };
+}
+
 function chunkTextInput(deps, row) {
-  return deps.buildEmbeddingInput({
-    headline: row.headline,
-    byline: row.byline,
-    body_plain: row.chunk_text,
-    edition_date: row.edition_date,
-    category: row.category,
-    summary: Number(row.chunk_index) === 0 ? row.summary : null,
-  });
+  return { header: deps.buildChunkHeader(row), text: row.chunk_text };
 }
 
 /**
  * Text embedding for one build, resumable by exact hash.
  *
  * The pending SELECT is the resumability proof: rows whose
- * (embedding, embedding_model, embedding_input_version) already match the
- * build's expected identity are never re-selected, so they are never
+ * (embedding_1024, embedding_model, embedding_input_version) already match
+ * the build's expected identity are never re-selected, so they are never
  * re-embedded. Each UPDATE is additionally keyed by embedding_input_hash so a
  * vector can only land on the exact input it was computed for; the stored
  * hash was minted by populateBuildRecords at RAG_TEXT_EMBEDDING_INPUT_VERSION,
  * so a build created with a divergent text input version surfaces as loud
  * per-row hash-mismatch failures instead of silently mixing versions.
  *
+ * voyage-context-4 embeds each chunk in the context of its article, so the
+ * pending chunks of one article always go in together, as one document led
+ * by the article header. `batchSize` counts articles per embed call.
+ *
  * A failed batch records {id, reason} per row and CONTINUES with the next
  * batch — one bad batch never aborts the run.
  *
  * @param {QueryExecutorLike} executor
  * @param {string} buildId
- * @param {{ embedFn?: EmbedFnLike, batchSize?: number }} [options]
+ * @param {{ embedChunksFn?: EmbedChunksFnLike, batchSize?: number }} [options]
  */
-export async function embedBuildText(executor, buildId, { embedFn, batchSize = 50 } = {}) {
-  if (typeof embedFn !== "function") throw new Error("embedBuildText requires an embedFn.");
+export async function embedBuildText(executor, buildId, { embedChunksFn, batchSize = 50 } = {}) {
+  if (typeof embedChunksFn !== "function") {
+    throw new Error("embedBuildText requires an embedChunksFn.");
+  }
   const deps = await loadDeps();
-  const build = await requireBuildingBuild(executor, buildId);
+  const build = await requireEmbeddableBuild(executor, buildId);
   const expectedModel = String(build.embedding_model);
   const expectedVersion = String(build.text_embedding_input_version);
 
@@ -393,17 +572,18 @@ export async function embedBuildText(executor, buildId, { embedFn, batchSize = 5
   const total = Number(totalRows[0].n);
 
   // Keyset-paginated pending read (chunk text over a whole build can exceed
-  // the 64 MiB HTTP response cap); collected fully before embedding so the
-  // embed batches are cut exactly as before.
+  // the 64 MiB HTTP response cap); collected fully before embedding. Row ids
+  // are {buildId}:{articleId}:{chunkIndex}, so an article's chunks arrive
+  // together and in order.
   const pending = [];
   let lastPendingId = null;
   for (;;) {
     const pageRows = await executor.query({
-      text: `SELECT c.id, c.chunk_index, c.chunk_text, c.embedding_input_hash,
-                          a.headline, a.byline, a.edition_date, a.category, a.summary
+      text: `SELECT c.id, c.article_id, c.chunk_index, c.chunk_text, c.embedding_input_hash,
+                          a.headline, a.byline, a.edition_date, a.category
                    FROM article_chunks c JOIN articles a ON a.id = c.article_id
                    WHERE c.index_build_id = $1
-                     AND (c.embedding IS NULL
+                     AND (c.embedding_1024 IS NULL
                           OR c.embedding_model IS DISTINCT FROM $2
                           OR c.embedding_input_version IS DISTINCT FROM $3)
                      ${lastPendingId === null ? "" : "AND c.id > $4"}
@@ -419,22 +599,35 @@ export async function embedBuildText(executor, buildId, { embedFn, batchSize = 5
     lastPendingId = String(pageRows[pageRows.length - 1].id);
   }
 
+  const articles = [];
+  for (const row of pending) {
+    const last = articles[articles.length - 1];
+    if (last && last[0].article_id === row.article_id) last.push(row);
+    else articles.push([row]);
+  }
+
   const planned = pending.length;
   const skipped = total - planned;
   const failed = [];
   let embedded = 0;
   let textTokens = 0;
 
-  for (let offset = 0; offset < pending.length; offset += batchSize) {
-    const batch = pending.slice(offset, offset + batchSize);
+  for (let offset = 0; offset < articles.length; offset += batchSize) {
+    const batchArticles = articles.slice(offset, offset + batchSize);
+    const batch = batchArticles.flat();
     const inputs = batch.map((row) => chunkTextInput(deps, row));
+    const documents = batchArticles.map((rows) => ({
+      header: deps.buildChunkHeader(rows[0]),
+      chunks: rows.map((row) => String(row.chunk_text)),
+    }));
 
     let vectors;
     try {
-      vectors = await embedFn(inputs, { op: "rag-index-build.embed-text" });
-      if (!Array.isArray(vectors) || vectors.length !== batch.length) {
+      const grouped = await embedChunksFn(documents, { op: "rag-index-build.embed-text" });
+      vectors = Array.isArray(grouped) ? grouped.flat() : [];
+      if (vectors.length !== batch.length) {
         throw new Error(
-          `embedFn returned ${vectors?.length ?? 0} vectors for ${batch.length} inputs`
+          `embedChunksFn returned ${vectors.length} vectors for ${batch.length} chunks`
         );
       }
     } catch (error) {
@@ -446,10 +639,12 @@ export async function embedBuildText(executor, buildId, { embedFn, batchSize = 5
 
     const updates = [];
     const updateIds = [];
-    let batchTokens = 0;
+    // Every header was sent once per article.
+    let batchTokens = documents.reduce((sum, doc) => sum + Math.ceil(doc.header.length / 4), 0);
     for (let index = 0; index < batch.length; index += 1) {
       const row = batch[index];
       const input = inputs[index];
+      batchTokens += Math.ceil(input.text.length / 4);
       const inputHash = deps.embeddingInputFingerprint(input, expectedVersion);
       if (inputHash !== String(row.embedding_input_hash)) {
         failed.push({
@@ -462,7 +657,7 @@ export async function embedBuildText(executor, buildId, { embedFn, batchSize = 5
       }
       updates.push({
         text: `UPDATE article_chunks
-                       SET embedding = $1::vector,
+                       SET embedding_1024 = $1::vector,
                            embedding_model = $2,
                            embedding_input_version = $3
                        WHERE id = $4 AND index_build_id = $5 AND embedding_input_hash = $6`,
@@ -476,7 +671,6 @@ export async function embedBuildText(executor, buildId, { embedFn, batchSize = 5
         ],
       });
       updateIds.push(String(row.id));
-      batchTokens += Math.ceil(input.text.length / 4);
     }
     // The model was already called for this batch, so its tokens count
     // toward cost even if persisting the vectors fails below.
@@ -498,10 +692,7 @@ export async function embedBuildText(executor, buildId, { embedFn, batchSize = 5
     }
   }
 
-  const costUsd = deps.computeEmbeddingCostUsd(
-    expectedModel,
-    syntheticEmbeddingResponse(textTokens)
-  );
+  const costUsd = deps.computeEmbeddingCostUsd(expectedModel, syntheticUsage(textTokens));
   return { planned, embedded, skipped, failed, textTokens, costUsd };
 }
 
@@ -579,6 +770,35 @@ export function sniffImageMime(buffer) {
   return null;
 }
 
+/** Voyage rejects images over 16 million pixels (multimodal API limits). */
+export const VOYAGE_MAX_IMAGE_PIXELS = 16_000_000;
+
+/**
+ * Shrink an image that is over Voyage's pixel limit, keeping its shape, and
+ * re-encode it as JPEG. Images within the limit come back unchanged.
+ *
+ * @param {Buffer} bytes
+ * @param {string} mimeType
+ * @param {number} [maxPixels]
+ * @returns {Promise<{ bytes: Buffer, mimeType: string, resized: boolean }>}
+ */
+export async function fitImageForVoyage(bytes, mimeType, maxPixels = VOYAGE_MAX_IMAGE_PIXELS) {
+  const sharp = (await import("sharp")).default;
+  const { width = 0, height = 0 } = await sharp(bytes).metadata();
+  const pixels = width * height;
+  if (pixels <= maxPixels) return { bytes, mimeType, resized: false };
+  const scale = Math.sqrt(maxPixels / pixels) * 0.99;
+  const resizedBytes = await sharp(bytes)
+    .resize({
+      width: Math.floor(width * scale),
+      height: Math.floor(height * scale),
+      fit: "inside",
+    })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  return { bytes: resizedBytes, mimeType: "image/jpeg", resized: true };
+}
+
 /**
  * Image embedding for one build. STREAMS one image at a time: fetch -> single
  * Buffer (validated magic + <=10MiB) -> embed -> UPDATE -> references released
@@ -611,14 +831,14 @@ export async function embedBuildImages(
     throw new Error("embedBuildImages requires a fetchObject.");
   }
   const deps = await loadDeps();
-  const build = await requireBuildingBuild(executor, buildId);
-  const expectedModel = String(build.embedding_model);
+  const build = await requireEmbeddableBuild(executor, buildId);
+  const expectedModel = String(build.image_embedding_model);
   const expectedVersion = String(build.image_embedding_input_version);
 
   const rows = await executor.query({
     text: `SELECT i.id, i.image_url, i.caption, i.embedding_input_hash,
                       i.embedding_model, i.embedding_input_version,
-                      (i.embedding IS NOT NULL) AS has_embedding,
+                      (i.embedding_1024 IS NOT NULL) AS has_embedding,
                       a.headline, a.byline, a.edition_date, a.category, a.summary
                FROM article_images i JOIN articles a ON a.id = i.article_id
                WHERE i.index_build_id = $1
@@ -649,10 +869,11 @@ export async function embedBuildImages(
     try {
       const key = resolveImageObjectKey(row.image_url);
       if (!key) throw new Error(`unresolvable R2 key for image_url ${row.image_url}`);
-      const bytes = await collectObjectBytes(await fetchObject(key), MAX_IMAGE_BYTES);
-      if (bytes.length === 0) throw new Error(`empty object at ${key}`);
-      const mimeType = sniffImageMime(bytes);
-      if (!mimeType) throw new Error(`object at ${key} is not webp/jpeg/png`);
+      const stored = await collectObjectBytes(await fetchObject(key), MAX_IMAGE_BYTES);
+      if (stored.length === 0) throw new Error(`empty object at ${key}`);
+      const storedMime = sniffImageMime(stored);
+      if (!storedMime) throw new Error(`object at ${key} is not webp/jpeg/png`);
+      const { bytes, mimeType } = await fitImageForVoyage(stored, storedMime);
 
       const caption =
         (typeof row.caption === "string" && row.caption.trim()) || FALLBACK_IMAGE_CAPTION;
@@ -679,7 +900,7 @@ export async function embedBuildImages(
       }
       await executor.query({
         text: `UPDATE article_images
-                       SET embedding = $1::vector,
+                       SET embedding_1024 = $1::vector,
                            embedding_model = $2,
                            embedding_input_version = $3,
                            embedding_input_hash = $4
@@ -704,8 +925,7 @@ export async function embedBuildImages(
 
   const costUsd = deps.computeEmbeddingCostUsd(
     expectedModel,
-    syntheticEmbeddingResponse(textTokens),
-    { imageCount: embedded }
+    syntheticUsage(textTokens, embedded * ESTIMATED_PIXELS_PER_IMAGE)
   );
   return { planned, embedded, skipped, failed, images, costUsd };
 }
@@ -732,9 +952,9 @@ export async function finalizeBuild(executor, buildId) {
   const counts = await executor.query({
     text: `SELECT
                    (SELECT count(*)::int FROM article_chunks
-                    WHERE index_build_id = $1 AND embedding IS NULL) AS pending_chunks,
+                    WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS pending_chunks,
                    (SELECT count(*)::int FROM article_images
-                    WHERE index_build_id = $1 AND embedding IS NULL) AS pending_images`,
+                    WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS pending_images`,
     params: [buildId],
   });
   const pendingChunks = Number(counts[0].pending_chunks);
@@ -822,13 +1042,12 @@ export async function rollbackActivation(executor, buildId) {
 
 /**
  * Read-only build plan and cost estimate: NO writes, NO model calls.
- * chunkChars sums the exact embedding-input text per chunk (chunk characters
- * plus the title/context header overhead buildEmbeddingInput adds).
- * estTextTokens = ceil(chars / 4), the cost tracker's own documented fallback
- * (embeddingTokenCount's billableCharacterCount / 4). Prices flow through
+ * chunkChars sums the exact embedding input per article: the header once,
+ * plus every chunk. estTextTokens = ceil(chars / 4). Prices flow through
  * computeEmbeddingCostUsd so this report can never drift from the tracker's
- * constants. estImageUsd is the flat per-image fee only; the (small) caption
- * text tokens of multimodal inputs are priced at embed time, not estimated.
+ * constants. estImageUsd prices ESTIMATED_PIXELS_PER_IMAGE a photo; the
+ * (small) caption text tokens of multimodal inputs are priced at embed
+ * time, not estimated.
  */
 export async function dryRunReport(executor, { corpusVersion } = {}) {
   const deps = await loadDeps();
@@ -854,7 +1073,9 @@ export async function dryRunReport(executor, { corpusVersion } = {}) {
           summary: article.summary,
         });
         chunks += records.length;
-        chunkChars += records.reduce((sum, record) => sum + record.embeddingInput.text.length, 0);
+        chunkChars +=
+          (records[0]?.embeddingInput.header.length ?? 0) +
+          records.reduce((sum, record) => sum + record.embeddingInput.text.length, 0);
         images += jsonArray(article.image_urls).length;
       }
     }
@@ -863,12 +1084,11 @@ export async function dryRunReport(executor, { corpusVersion } = {}) {
   const estTextTokens = Math.ceil(chunkChars / 4);
   const estTextUsd = deps.computeEmbeddingCostUsd(
     deps.RAG_EMBEDDING_MODEL,
-    syntheticEmbeddingResponse(estTextTokens)
+    syntheticUsage(estTextTokens)
   );
   const estImageUsd = deps.computeEmbeddingCostUsd(
-    deps.RAG_EMBEDDING_MODEL,
-    {},
-    { imageCount: images }
+    deps.RAG_IMAGE_EMBEDDING_MODEL,
+    syntheticUsage(0, images * ESTIMATED_PIXELS_PER_IMAGE)
   );
   return {
     corpusVersion: corpusVersion ?? null,
@@ -928,6 +1148,8 @@ async function main() {
       corpusVersion,
       pipelineVersion: deps.RAG_PIPELINE_VERSION,
       embeddingModel: deps.RAG_EMBEDDING_MODEL,
+      imageEmbeddingModel: deps.RAG_IMAGE_EMBEDDING_MODEL,
+      embeddingDims: deps.RAG_EMBEDDING_DIMS,
       textInputVersion: deps.RAG_TEXT_EMBEDDING_INPUT_VERSION,
       imageInputVersion: deps.RAG_IMAGE_EMBEDDING_INPUT_VERSION,
     });
@@ -941,41 +1163,68 @@ async function main() {
     return;
   }
 
+  const contextualizeId = argValue("--contextualize");
+  if (contextualizeId) {
+    if (!process.env.ANTHROPIC_API_KEY) fail("ANTHROPIC_API_KEY is required.");
+    const anthropicModule = await import("@anthropic-ai/sdk");
+    const Anthropic = anthropicModule.default ?? anthropicModule;
+    const client = new Anthropic({ maxRetries: 4 });
+    // Batches stay well under the API's 256 MB cap.
+    const BATCH_REQUESTS = 5_000;
+    const runBatch = async (requests) => {
+      let batchIds = argValue("--batch")?.split(",").filter(Boolean) ?? [];
+      if (batchIds.length === 0) {
+        for (const group of chunkArray(requests, BATCH_REQUESTS)) {
+          const batch = await client.messages.batches.create({ requests: group });
+          batchIds.push(batch.id);
+        }
+        console.error(
+          `Submitted ${requests.length} requests. If this run stops, collect them with ` +
+            `--batch ${batchIds.join(",")}`
+        );
+      }
+      for (const batchId of batchIds) {
+        for (;;) {
+          const batch = await client.messages.batches.retrieve(batchId);
+          if (batch.processing_status === "ended") break;
+          console.error(`${batchId}: ${batch.request_counts.processing} still processing`);
+          await new Promise((resolve) => setTimeout(resolve, 30_000));
+        }
+      }
+      const results = [];
+      for (const batchId of batchIds) {
+        for await (const entry of await client.messages.batches.results(batchId)) {
+          const message = entry.result.type === "succeeded" ? entry.result.message : null;
+          results.push({
+            custom_id: entry.custom_id,
+            text: message
+              ? message.content
+                  .filter((block) => block.type === "text")
+                  .map((block) => block.text)
+                  .join("")
+              : null,
+            usage: message?.usage,
+          });
+        }
+      }
+      return results;
+    };
+    const result = await contextualizeBuildChunks(executor, contextualizeId, { runBatch });
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   const embedTextId = argValue("--embed-text");
   const embedImagesId = argValue("--embed-images");
   if (embedTextId || embedImagesId) {
     const embeddingsMod = await import("../../src/lib/embeddings.ts");
-    const { embedDocuments, hasGoogleCredentials } = embeddingsMod.default ?? embeddingsMod;
-    if (!hasGoogleCredentials()) fail("GOOGLE_CLOUD_PROJECT is required for Vertex AI ADC.");
-
-    // Vertex embedContent for gemini-embedding-2 accepts exactly ONE
-    // content per request (verified live: multi-content batches are
-    // rejected wholesale). Adapt to per-item calls with bounded
-    // concurrency; the embedFn contract (N inputs -> N vectors, ordered)
-    // and all failure-isolation semantics upstream are unchanged.
-    const EMBED_CONCURRENCY = 6;
-    const perItemEmbedFn = async (inputs, opts) => {
-      const vectors = new Array(inputs.length);
-      let next = 0;
-      const workers = Array.from(
-        { length: Math.min(EMBED_CONCURRENCY, inputs.length) },
-        async () => {
-          for (;;) {
-            const index = next;
-            next += 1;
-            if (index >= inputs.length) return;
-            const [vector] = await embedDocuments([inputs[index]], opts);
-            vectors[index] = vector;
-          }
-        }
-      );
-      await Promise.all(workers);
-      return vectors;
-    };
+    const { embedArticleChunks, embedDocuments, hasVoyageCredentials } =
+      embeddingsMod.default ?? embeddingsMod;
+    if (!hasVoyageCredentials()) fail("VOYAGE_API_KEY is required.");
 
     if (embedTextId) {
       const result = await embedBuildText(executor, embedTextId, {
-        embedFn: perItemEmbedFn,
+        embedChunksFn: embedArticleChunks,
       });
       console.log(JSON.stringify(result, null, 2));
       return;
@@ -1006,7 +1255,7 @@ async function main() {
     };
     const limitArg = argValue("--limit");
     const result = await embedBuildImages(executor, embedImagesId, {
-      embedFn: perItemEmbedFn,
+      embedFn: embedDocuments,
       fetchObject,
       maxItems: limitArg ? Number(limitArg) : Infinity,
     });
@@ -1017,6 +1266,12 @@ async function main() {
   const finalizeId = argValue("--finalize");
   if (finalizeId) {
     console.log(JSON.stringify(await finalizeBuild(executor, finalizeId), null, 2));
+    return;
+  }
+
+  const registerCorpusId = argValue("--register-corpus");
+  if (registerCorpusId) {
+    console.log(JSON.stringify(await registerCorpus(executor, registerCorpusId), null, 2));
     return;
   }
 
@@ -1045,9 +1300,9 @@ async function main() {
     const counts = await executor.query({
       text: `SELECT
                        (SELECT count(*)::int FROM article_chunks
-                        WHERE index_build_id = $1 AND embedding IS NULL) AS pending_chunks,
+                        WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS pending_chunks,
                        (SELECT count(*)::int FROM article_images
-                        WHERE index_build_id = $1 AND embedding IS NULL) AS pending_images`,
+                        WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS pending_images`,
       params: [statusId],
     });
     console.log(
@@ -1065,8 +1320,8 @@ async function main() {
   }
 
   fail(
-    "One of --create, --populate, --embed-text, --embed-images, --finalize, --activate, " +
-      "--rollback-activation, --dry-run, --status is required."
+    "One of --create, --populate, --contextualize, --embed-text, --embed-images, --finalize, " +
+      "--register-corpus, --activate, --rollback-activation, --dry-run, --status is required."
   );
 }
 

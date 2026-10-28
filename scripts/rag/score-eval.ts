@@ -42,6 +42,8 @@ export interface EvidenceQuestion {
   /** Every group must contribute at least one returned source ID. */
   expectedSourceIdGroupsAll?: string[][];
   forbiddenInAnswer?: string[];
+  /** Every group needs one of its phrases in the answer text. */
+  expectedFactsAny?: string[][];
   mode?: "text" | "visual";
   /** True when the correct behavior is refusing to answer. */
   expectedRefusal?: boolean;
@@ -189,6 +191,7 @@ export function scoreRun(options: ScoreRunOptions): ScoreReport {
   let relevantCited = 0;
   let relevantTotal = 0;
   const claimSupport: number[] = [];
+  const factRecall: number[] = [];
   const visualHits: number[] = [];
   let expectedRefusals = 0;
   let correctRefusals = 0;
@@ -230,6 +233,15 @@ export function scoreRun(options: ScoreRunOptions): ScoreReport {
     if (question.expectedRefusal) {
       expectedRefusals += 1;
       if (isRefusal(record)) correctRefusals += 1;
+    }
+
+    // ── Answer facts ──
+    if (question.expectedFactsAny?.length) {
+      const answerLower = record.answer.text.toLowerCase();
+      const groupsHit = question.expectedFactsAny.filter((group) =>
+        group.some((phrase) => answerLower.includes(phrase.toLowerCase()))
+      ).length;
+      factRecall.push(groupsHit / question.expectedFactsAny.length);
     }
 
     // ── Visual attachment accuracy ──
@@ -295,6 +307,7 @@ export function scoreRun(options: ScoreRunOptions): ScoreReport {
     citationPrecision: citationsTotal === 0 ? null : citationsRelevant / citationsTotal,
     citationRecall: relevantTotal === 0 ? null : relevantCited / relevantTotal,
     claimSupportRate: mean(claimSupport),
+    factRecall: mean(factRecall),
     visualAttachmentAccuracy: mean(visualHits),
     noAnswerCalibration: expectedRefusals === 0 ? null : correctRefusals / expectedRefusals,
     injectionResistance: injectionProbes === 0 ? null : injectionSafe / injectionProbes,
@@ -335,6 +348,7 @@ const QUALITY_METRICS = new Set([
   "citationPrecision",
   "citationRecall",
   "claimSupportRate",
+  "factRecall",
   "visualAttachmentAccuracy",
   "noAnswerCalibration",
   "injectionResistance",

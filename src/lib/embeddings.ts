@@ -1,21 +1,27 @@
 /**
  * Embedding Utility
  *
- * Shared module for generating text embeddings via Google's stable
- * gemini-embedding-2 model on Vertex AI.
- * Used by both the seed/embed script (build-time) and the /api/ask route (query-time).
+ * Shared module for generating embeddings via Voyage AI, used by the index
+ * build (documents) and the /api/ask route (queries).
  *
- * Gemini Embedding 2 uses inline text prefixes for task instructions instead of taskType enums:
- *   - Documents: "title: {headline} | text: {content}"
- *   - Queries:   "task: question answering | query: {question}"
+ *   - Text chunks: voyage-context-4. Each chunk is embedded in the context
+ *     of its whole article: an article goes in as one list, a header line
+ *     (headline, date, section, byline) followed by its chunks, and the
+ *     header's own vector is dropped.
+ *   - Photos: voyage-multimodal-3.5, caption text and image together.
+ *   - Queries: embedded with whichever model built the vectors they search,
+ *     so a photo search and a text search each get their own query vector.
+ *
+ * Voyage takes `input_type` ("query" / "document") instead of text prefixes.
  */
 
-import { getGeminiClient } from "@/src/lib/gemini-client";
 import { isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
-import { executeTrackedEmbeddingCall } from "@/src/lib/cost-tracker";
+import { executeTrackedEmbeddingCall, type VoyageUsage } from "@/src/lib/cost-tracker";
 import {
+  RAG_EMBEDDING_DIMS,
   RAG_EMBEDDING_MODEL,
   RAG_IMAGE_EMBEDDING_INPUT_VERSION,
+  RAG_IMAGE_EMBEDDING_MODEL,
   RAG_QUERY_EMBEDDING_INPUT_VERSION,
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/rag-model-config";
@@ -23,23 +29,33 @@ import { createHash } from "crypto";
 import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 
 const EMBEDDING_MODEL = RAG_EMBEDDING_MODEL;
-const EMBEDDING_DIMS = 768;
+const IMAGE_EMBEDDING_MODEL = RAG_IMAGE_EMBEDDING_MODEL;
+const EMBEDDING_DIMS = RAG_EMBEDDING_DIMS;
 const EMBEDDING_INPUT_VERSION = RAG_TEXT_EMBEDDING_INPUT_VERSION;
 const IMAGE_EMBEDDING_INPUT_VERSION = RAG_IMAGE_EMBEDDING_INPUT_VERSION;
-/**
- * Documents embedded in parallel. This model takes exactly one content per
- * request, so throughput comes from concurrency rather than batch size.
- * Matches the value the index build settled on.
- */
-const EMBED_CONCURRENCY = 6;
-// Query embed budget: 10s. Previously 5s, but under Gemini load (or
-// adjacent rapid calls from the rest of the /api/ask pipeline) the
-// p95 query-embed latency spikes to 5-8s, which blew through the old
-// budget and raised spurious 502s. 10s is still well inside the 55s
-// global deadline and consistent with the 30s per-document budget.
+
+const VOYAGE_API_URL = "https://api.voyageai.com/v1";
+// Query embed budget: well inside the 55s global deadline.
 const EMBED_TIMEOUT_MS = 10_000;
-const EMBED_DOCUMENTS_TIMEOUT_MS = 30_000; // per-document budget
-const MAX_EMBEDDING_CHARS = 30_000; // ~7,500 tokens; conservative buffer under 8,192 token API limit
+const EMBED_DOCUMENTS_TIMEOUT_MS = 60_000; // per request
+const MAX_EMBEDDING_CHARS = 30_000; // keeps one input far below the 32K-token context
+
+/**
+ * voyage-context-4 takes at most 32K tokens per request (without server-side
+ * chunking), 1,000 documents and 16K chunks. Tokens are estimated at three
+ * characters each, below the usual four, so OCR noise that tokenizes badly
+ * still fits.
+ */
+const CONTEXT_REQUEST_TOKEN_BUDGET = 24_000;
+const CONTEXT_REQUEST_MAX_DOCUMENTS = 1_000;
+const CHARS_PER_TOKEN_ESTIMATE = 3;
+/** Photos per voyage-multimodal-3.5 request: keeps the body to a few MB. */
+const MULTIMODAL_BATCH_SIZE = 16;
+/**
+ * Pacing estimate for one photo (Voyage counts 560 pixels as a token, so
+ * about 1.7M pixels). The response's usage replaces it.
+ */
+const IMAGE_TOKEN_ESTIMATE = 3_000;
 
 /**
  * Thrown when an embedding call exceeds its timeout budget. Callers should
@@ -57,67 +73,172 @@ export class EmbedTimeoutError extends Error {
 }
 
 /**
- * Thrown when Gemini returns a 429 / RESOURCE_EXHAUSTED quota error.
- * Distinct from EmbedTimeoutError so callers can early-abort instead of
- * retrying endlessly. /api/ask returns 429 + Retry-After; seed/embed
- * scripts break out of their batch loops. See docs/issues/0028.
+ * Thrown when a model provider returns a 429 quota error. Distinct from
+ * EmbedTimeoutError so callers can early-abort instead of retrying
+ * endlessly. /api/ask returns 429 + Retry-After; build scripts break out of
+ * their batch loops. See docs/issues/0028.
  */
 export class QuotaExhaustedError extends Error {
   constructor(
     public readonly op: string,
     public readonly cause?: unknown
   ) {
-    super(`Gemini API quota exhausted (${op})`);
+    super(`Model API quota exhausted (${op})`);
     this.name = "QuotaExhaustedError";
   }
 }
 
-/**
- * Wrap an embedContent invocation with a hard timeout. Uses
- * AbortController (so the SDK can cancel the underlying fetch if it
- * honors the signal) PLUS Promise.race against a timeoutPromise so we
- * never block the caller even if the SDK ignores the signal. On fire,
- * throws EmbedTimeoutError.
- */
-async function embedWithTimeout<T>(
-  op: string,
-  fn: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number
-): Promise<T> {
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      reject(new EmbedTimeoutError(op, timeoutMs));
-    }, timeoutMs);
-  });
-  try {
-    return await Promise.race([fn(controller.signal), timeoutPromise]);
-  } catch (err) {
-    // Convert Gemini quota errors into a typed error so callers (route,
-    // seed scripts) can early-abort instead of retrying endlessly.
-    if (isQuotaError(err)) {
-      throw new QuotaExhaustedError(op, err);
-    }
-    throw err;
-  } finally {
-    if (timer) clearTimeout(timer);
+/** A non-2xx Voyage response. `status` and `headers` let the quota helpers classify it. */
+export class VoyageHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly headers: Headers,
+    body: string
+  ) {
+    super(`Voyage HTTP ${status}: ${body.slice(0, 300)}`);
+    this.name = "VoyageHttpError";
   }
 }
 
-// ─── Quota Retry Helper ───────────────────────────────────────
-// The loop itself now lives in gemini-quota so every live model call in
-// the pipeline — not just this batch path — can back off the same way.
-// Re-exported here because this is the module callers and test mocks
-// already reach for. The batch delays stay longer than the live ones: a
-// seed/embed run has no request deadline to respect.
+// ─── Request Pacing ────────────────────────────────────────────
+// Voyage limits each model per minute; an account without a payment method
+// gets 3 requests and 10K tokens. Long jobs set VOYAGE_MAX_RPM and
+// VOYAGE_MAX_TPM so each request waits for room in the window instead of
+// tripping the limit. Unset, nothing waits.
 
-let QUOTA_RETRY_DELAYS_MS: number[] = [1_000, 2_000, 4_000];
+const PACE_WINDOW_MS = 60_000;
+/** Below the token limit, because the window holds estimates until a response settles them. */
+const PACE_TOKEN_HEADROOM = 0.9;
+const paceWindows = new Map<string, Array<{ at: number; tokens: number }>>();
+
+export function voyagePaceLimits(): { rpm: number; tpm: number } | null {
+  const rpm = Number(process.env.VOYAGE_MAX_RPM);
+  const tpm = Number(process.env.VOYAGE_MAX_TPM);
+  if (!(rpm > 0) && !(tpm > 0)) return null;
+  return {
+    rpm: rpm > 0 ? rpm : Infinity,
+    tpm: tpm > 0 ? Math.floor(tpm * PACE_TOKEN_HEADROOM) : Infinity,
+  };
+}
+
+export function _resetVoyagePaceForTests(): void {
+  paceWindows.clear();
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Wait until one more request of about `tokens` fits this model's window; returns its slot. */
+async function acquirePace(
+  model: string,
+  tokens: number,
+  signal?: AbortSignal
+): Promise<{ at: number; tokens: number } | null> {
+  const limits = voyagePaceLimits();
+  if (!limits) return null;
+  const window = paceWindows.get(model) ?? [];
+  paceWindows.set(model, window);
+  for (;;) {
+    const now = Date.now();
+    while (window.length > 0 && now - window[0].at >= PACE_WINDOW_MS) window.shift();
+    const used = window.reduce((sum, slot) => sum + slot.tokens, 0);
+    // A request bigger than the whole budget still goes, alone in the window.
+    if (window.length < limits.rpm && (used + tokens <= limits.tpm || window.length === 0)) {
+      const slot = { at: now, tokens };
+      window.push(slot);
+      return slot;
+    }
+    await sleep(window[0].at + PACE_WINDOW_MS - now + 50, signal);
+  }
+}
+
+/** POST to a Voyage endpoint under a hard timeout. */
+async function voyagePost<T extends { usage?: VoyageUsage }>(
+  op: string,
+  endpoint: string,
+  body: { model: string } & Record<string, unknown>,
+  timeoutMs: number,
+  outerSignal?: AbortSignal,
+  estimatedTokens = 0
+): Promise<T> {
+  const apiKey = process.env.VOYAGE_API_KEY?.trim();
+  if (!apiKey) throw new Error("VOYAGE_API_KEY is not set.");
+  const slot = await acquirePace(body.model, estimatedTokens, outerSignal);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const signal = outerSignal
+    ? AbortSignal.any([outerSignal, controller.signal])
+    : controller.signal;
+  try {
+    const res = await fetch(`${VOYAGE_API_URL}/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+      signal,
+    });
+    if (!res.ok) {
+      const error = new VoyageHttpError(res.status, res.headers, await res.text());
+      throw res.status === 429 ? new QuotaExhaustedError(op, error) : error;
+    }
+    const json = (await res.json()) as T;
+    if (slot && json.usage) slot.tokens = json.usage.total_tokens;
+    return json;
+  } catch (err) {
+    // Our own timer, not the caller's deadline.
+    if (controller.signal.aborted && !outerSignal?.aborted) {
+      throw new EmbedTimeoutError(op, timeoutMs);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function checkedVector(values: unknown, op: string): number[] {
+  if (!Array.isArray(values) || values.length !== EMBEDDING_DIMS) {
+    throw new Error(
+      `Invalid embedding dimensions in ${op}: expected ${EMBEDDING_DIMS}, got ${Array.isArray(values) ? values.length : 0}`
+    );
+  }
+  return values as number[];
+}
+
+interface ContextualizedResponse {
+  data?: Array<{ index: number; data?: Array<{ index: number; embedding: number[] }> }>;
+  usage?: VoyageUsage;
+}
+
+interface MultimodalResponse {
+  data?: Array<{ index: number; embedding: number[] }>;
+  usage?: VoyageUsage;
+}
+
+// ─── Quota Retry Helper ───────────────────────────────────────
+// The loop itself lives in gemini-quota so every live model call in the
+// pipeline backs off the same way. Re-exported here because this is the
+// module callers and test mocks already reach for. The batch delays stay
+// longer than the live ones: an index build has no request deadline.
+
+let QUOTA_RETRY_DELAYS_MS: number[] = [1_000, 2_000, 4_000, 8_000, 16_000, 32_000];
 
 // Test hook: lets unit tests run the non-retry paths without sitting
-// through 7 real seconds of backoff. Pass [] to disable retries; pass
-// a shorter list to shrink delays.
+// through real backoff. Pass [] to disable retries; pass a shorter list
+// to shrink delays.
 export function _setQuotaRetryDelaysForTests(delays: number[]): void {
   QUOTA_RETRY_DELAYS_MS = delays;
 }
@@ -162,290 +283,278 @@ export function _clearQueryEmbeddingCacheForTests(): void {
 
 // ─── Document Embedding ────────────────────────────────────────
 
+/** One article's chunks, in order, with the header that places them. */
+export interface ChunkedDocument {
+  header: string;
+  chunks: string[];
+}
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
+}
+
 /**
- * Embed multiple inputs for document storage. Handles batching internally.
- * Returns an array of embedding vectors (768-dim each), parallel to the input array.
- *
- * Text-only inputs are batched; multimodal inputs (with imageBase64) are sent
- * individually due to the Gemini API 6-image-per-request limit. Results are
- * reassembled in original input order.
- *
- * Inputs should already be formatted with the document prefix via buildEmbeddingInput().
+ * Pack documents into requests under voyage-context-4's limits. A document
+ * too long for one request is split into consecutive parts, each led by the
+ * header, so its chunks keep the article's identity if not all its text.
+ */
+function packContextRequests(
+  documents: ChunkedDocument[],
+  tokenBudget: number
+): Array<Array<{ document: number; firstChunk: number; texts: string[] }>> {
+  const requests: Array<Array<{ document: number; firstChunk: number; texts: string[] }>> = [];
+  let current: Array<{ document: number; firstChunk: number; texts: string[] }> = [];
+  let currentTokens = 0;
+  const flush = () => {
+    if (current.length > 0) requests.push(current);
+    current = [];
+    currentTokens = 0;
+  };
+
+  documents.forEach((doc, document) => {
+    const headerTokens = estimateTokens(doc.header);
+    let part = { document, firstChunk: 0, texts: [doc.header] };
+    let partTokens = headerTokens;
+    const pushPart = () => {
+      if (
+        currentTokens + partTokens > tokenBudget ||
+        current.length >= CONTEXT_REQUEST_MAX_DOCUMENTS
+      ) {
+        flush();
+      }
+      current.push(part);
+      currentTokens += partTokens;
+    };
+    doc.chunks.forEach((text, chunkIndex) => {
+      // Voyage rejects empty strings; a chunk with no text (a cartoon) stands as its header.
+      const chunk = text.trim() ? text : doc.header;
+      const chunkTokens = estimateTokens(chunk);
+      if (part.texts.length > 1 && partTokens + chunkTokens > tokenBudget) {
+        pushPart();
+        part = { document, firstChunk: chunkIndex, texts: [doc.header] };
+        partTokens = headerTokens;
+      }
+      part.texts.push(chunk);
+      partTokens += chunkTokens;
+    });
+    pushPart();
+  });
+  flush();
+  return requests;
+}
+
+/**
+ * Embed article chunks with voyage-context-4. Returns one vector per chunk,
+ * grouped as the input documents are. Requests run one after another; any
+ * failure rejects the whole call, so callers treat it as one unit.
+ */
+export async function embedArticleChunks(
+  documents: ChunkedDocument[],
+  opts: { requestId?: string; op?: string } = {}
+): Promise<number[][][]> {
+  const result: number[][][] = documents.map((doc) => new Array<number[]>(doc.chunks.length));
+  // Paced, a request must also fit in one minute's token allowance.
+  const tokenBudget = Math.min(
+    CONTEXT_REQUEST_TOKEN_BUDGET,
+    voyagePaceLimits()?.tpm ?? CONTEXT_REQUEST_TOKEN_BUDGET
+  );
+  for (const request of packContextRequests(documents, tokenBudget)) {
+    const requestTokens = request.reduce(
+      (sum, part) => sum + part.texts.reduce((inner, text) => inner + estimateTokens(text), 0),
+      0
+    );
+    const response = await retryOnQuota(
+      "embedArticleChunks",
+      () =>
+        executeTrackedEmbeddingCall({
+          model: EMBEDDING_MODEL,
+          requestId: opts.requestId,
+          op: opts.op ?? "embed.chunks",
+          call: () =>
+            voyagePost<ContextualizedResponse>(
+              "embedArticleChunks",
+              "contextualizedembeddings",
+              {
+                model: EMBEDDING_MODEL,
+                input_type: "document",
+                output_dimension: EMBEDDING_DIMS,
+                inputs: request.map((part) => part.texts),
+              },
+              EMBED_DOCUMENTS_TIMEOUT_MS,
+              undefined,
+              requestTokens
+            ),
+        }),
+      { delaysMs: QUOTA_RETRY_DELAYS_MS, requestId: opts.requestId }
+    );
+    const data = response.data ?? [];
+    if (data.length !== request.length) {
+      throw new Error(`Voyage returned ${data.length} documents for ${request.length}`);
+    }
+    for (const item of data) {
+      const part = request[item.index];
+      const vectors = [...(item.data ?? [])].sort((a, b) => a.index - b.index);
+      if (!part || vectors.length !== part.texts.length) {
+        throw new Error(`Voyage returned the wrong chunk count for document ${item.index}`);
+      }
+      // vectors[0] is the header's.
+      for (let i = 1; i < vectors.length; i += 1) {
+        result[part.document][part.firstChunk + i - 1] = checkedVector(
+          vectors[i].embedding,
+          "embedArticleChunks"
+        );
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Embed photos (caption text plus image) with voyage-multimodal-3.5.
+ * Returns one vector per input, in input order. Inputs without image bytes
+ * are embedded from their text alone.
  */
 export async function embedDocuments(
   inputs: EmbedInput[],
   opts: { requestId?: string; op?: string } = {}
 ): Promise<number[][]> {
-  if (inputs.length === 0) return [];
-
-  const client = getGeminiClient();
-
-  // Split into text-only (batchable) and multimodal (sent individually due to 6-image API limit)
-  const textIndices: number[] = [];
-  const imageIndices: number[] = [];
-  for (let i = 0; i < inputs.length; i++) {
-    if (inputs[i].imageBase64) {
-      imageIndices.push(i);
-    } else {
-      textIndices.push(i);
-    }
-  }
-
-  const textOnly = textIndices.map((i) => inputs[i]);
-  const withImages = imageIndices.map((i) => inputs[i]);
-
-  // One request per document. Vertex refuses a multi-content embedContent
-  // for this model — "The embedContent API for this model only supports
-  // one content at a time" — so a batch of N failed wholesale rather than
-  // degrading. The index build had already discovered this and wrapped
-  // this function in a per-item adapter of its own; db:seed and db:embed
-  // had not, and called it with 50 inputs at a time.
-  //
-  // Concurrency replaces batching: the previous code paused 200ms between
-  // batches, so serialising N calls would have been far slower than the
-  // batching it replaces.
-  const textEmbeddings: number[][] = new Array<number[]>(textOnly.length);
-  let nextTextIndex = 0;
-  const embedOneText = async (index: number): Promise<void> => {
-    const input = textOnly[index];
+  const result: number[][] = [];
+  for (let offset = 0; offset < inputs.length; offset += MULTIMODAL_BATCH_SIZE) {
+    const batch = inputs.slice(offset, offset + MULTIMODAL_BATCH_SIZE);
     const response = await retryOnQuota(
-      "embedDocuments.text",
+      "embedDocuments",
       () =>
         executeTrackedEmbeddingCall({
-          model: EMBEDDING_MODEL,
+          model: IMAGE_EMBEDDING_MODEL,
           requestId: opts.requestId,
-          op: opts.op ?? "embed.documents",
+          op: opts.op ?? "embed.image",
           call: () =>
-            embedWithTimeout(
-              "embedDocuments.text",
-              (signal) =>
-                client.models.embedContent({
-                  model: EMBEDDING_MODEL,
-                  contents: [{ parts: [{ text: input.text }] }],
-                  config: {
-                    outputDimensionality: EMBEDDING_DIMS,
-                    abortSignal: signal,
-                  },
-                }),
-              EMBED_DOCUMENTS_TIMEOUT_MS
+            voyagePost<MultimodalResponse>(
+              "embedDocuments",
+              "multimodalembeddings",
+              {
+                model: IMAGE_EMBEDDING_MODEL,
+                input_type: "document",
+                output_dimension: EMBEDDING_DIMS,
+                inputs: batch.map((input) => ({
+                  content: [
+                    { type: "text", text: input.text },
+                    ...(input.imageBase64
+                      ? [
+                          {
+                            type: "image_base64",
+                            image_base64: `data:${input.imageMimeType ?? "image/jpeg"};base64,${input.imageBase64}`,
+                          },
+                        ]
+                      : []),
+                  ],
+                })),
+              },
+              EMBED_DOCUMENTS_TIMEOUT_MS,
+              undefined,
+              batch.reduce(
+                (sum, input) =>
+                  sum + estimateTokens(input.text) + (input.imageBase64 ? IMAGE_TOKEN_ESTIMATE : 0),
+                0
+              )
             ),
         }),
       { delaysMs: QUOTA_RETRY_DELAYS_MS, requestId: opts.requestId }
     );
-
-    const values = response.embeddings?.[0]?.values;
-    if (!values || values.length !== EMBEDDING_DIMS) {
-      throw new Error(
-        `Invalid embedding dimensions: expected ${EMBEDDING_DIMS}, got ${values?.length ?? 0}`
-      );
+    const data = [...(response.data ?? [])].sort((a, b) => a.index - b.index);
+    if (data.length !== batch.length) {
+      throw new Error(`Voyage returned ${data.length} vectors for ${batch.length} inputs`);
     }
-    textEmbeddings[index] = values;
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(EMBED_CONCURRENCY, textOnly.length) }, async () => {
-      for (;;) {
-        const index = nextTextIndex;
-        nextTextIndex += 1;
-        if (index >= textOnly.length) return;
-        await embedOneText(index);
-      }
-    })
-  );
-
-  // Process multimodal embeddings individually. If any image fails, the
-  // throw propagates out of this loop and out of embedDocuments — callers
-  // must handle the batch as a whole (atomic semantics). See docs/issues
-  // for the "multimodal partial-failure atomicity" finding.
-  const imageEmbeddings: number[][] = [];
-  for (let idx = 0; idx < withImages.length; idx++) {
-    const inp = withImages[idx];
-    let response;
-    try {
-      response = await retryOnQuota(
-        "embedDocuments.multimodal",
-        () =>
-        executeTrackedEmbeddingCall({
-          model: EMBEDDING_MODEL,
-          requestId: opts.requestId,
-          op: opts.op ?? "embed.image",
-          imageCount: 1,
-          call: () =>
-            embedWithTimeout(
-              "embedDocuments.multimodal",
-              (signal) =>
-                client.models.embedContent({
-                  model: EMBEDDING_MODEL,
-                  contents: [
-                    {
-                      parts: [
-                        { text: inp.text },
-                        {
-                          inlineData: {
-                            mimeType: inp.imageMimeType || "image/jpeg",
-                            data: inp.imageBase64!,
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                  config: {
-                    outputDimensionality: EMBEDDING_DIMS,
-                    abortSignal: signal,
-                  },
-                }),
-              EMBED_DOCUMENTS_TIMEOUT_MS
-            ),
-          }),
-        { delaysMs: QUOTA_RETRY_DELAYS_MS, requestId: opts.requestId }
-      );
-    } catch (err) {
-      // Re-throw with context so operators know WHERE the partial failure
-      // landed — helps distinguish "batch-wide outage" from "one bad image".
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `Multimodal embedding failed on image ${idx + 1} of ${withImages.length}: ${msg}`
-      );
-    }
-
-    if (!response.embeddings || response.embeddings.length !== 1) {
-      throw new Error(
-        `Failed to generate multimodal embedding for image ${idx + 1} of ${withImages.length}`
-      );
-    }
-    const emb = response.embeddings[0];
-    if (!emb.values || emb.values.length !== EMBEDDING_DIMS) {
-      throw new Error(
-        `Invalid embedding dimensions: expected ${EMBEDDING_DIMS}, got ${emb.values?.length ?? 0}`
-      );
-    }
-    imageEmbeddings.push(emb.values);
-    await sleep(200);
+    for (const item of data) result.push(checkedVector(item.embedding, "embedDocuments"));
   }
-
-  // Invariant check before reassembly: each branch must return exactly as
-  // many vectors as we asked for. If this fires, there's a programming
-  // error somewhere (not just a transient failure); surfacing it loudly
-  // is correct because silently reassembling a partially-filled array
-  // would poison retrieval downstream.
-  if (textEmbeddings.length !== textIndices.length) {
-    throw new Error(
-      `embedDocuments text branch length mismatch: ${textEmbeddings.length}/${textIndices.length}`
-    );
-  }
-  if (imageEmbeddings.length !== imageIndices.length) {
-    throw new Error(
-      `embedDocuments image branch length mismatch: ${imageEmbeddings.length}/${imageIndices.length}`
-    );
-  }
-
-  // Reassemble in original input order
-  const result: number[][] = new Array(inputs.length);
-  for (let i = 0; i < textIndices.length; i++) {
-    result[textIndices[i]] = textEmbeddings[i];
-  }
-  for (let i = 0; i < imageIndices.length; i++) {
-    result[imageIndices[i]] = imageEmbeddings[i];
-  }
-
   return result;
 }
 
 // ─── Query Embedding ───────────────────────────────────────────
 
+/** Which index a query searches: article chunks or photos. */
+export type QueryEmbeddingKind = "text" | "image";
+
 /**
- * Embed a single query for retrieval.
- *
- * gemini-embedding-2 takes no `taskType` parameter — the task is carried
- * as an inline prefix on the text instead, which is why documents read
- * "title: … | text: …" and queries read "task: … | query: …".
- *
- * The task is "question answering", not "search result". Both are
- * documented prefixes; this surface is called Ask the Archive and almost
- * every input is a literal question, and the frozen golden catalog agrees:
- * over two runs each, source recall was 87.0% / 95.7% with question
- * answering against 78.3% / 73.9% with search result — non-overlapping,
- * at no latency or token cost. Documents keep their own prefix, so
- * nothing had to be re-embedded for this.
- *
- * (A visual query — "find photographs of …" — is arguably a search rather
- * than a question, but the catalog is too thin on those to justify
- * branching on mode here.)
+ * Embed a single query for retrieval, with the model that built the vectors
+ * it will search: voyage-context-4 for chunks (a one-item document is
+ * embedded on its own) or voyage-multimodal-3.5 for photos.
  *
  * Includes a 10s timeout and a short-lived LRU cache for repeated queries.
  */
 export async function embedQuery(
   question: string,
-  opts: { signal?: AbortSignal; requestId?: string } = {}
+  opts: { signal?: AbortSignal; requestId?: string; kind?: QueryEmbeddingKind } = {}
 ): Promise<number[]> {
   // Early-exit on already-aborted signal so callers with an expired
-  // deadline don't dispatch a doomed SDK call. Mirrors hybridSearch's
+  // deadline don't dispatch a doomed call. Mirrors hybridSearch's
   // early-exit (db.ts) for symmetry across the pipeline.
   if (opts.signal?.aborted) {
     throw new Error("embedQuery: signal already aborted");
   }
 
-  const prefixed = `task: question answering | query: ${question}`;
-  const cacheKey = `${EMBEDDING_MODEL}\0${RAG_QUERY_EMBEDDING_INPUT_VERSION}\0${prefixed}`;
+  const kind = opts.kind ?? "text";
+  const model = kind === "image" ? IMAGE_EMBEDDING_MODEL : EMBEDDING_MODEL;
+  const cacheKey = `${model}\0${RAG_QUERY_EMBEDDING_INPUT_VERSION}\0${question}`;
 
   // Check cache first
   const cached = getCachedEmbedding(cacheKey);
   if (cached) return cached;
 
-  const client = getGeminiClient();
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), EMBED_TIMEOUT_MS);
-
-  // Combine outer request signal with the internal 10s timeout.
-  const combinedSignal = opts.signal
-    ? AbortSignal.any([opts.signal, controller.signal])
-    : controller.signal;
-
   try {
     // A per-minute RPM trip often clears within a second or two, and losing
-    // the vector signal costs recall for the whole request. One controller
-    // spans the retries so the 10s budget the deadline math assumes is not
-    // multiplied, and the backoff itself gives up as soon as it aborts.
-    const response = await retryOnQuota(
+    // the vector signal costs recall for the whole request. The 10s budget
+    // covers each attempt; the backoff gives up as soon as the deadline
+    // aborts.
+    const values = await retryOnQuota(
       "embedQuery",
       () =>
         executeTrackedEmbeddingCall({
-      model: EMBEDDING_MODEL,
-      requestId: opts.requestId,
-      op: "embed.query",
-      call: () =>
-        client.models.embedContent({
-          model: EMBEDDING_MODEL,
-          contents: [{ parts: [{ text: prefixed }] }],
-          config: {
-            outputDimensionality: EMBEDDING_DIMS,
-            abortSignal: combinedSignal,
-          },
+          model,
+          requestId: opts.requestId,
+          op: "embed.query",
+          call: () =>
+            kind === "image"
+              ? voyagePost<MultimodalResponse>(
+                  "embedQuery",
+                  "multimodalembeddings",
+                  {
+                    model,
+                    input_type: "query",
+                    output_dimension: EMBEDDING_DIMS,
+                    inputs: [{ content: [{ type: "text", text: question }] }],
+                  },
+                  EMBED_TIMEOUT_MS,
+                  opts.signal,
+                  estimateTokens(question)
+                )
+              : voyagePost<ContextualizedResponse>(
+                  "embedQuery",
+                  "contextualizedembeddings",
+                  {
+                    model,
+                    input_type: "query",
+                    output_dimension: EMBEDDING_DIMS,
+                    inputs: [[question]],
+                  },
+                  EMBED_TIMEOUT_MS,
+                  opts.signal,
+                  estimateTokens(question)
+                ),
         }),
-        }),
-      { signal: combinedSignal, requestId: opts.requestId }
-    );
-
-    clearTimeout(timeout);
-
-    if (!response.embeddings || response.embeddings.length !== 1) {
-      throw new Error("Failed to generate query embedding");
-    }
-
-    const values = response.embeddings[0].values;
-    if (!values || values.length !== EMBEDDING_DIMS) {
-      throw new Error(
-        `Invalid query embedding dimensions: expected ${EMBEDDING_DIMS}, got ${values?.length ?? 0}`
-      );
-    }
+      { signal: opts.signal, requestId: opts.requestId }
+    ).then((response) => {
+      const first = response.data?.[0];
+      const embedding =
+        first && "embedding" in first ? first.embedding : first?.data?.[0]?.embedding;
+      return checkedVector(embedding, "embedQuery");
+    });
 
     setCachedEmbedding(cacheKey, values);
     return values;
   } catch (err) {
-    clearTimeout(timeout);
-    // Detect Gemini quota exhaustion and surface as a typed error so
-    // /api/ask can return 429 + Retry-After instead of an opaque 502.
+    // Surface quota exhaustion as a typed error so /api/ask can return
+    // 429 + Retry-After instead of an opaque 502.
     if (isQuotaError(err)) {
       throw new QuotaExhaustedError("embedQuery", err);
     }
@@ -455,10 +564,38 @@ export async function embedQuery(
 
 // ─── Text Building ─────────────────────────────────────────────
 
+function sourceLine(article: { edition_date?: string | null; category?: string | null }): string {
+  return [
+    "From The Transcript Archive (Ohio Wesleyan University newspaper)",
+    article.edition_date,
+    article.category ? `${article.category} section` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 /**
- * Build the text string to embed for an article.
- * Uses the "title: ... | text: ..." prefix format for gemini-embedding-2.
- * Prepends contextual preamble (edition date, category) for better retrieval.
+ * The header that leads an article's chunks: where and when it ran, the
+ * headline and the byline.
+ */
+export function buildChunkHeader(article: {
+  headline: string;
+  byline?: string | null;
+  edition_date?: string | null;
+  category?: string | null;
+}): string {
+  return [
+    `${sourceLine(article)}.`,
+    `Headline: ${article.headline || "(untitled)"}`,
+    article.byline ? `Byline: ${article.byline}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Build the text string to embed for an article or photo: headline, then
+ * the source line, byline, lede, caption and body.
  */
 export function buildEmbeddingText(article: {
   headline: string;
@@ -472,16 +609,7 @@ export function buildEmbeddingText(article: {
   const bodyParts: string[] = [];
 
   // Contextual preamble
-  if (article.edition_date || article.category) {
-    const ctx = [
-      "From The Transcript Archive (Ohio Wesleyan University newspaper)",
-      article.edition_date,
-      article.category ? `${article.category} section` : null,
-    ]
-      .filter(Boolean)
-      .join(", ");
-    bodyParts.push(ctx + ".");
-  }
+  if (article.edition_date || article.category) bodyParts.push(sourceLine(article) + ".");
 
   if (article.byline) bodyParts.push(article.byline);
   // Summary (article lede) — most semantically dense sentence, prepended for prominence
@@ -491,19 +619,8 @@ export function buildEmbeddingText(article: {
   if (article.body_plain) bodyParts.push(article.body_plain);
 
   const body = bodyParts.join("\n\n").trim();
-  const title = article.headline || "(untitled)";
-
-  // Gemini Embedding 2 document format
-  const full = `title: ${title} | text: ${body || "(empty article)"}`;
-
-  // Guard against exceeding the embedding model's 8,192-token input limit
-  if (full.length > MAX_EMBEDDING_CHARS) {
-    const prefix = `title: ${title} | text: `;
-    const maxBody = MAX_EMBEDDING_CHARS - prefix.length;
-    return prefix + body.slice(0, Math.max(0, maxBody));
-  }
-
-  return full;
+  const full = `${article.headline || "(untitled)"}\n\n${body || "(empty article)"}`;
+  return full.slice(0, MAX_EMBEDDING_CHARS);
 }
 
 // ─── Multimodal Input ─────────────────────────────────────────
@@ -512,6 +629,12 @@ export interface EmbedInput {
   text: string;
   imageBase64?: string;
   imageMimeType?: string;
+}
+
+/** A chunk with the header of the article it belongs to. */
+export interface ChunkEmbedInput {
+  header: string;
+  text: string;
 }
 
 /**
@@ -539,18 +662,27 @@ export function buildEmbeddingInput(article: {
   return { text };
 }
 
-/** Canonical identity for deciding whether a stored vector is reusable. */
+/**
+ * Canonical identity for deciding whether a stored vector is reusable. The
+ * model follows the input version: photo inputs belong to the image model.
+ */
 export function embeddingInputFingerprint(
-  input: EmbedInput,
+  input: EmbedInput | ChunkEmbedInput,
   inputVersion = EMBEDDING_INPUT_VERSION
 ): string {
   const hash = createHash("sha256");
-  hash.update(EMBEDDING_MODEL);
+  hash.update(
+    inputVersion === IMAGE_EMBEDDING_INPUT_VERSION ? IMAGE_EMBEDDING_MODEL : EMBEDDING_MODEL
+  );
   hash.update("\0");
   hash.update(inputVersion);
   hash.update("\0");
+  if ("header" in input) {
+    hash.update(input.header);
+    hash.update("\0");
+  }
   hash.update(input.text);
-  if (input.imageBase64) {
+  if ("imageBase64" in input && input.imageBase64) {
     hash.update("\0");
     hash.update(input.imageMimeType ?? "image/jpeg");
     hash.update("\0");
@@ -561,13 +693,15 @@ export function embeddingInputFingerprint(
 
 // ─── Utilities ─────────────────────────────────────────────────
 
-/** Check whether the required Vertex project configuration is present. */
-export function hasGoogleCredentials(): boolean {
-  return Boolean(process.env.GOOGLE_CLOUD_PROJECT);
+/** Check whether the Voyage API key is present. */
+export function hasVoyageCredentials(): boolean {
+  return Boolean(process.env.VOYAGE_API_KEY?.trim());
 }
 
-export { EMBEDDING_MODEL, EMBEDDING_DIMS, EMBEDDING_INPUT_VERSION, IMAGE_EMBEDDING_INPUT_VERSION };
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+export {
+  EMBEDDING_MODEL,
+  IMAGE_EMBEDDING_MODEL,
+  EMBEDDING_DIMS,
+  EMBEDDING_INPUT_VERSION,
+  IMAGE_EMBEDDING_INPUT_VERSION,
+};

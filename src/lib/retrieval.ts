@@ -173,9 +173,11 @@ export async function retrieveCandidates(params: {
     temporalStratify: rangeDays >= 90,
   };
 
+  // A photo search reads image vectors, a different model's space.
   const embeddingPromise = embedQuery(params.embeddingQuery, {
     signal: params.signal,
     requestId: params.requestId,
+    kind: params.onlyWithImages ? "image" : "text",
   });
   const servedFtsPromise = searchArticlesForRag(params.ftsQuery, {
     ...searchOptions,

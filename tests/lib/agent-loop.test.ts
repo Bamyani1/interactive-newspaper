@@ -320,7 +320,7 @@ describe("agent-loop", () => {
       expect(finalCall.messages[0].content).toContain("ARCHIVE EVIDENCE");
       // Research rounds plan at MEDIUM; writing up the evidence needs less.
       expect(modelCalls[0].output_config.effort).toBe("medium");
-      expect(finalCall.output_config.effort).toBe("low");
+      expect(finalCall.output_config.effort).toBe("medium");
     });
 
     it("uses partial tool-round text if forced synthesis is empty", async () => {

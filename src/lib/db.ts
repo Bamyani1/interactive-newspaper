@@ -3,6 +3,7 @@ import type { Article, EditionInfo, VintageAd } from "@/src/types";
 import { createHash } from "crypto";
 import {
   RAG_EMBEDDING_MODEL,
+  RAG_IMAGE_EMBEDDING_MODEL,
   RAG_IMAGE_EMBEDDING_INPUT_VERSION,
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/rag-model-config";
@@ -72,6 +73,7 @@ async function assertConfiguredIndexBuildReady(signal: AbortSignal): Promise<str
 
   const rows = await sql.query(
     `SELECT id, corpus_version, status, pipeline_version, embedding_model,
+            image_embedding_model, embedding_dims,
             text_embedding_input_version, image_embedding_input_version,
             (SELECT COUNT(*)::int FROM rag_index_builds active
              WHERE active.corpus_version = build.corpus_version
@@ -90,6 +92,8 @@ async function assertConfiguredIndexBuildReady(signal: AbortSignal): Promise<str
     build.corpus_version !== config.corpusVersion && "corpus_version",
     build.pipeline_version !== config.pipelineVersion && "pipeline_version",
     build.embedding_model !== config.embeddingModel && "embedding_model",
+    build.image_embedding_model !== config.imageEmbeddingModel && "image_embedding_model",
+    Number(build.embedding_dims) !== config.embeddingDims && "embedding_dims",
     build.text_embedding_input_version !== config.textEmbeddingInputVersion &&
       "text_embedding_input_version",
     build.image_embedding_input_version !== config.imageEmbeddingInputVersion &&
@@ -637,18 +641,18 @@ async function queryRagV2ByEmbedding(
                  a.byline, a.body_plain, a.image_urls, a.image_captions,
                  i.image_url AS matched_image_url,
                  i.caption AS matched_caption,
-                 (i.embedding <=> ${vecStr}::vector) AS evidence_distance,
-                 MIN(i.embedding <=> ${vecStr}::vector)
+                 (i.embedding_1024 <=> ${vecStr}::vector) AS evidence_distance,
+                 MIN(i.embedding_1024 <=> ${vecStr}::vector)
                    OVER (PARTITION BY i.article_id) AS article_distance,
                  ROW_NUMBER() OVER (
                    PARTITION BY i.article_id
-                   ORDER BY i.embedding <=> ${vecStr}::vector, i.image_index
+                   ORDER BY i.embedding_1024 <=> ${vecStr}::vector, i.image_index
                  ) AS evidence_rank
           FROM article_images i
           JOIN articles a ON a.id = i.article_id
-          WHERE i.embedding IS NOT NULL
+          WHERE i.embedding_1024 IS NOT NULL
             AND i.index_build_id = ${indexBuildId}
-            AND i.embedding_model = ${RAG_EMBEDDING_MODEL}
+            AND i.embedding_model = ${RAG_IMAGE_EMBEDDING_MODEL}
             AND i.embedding_input_version = ${RAG_IMAGE_EMBEDDING_INPUT_VERSION}
             AND (${category}::text IS NULL OR a.category = ${category})
             AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
@@ -683,16 +687,16 @@ async function queryRagV2ByEmbedding(
         SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
                a.byline, a.body_plain, a.image_urls, a.image_captions,
                c.chunk_text,
-               (c.embedding <=> ${vecStr}::vector) AS evidence_distance,
-               MIN(c.embedding <=> ${vecStr}::vector)
+               (c.embedding_1024 <=> ${vecStr}::vector) AS evidence_distance,
+               MIN(c.embedding_1024 <=> ${vecStr}::vector)
                  OVER (PARTITION BY c.article_id) AS article_distance,
                ROW_NUMBER() OVER (
                  PARTITION BY c.article_id
-                 ORDER BY c.embedding <=> ${vecStr}::vector, c.chunk_index
+                 ORDER BY c.embedding_1024 <=> ${vecStr}::vector, c.chunk_index
                ) AS evidence_rank
         FROM article_chunks c
         JOIN articles a ON a.id = c.article_id
-        WHERE c.embedding IS NOT NULL
+        WHERE c.embedding_1024 IS NOT NULL
           AND c.index_build_id = ${indexBuildId}
           AND c.embedding_model = ${RAG_EMBEDDING_MODEL}
           AND c.embedding_input_version = ${RAG_TEXT_EMBEDDING_INPUT_VERSION}
@@ -729,16 +733,16 @@ async function queryRagV2ByEmbedding(
         SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
                a.byline, a.body_plain, a.image_urls, a.image_captions,
                c.chunk_text,
-               (c.embedding <=> ${vecStr}::vector) AS evidence_distance,
-               MIN(c.embedding <=> ${vecStr}::vector)
+               (c.embedding_1024 <=> ${vecStr}::vector) AS evidence_distance,
+               MIN(c.embedding_1024 <=> ${vecStr}::vector)
                  OVER (PARTITION BY c.article_id) AS article_distance,
                ROW_NUMBER() OVER (
                  PARTITION BY c.article_id
-                 ORDER BY c.embedding <=> ${vecStr}::vector, c.chunk_index
+                 ORDER BY c.embedding_1024 <=> ${vecStr}::vector, c.chunk_index
                ) AS evidence_rank
         FROM article_chunks c
         JOIN articles a ON a.id = c.article_id
-        WHERE c.embedding IS NOT NULL
+        WHERE c.embedding_1024 IS NOT NULL
           AND c.index_build_id = ${indexBuildId}
           AND c.embedding_model = ${RAG_EMBEDDING_MODEL}
           AND c.embedding_input_version = ${RAG_TEXT_EMBEDDING_INPUT_VERSION}

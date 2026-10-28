@@ -1,7 +1,7 @@
 import {
-  buildEmbeddingInput,
+  buildChunkHeader,
   embeddingInputFingerprint,
-  type EmbedInput,
+  type ChunkEmbedInput,
 } from "@/src/lib/embeddings";
 
 export const ARTICLE_CHUNK_TARGET_CHARS = 3_200;
@@ -22,7 +22,7 @@ export interface ArticleChunkRecord {
   articleId: string;
   chunkIndex: number;
   chunkText: string;
-  embeddingInput: EmbedInput;
+  embeddingInput: ChunkEmbedInput;
   embeddingInputHash: string;
 }
 
@@ -92,15 +92,9 @@ export function chunkArticleBody(
 }
 
 export function buildArticleChunkRecords(article: ChunkableArticle): ArticleChunkRecord[] {
+  const header = buildChunkHeader(article);
   return chunkArticleBody(article.body_plain).map((chunkText, chunkIndex) => {
-    const embeddingInput = buildEmbeddingInput({
-      headline: article.headline,
-      byline: article.byline,
-      body_plain: chunkText,
-      edition_date: article.edition_date,
-      category: article.category,
-      summary: chunkIndex === 0 ? article.summary : null,
-    });
+    const embeddingInput = { header, text: chunkText };
     return {
       id: `${article.id}:${String(chunkIndex).padStart(4, "0")}`,
       articleId: article.id,

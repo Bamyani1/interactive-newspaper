@@ -16,11 +16,14 @@ import {
   embedBuildText,
   finalizeBuild,
   populateBuildRecords,
+  registerCorpus,
 } from "../../scripts/db/build-rag-index.mjs";
 import { importBuildVectors, verifyExportDir } from "../../scripts/db/import-build-vectors.mjs";
 import {
+  RAG_EMBEDDING_DIMS,
   RAG_EMBEDDING_MODEL,
   RAG_IMAGE_EMBEDDING_INPUT_VERSION,
+  RAG_IMAGE_EMBEDDING_MODEL,
   RAG_PIPELINE_VERSION,
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "../../src/lib/rag-model-config";
@@ -34,6 +37,8 @@ const BUILD_OPTIONS = {
   corpusVersion: CORPUS,
   pipelineVersion: RAG_PIPELINE_VERSION,
   embeddingModel: RAG_EMBEDDING_MODEL,
+  imageEmbeddingModel: RAG_IMAGE_EMBEDDING_MODEL,
+  embeddingDims: RAG_EMBEDDING_DIMS,
   textInputVersion: RAG_TEXT_EMBEDDING_INPUT_VERSION,
   imageInputVersion: RAG_IMAGE_EMBEDDING_INPUT_VERSION,
 } as const;
@@ -148,8 +153,10 @@ describe("import-build-vectors round trip", () => {
     buildId = await createIndexBuild(source.executor, BUILD_OPTIONS);
     await populateBuildRecords(source.executor, buildId);
     await embedBuildText(source.executor, buildId, {
-      embedFn: async (inputs: Array<{ text: string }>) =>
-        inputs.map(() => Array.from({ length: 768 }, (_, i) => i / 1000)),
+      embedChunksFn: async (documents: Array<{ chunks: string[] }>) =>
+        documents.map((doc) =>
+          doc.chunks.map(() => Array.from({ length: RAG_EMBEDDING_DIMS }, (_, i) => i / 1000))
+        ),
     });
     await finalizeBuild(source.executor, buildId);
     // Source is ACTIVE at export time; the import must land it 'validated'.
@@ -164,10 +171,10 @@ describe("import-build-vectors round trip", () => {
     );
     const { rows: chunkRows } = await source.pg.query(
       `SELECT id, index_build_id, article_id, chunk_index, chunk_text,
-                    embedding::text AS embedding, embedding_model,
+                    embedding_1024::text AS embedding, embedding_model,
                     embedding_input_version, embedding_input_hash, content_revision_id
              FROM article_chunks
-             WHERE index_build_id = $1 AND embedding IS NOT NULL ORDER BY id`,
+             WHERE index_build_id = $1 AND embedding_1024 IS NOT NULL ORDER BY id`,
       [buildId]
     );
     expect(chunkRows.length).toBeGreaterThan(0);
@@ -229,4 +236,18 @@ describe("import-build-vectors round trip", () => {
     );
     await bare.close();
   });
+
+  it("importBuildVectors accepts a build once its corpus is registered", async () => {
+    const bare = await createTestDb();
+    await runMigrations(bare.executor, { dir: MIGRATIONS_DIR });
+    await seedFixture(bare.pg, "bare");
+    await bare.pg.query("DELETE FROM corpus_versions WHERE id = $1", [CORPUS]);
+    await expect(importBuildVectors(bare.executor, { dir: exportDir })).rejects.toThrow(
+      /is not registered/
+    );
+    await registerCorpus(bare.executor, CORPUS);
+    const result = await importBuildVectors(bare.executor, { dir: exportDir });
+    expect(result.embedded.chunks).toBeGreaterThan(0);
+    await bare.close();
+  }, 60_000);
 });

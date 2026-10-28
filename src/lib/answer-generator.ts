@@ -31,9 +31,10 @@ import {
 
 const GENERATION_MODEL = RAG_MODEL_CONFIG.answer.model;
 // Thinking tokens share the output-token ceiling. Reasoning consumed nearly
-// the old 4,096-token limit in a live housing synthesis and truncated the
-// JSON envelope, so leave enough room for both reasoning and the answer.
-const MAX_ANSWER_TOKENS = 8192;
+// a 4,096-token limit at low effort in a live housing synthesis and
+// truncated the JSON envelope; the answer profiles think at medium or
+// xhigh, so leave the agent's room for both reasoning and the answer.
+const MAX_ANSWER_TOKENS = 16_384;
 // gemini-3.6-flash regularly needed 15-25s for survey-style answers at
 // the LOW thinking level this stage uses (see rag-model-config); the route's
 // global deadline bounds the request either way.

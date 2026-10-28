@@ -1,0 +1,2275 @@
+{
+  "schemaVersion": 2,
+  "datasetId": "rag-development-v2",
+  "split": "development",
+  "provenance": "Drafted by Claude from a seeded, decade-stratified sample of archive articles and captioned photos (scripts/rag/build-dev-catalog.mjs); facts are verified verbatim against the source.",
+  "questions": [
+    {
+      "id": "dev2-t-1953-01-14-37",
+      "question": "How did the Ohio Wesleyan swim team lose its first meet at Kent State in January 1953, and what decided the outcome?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1953-01-14-37"
+      ],
+      "expectedFactsAny": [
+        [
+          "43-41",
+          "43-41 final tally"
+        ],
+        [
+          "400 yard freestyle relay",
+          "relay"
+        ],
+        [
+          "Kent State",
+          "Kempf"
+        ]
+      ],
+      "source": "1953-01-14 — Kent Hands Swim Team First Defeat Of Season, 43-41"
+    },
+    {
+      "id": "dev2-t-1957-01-09-9",
+      "question": "How much funding did the National Science Foundation give Ohio Wesleyan in 1957 for a summer institute for high school science teachers?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1957-01-09-9"
+      ],
+      "expectedFactsAny": [
+        [
+          "$57,300"
+        ],
+        [
+          "National Science Foundation"
+        ],
+        [
+          "50 teachers",
+          "eight-week"
+        ]
+      ],
+      "source": "1957-01-09 — OWU To Conduct Teacher Institute"
+    },
+    {
+      "id": "dev2-t-1951-01-10-33",
+      "question": "Who represented Ohio Wesleyan at the 1951 Ohio regional meeting of the National Student Association, and who was the featured national speaker?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1951-01-10-33"
+      ],
+      "expectedFactsAny": [
+        [
+          "Ron Mayer",
+          "Marc Powers",
+          "Marilyn Musselman"
+        ],
+        [
+          "Al Lowenstein",
+          "Lowenstein"
+        ],
+        [
+          "Muskingum university",
+          "Muskingum"
+        ]
+      ],
+      "source": "1951-01-10 — Wesleyan To Send Eight Delegates To NSA Convention At Muskingham"
+    },
+    {
+      "id": "dev2-t-1950-03-01-47",
+      "question": "Who had the highest fraternity league bowling average in intramurals in early 1950, and which houses were in the upperclass bowling championship?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-03-01-47"
+      ],
+      "expectedFactsAny": [
+        [
+          "Bob Reece",
+          "Reece"
+        ],
+        [
+          "168"
+        ],
+        [
+          "Sig Eps",
+          "Phi Delts"
+        ]
+      ],
+      "source": "1950-03-01 — Highlights"
+    },
+    {
+      "id": "dev2-t-1950-04-19-13",
+      "question": "What did the Toledo Blade's managing editor say when he spoke at the 1950 publications banquet about journalism schools and how journalists should be educated?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-04-19-13"
+      ],
+      "expectedFactsAny": [
+        [
+          "Paul Schrader",
+          "Schrader"
+        ],
+        [
+          "Toledo Blade",
+          "Toledo"
+        ],
+        [
+          "liberal arts",
+          "journalism minors"
+        ]
+      ],
+      "source": "1950-04-19 — Schrader Stresses Journalistic Service"
+    },
+    {
+      "id": "dev2-t-1950-01-18-6",
+      "question": "What jokes did the Transcript borrow from other college papers in January 1950 about professors and students falling asleep in lecture?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-01-18-6"
+      ],
+      "expectedFactsAny": [
+        [
+          "Penn State Froth"
+        ],
+        [
+          "Student's Prayer",
+          "Now I lay me down to sleep"
+        ],
+        [
+          "Humpty Dumpty"
+        ]
+      ],
+      "source": "1950-01-18 — From The Neighbors"
+    },
+    {
+      "id": "dev2-t-1950-01-18-14",
+      "question": "What proposals did Ohio Wesleyan students vote on in 1950 about fraternities and groups with race or religion membership restrictions?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-01-18-14"
+      ],
+      "expectedFactsAny": [
+        [
+          "Michigan Plan"
+        ],
+        [
+          "I. F. C. Plan"
+        ],
+        [
+          "Wesleyan Plan"
+        ]
+      ],
+      "source": "1950-01-18 — Advisory Referendum"
+    },
+    {
+      "id": "dev2-t-1950-03-01-52",
+      "question": "Which Ohio Wesleyan coed became a First Lady known for banning alcohol at the White House, and what nickname did she earn?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-03-01-52"
+      ],
+      "expectedFactsAny": [
+        [
+          "Lemonade Lucy"
+        ],
+        [
+          "Lucy Webb",
+          "Lucy"
+        ],
+        [
+          "Hayes"
+        ]
+      ],
+      "source": "1950-03-01 — 'Lemonade Lucy,' OWU Coed, Enforced White House 'Dry Spell"
+    },
+    {
+      "id": "dev2-t-1950-09-27-42",
+      "question": "Which Nobel Peace Prize winner was scheduled to speak in Gray Chapel in spring 1951 as part of the lecture-movie series, and what was the season ticket price?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-09-27-42"
+      ],
+      "expectedFactsAny": [
+        [
+          "Ralph Bunche",
+          "Dr. Bunche"
+        ],
+        [
+          "March 16, 1951",
+          "March 16"
+        ],
+        [
+          "$3.00"
+        ]
+      ],
+      "source": "1950-09-27 — Palestine Mediator Heads Lecture Movie Series"
+    },
+    {
+      "id": "dev2-t-1950-02-22-25",
+      "question": "Who was chosen to command the Air Force ROTC summer camp at Wright-Patterson in 1950, and how many Ohio Wesleyan students attended?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-02-22-25"
+      ],
+      "expectedFactsAny": [
+        [
+          "Paul A. Johnson",
+          "Colonel Johnson",
+          "Lt. Col. Paul A. Johnson"
+        ],
+        [
+          "Fifteen"
+        ]
+      ],
+      "source": "1950-02-22 — Colonel Johnson To Head ROTC's Summer Program"
+    },
+    {
+      "id": "dev2-t-1950-02-22-2",
+      "question": "Why did Ohio Wesleyan's Phi Beta Kappa elect a record number of juniors in 1950, and who explained it?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-02-22-2"
+      ],
+      "expectedFactsAny": [
+        [
+          "Allen C. Conger",
+          "Conger"
+        ],
+        [
+          "largest junior election"
+        ],
+        [
+          "careful selection",
+          "freshman class in 1947"
+        ]
+      ],
+      "source": "1950-02-22 — Phi Beta Kappa Elects 14 Juniors, 21 More Seniors"
+    },
+    {
+      "id": "dev2-t-1950-03-22-52",
+      "question": "What was the grand prize in the 1950 Revlon Miss Fashion Plate contest that students voted on at Ohio Wesleyan?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-03-22-52"
+      ],
+      "expectedFactsAny": [
+        [
+          "trip to Bermuda",
+          "Bermuda"
+        ],
+        [
+          "Castle Harbour"
+        ],
+        [
+          "Pan American Clipper",
+          "Pan-American-Clipper"
+        ]
+      ],
+      "source": "1950-03-22 — Who will she be on this campus?"
+    },
+    {
+      "id": "dev2-t-1956-01-11-13",
+      "question": "Did a reader object in 1956 to an editorial saying religious outward signs were a poor way to judge the Ohio Wesleyan campus?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1956-01-11-13"
+      ],
+      "expectedFactsAny": [
+        [
+          "j. r. f."
+        ],
+        [
+          "Christ",
+          "Living Christ"
+        ],
+        [
+          "Christmas issue",
+          "Christmas"
+        ]
+      ],
+      "source": "1956-01-11 — Christmas Issue Good"
+    },
+    {
+      "id": "dev2-t-1950-10-04-3",
+      "question": "In 1950, what kind of printing press did the Delaware Gazette buy for its new building, and how fast could it print the Transcript?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-10-04-3"
+      ],
+      "expectedFactsAny": [
+        [
+          "Goss Straightline",
+          "Goss"
+        ],
+        [
+          "20,000 copies an hour",
+          "20,000"
+        ],
+        [
+          "Sandusky Register"
+        ]
+      ],
+      "source": "1950-10-04 — Construction of New Home For Gazette Nears Completion"
+    },
+    {
+      "id": "dev2-t-1966-02-09-21",
+      "question": "Who led Ohio Wesleyan in scoring when the Bishops beat Transylvania and Centre in early February 1966, and how did Centre's star do?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1966-02-09-21"
+      ],
+      "expectedFactsAny": [
+        [
+          "Jeff Buckalew",
+          "Buckalew"
+        ],
+        [
+          "Mike Marks",
+          "40 point"
+        ],
+        [
+          "92-79",
+          "90-71"
+        ]
+      ],
+      "source": "1966-02-09 — Cagers Score Two Wins Over Kentucky Visitors"
+    },
+    {
+      "id": "dev2-t-1966-02-09-20",
+      "question": "Which Ohio Conference teams did Ohio Wesleyan face in basketball, swimming and wrestling during the 1966 Winter Homecoming weekend?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1966-02-09-20"
+      ],
+      "expectedFactsAny": [
+        [
+          "Akron"
+        ],
+        [
+          "Denison"
+        ],
+        [
+          "Hiram"
+        ]
+      ],
+      "source": "1966-02-09 — OC Leaders Here For Homecoming"
+    },
+    {
+      "id": "dev2-t-1960-11-09-15",
+      "question": "What did the student paper say about the Trustees' decision to build the first unit of a new science center around 1960?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1960-11-09-15"
+      ],
+      "expectedFactsAny": [
+        [
+          "first unit"
+        ],
+        [
+          "biological sciences",
+          "biological"
+        ],
+        [
+          "Trustees"
+        ]
+      ],
+      "source": "1960-11-09 — New Science Center Points To OWU's Future"
+    },
+    {
+      "id": "dev2-t-1968-01-31-54",
+      "question": "Which presidential candidate did a 1968 student opinion piece urge Ohio voters to back over Johnson, and why?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1968-01-31-54"
+      ],
+      "expectedFactsAny": [
+        [
+          "Eugene McCarthy",
+          "Senator McCarthy"
+        ],
+        [
+          "Vietnam"
+        ],
+        [
+          "Ohio Democratic Primary",
+          "May"
+        ]
+      ],
+      "source": "1968-01-31 — WE NEED A CHANGE"
+    },
+    {
+      "id": "dev2-t-1964-10-28-33",
+      "question": "What did a math professor say in 1964 about whether the 4-3-3 calendar improved student work, and what senior projects did he cite?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1964-10-28-33"
+      ],
+      "expectedFactsAny": [
+        [
+          "Robert L. Wilson",
+          "Prof. Wilson"
+        ],
+        [
+          "Mathematical Genetics",
+          "Voting Patterns",
+          "Game-theoretic Analysis"
+        ],
+        [
+          "distinct improvement"
+        ]
+      ],
+      "source": "1964-10-28 — Wilson Calls 4-3-3 Plan"
+    },
+    {
+      "id": "dev2-t-1967-01-10-20",
+      "question": "What did a Boston University student editor argue in 1967 about administrators deciding whether students could conduct a survey on sex?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1967-01-10-20"
+      ],
+      "expectedFactsAny": [
+        [
+          "vice-president for academic affairs"
+        ],
+        [
+          "sex"
+        ],
+        [
+          "Committee \"S\"",
+          "American Association of University Professors"
+        ]
+      ],
+      "source": "1967-01-10 — BU Editor Slams Ruling On Student Sex Poll"
+    },
+    {
+      "id": "dev2-t-1960-05-04-29",
+      "question": "Who judged the 1960 student May Art Show and which honorary group sponsored it?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1960-05-04-29"
+      ],
+      "expectedFactsAny": [
+        [
+          "Robert Gatrell"
+        ],
+        [
+          "Delta Phi Delta"
+        ]
+      ],
+      "source": "1960-05-04 — Student Art On Display"
+    },
+    {
+      "id": "dev2-t-1965-01-13-18",
+      "question": "In the mid-1960s, how did Ohio Athletic Conference leaders plan to define academic scholarships to stop disguised athletic aid to varsity players?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1965-01-13-18"
+      ],
+      "expectedFactsAny": [
+        [
+          "CEEB score"
+        ],
+        [
+          "upper third"
+        ],
+        [
+          "Princeton formula"
+        ]
+      ],
+      "source": "1965-01-13 — OC Eyes Rule Changes"
+    },
+    {
+      "id": "dev2-t-1960-03-16-32",
+      "question": "Which Ohio Wesleyan junior was selected for a YWCA student trip to the Soviet Union in summer 1960, and what was the itinerary?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1960-03-16-32"
+      ],
+      "expectedFactsAny": [
+        [
+          "Ursula Parrish"
+        ],
+        [
+          "Moscow",
+          "Stalingrad",
+          "Prague"
+        ],
+        [
+          "YWCA"
+        ]
+      ],
+      "source": "1960-03-16 — YW Names Junior For Russian Trip"
+    },
+    {
+      "id": "dev2-t-1963-05-01-21",
+      "question": "Which OWU pitcher shut out defending conference champion Hiram in spring 1963, and what was the score?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1963-05-01-21"
+      ],
+      "expectedFactsAny": [
+        [
+          "Bastian",
+          "Chris Bastian"
+        ],
+        [
+          "5-0"
+        ],
+        [
+          "Hiram"
+        ]
+      ],
+      "source": "1963-05-01 — OWU Pitching Improves Markedly As Bastian, Overholt Go Full Nine"
+    },
+    {
+      "id": "dev2-t-1960-01-13-16",
+      "question": "Why did a student columnist in early 1960 argue against government limits on strikes after the steel strike settlement?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1960-01-13-16"
+      ],
+      "expectedFactsAny": [
+        [
+          "Nixon"
+        ],
+        [
+          "compulsory arbitration"
+        ],
+        [
+          "right to strike",
+          "freedom to strike"
+        ]
+      ],
+      "source": "1960-01-13 — Right To Strike Must Be Preserved"
+    },
+    {
+      "id": "dev2-t-1964-01-15-47",
+      "question": "Which OWU alumnus who was a former New York Giants football player received an honorary divinity degree in the early 1960s?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1964-01-15-47"
+      ],
+      "expectedFactsAny": [
+        [
+          "Drake",
+          "M. Richard Drake"
+        ],
+        [
+          "New York Giant",
+          "Rocky River Methodist"
+        ]
+      ],
+      "source": "1964-01-15 — Four Ministers To Get Degrees"
+    },
+    {
+      "id": "dev2-t-1963-05-01-15",
+      "question": "Why did Ohio Wesleyan allow men to live in apartments in 1963, and what changed with Welch Hall opening the next fall?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1963-05-01-15"
+      ],
+      "expectedFactsAny": [
+        [
+          "Selby fire"
+        ],
+        [
+          "over-crowded dorms",
+          "over-crowded"
+        ],
+        [
+          "Welch Hall"
+        ]
+      ],
+      "source": "1963-05-01 — Off-Campus Housing Set For Fall"
+    },
+    {
+      "id": "dev2-t-1960-04-13-45",
+      "question": "What was the topic and format of Ohio Wesleyan's first fraternity intramural debate competition in 1960, and who sponsored it?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1960-04-13-45"
+      ],
+      "expectedFactsAny": [
+        [
+          "power of the faculty"
+        ],
+        [
+          "Delta Sigma Rho"
+        ],
+        [
+          "two teams",
+          "two men"
+        ]
+      ],
+      "source": "1960-04-13 — Intramural Debates Scheduled"
+    },
+    {
+      "id": "dev2-t-1974-01-10-15",
+      "question": "What happened when a student senator at Ohio Northern pushed for an inquiry into a student's expulsion for drinking at a birthday party?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1974-01-10-15"
+      ],
+      "expectedFactsAny": [
+        [
+          "defeated nine to eight",
+          "nine to eight"
+        ],
+        [
+          "Kevin Cornell",
+          "Cornell"
+        ],
+        [
+          "Dan Shyrock",
+          "Shyrock"
+        ]
+      ],
+      "source": "1974-01-10 — Liquor Probe Denied"
+    },
+    {
+      "id": "dev2-t-1975-11-06-12",
+      "question": "Is there a satirical 1975 student column retelling Diogenes searching for an honest man across New York and Washington, ending in Congress?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1975-11-06-12"
+      ],
+      "expectedFactsAny": [
+        [
+          "Diogenes"
+        ],
+        [
+          "lamp was stolen",
+          "His lamp was stolen"
+        ],
+        [
+          "Wall Street",
+          "Penn Central Railroad",
+          "World Football League"
+        ]
+      ],
+      "source": "1975-11-06 — Diogenes in America: his lamp was stolen"
+    },
+    {
+      "id": "dev2-t-1970-04-08-51",
+      "question": "Why were bars put on ground floor windows of Smith and Stuyvesant Halls around 1970, and who was in charge of security then?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1970-04-08-51"
+      ],
+      "expectedFactsAny": [
+        [
+          "Calvin Potter"
+        ],
+        [
+          "security and protection",
+          "deterrent"
+        ],
+        [
+          "Stuyvesant"
+        ]
+      ],
+      "source": "1970-04-08 — Bars Insure Safety In Women's Dorm"
+    },
+    {
+      "id": "dev2-t-1979-04-05-20",
+      "question": "Which Ohio Wesleyan zoology professor in 1979 ran daily and raced 10,000 meter road races, once finishing a high school race on a broken leg?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1979-04-05-20"
+      ],
+      "expectedFactsAny": [
+        [
+          "John Gatz",
+          "Gatz"
+        ],
+        [
+          "fatigue fracture",
+          "broken leg"
+        ],
+        [
+          "10,000 meter",
+          "6.2 miles"
+        ]
+      ],
+      "source": "1979-04-05 — John Gatz"
+    },
+    {
+      "id": "dev2-t-1970-04-08-18",
+      "question": "What did the Vietnam Moratorium Committee plan for spring 1970, and how did it differ from the earlier monthly protest approach?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1970-04-08-18"
+      ],
+      "expectedFactsAny": [
+        [
+          "taxpayer rallies"
+        ],
+        [
+          "three day fast",
+          "fast on April 13, 14 and 15",
+          "fast"
+        ],
+        [
+          "grassroots",
+          "locally oriented community"
+        ]
+      ],
+      "source": "1970-04-08 — April Moratorium: 'Politics And Protest'"
+    },
+    {
+      "id": "dev2-t-1970-02-18-8",
+      "question": "Which new spring 1970 courses were approved, including a multi-department seminar on revolution, and who was slated to teach them?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1970-02-18-8"
+      ],
+      "expectedFactsAny": [
+        [
+          "revolutionary studies",
+          "revolution"
+        ],
+        [
+          "Stephen Scholl",
+          "Scholl"
+        ],
+        [
+          "Bob Stein",
+          "Stein"
+        ]
+      ],
+      "source": "1970-02-18 — Two Additional Courses Offered Spring Term"
+    },
+    {
+      "id": "dev2-t-1976-05-27-2",
+      "question": "In 1976, why did OWU's president say the university might shrink its campus security staff, and what did he compare security spending to?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1976-05-27-2"
+      ],
+      "expectedFactsAny": [
+        [
+          "Wenzlau"
+        ],
+        [
+          "Cadillac"
+        ],
+        [
+          "Security Task Force",
+          "task force"
+        ]
+      ],
+      "source": "1976-05-27 — Cuts in security force possible, Wenzlau says"
+    },
+    {
+      "id": "dev2-t-1971-01-14-13",
+      "question": "Why did a student object to the university president signing a recruiting letter for Air Force ROTC sent to students over Christmas 1970?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1971-01-14-13"
+      ],
+      "expectedFactsAny": [
+        [
+          "Air Force ROTC",
+          "AFROTC"
+        ],
+        [
+          "Wenzlau"
+        ],
+        [
+          "University funds",
+          "costs",
+          "finances"
+        ]
+      ],
+      "source": "1971-01-14 — Student Raps Wenzlaw For AFROTC Letter"
+    },
+    {
+      "id": "dev2-t-1976-01-15-13",
+      "question": "How did President Wenzlau respond in 1976 to the student demands about the House of Black Culture and its yearly renewal?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1976-01-15-13"
+      ],
+      "expectedFactsAny": [
+        [
+          "number of persons interested",
+          "based solely on the number"
+        ],
+        [
+          "annual renewal"
+        ],
+        [
+          "Wenzlau"
+        ]
+      ],
+      "source": "1976-01-15 — Wenzlau replies to manifesto"
+    },
+    {
+      "id": "dev2-t-1974-05-23-43",
+      "question": "What changes did OWU make to its summer school in 1974, such as auditing fees and evening classes?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1974-05-23-43"
+      ],
+      "expectedFactsAny": [
+        [
+          "evening courses",
+          "Six evening classes"
+        ],
+        [
+          "$60",
+          "reduced from last year's $120"
+        ],
+        [
+          "modular courses",
+          "Eleven modular"
+        ]
+      ],
+      "source": "1974-05-23 — Night Courses Added To Summer School"
+    },
+    {
+      "id": "dev2-t-1975-03-06-15",
+      "question": "Why were faculty worried in 1975 when the university archives was slated to be locked up after the archivist's job was eliminated?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1975-03-06-15"
+      ],
+      "expectedFactsAny": [
+        [
+          "independent studies"
+        ],
+        [
+          "John Reed",
+          "Reed"
+        ],
+        [
+          "Beeghly"
+        ]
+      ],
+      "source": "1975-03-06 — Archives Closing May Limit Research"
+    },
+    {
+      "id": "dev2-t-1970-04-08-0",
+      "question": "In 1970, how inadequate was Delaware's sewage treatment plant, and what were the proposed options for replacing it on the Olentangy River?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1970-04-08-0"
+      ],
+      "expectedFactsAny": [
+        [
+          "40 percent",
+          "1927"
+        ],
+        [
+          "three possible",
+          "$6,415,000"
+        ],
+        [
+          "Olentangy"
+        ]
+      ],
+      "source": "1970-04-08 — Sleeping Delaware Awakens To Pollution"
+    },
+    {
+      "id": "dev2-t-1972-10-05-21",
+      "question": "In fall 1972, what remodeling options for Sturges, Slocum and Merrick Halls were the trustees weighing as part of the main campus plans?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1972-10-05-21"
+      ],
+      "expectedFactsAny": [
+        [
+          "Sturges Hall"
+        ],
+        [
+          "remodeled",
+          "remodeling"
+        ],
+        [
+          "Social Science building",
+          "new Social Science"
+        ]
+      ],
+      "source": "1972-10-05 — Trustees To Hear Building Reports"
+    },
+    {
+      "id": "dev2-t-1975-11-06-17",
+      "question": "In 1975, which campus areas were prioritized for new lighting after the WCSA recommendation about attacks on women students?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1975-11-06-17"
+      ],
+      "expectedFactsAny": [
+        [
+          "Robert Warner",
+          "Warner"
+        ],
+        [
+          "behind Slocum and Sturges",
+          "behind Beeghly Library",
+          "Stuyvesant Hall"
+        ],
+        [
+          "sodium vapor",
+          "Oct. 20"
+        ]
+      ],
+      "source": "1975-11-06 — Additional lighting planned"
+    },
+    {
+      "id": "dev2-t-1981-04-16-24",
+      "question": "Who led the OWU lacrosse team in scoring in the 1981 rout of Kenyon, and what was the final score?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1981-04-16-24"
+      ],
+      "expectedFactsAny": [
+        [
+          "Mark Goldsmith",
+          "Goldsmith"
+        ],
+        [
+          "19-3"
+        ]
+      ],
+      "source": "1981-04-16 — LaXmen 4-0 In OAC Play"
+    },
+    {
+      "id": "dev2-t-1989-02-01-13",
+      "question": "Which humorous 1989 student column complained about pig knuckles being sold in clear jars at the grocery store?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1989-02-01-13"
+      ],
+      "expectedFactsAny": [
+        [
+          "pig knuckles"
+        ],
+        [
+          "clear bottles"
+        ],
+        [
+          "Kennedy's assassination",
+          "Folger's"
+        ]
+      ],
+      "source": "1989-02-01 — Package's Purpose \"Unclear\""
+    },
+    {
+      "id": "dev2-t-1981-10-08-28",
+      "question": "How did the Daedalus Company's 1981 production of the musical about a prince searching for fulfillment get reviewed, and how many people attended?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1981-10-08-28"
+      ],
+      "expectedFactsAny": [
+        [
+          "630"
+        ],
+        [
+          "Daedalus Company",
+          "Daedalus"
+        ],
+        [
+          "Pippin"
+        ]
+      ],
+      "source": "1981-10-08 — 'Pippin' Entertaining But Weak In Spots"
+    },
+    {
+      "id": "dev2-t-1982-04-29-25",
+      "question": "Which student band played a New Wave-themed all-campus dance in spring 1982 co-sponsored by the Interfraternity Council and residence hall program boards?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1982-04-29-25"
+      ],
+      "expectedFactsAny": [
+        [
+          "The Squares"
+        ],
+        [
+          "Stuyvesant dining hall",
+          "Stuyvesant"
+        ],
+        [
+          "Austin and Smith",
+          "Interfraternity Council"
+        ]
+      ],
+      "source": "1982-04-29 — All-Campus Dance Friday"
+    },
+    {
+      "id": "dev2-t-1988-08-24-22",
+      "question": "Who replaced James Leslie as Ohio Wesleyan's chaplain in 1988, and what programs did he plan to start, like a volunteer campaign tied to a talk show host?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1988-08-24-22"
+      ],
+      "expectedFactsAny": [
+        [
+          "Jon Powers",
+          "Powers"
+        ],
+        [
+          "Give 5"
+        ],
+        [
+          "Oprah Winfrey",
+          "Oprah"
+        ]
+      ],
+      "source": "1988-08-24 — Students are new chaplain's main concern"
+    },
+    {
+      "id": "dev2-t-1989-02-01-7",
+      "question": "What did an OWU opinion writer say in early 1989 about the California schoolyard shooting and the gun purchase that made it possible?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1989-02-01-7"
+      ],
+      "expectedFactsAny": [
+        [
+          "Patrick Purdy",
+          "Purdy"
+        ],
+        [
+          "Stockton"
+        ],
+        [
+          "AK-47"
+        ]
+      ],
+      "source": "1989-02-01 — Massacre of children was easy for gunman"
+    },
+    {
+      "id": "dev2-t-1986-09-26-23",
+      "question": "What did a Phi Delt brother complain about regarding fraternity rush in 1986, like having to entertain freshmen who then joined other houses?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1986-09-26-23"
+      ],
+      "expectedFactsAny": [
+        [
+          "Eighty-five to ninety percent"
+        ],
+        [
+          "Phi Delt",
+          "Phi Delta Theta"
+        ],
+        [
+          "free",
+          "for free"
+        ]
+      ],
+      "source": "1986-09-26 — Greek: Rush painful ordeal"
+    },
+    {
+      "id": "dev2-t-1981-05-14-6",
+      "question": "Who organized the 1981 Global Weekend at Ohio Wesleyan, and which group sponsored it?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1981-05-14-6"
+      ],
+      "expectedFactsAny": [
+        [
+          "Judy Schnidman",
+          "Schnidman"
+        ],
+        [
+          "World Federalists Association",
+          "WFA",
+          "Projects for Global Education"
+        ]
+      ],
+      "source": "1981-05-14 — Weekend Conference To Focus On World Issues"
+    },
+    {
+      "id": "dev2-t-1986-10-03-7",
+      "question": "What did a 1986 student columnist say about Greeks who complained about Greek Week events but never helped organize them?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1986-10-03-7"
+      ],
+      "expectedFactsAny": [
+        [
+          "Greek Week"
+        ],
+        [
+          "complain",
+          "complaining",
+          "complainers"
+        ],
+        [
+          "get involved",
+          "lift a finger"
+        ]
+      ],
+      "source": "1986-10-03 — Campus gripers should get active"
+    },
+    {
+      "id": "dev2-t-1980-01-24-14",
+      "question": "Why did the student paper argue in 1980 that 3.2 beer should be allowed in the campus union building?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1980-01-24-14"
+      ],
+      "expectedFactsAny": [
+        [
+          "3.2 beer"
+        ],
+        [
+          "WCSA"
+        ],
+        [
+          "Memorial Union Building",
+          "MUB"
+        ]
+      ],
+      "source": "1980-01-24 — MUB alcohol"
+    },
+    {
+      "id": "dev2-t-1982-09-23-26",
+      "question": "Which humorous 1982 column imagined classic literature retold in the voices of a Valley Girl, a 1960s hippie, and a freshman, as a cure for writer's block?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1982-09-23-26"
+      ],
+      "expectedFactsAny": [
+        [
+          "Valley Girl"
+        ],
+        [
+          "Wuthering Heights",
+          "A Christmas Carol",
+          "Gulliver's Travels"
+        ],
+        [
+          "Butsie's"
+        ]
+      ],
+      "source": "1982-09-23 — Classic Interpretations For The Uninspired"
+    },
+    {
+      "id": "dev2-t-1983-09-15-18",
+      "question": "Who took over as OWU field hockey coach after Harriet Stewart retired, and what changes did she plan for the offense in 1983?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1983-09-15-18"
+      ],
+      "expectedFactsAny": [
+        [
+          "Laura Bump",
+          "Bump"
+        ],
+        [
+          "six forwards",
+          "four"
+        ]
+      ],
+      "source": "1983-09-15 — Stickers Open Play Friday"
+    },
+    {
+      "id": "dev2-t-1981-05-14-34",
+      "question": "How did the audience react to the genetic engineering pioneer from Genentech who spoke in Gray Chapel in 1981 as part of the Lecture-Artist Series?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1981-05-14-34"
+      ],
+      "expectedFactsAny": [
+        [
+          "Boyer"
+        ],
+        [
+          "disappointed",
+          "disappointing",
+          "fell asleep"
+        ],
+        [
+          "Genentech"
+        ]
+      ],
+      "source": "1981-05-14 — Boyer Lecture 'Disappointing'"
+    },
+    {
+      "id": "dev2-t-1987-04-01-16",
+      "question": "In the 1987 student body president race, what did the incumbent say WCSA should do next year, and which parties could students align with?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1987-04-01-16"
+      ],
+      "expectedFactsAny": [
+        [
+          "Greek, SUBA and Wesleyan",
+          "Greek",
+          "SUBA"
+        ],
+        [
+          "commitment to their constituency",
+          "knows what the students want",
+          "implementor, an integrator"
+        ],
+        [
+          "April 6, 7 and 8"
+        ]
+      ],
+      "source": "1987-04-01 — Incumbent views WCSA as \"lifeline\""
+    },
+    {
+      "id": "dev2-t-1991-09-11-13",
+      "question": "Who led Ohio Wesleyan's men's cross country team at the 1991 season-opening meet at Wittenberg, and what was the team's goal for that year?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1991-09-11-13"
+      ],
+      "expectedFactsAny": [
+        [
+          "Aaron Caplice",
+          "Caplice"
+        ],
+        [
+          "regional meet",
+          "top five"
+        ],
+        [
+          "fourth"
+        ]
+      ],
+      "source": "1991-09-11 — Men Harriers Take Fourth at Wittenberg"
+    },
+    {
+      "id": "dev2-t-1997-03-19-16",
+      "question": "Who pitched the two-hitter in the Bishops' 1997 baseball season opener against Albion, and who drove in five runs?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1997-03-19-16"
+      ],
+      "expectedFactsAny": [
+        [
+          "Langenderfer"
+        ],
+        [
+          "Heise"
+        ],
+        [
+          "Albion"
+        ]
+      ],
+      "source": "1997-03-19 — OWU sports have a successful spring break"
+    },
+    {
+      "id": "dev2-t-1990-04-04-27",
+      "question": "How much money did the Ohio Wesleyan student work-a-thon for hunger raise in 1990, and which Delaware mayor backed it?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1990-04-04-27"
+      ],
+      "expectedFactsAny": [
+        [
+          "$1200"
+        ],
+        [
+          "Mike Shade",
+          "Mayor Mike Shade"
+        ]
+      ],
+      "source": "1990-04-04 — Students Work For Hunger"
+    },
+    {
+      "id": "dev2-t-1998-03-18-2",
+      "question": "Which attorney who won the landmark abortion rights case spoke at Ohio Wesleyan's Women's Week in 1998, and what groups brought her?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1998-03-18-2"
+      ],
+      "expectedFactsAny": [
+        [
+          "Sarah Weddington",
+          "Weddington"
+        ],
+        [
+          "Women's House",
+          "NARAL",
+          "Pre-Law Club"
+        ]
+      ],
+      "source": "1998-03-18 — Roe v. Wade Lawyer Keynote Speaker for Women's Week"
+    },
+    {
+      "id": "dev2-t-1991-03-21-14",
+      "question": "How did the Bishops baseball team do on their 1991 Florida spring trip, and which ranked opponents did they beat?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1991-03-21-14"
+      ],
+      "expectedFactsAny": [
+        [
+          "splitting 7 games",
+          "split"
+        ],
+        [
+          "William Paterson",
+          "ninth-ranked William Paterson"
+        ],
+        [
+          "Roger Ingles",
+          "Ingles"
+        ]
+      ],
+      "source": "1991-03-21 — Bishop baseball splits seven in preseason"
+    },
+    {
+      "id": "dev2-t-1990-02-28-24",
+      "question": "Is there a 1990 student column humorously describing the guilt of trying to recycle at home and driving the trash miles away?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1990-02-28-24"
+      ],
+      "expectedFactsAny": [
+        [
+          "recycling"
+        ],
+        [
+          "five miles away",
+          "drive my garbage"
+        ],
+        [
+          "Daily Bulletin",
+          "Daily Bulletins"
+        ]
+      ],
+      "source": "1990-02-28 — Trying to save the planet one Daily Bulletin at a time"
+    },
+    {
+      "id": "dev2-t-1990-02-14-8",
+      "question": "Who organized the first Greek leadership conference at Ohio Wesleyan in 1990, and who gave the keynote address?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1990-02-14-8"
+      ],
+      "expectedFactsAny": [
+        [
+          "Evelyn Jones",
+          "Jones"
+        ],
+        [
+          "J. Dale Brubeck",
+          "Brubeck"
+        ]
+      ],
+      "source": "1990-02-14 — Leaders learn roles"
+    },
+    {
+      "id": "dev2-t-1995-10-25-12",
+      "question": "How did the OWL literary magazine staff decide which student and faculty submissions to print back in fall 1995?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1995-10-25-12"
+      ],
+      "expectedFactsAny": [
+        [
+          "one vote"
+        ],
+        [
+          "anonymous",
+          "Names of the writers"
+        ],
+        [
+          "10 editors"
+        ]
+      ],
+      "source": "1995-10-25 — OWU Literary Magazine Sorts Through Submissions"
+    },
+    {
+      "id": "dev2-t-1992-02-27-14",
+      "question": "Who checks the campus emergency phone safety lights, and how often, after a 1992 student newspaper article questioned whether they work?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1992-02-27-14"
+      ],
+      "expectedFactsAny": [
+        [
+          "Telecommunications Department",
+          "Telecommunications"
+        ],
+        [
+          "several times weekly"
+        ]
+      ],
+      "source": "1992-02-27 — Lights Have Been Tested"
+    },
+    {
+      "id": "dev2-t-1990-03-28-2",
+      "question": "Which Ohio Wesleyan alumnus and Washington communications lawyer was indicted in 1990 for lying to the FCC after a plane crash off the Bahamas?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1990-03-28-2"
+      ],
+      "expectedFactsAny": [
+        [
+          "Thomas Root",
+          "Root"
+        ],
+        [
+          "33 counts",
+          "33"
+        ],
+        [
+          "Federal Communications Commission",
+          "FCC"
+        ]
+      ],
+      "source": "1990-03-28 — Alumnus indicted on fraud charges"
+    },
+    {
+      "id": "dev2-t-1991-12-11-2",
+      "question": "Why couldn't Ohio Wesleyan display the O'Keeffe and Klee paintings an alumna donated in 1991, and where were they stored?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1991-12-11-2"
+      ],
+      "expectedFactsAny": [
+        [
+          "Georgia O'Keeffe",
+          "Paul Klee"
+        ],
+        [
+          "security",
+          "24-hour surveillance"
+        ],
+        [
+          "vault",
+          "Delaware County Bank"
+        ]
+      ],
+      "source": "1991-12-11 — Art locked away"
+    },
+    {
+      "id": "dev2-t-1990-02-14-26",
+      "question": "Who scored a career-high 32 points against Wooster for the Bishops women's basketball team in early 1990?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1990-02-14-26"
+      ],
+      "expectedFactsAny": [
+        [
+          "Krista Jacobs",
+          "Jacobs"
+        ],
+        [
+          "32 points",
+          "career-high 32"
+        ],
+        [
+          "Wooster"
+        ]
+      ],
+      "source": "1990-02-14 — Sports Briefs"
+    },
+    {
+      "id": "dev2-t-1992-02-11-15",
+      "question": "How much did the Campaign for Ohio Wesleyan raise beyond its goal under trustee George Poe, who died in 1992 in Cleveland?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1992-02-11-15"
+      ],
+      "expectedFactsAny": [
+        [
+          "four million dollars",
+          "four million"
+        ],
+        [
+          "50 million dollar goal",
+          "50 million"
+        ]
+      ],
+      "source": "1992-02-11 — A Tribute to George A. Poe"
+    },
+    {
+      "id": "dev2-t-2001-01-24-8",
+      "question": "In 2001, why were house moderators unhappy about pay compared with resident assistants, even after a stipend increase was proposed?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2001-01-24-8"
+      ],
+      "expectedFactsAny": [
+        [
+          "$400"
+        ],
+        [
+          "equal pay for equal work",
+          "inequality"
+        ],
+        [
+          "Terranova-Webb",
+          "Ariel Terranova-Webb"
+        ]
+      ],
+      "source": "2001-01-24 — Raise"
+    },
+    {
+      "id": "dev2-t-2005-01-26-26",
+      "question": "Why did the Red Wanting Blue concert at Ohio Wesleyan's Stuy Smoker in 2003 draw a smaller crowd than expected?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2005-01-26-26"
+      ],
+      "expectedFactsAny": [
+        [
+          "weather",
+          "moved inside"
+        ],
+        [
+          "seventy-five"
+        ],
+        [
+          "Colin Campbell",
+          "Campbell"
+        ]
+      ],
+      "source": "2005-01-26 — What's new at the Newport"
+    },
+    {
+      "id": "dev2-t-2005-04-14-15",
+      "question": "How did the Bishops baseball team do against Wabash in the April 2005 four-game weekend series, and what was their conference record afterward?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2005-04-14-15"
+      ],
+      "expectedFactsAny": [
+        [
+          "four games",
+          "double sweep"
+        ],
+        [
+          "7-5"
+        ],
+        [
+          "Wabash"
+        ]
+      ],
+      "source": "2005-04-14 — Bishops baseball victorious over Wabash"
+    },
+    {
+      "id": "dev2-t-2003-02-26-12",
+      "question": "Which U.S. army division was waiting to deploy through Turkey into northern Iraq before the 2003 war, and did Turkey's government approve hosting troops?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2003-02-26-12"
+      ],
+      "expectedFactsAny": [
+        [
+          "4th Infantry Division"
+        ],
+        [
+          "Cabinet agreed",
+          "Turkey's Cabinet"
+        ],
+        [
+          "northern Iraq"
+        ]
+      ],
+      "source": "2003-02-26 — Turkish Cabinet Oks U.S. Troop Deployment"
+    },
+    {
+      "id": "dev2-t-2006-02-01-12",
+      "question": "What did a 2006 letter say about the James Frey memoir controversy and Oprah's defense in relation to US propaganda in Iraq?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2006-02-01-12"
+      ],
+      "expectedFactsAny": [
+        [
+          "James Frey"
+        ],
+        [
+          "A Million Little Pieces"
+        ],
+        [
+          "Oprah"
+        ]
+      ],
+      "source": "2006-02-01 — Unethical Journalism In Iraq Shows Lack Of Integrity At Home"
+    },
+    {
+      "id": "dev2-t-2000-03-29-16",
+      "question": "Which Bishop catcher hit for the cycle in 2000 during a doubleheader against Penn State-Behrend, the first Bishop to do so since 1991?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2000-03-29-16"
+      ],
+      "expectedFactsAny": [
+        [
+          "Bogenrife"
+        ],
+        [
+          "cycle"
+        ],
+        [
+          "Penn State-Behrend"
+        ]
+      ],
+      "source": "2000-03-29 — Baseball Beats Tiffin, Ohio Northern At Classic"
+    },
+    {
+      "id": "dev2-t-2004-09-22-36",
+      "question": "How did the OWU women's rugby team do in its 2004 season opener, and why do most players join without any rugby experience?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2004-09-22-36"
+      ],
+      "expectedFactsAny": [
+        [
+          "32-0",
+          "Ohio Northern"
+        ],
+        [
+          "Melanie Hill",
+          "Jenn Wise"
+        ],
+        [
+          "non-athletes",
+          "learning curve",
+          "never played"
+        ]
+      ],
+      "source": "2004-09-22 — Women's rugby beats Ohio Northern"
+    },
+    {
+      "id": "dev2-t-2001-09-05-9",
+      "question": "How much money did Kevin Smith donate after gay rights groups criticized the homophobic jokes in his 2001 Jay and Silent Bob movie?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2001-09-05-9"
+      ],
+      "expectedFactsAny": [
+        [
+          "$10,000"
+        ],
+        [
+          "Matthew Shepherd Foundation"
+        ],
+        [
+          "GLAAD",
+          "Gay and Lesbian Alliance"
+        ]
+      ],
+      "source": "2001-09-05 — Silent Bob Speaks Up in Latest Smith Effort"
+    },
+    {
+      "id": "dev2-t-2002-01-23-7",
+      "question": "How did the five-day sorority formal recruitment work at Ohio Wesleyan in 2002, including the silence period and what happened in each set?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2002-01-23-7"
+      ],
+      "expectedFactsAny": [
+        [
+          "80 women",
+          "80 new women"
+        ],
+        [
+          "silence period"
+        ],
+        [
+          "Set III",
+          "three sets"
+        ]
+      ],
+      "source": "2002-01-23 — Sororities draw 80 new women to formal recruitment"
+    },
+    {
+      "id": "dev2-t-2006-03-30-22",
+      "question": "How did OWU's men's lacrosse team lose to rival Denison in overtime in March 2006, and what did Coach Ryan say about the playoffs?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2006-03-30-22"
+      ],
+      "expectedFactsAny": [
+        [
+          "9-8"
+        ],
+        [
+          "P.J. Hendrick",
+          "Hendrick"
+        ],
+        [
+          "Sean Ryan",
+          "Ryan"
+        ]
+      ],
+      "source": "2006-03-30 — Extra session unkind to Bishops"
+    },
+    {
+      "id": "dev2-t-2006-03-09-13",
+      "question": "Which OWU men's basketball players and coach earned all-conference honors in 2006, and who was named conference Coach of the Year?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2006-03-09-13"
+      ],
+      "expectedFactsAny": [
+        [
+          "Chojnacki"
+        ],
+        [
+          "Warnock"
+        ],
+        [
+          "Mike DeWitt",
+          "DeWitt"
+        ]
+      ],
+      "source": "2006-03-09 — Two players, coach make NCAC team"
+    },
+    {
+      "id": "dev2-t-2006-02-01-15",
+      "question": "Which Kevin Costner movie did a 2006 opinion columnist use to joke about melting polar ice caps and global warming?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2006-02-01-15"
+      ],
+      "expectedFactsAny": [
+        [
+          "Waterworld"
+        ],
+        [
+          "Kevin Costner",
+          "Costner"
+        ],
+        [
+          "polar ice caps"
+        ]
+      ],
+      "source": "2006-02-01 — Warmer temps 'capping it off'"
+    },
+    {
+      "id": "dev2-t-2000-03-01-3",
+      "question": "Was there a letter urging Christians to go vegetarian during Lent in 2000 as a way of honoring Christ's mercy?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2000-03-01-3"
+      ],
+      "expectedFactsAny": [
+        [
+          "Lent 2000"
+        ],
+        [
+          "vegetarian",
+          "vegetarianism"
+        ],
+        [
+          "Lamb of God"
+        ]
+      ],
+      "source": "2000-03-01 — Letter to the Editor"
+    },
+    {
+      "id": "dev2-t-2004-03-03-3",
+      "question": "Who was the male student admitted to the Women's House small living unit in 2004, and when had a man last lived there?",
+      "mode": "text",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2004-03-03-3"
+      ],
+      "expectedFactsAny": [
+        [
+          "Christian Shively",
+          "Shively"
+        ],
+        [
+          "Mark Holtey",
+          "Holtey"
+        ],
+        [
+          "2000"
+        ]
+      ],
+      "source": "2004-03-03 — Male student accepted to live in Women's House next year"
+    },
+    {
+      "id": "dev2-v-1982-09-23-25",
+      "question": "Show me a 1982 editorial cartoon poking fun at Ohio Wesleyan's football team and whether the Bishops had finally gotten tough.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1982-09-23-25"
+      ],
+      "expectedFactsAny": [
+        [
+          "BISHOPS"
+        ],
+        [
+          "FOOTBALL"
+        ],
+        [
+          "WE SURRENDER",
+          "SORRY! SORRY!"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1982-09-23/images/0004_Page 4_img3.webp"
+      ],
+      "source": "1982-09-23 — A Day In The Life"
+    },
+    {
+      "id": "dev2-v-1981-01-29-12",
+      "question": "Show me the 1981 birthday greeting photo for a student with lots of nicknames like Patty, Hambone and Hammond.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1981-01-29-12"
+      ],
+      "expectedFactsAny": [
+        [
+          "Hambone",
+          "Ham-monde"
+        ],
+        [
+          "Patriscuit",
+          "Patrice",
+          "Patty"
+        ],
+        [
+          "Hammond"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1981-01-29/images/0005_Page 5_img2.webp"
+      ],
+      "source": "1981-01-29 — Happy Birthday"
+    },
+    {
+      "id": "dev2-v-1980-10-30-23",
+      "question": "Show me photos of the 1980 Ohio Wesleyan field hockey team playing Bowling Green in the fall, with a Falcon dribbling past a Bishop defender.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1980-10-30-23"
+      ],
+      "expectedFactsAny": [
+        [
+          "Kim Dacek"
+        ],
+        [
+          "Cathy Buck"
+        ],
+        [
+          "Bowling Green",
+          "Falcons"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1980-10-30/images/0016_Page 12_img1.webp"
+      ],
+      "source": "1980-10-30 — Fore!"
+    },
+    {
+      "id": "dev2-v-1950-11-08-33",
+      "question": "Show me photos of the 1950 Bishop football linemen, an offensive tackle nicknamed Moose and a guard from Canton.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-11-08-33"
+      ],
+      "expectedFactsAny": [
+        [
+          "MacCracken",
+          "Moose"
+        ],
+        [
+          "Sisterhen",
+          "Gus"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1950-11-08/images/0004_Page 4_img2.webp"
+      ],
+      "source": "1950-11-08 — Meet Your Bishops"
+    },
+    {
+      "id": "dev2-v-1994-09-07-4",
+      "question": "Show me a 1994 student cartoon where a character wishes his clothing, like a Calvin and Hobbes beer shirt, would keep him from looking like a freshman.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1994-09-07-4"
+      ],
+      "expectedFactsAny": [
+        [
+          "Tool Box"
+        ],
+        [
+          "Calvin",
+          "Hobbes"
+        ],
+        [
+          "Fresh man",
+          "freshman"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1994-09-07/images/0002_Page 2_img1.webp"
+      ],
+      "source": "1994-09-07 — The Tool Box"
+    },
+    {
+      "id": "dev2-v-1965-01-13-32",
+      "question": "Show me a portrait photo of the English professor who presented new research on Milton's Lycidas and Monteverdi's music at the 1964 Modern Language Association meeting.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1965-01-13-32"
+      ],
+      "expectedFactsAny": [
+        [
+          "Robert K. Marshall",
+          "Prof. Marshall",
+          "Marshall"
+        ],
+        [
+          "Lycidas"
+        ],
+        [
+          "Milton"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1965-01-13/images/0003_Page 3_img2.webp"
+      ],
+      "source": "1965-01-13 — Marshall Takes New Tack In Research On Milton"
+    },
+    {
+      "id": "dev2-v-1981-02-12-21",
+      "question": "Show me the photo of the student columnist who recanted his earlier mockery and praised the new campus pub in early 1981.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1981-02-12-21"
+      ],
+      "expectedFactsAny": [
+        [
+          "Mark Reich",
+          "Reich"
+        ],
+        [
+          "MUB Pub",
+          "Pub"
+        ],
+        [
+          "apologize",
+          "humbly apologize"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1981-02-12/images/0004_Page 4_img1.webp"
+      ],
+      "source": "1981-02-12 — The Mub Pub: A Panacea"
+    },
+    {
+      "id": "dev2-v-2006-04-20-10",
+      "question": "Show me the illustration of someone walking off with a computer monitor, from the 2006 debate over stolen lab computers and closing campus computer labs.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2006-04-20-10"
+      ],
+      "expectedFactsAny": [
+        [
+          "Welch"
+        ],
+        [
+          "computer lab",
+          "computer labs"
+        ],
+        [
+          "Spring break"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/2006-04-20/images/0008_Page Page 8_img2.webp"
+      ],
+      "source": "2006-04-20 — Computer Thief Or Robin Hood?"
+    },
+    {
+      "id": "dev2-v-1950-04-19-3",
+      "question": "Show me photos from 1950 of a man handing a prize check to the student newspaper editor after a national safe driving contest win.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1950-04-19-3"
+      ],
+      "expectedFactsAny": [
+        [
+          "Robert L. Hardaker",
+          "Hardaker"
+        ],
+        [
+          "Ed DeHart",
+          "DeHart"
+        ],
+        [
+          "$500"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1950-04-19/images/0001_Page 1_img1.webp"
+      ],
+      "source": "1950-04-19 — Transcript Wins National Safety Contest, $500"
+    },
+    {
+      "id": "dev2-v-2005-03-03-11",
+      "question": "Show me the 2005 Spring Break graphic with palm trees on a tropical island, wishing students a good break from the newspaper staff.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "2005-03-03-11"
+      ],
+      "expectedFactsAny": [
+        [
+          "palm trees"
+        ],
+        [
+          "tropical island",
+          "tropical paradise"
+        ],
+        [
+          "Spring Break"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/2005-03-03/images/0004_Page 4_img1.webp"
+      ],
+      "source": "2005-03-03 — Whether On Your Way Home"
+    },
+    {
+      "id": "dev2-v-1969-01-08-12",
+      "question": "Show me a photo of the student who wrote about returning from a semester in Britain in early 1969.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1969-01-08-12"
+      ],
+      "expectedFactsAny": [
+        [
+          "Barb Goode"
+        ],
+        [
+          "Britain",
+          "Great Britain"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1969-01-08/images/0002_Page 2_img1.webp"
+      ],
+      "source": "1969-01-08 — 'Culture Shock' Felt After Term In Britain"
+    },
+    {
+      "id": "dev2-v-1981-02-05-18",
+      "question": "Show me a winter photo from early 1981 of a farmhouse and trees in a part of Delaware students rarely see.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1981-02-05-18"
+      ],
+      "expectedFactsAny": [
+        [
+          "Southwest corner"
+        ],
+        [
+          "farm"
+        ],
+        [
+          "Transcript photo",
+          "Delaware"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1981-02-05/images/0007_Page 7_img1.webp"
+      ],
+      "source": "1981-02-05 — It's Cold Again"
+    },
+    {
+      "id": "dev2-v-1990-08-23-3",
+      "question": "Show me a photo from 1990 of a crane over the construction site of the new campus center building under construction.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1990-08-23-3"
+      ],
+      "expectedFactsAny": [
+        [
+          "Hamilton-Williams Campus Center",
+          "Hamilton-Williams"
+        ],
+        [
+          "crane"
+        ],
+        [
+          "December, 1991",
+          "December"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1990-08-23/images/0002_Page 2_img1.webp"
+      ],
+      "source": "1990-08-23 — Making progress"
+    },
+    {
+      "id": "dev2-v-1983-01-20-0",
+      "question": "Show me photos of kids sledding on a campus hill after the first snow of winter term in January 1983.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1983-01-20-0"
+      ],
+      "expectedFactsAny": [
+        [
+          "Stuyvesant hill",
+          "Stuyvesant"
+        ],
+        [
+          "sled",
+          "sled down"
+        ],
+        [
+          "first snowfall",
+          "snowfall"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1983-01-20/images/0001_Page 1_img1.webp"
+      ],
+      "source": "1983-01-20 — Here At Last"
+    },
+    {
+      "id": "dev2-v-1980-05-15-38",
+      "question": "Show me photos of an Ohio Wesleyan lacrosse player throwing a pass during the 1980 season game against Denison.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1980-05-15-38"
+      ],
+      "expectedFactsAny": [
+        [
+          "Kevin Nugent",
+          "Nugent"
+        ],
+        [
+          "Denison"
+        ],
+        [
+          "lacrosse"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1980-05-15/images/0010_Page 10_img1.webp"
+      ],
+      "source": "1980-05-15 — LaXmen End Season, Lose To Cortland 13-9"
+    },
+    {
+      "id": "dev2-v-1957-01-09-35",
+      "question": "Show me the 1957 drawing of a mother gazing down at her infant in a crib that ran with a humorous column about married students and babies.",
+      "mode": "visual",
+      "minCitations": 1,
+      "expectedSourceIdsAny": [
+        "1957-01-09-35"
+      ],
+      "expectedFactsAny": [
+        [
+          "Philip Morris"
+        ],
+        [
+          "married students",
+          "married undergraduates",
+          "married"
+        ],
+        [
+          "baby",
+          "babies"
+        ]
+      ],
+      "expectedImagesAny": [
+        "https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev/1957-01-09/images/0005_Page 5_img3.webp"
+      ],
+      "source": "1957-01-09 — Eat, Drink, And Be Married"
+    }
+  ]
+}

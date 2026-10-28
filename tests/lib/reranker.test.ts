@@ -13,6 +13,7 @@ vi.mock("@/src/lib/claude-client", async (importOriginal) => ({
 }));
 vi.mock("@/src/lib/cost-tracker", () => ({
   executeTrackedGenerationCall: (options: { call: () => Promise<unknown> }) => options.call(),
+  executeTrackedEmbeddingCall: (options: { call: () => Promise<unknown> }) => options.call(),
 }));
 
 import { parseScores, rerankArticles } from "@/src/lib/reranker";
@@ -109,11 +110,41 @@ describe("voyage rerank path", () => {
     const result = await rerankArticles("question", articles, { minScore: 4 });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe("rerank-3");
     expect(createMock).not.toHaveBeenCalled();
     // 0.9 -> 9 and 0.62 -> 6.2 survive minScore 4; 0.2 -> 2 is filtered.
     expect(result.map((a) => a.id)).toEqual(["a-1", "a-0"]);
     expect(result[0].relevanceScore).toBeCloseTo(9);
     expect(result[1].relevanceScore).toBeCloseTo(6.2);
+  });
+
+  it("lets the judge rescore Voyage's top 20 in voyage+claude mode", async () => {
+    vi.stubEnv("RAG_RERANKER", "voyage+claude");
+    vi.stubEnv("VOYAGE_API_KEY", "test-voyage-key");
+    const articles = Array.from({ length: 25 }, (_, i) => makeArticle({ id: `a-${i}` }));
+    // Voyage puts the articles in reverse order.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: articles.map((_, i) => ({ index: i, relevance_score: i / 100 })),
+        }),
+      })
+    );
+    createMock.mockResolvedValue(
+      reply(JSON.stringify({ scores: [3, 9, ...Array.from({ length: 18 }, () => 1)] }))
+    );
+
+    const result = await rerankArticles("question", articles, { minScore: 2 });
+
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const prompt = JSON.stringify(createMock.mock.calls[0][0]);
+    expect(prompt).toContain("[20]");
+    expect(prompt).not.toContain("[21]");
+    // The judge's scores decide: a-23 (9) before a-24 (3).
+    expect(result.map((a) => a.id)).toEqual(["a-23", "a-24"]);
+    expect(result[0].relevanceScore).toBe(9);
   });
 
   it("falls back to the LLM judge when the Voyage call fails", async () => {

@@ -244,7 +244,19 @@
           "default": null
         },
         {
+          "name": "context_text",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
           "name": "embedding",
+          "dataType": "vector",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding_1024",
           "dataType": "vector",
           "nullable": true,
           "default": null
@@ -315,6 +327,12 @@
         },
         {
           "name": "embedding",
+          "dataType": "vector",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "embedding_1024",
           "dataType": "vector",
           "nullable": true,
           "default": null
@@ -1355,6 +1373,12 @@
           "default": "now()"
         },
         {
+          "name": "embedding_dims",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
           "name": "embedding_model",
           "dataType": "text",
           "nullable": false,
@@ -1376,6 +1400,12 @@
           "name": "image_embedding_input_version",
           "dataType": "text",
           "nullable": false,
+          "default": null
+        },
+        {
+          "name": "image_embedding_model",
+          "dataType": "text",
+          "nullable": true,
           "default": null
         },
         {
@@ -1618,11 +1648,13 @@
     "idx_article_chunks_article": "CREATE INDEX idx_article_chunks_article ON public.article_chunks USING btree (index_build_id, article_id, chunk_index)",
     "idx_article_chunks_content_revision": "CREATE INDEX idx_article_chunks_content_revision ON public.article_chunks USING btree (content_revision_id) WHERE (content_revision_id IS NOT NULL)",
     "idx_article_chunks_embedding": "CREATE INDEX idx_article_chunks_embedding ON public.article_chunks USING hnsw (embedding vector_cosine_ops) WITH (m='16', ef_construction='128')",
+    "idx_article_chunks_embedding_1024": "CREATE INDEX idx_article_chunks_embedding_1024 ON public.article_chunks USING hnsw (embedding_1024 vector_cosine_ops) WITH (m='16', ef_construction='128')",
     "idx_article_chunks_search": "CREATE INDEX idx_article_chunks_search ON public.article_chunks USING gin (search_vector)",
     "idx_article_images_article": "CREATE INDEX idx_article_images_article ON public.article_images USING btree (index_build_id, article_id, image_index)",
     "idx_article_images_caption_search": "CREATE INDEX idx_article_images_caption_search ON public.article_images USING gin (to_tsvector('english'::regconfig, COALESCE(caption, ''::text)))",
     "idx_article_images_content_revision": "CREATE INDEX idx_article_images_content_revision ON public.article_images USING btree (content_revision_id) WHERE (content_revision_id IS NOT NULL)",
     "idx_article_images_embedding": "CREATE INDEX idx_article_images_embedding ON public.article_images USING hnsw (embedding vector_cosine_ops) WITH (m='16', ef_construction='128')",
+    "idx_article_images_embedding_1024": "CREATE INDEX idx_article_images_embedding_1024 ON public.article_images USING hnsw (embedding_1024 vector_cosine_ops) WITH (m='16', ef_construction='128')",
     "idx_articles_byline": "CREATE INDEX idx_articles_byline ON public.articles USING btree (byline) WHERE (byline IS NOT NULL)",
     "idx_articles_category": "CREATE INDEX idx_articles_category ON public.articles USING btree (category)",
     "idx_articles_edition": "CREATE INDEX idx_articles_edition ON public.articles USING btree (edition_date)",
@@ -1656,12 +1688,12 @@
     "year_digests_pkey": "CREATE UNIQUE INDEX year_digests_pkey ON public.year_digests USING btree (year)"
   },
   "triggers": {
-    "article_chunks_search_vector_trig": "CREATE TRIGGER article_chunks_search_vector_trig BEFORE INSERT OR UPDATE OF chunk_text ON public.article_chunks FOR EACH ROW EXECUTE FUNCTION article_chunks_search_vector_update()",
+    "article_chunks_search_vector_trig": "CREATE TRIGGER article_chunks_search_vector_trig BEFORE INSERT OR UPDATE OF chunk_text, context_text ON public.article_chunks FOR EACH ROW EXECUTE FUNCTION article_chunks_search_vector_update()",
     "articles_search_vector_trig": "CREATE TRIGGER articles_search_vector_trig BEFORE INSERT OR UPDATE ON public.articles FOR EACH ROW EXECUTE FUNCTION articles_search_vector_update()",
     "content_revisions_immutable_trig": "CREATE TRIGGER content_revisions_immutable_trig BEFORE UPDATE ON public.content_revisions FOR EACH ROW EXECUTE FUNCTION content_revisions_immutable()"
   },
   "functions": {
-    "article_chunks_search_vector_update": "CREATE OR REPLACE FUNCTION public.article_chunks_search_vector_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  NEW.search_vector := to_tsvector('english', coalesce(NEW.chunk_text, ''));\n  RETURN NEW;\nEND $function$\n",
+    "article_chunks_search_vector_update": "CREATE OR REPLACE FUNCTION public.article_chunks_search_vector_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  NEW.search_vector := to_tsvector('english', concat_ws(' ', NEW.context_text, NEW.chunk_text));\n  RETURN NEW;\nEND $function$\n",
     "articles_search_vector_update": "CREATE OR REPLACE FUNCTION public.articles_search_vector_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  NEW.search_vector :=\n    setweight(to_tsvector('english', coalesce(NEW.headline, '')), 'A') ||\n    setweight(to_tsvector('english', coalesce(NEW.summary, '')), 'B') ||\n    setweight(to_tsvector('english', coalesce(NEW.byline, '')), 'C') ||\n    setweight(to_tsvector('english', coalesce(NEW.body_plain, '')), 'C');\n  RETURN NEW;\nEND $function$\n",
     "content_revisions_immutable": "CREATE OR REPLACE FUNCTION public.content_revisions_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'content_revisions rows are immutable; write a new revision instead';\nEND $function$\n"
   },

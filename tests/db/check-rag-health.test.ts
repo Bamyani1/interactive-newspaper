@@ -1,11 +1,17 @@
 /** @vitest-environment node */
 // The defect this script exists to catch is silent: a serving filter that
-// matches no rows. These cases pin the four ways the check must speak up —
-// a healthy versioned build, a legacy filter that reaches nothing, one broken
-// readiness predicate named individually, and a served-table stamp mismatch.
+// matches no rows. These cases pin the ways the check must speak up — a
+// healthy versioned build, a legacy filter that reaches nothing, one broken
+// readiness predicate named individually, a served-table stamp mismatch, and
+// a photo filter that reaches nothing.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { assertMigrationsCurrent, runMigrations } from "../../scripts/db/lib/migration-runner";
-import { checkRagHealth, formatReport, servingPlan } from "../../scripts/db/check-rag-health.mjs";
+import {
+  checkRagHealth,
+  formatReport,
+  imageServingPlan,
+  servingPlan,
+} from "../../scripts/db/check-rag-health.mjs";
 import { MIGRATIONS_DIR, createTestDb, type TestDb } from "./helpers/pglite";
 
 const CORPUS = "corpus-health-v1";
@@ -13,10 +19,12 @@ const DATE = "1962-11-06";
 const ARTICLE = "1962-11-06-0";
 const BUILD = "build-health-live";
 
-const MODEL = "gemini-embedding-2";
-const TEXT_INPUT = "article-chunk-v1";
-const IMAGE_INPUT = "article-image-v1";
-const PIPELINE = "rag-v3-independent-grounded";
+const MODEL = "voyage-context-4";
+const IMAGE_MODEL = "voyage-multimodal-3.5";
+const DIMS = 1024;
+const TEXT_INPUT = "article-chunk-voyage-v1";
+const IMAGE_INPUT = "article-image-voyage-v1";
+const PIPELINE = "rag-v4-voyage";
 
 /** A config as getRagRetrievalConfig() would resolve it, without touching env. */
 function config(overrides: Record<string, unknown> = {}) {
@@ -26,6 +34,8 @@ function config(overrides: Record<string, unknown> = {}) {
     corpusVersion: CORPUS,
     pipelineVersion: PIPELINE,
     embeddingModel: MODEL,
+    imageEmbeddingModel: IMAGE_MODEL,
+    embeddingDims: DIMS,
     textEmbeddingInputVersion: TEXT_INPUT,
     imageEmbeddingInputVersion: IMAGE_INPUT,
     cacheIdentity: "test-identity",
@@ -57,19 +67,24 @@ async function insertBuild(
   await db.pg.query(
     `INSERT INTO rag_index_builds
              (id, corpus_version, status, pipeline_version, embedding_model,
+              image_embedding_model, embedding_dims,
               text_embedding_input_version, image_embedding_input_version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
     [
       id,
       overrides.corpusVersion ?? CORPUS,
       status,
       overrides.pipelineVersion ?? PIPELINE,
       MODEL,
+      IMAGE_MODEL,
+      DIMS,
       TEXT_INPUT,
       IMAGE_INPUT,
     ]
   );
 }
+
+const VECTOR = `[${new Array(DIMS).fill(0.01).join(",")}]`;
 
 async function insertChunk(
   db: TestDb,
@@ -81,7 +96,7 @@ async function insertChunk(
   await db.pg.query(
     `INSERT INTO article_chunks
              (id, index_build_id, article_id, chunk_index, chunk_text,
-              embedding, embedding_model, embedding_input_version, embedding_input_hash)
+              embedding_1024, embedding_model, embedding_input_version, embedding_input_hash)
          VALUES ($1, $2, $3, $4, 'chunk text', $5, $6, $7, $1)`,
     [
       id,
@@ -89,10 +104,20 @@ async function insertChunk(
       ARTICLE,
       // chunk_index must stay unique per (build, article).
       Number(id.replace(/\D/g, "") || 0),
-      embedded ? `[${new Array(768).fill(0.01).join(",")}]` : null,
+      embedded ? VECTOR : null,
       stamp.model ?? MODEL,
       stamp.inputVersion ?? TEXT_INPUT,
     ]
+  );
+}
+
+async function insertImage(db: TestDb, id: string, buildId: string): Promise<void> {
+  await db.pg.query(
+    `INSERT INTO article_images
+             (id, index_build_id, article_id, image_index, image_url,
+              embedding_1024, embedding_model, embedding_input_version, embedding_input_hash)
+         VALUES ($1, $2, $3, 0, 'https://example.test/a.jpg', $4, $5, $6, $1)`,
+    [id, buildId, ARTICLE, VECTOR, IMAGE_MODEL, IMAGE_INPUT]
   );
 }
 
@@ -116,6 +141,7 @@ describe("check-rag-health", () => {
     await insertBuild(db, BUILD, "active");
     await insertChunk(db, "1", BUILD);
     await insertChunk(db, "2", BUILD);
+    await insertImage(db, "img-1", BUILD);
   }, 120_000);
 
   afterAll(async () => {
@@ -135,13 +161,16 @@ describe("check-rag-health", () => {
       { embeddingModel: MODEL, embeddingInputVersion: TEXT_INPUT, rows: 2 },
     ]);
     expect(report.coverage).toEqual({ total: 2, embedded: 2, ratio: 1 });
+    expect(report.served.images).toMatchObject({ table: "article_images", count: 1 });
 
     // Every readiness predicate is reported by name, not as one verdict.
     expect(Object.keys(report.build.row).sort()).toEqual([
       "active_count",
       "corpus_version",
+      "embedding_dims",
       "embedding_model",
       "image_embedding_input_version",
+      "image_embedding_model",
       "pipeline_version",
       "status",
       "text_embedding_input_version",
@@ -192,7 +221,7 @@ describe("check-rag-health", () => {
     // Config bumped its text-embedding input version; the served rows are
     // still stamped with the old one.
     const report = await checkRagHealth(db.executor, {
-      config: config({ textEmbeddingInputVersion: "article-chunk-v2" }),
+      config: config({ textEmbeddingInputVersion: "article-chunk-voyage-v2" }),
       ...deps,
     });
 
@@ -203,15 +232,30 @@ describe("check-rag-health", () => {
     ]);
     const failures = report.failures.join("\n");
     expect(failures).toMatch(
-      /served\.stamps: article_chunks holds no rows stamped \(gemini-embedding-2, article-chunk-v2\)/
+      /served\.stamps: article_chunks holds no rows stamped \(voyage-context-4, article-chunk-voyage-v2\)/
     );
-    expect(failures).toMatch(/present: \(gemini-embedding-2, article-chunk-v1\)/);
+    expect(failures).toMatch(/present: \(voyage-context-4, article-chunk-voyage-v1\)/);
     // A config-side bump shows up in both places, and both are named.
     expect(report.build.row.text_embedding_input_version).toEqual({
       ok: false,
-      expected: "article-chunk-v2",
+      expected: "article-chunk-voyage-v2",
       actual: TEXT_INPUT,
     });
+  });
+
+  it("fails a build whose photos carry a different model than the config", async () => {
+    // Text serves fine, so only the photo search would come back empty.
+    const report = await checkRagHealth(db.executor, {
+      config: config({ imageEmbeddingModel: "voyage-multimodal-9" }),
+      ...deps,
+    });
+
+    expect(report.healthy).toBe(false);
+    expect(report.served.predicate.count).toBe(2);
+    expect(report.served.images?.count).toBe(0);
+    const failures = report.failures.join("\n");
+    expect(failures).toMatch(/served\.images matched 0 rows in article_images/);
+    expect(failures).toMatch(/build\.row\.image_embedding_model/);
   });
 
   it("reports incomplete coverage without inventing a passing ratio", async () => {
@@ -238,6 +282,7 @@ describe("check-rag-health", () => {
     expect(healthy).toMatch(/ok {3}migrations\.current/);
     expect(healthy).toMatch(/ok {3}served\.predicate {8}2 row\(s\) match WHERE/);
     expect(healthy).toMatch(/coverage\.ratio {10}1\.0000 \(2\/2\)/);
+    expect(healthy).toMatch(/ok {3}served\.images {11}1 photo\(s\) match WHERE/);
     expect(healthy).not.toMatch(/Mismatches:/);
 
     const broken = formatReport(
@@ -255,16 +300,26 @@ describe("check-rag-health", () => {
     expect(servingPlan(config())).toMatchObject({
       table: "article_chunks",
       buildScoped: true,
+      vectorColumn: "embedding_1024",
       where:
-        "embedding IS NOT NULL AND index_build_id = $1 AND embedding_model = $2 " +
+        "embedding_1024 IS NOT NULL AND index_build_id = $1 AND embedding_model = $2 " +
         "AND embedding_input_version = $3",
       params: [BUILD, MODEL, TEXT_INPUT],
     });
     expect(servingPlan(config({ mode: "legacy", activeIndexBuildId: null }))).toMatchObject({
       table: "articles",
       buildScoped: false,
+      vectorColumn: "embedding",
       where: "embedding IS NOT NULL AND embedding_model = $1",
       params: [MODEL],
     });
+    expect(imageServingPlan(config())).toMatchObject({
+      table: "article_images",
+      where:
+        "embedding_1024 IS NOT NULL AND index_build_id = $1 AND embedding_model = $2 " +
+        "AND embedding_input_version = $3",
+      params: [BUILD, IMAGE_MODEL, IMAGE_INPUT],
+    });
+    expect(imageServingPlan(config({ mode: "legacy", activeIndexBuildId: null }))).toBeNull();
   });
 });
