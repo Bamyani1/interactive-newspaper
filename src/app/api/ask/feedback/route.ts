@@ -20,7 +20,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
+import { createSql } from "@/src/lib/sql";
 import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 import { isRagEvaluationMode } from "@/src/lib/rag-evaluation";
 
@@ -30,7 +30,7 @@ const MAX_COMMENT_LENGTH = 1000;
 
 const feedbackRateLimiter = createRateLimiter({ bucket: "feedback", limit: 20, windowMs: 60_000 });
 
-const sql = neon(process.env.DATABASE_URL!);
+const sql = createSql(process.env.DATABASE_URL!);
 
 interface Citation {
   articleId: string;

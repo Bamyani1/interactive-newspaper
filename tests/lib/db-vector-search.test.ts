@@ -9,6 +9,7 @@ const { mockSql } = vi.hoisted(() => {
   return { mockSql: fn };
 });
 vi.mock("@neondatabase/serverless", () => ({
+  neonConfig: {},
   neon: vi.fn(() => mockSql),
 }));
 

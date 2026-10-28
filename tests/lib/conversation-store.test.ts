@@ -10,7 +10,7 @@ const { sqlMock } = vi.hoisted(() => {
   mock.transaction = vi.fn();
   return { sqlMock: mock };
 });
-vi.mock("@neondatabase/serverless", () => ({ neon: () => sqlMock }));
+vi.mock("@neondatabase/serverless", () => ({ neon: () => sqlMock, neonConfig: {} }));
 
 // Ensure lazy getSql() returns our mock (requires a non-empty URL).
 beforeAll(() => {

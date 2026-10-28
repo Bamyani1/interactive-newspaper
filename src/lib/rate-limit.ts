@@ -8,7 +8,7 @@
  * Public API is now async. Every existing caller awaits the result.
  */
 
-import { neon } from "@neondatabase/serverless";
+import { createSql } from "@/src/lib/sql";
 import { runWithDbTimeout } from "@/src/lib/db-timeout";
 
 // The limiter gates every /api/* request, so its budget is the tightest on
@@ -37,12 +37,12 @@ interface RateLimitResult {
 }
 
 // Module-level Neon client; lazy-initialized once DATABASE_URL is known.
-let _sql: ReturnType<typeof neon> | null = null;
-function getSql(): ReturnType<typeof neon> | null {
+let _sql: ReturnType<typeof createSql> | null = null;
+function getSql(): ReturnType<typeof createSql> | null {
   if (_sql !== null) return _sql;
   const url = process.env.DATABASE_URL;
   if (!url) return null;
-  _sql = neon(url);
+  _sql = createSql(url);
   return _sql;
 }
 
@@ -81,7 +81,7 @@ function checkInMemory(
 }
 
 async function checkNeon(
-  sql: ReturnType<typeof neon>,
+  sql: ReturnType<typeof createSql>,
   options: RateLimiterOptions,
   ip: string
 ): Promise<RateLimitResult> {

@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless";
+import { createSql } from "@/src/lib/sql";
 import type { Article, EditionInfo, VintageAd } from "@/src/types";
 import { createHash } from "crypto";
 import {
@@ -18,7 +18,7 @@ export { DbTimeoutError, runWithDbTimeout };
 
 // Neon's serverless driver uses HTTP — no persistent connection, no pool.
 // Each query is a single HTTP request, ideal for Vercel serverless functions.
-const sql = neon(process.env.DATABASE_URL!);
+const sql = createSql(process.env.DATABASE_URL!);
 
 const HYBRID_SEARCH_TIMEOUT_MS = 8_000;
 
