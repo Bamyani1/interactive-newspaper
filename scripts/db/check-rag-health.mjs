@@ -307,11 +307,26 @@ export async function checkRagHealth(executor, deps) {
   };
 }
 
+/** The rag_serving_pointer row, or null when it or its table (0014) is missing. */
+export async function readServingPointer(executor) {
+  try {
+    const [row] = await executor.query({
+      text: "SELECT index_build_id, corpus_version FROM rag_serving_pointer WHERE id = 1",
+    });
+    return row
+      ? { indexBuildId: String(row.index_build_id), corpusVersion: String(row.corpus_version) }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function formatReport(report) {
   const mark = (ok) => (ok ? "ok  " : "FAIL");
   const lines = [
     `config.mode                 ${report.config.mode}`,
-    `config.indexBuildId         ${report.config.activeIndexBuildId ?? "(none)"}`,
+    `config.indexBuildId         ${report.config.activeIndexBuildId ?? "(none)"}` +
+      (report.config.source ? ` (${report.config.source})` : ""),
     `${mark(report.migrations.current)} migrations.current`,
   ];
 
@@ -387,10 +402,19 @@ async function main() {
     const { createNeonExecutor } = executorModule.default ?? executorModule;
     ({ assertMigrationsCurrent } = runnerModule.default ?? runnerModule);
     const { getRagRetrievalConfig } = indexConfigModule.default ?? indexConfigModule;
-    // Throws on an invalid RAG_RETRIEVAL_MODE or a candidate mode with no
-    // build id — a configuration error, not a health mismatch.
-    config = getRagRetrievalConfig();
     executor = createNeonExecutor(databaseUrl);
+    // Checks what Ask would serve: the env's build when it names one,
+    // otherwise the database's serving pointer. Throws on an invalid
+    // RAG_RETRIEVAL_MODE or a candidate mode with neither — a configuration
+    // error, not a health mismatch.
+    const pointer = await readServingPointer(executor);
+    config = getRagRetrievalConfig(process.env, pointer);
+    config.source =
+      config.mode === "legacy"
+        ? "legacy"
+        : process.env.RAG_ACTIVE_INDEX_BUILD_ID?.trim()
+          ? "env override"
+          : "serving pointer";
   } catch (error) {
     console.error(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(2);

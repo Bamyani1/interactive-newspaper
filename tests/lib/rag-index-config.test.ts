@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getRagRetrievalConfig, shouldServeVersionedRetrieval } from "@/src/lib/rag-index-config";
+import {
+  getRagRetrievalConfig,
+  setServingPointer,
+  shouldServeVersionedRetrieval,
+} from "@/src/lib/rag-index-config";
 
 describe("RAG retrieval configuration", () => {
   it("defaults to legacy with no index identity", () => {
@@ -45,6 +49,61 @@ describe("RAG retrieval configuration", () => {
       cacheIdentity: expect.stringContaining("index=versioned:build-2026-08-02"),
     });
     expect(shouldServeVersionedRetrieval(env)).toBe(true);
+  });
+
+  it("serves the database pointer's build and corpus when the env names no build", () => {
+    const env = { RAG_RETRIEVAL_MODE: "versioned" } as unknown as NodeJS.ProcessEnv;
+    const config = getRagRetrievalConfig(env, {
+      indexBuildId: "build-pointer",
+      corpusVersion: "corpus-pointer",
+    });
+    expect(config).toMatchObject({
+      mode: "versioned",
+      activeIndexBuildId: "build-pointer",
+      corpusVersion: "corpus-pointer",
+    });
+    expect(config.cacheIdentity).toContain("index=versioned:build-pointer");
+  });
+
+  it("lets the env build id and corpus override the pointer, as a pair", () => {
+    const pointer = { indexBuildId: "build-pointer", corpusVersion: "corpus-pointer" };
+    expect(
+      getRagRetrievalConfig(
+        {
+          RAG_RETRIEVAL_MODE: "versioned",
+          RAG_ACTIVE_INDEX_BUILD_ID: "build-env",
+          RAG_CORPUS_VERSION: "corpus-env",
+        } as unknown as NodeJS.ProcessEnv,
+        pointer
+      )
+    ).toMatchObject({ activeIndexBuildId: "build-env", corpusVersion: "corpus-env" });
+    // An env corpus without an env build never pairs with the pointer's build.
+    expect(
+      getRagRetrievalConfig(
+        { RAG_RETRIEVAL_MODE: "versioned", RAG_CORPUS_VERSION: "corpus-env" } as unknown as NodeJS.ProcessEnv,
+        pointer
+      )
+    ).toMatchObject({ activeIndexBuildId: "build-pointer", corpusVersion: "corpus-pointer" });
+  });
+
+  it("ignores the pointer in legacy mode", () => {
+    expect(
+      getRagRetrievalConfig({} as NodeJS.ProcessEnv, {
+        indexBuildId: "build-pointer",
+        corpusVersion: "corpus-pointer",
+      })
+    ).toMatchObject({ mode: "legacy", activeIndexBuildId: null, corpusVersion: "legacy-unversioned" });
+  });
+
+  it("reads the loaded pointer by default", () => {
+    const env = { RAG_RETRIEVAL_MODE: "versioned" } as unknown as NodeJS.ProcessEnv;
+    setServingPointer({ indexBuildId: "build-loaded", corpusVersion: "corpus-loaded" });
+    try {
+      expect(getRagRetrievalConfig(env).activeIndexBuildId).toBe("build-loaded");
+    } finally {
+      setServingPointer(null);
+    }
+    expect(() => getRagRetrievalConfig(env)).toThrow(/serving pointer/);
   });
 
   it("rejects unknown modes rather than guessing", () => {
