@@ -146,3 +146,11 @@ def test_env_local_never_overrides_variables_the_caller_set(tmp_path):
         check=True,
     )
     assert out.stdout.strip() == "postgresql://prod/db|from-file"
+
+
+def test_fresh_publications_run_publish_checks_but_repairs_do_not():
+    # Repairs re-validate editions published before provenance existed.
+    source = _text(PROCESS)
+    assert 'check_publishable "$CANDIDATE_EDITION" candidate || fail 20' in source
+    assert 'check_publishable "$CANDIDATE_EDITION" post-upload || fail 20' in source
+    assert source.count("check_publishable \"") == 2

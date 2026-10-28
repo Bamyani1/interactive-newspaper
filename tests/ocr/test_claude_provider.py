@@ -393,3 +393,19 @@ def test_provenance_names_anthropic_and_no_google_project(monkeypatch, tmp_path)
     assert payload["provider"]["name"] == "anthropic"
     assert "google_cloud" not in payload
     assert "some-project" not in target.read_text()
+
+
+def test_provenance_records_the_editions_estimated_cost(tmp_path):
+    # archive:run's spend cap and the publish check read it from here.
+    target = tmp_path / "provenance.json"
+    write_provenance(
+        target,
+        edition_date="1985-10-18",
+        edition_dir=tmp_path,
+        manifest_path=None,
+        outcomes=[],
+        provider=_provider_provenance(),
+        model_routes={},
+        estimated_cost_usd=0.41234,
+    )
+    assert json.loads(target.read_text())["estimated_cost_usd"] == 0.4123
