@@ -83,11 +83,16 @@ log_failure_metadata() {
   if [[ -z "$DATE" || ! -f "$OCR_ROOT/log_failure.py" ]]; then
     return 0
   fi
+  # A candidate discarded after OCR still cost money; archive:run reads it from the log.
+  local cost_args=()
+  if [[ -n "$CANDIDATE_EDITION" && -f "$CANDIDATE_EDITION/provenance.json" ]]; then
+    cost_args=(--provenance "$CANDIDATE_EDITION/provenance.json")
+  fi
   python3 "$OCR_ROOT/log_failure.py" \
     --edition "$DATE" \
     --stage "$FAILURE_STAGE" \
     --status "$status" \
-    --error "$reason" >/dev/null 2>&1 || true
+    --error "$reason" ${cost_args[@]+"${cost_args[@]}"} >/dev/null 2>&1 || true
 }
 
 restore_rollback_if_needed() {

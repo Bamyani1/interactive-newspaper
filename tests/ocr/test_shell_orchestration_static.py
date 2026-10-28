@@ -154,3 +154,11 @@ def test_fresh_publications_run_publish_checks_but_repairs_do_not():
     assert 'check_publishable "$CANDIDATE_EDITION" candidate || fail 20' in source
     assert 'check_publishable "$CANDIDATE_EDITION" post-upload || fail 20' in source
     assert source.count("check_publishable \"") == 2
+
+
+def test_a_discarded_candidate_logs_its_cost_before_it_is_removed():
+    source = _text(PROCESS)
+    on_exit = source[source.index("on_exit() {") : source.index("trap on_exit EXIT")]
+    log_call = on_exit.index('log_failure_metadata "failed"')
+    assert log_call < on_exit.index('safe_remove_tree "$CANDIDATE_ROOT"')
+    assert '--provenance "$CANDIDATE_EDITION/provenance.json"' in source
