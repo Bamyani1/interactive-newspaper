@@ -7,7 +7,7 @@ import { createRateLimiter, getClientIp } from "@/src/lib/rate-limit";
 // second bucket of their own, so every request paid for two Neon writes and
 // search's two limits disagreed (60 here, 20 in the route). The stricter
 // number won.
-const askLimiter = createRateLimiter({ bucket: "mw-ask", limit: 10, windowMs: 60_000 }); // /api/ask — expensive Gemini calls
+const askLimiter = createRateLimiter({ bucket: "mw-ask", limit: 10, windowMs: 60_000 }); // /api/ask — expensive model calls
 const searchLimiter = createRateLimiter({ bucket: "mw-search", limit: 20, windowMs: 60_000 }); // /api/search — DB query
 const generalLimiter = createRateLimiter({ bucket: "mw-general", limit: 120, windowMs: 60_000 }); // /api/editions, /api/weather
 
