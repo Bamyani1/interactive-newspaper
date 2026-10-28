@@ -137,6 +137,7 @@ ocr/runs/
 # onnxruntime telemetry session id, written to the working directory
 :memory:.ses
 ocr/logs/
+ocr/reports/
 
 # OCR scan staging (large TIFFs)
 ocr/inbox/
