@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -305,8 +306,14 @@ def download_manifest(
     output_dir_name=None,
     max_workers=2,
     show_progress=None,
+    pace_seconds=None,
+    sleep=None,
 ):
-    """Download all canvases from a IIIF manifest."""
+    """Download all canvases from a IIIF manifest.
+
+    pace_seconds downloads one image at a time with that pause between
+    image requests, to go easy on the library's server.
+    """
     if output_root is None:
         output_root = DEFAULT_OUTPUT_ROOT
 
@@ -369,18 +376,24 @@ def download_manifest(
     successful = 0
     failed = 0
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = executor.map(download_image, tasks)
-        if show_progress and tqdm:
-            results = tqdm(results, total=total_images, unit="img")
-
-        collected = []
-        for result in results:
-            collected.append(result)
-            if result["successful"]:
-                successful += 1
-            else:
-                failed += 1
+    collected = []
+    if pace_seconds is not None:
+        sleep = sleep or time.sleep
+        for position, task in enumerate(tasks):
+            if position > 0:
+                sleep(pace_seconds)
+            collected.append(download_image(task))
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = executor.map(download_image, tasks)
+            if show_progress and tqdm:
+                results = tqdm(results, total=total_images, unit="img")
+            collected.extend(results)
+    for result in collected:
+        if result["successful"]:
+            successful += 1
+        else:
+            failed += 1
 
     collected.sort(key=lambda item: item["index"])
     _write_source_metadata(output_dir, manifest_url, manifest, collected)
@@ -397,7 +410,16 @@ def download_manifest(
     }
 
 
+def _flag_value(name):
+    if name in sys.argv:
+        index = sys.argv.index(name)
+        if index + 1 < len(sys.argv):
+            return sys.argv[index + 1]
+    return None
+
+
 def main():
+    """Returns the exit code: 1 when a manifest or any canvas failed."""
     if "--batch" in sys.argv:
         batch_idx = sys.argv.index("--batch")
         if batch_idx + 1 < len(sys.argv):
@@ -407,7 +429,7 @@ def main():
 
         if not os.path.exists(batch_file):
             print(f"Error: Batch file '{batch_file}' not found.")
-            return
+            return 1
 
         # Parse optional --output-root
         output_root = DEFAULT_OUTPUT_ROOT
@@ -465,21 +487,33 @@ def main():
         print(f"  Images failed:       {total_failed}")
         if total_failed > 0:
             print("  Check if some manifests restrict high-resolution downloads or have broken links.")
-        return
+        return 1 if total_failed or total_skipped else 0
 
     if len(sys.argv) > 1 and not sys.argv[1].startswith("--"):
         url = sys.argv[1]
     else:
         url = input("Enter the IIIF URL: ").strip()
 
-    result = download_manifest(url)
+    # --output-dir PATH puts the images in exactly that folder (archive:run).
+    output_dir = _flag_value("--output-dir")
+    pace = _flag_value("--pace")
+    target = Path(output_dir).resolve() if output_dir else None
+    result = download_manifest(
+        url,
+        output_root=str(target.parent) if target else None,
+        output_dir_name=target.name if target else None,
+        pace_seconds=float(pace) if pace is not None else None,
+    )
 
     print("\nDownload complete.")
     print(f"Successful: {result['successful']}")
     print(f"Failed: {result['failed']}")
     if result["failed"] > 0:
         print("Check if the manifest restricts high-resolution downloads or has broken links.")
+    if result["error"] or result["failed"] > 0 or result["total_images"] == 0:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
