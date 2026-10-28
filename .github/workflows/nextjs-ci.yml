@@ -68,6 +68,9 @@ jobs:
       # localhost URLs reach Postgres through the neon-http-shim, which the
       # db scripts and scripts/dev/with-local-db.mjs start (src/lib/sql.ts).
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/transcript
+      # The seed writes image URLs on the public R2 bucket, as production
+      # does; the fixtures carry no image files.
+      IMAGE_BASE_URL: https://pub-6b4b0bceb63e48c1af6578ad09beb2e5.r2.dev
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
