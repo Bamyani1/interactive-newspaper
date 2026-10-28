@@ -7,10 +7,12 @@ describe("RAG retrieval configuration", () => {
       mode: "legacy",
       activeIndexBuildId: null,
       corpusVersion: "legacy-unversioned",
-      pipelineVersion: "rag-v3-independent-grounded",
-      embeddingModel: "gemini-embedding-2",
-      textEmbeddingInputVersion: "article-chunk-v1",
-      imageEmbeddingInputVersion: "article-image-v1",
+      pipelineVersion: "rag-v4-voyage",
+      embeddingModel: "voyage-context-4",
+      imageEmbeddingModel: "voyage-multimodal-3.5",
+      embeddingDims: 1024,
+      textEmbeddingInputVersion: "article-chunk-voyage-v1",
+      imageEmbeddingInputVersion: "article-image-voyage-v1",
       cacheIdentity: expect.stringContaining("index=legacy"),
     });
   });
@@ -34,10 +36,12 @@ describe("RAG retrieval configuration", () => {
       mode: "versioned",
       activeIndexBuildId: "build-2026-08-02",
       corpusVersion: "corpus-a",
-      pipelineVersion: "rag-v3-independent-grounded",
-      embeddingModel: "gemini-embedding-2",
-      textEmbeddingInputVersion: "article-chunk-v1",
-      imageEmbeddingInputVersion: "article-image-v1",
+      pipelineVersion: "rag-v4-voyage",
+      embeddingModel: "voyage-context-4",
+      imageEmbeddingModel: "voyage-multimodal-3.5",
+      embeddingDims: 1024,
+      textEmbeddingInputVersion: "article-chunk-voyage-v1",
+      imageEmbeddingInputVersion: "article-image-voyage-v1",
       cacheIdentity: expect.stringContaining("index=versioned:build-2026-08-02"),
     });
     expect(shouldServeVersionedRetrieval(env)).toBe(true);

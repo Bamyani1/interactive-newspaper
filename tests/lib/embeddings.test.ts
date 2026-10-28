@@ -1,37 +1,94 @@
 /** @vitest-environment node */
 // Uses node env (not jsdom) because embedQuery relies on AbortSignal.any,
 // a Node 20+ / Chrome 105+ feature that jsdom's polyfill does not provide.
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
-// Mock the shared Gemini client so embedDocuments calls a controllable fake
-// instead of hitting the real API. vi.hoisted ensures mockEmbedContent is
-// defined when the hoisted vi.mock factory runs.
-const { mockEmbedContent } = vi.hoisted(() => ({
-  mockEmbedContent: vi.fn(),
-}));
-
-vi.mock("@/src/lib/gemini-client", () => ({
-  getGeminiClient: () => ({
-    models: { embedContent: mockEmbedContent },
-  }),
-}));
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import {
+  buildChunkHeader,
   buildEmbeddingText,
   buildEmbeddingInput,
+  embedArticleChunks,
   embedDocuments,
   embedQuery,
   EmbedTimeoutError,
   QuotaExhaustedError,
   _setQuotaRetryDelaysForTests,
   _clearQueryEmbeddingCacheForTests,
+  _resetVoyagePaceForTests,
   embeddingInputFingerprint,
   EMBEDDING_INPUT_VERSION,
   IMAGE_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/embeddings";
 
+const mockFetch = vi.fn();
+
+function makeFakeVector(seed: number): number[] {
+  return Array.from({ length: 1024 }, (_, i) => (seed + i) / 10_000);
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+interface FetchCall {
+  url: string;
+  body: Record<string, unknown>;
+}
+
+function fetchCalls(): FetchCall[] {
+  return mockFetch.mock.calls.map(([url, init]) => ({
+    url: String(url),
+    body: JSON.parse(String((init as RequestInit).body)),
+  }));
+}
+
+/** Answers contextualized requests with one vector per chunk, seeded by position. */
+function contextualizedEcho(seedBase = 0) {
+  let seed = seedBase;
+  return async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as { inputs: string[][] };
+    return jsonResponse({
+      data: body.inputs.map((texts, index) => ({
+        index,
+        data: texts.map((_, chunk) => ({ index: chunk, embedding: makeFakeVector(seed++) })),
+      })),
+      usage: { total_tokens: 10 },
+    });
+  };
+}
+
+/** Answers multimodal requests with one vector per input, in reverse order. */
+function multimodalEcho(seedBase = 0) {
+  let seed = seedBase;
+  return async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as { inputs: unknown[] };
+    const data = body.inputs.map((_, index) => ({ index, embedding: makeFakeVector(seed++) }));
+    return jsonResponse({
+      data: data.reverse(),
+      usage: { total_tokens: 10, text_tokens: 10, image_pixels: 1000 },
+    });
+  };
+}
+
+beforeEach(() => {
+  mockFetch.mockReset();
+  vi.stubGlobal("fetch", mockFetch);
+  vi.stubEnv("VOYAGE_API_KEY", "test-key");
+  _setQuotaRetryDelaysForTests([]);
+  _clearQueryEmbeddingCacheForTests();
+  _resetVoyagePaceForTests();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
 describe("buildEmbeddingText", () => {
-  it("builds text with title and body prefix format", () => {
+  it("leads with the headline and carries the source line, without Gemini prefixes", () => {
     const text = buildEmbeddingText({
       headline: "Test Headline",
       body_plain: "Some content",
@@ -39,580 +96,448 @@ describe("buildEmbeddingText", () => {
       category: "News",
     });
 
-    expect(text).toContain("title: Test Headline");
-    expect(text).toContain("text:");
+    expect(text.startsWith("Test Headline\n\n")).toBe(true);
+    expect(text).toContain("1960-01-13, News section.");
     expect(text).toContain("Some content");
-    expect(text).toContain("1960-01-13");
+    expect(text).not.toContain("title:");
   });
 
-  it("truncates body when total text exceeds MAX_EMBEDDING_CHARS", () => {
-    const longBody = "x".repeat(40_000);
+  it("caps the text at MAX_EMBEDDING_CHARS, keeping the front", () => {
     const text = buildEmbeddingText({
       headline: "Short Headline",
-      body_plain: longBody,
+      body_plain: "x".repeat(40_000),
       edition_date: "1960-01-13",
       category: "News",
     });
 
-    // Should be capped at 30,000 chars total
     expect(text.length).toBeLessThanOrEqual(30_000);
-    // Should still contain the headline and preamble (not truncated from the front)
-    expect(text).toContain("title: Short Headline");
+    expect(text).toContain("Short Headline");
     expect(text).toContain("1960-01-13");
   });
+});
 
-  it("does not truncate text under the limit", () => {
-    const normalBody = "Normal article content about campus events.";
-    const text = buildEmbeddingText({
-      headline: "Normal Headline",
-      body_plain: normalBody,
-      edition_date: "1960-01-13",
-      category: "News",
-    });
-
-    expect(text).toContain(normalBody);
+describe("buildChunkHeader", () => {
+  it("names the paper, date, section, headline and byline", () => {
+    expect(
+      buildChunkHeader({
+        headline: "Kent Hands Swim Team First Defeat",
+        byline: "By Bob Reece",
+        edition_date: "1953-01-14",
+        category: "Sports",
+      })
+    ).toBe(
+      "From The Transcript Archive (Ohio Wesleyan University newspaper), 1953-01-14, Sports section.\n" +
+        "Headline: Kent Hands Swim Team First Defeat\n" +
+        "Byline: By Bob Reece"
+    );
   });
 });
 
 describe("buildEmbeddingInput", () => {
   it("returns text-only input when no image provided", () => {
-    const input = buildEmbeddingInput({
-      headline: "Test",
-      body_plain: "Content",
-      edition_date: "1960-01-13",
-      category: "News",
-    });
-    expect(input.text).toContain("title: Test");
+    const input = buildEmbeddingInput({ headline: "Test", body_plain: "Content" });
     expect(input.imageBase64).toBeUndefined();
+    expect(input.text).toContain("Content");
   });
 
   it("includes image data when imageBase64 is provided", () => {
     const input = buildEmbeddingInput({
       headline: "Test",
       body_plain: "Content",
-      edition_date: "1960-01-13",
-      category: "News",
-      imageBase64: "iVBORw0KGgo=",
-      imageMimeType: "image/jpeg",
+      imageBase64: "base64data",
+      imageMimeType: "image/png",
     });
-    expect(input.text).toContain("title: Test");
-    expect(input.imageBase64).toBe("iVBORw0KGgo=");
-    expect(input.imageMimeType).toBe("image/jpeg");
+    expect(input.imageBase64).toBe("base64data");
+    expect(input.imageMimeType).toBe("image/png");
   });
 });
 
-// ─── embedDocuments ─────────────────────────────────────────────
-// Covers the happy path for text-only batches and the critical timeout
-// wrap added for issue 0029's sibling (new latent finding #1).
+describe("embedArticleChunks", () => {
+  it("sends each article as one list led by its header and drops the header's vector", async () => {
+    mockFetch.mockImplementation(contextualizedEcho());
 
-function makeFakeVector(seed = 0): number[] {
-  return Array.from({ length: 768 }, (_, i) => ((i + seed) % 100) / 100);
-}
+    const result = await embedArticleChunks([
+      { header: "H1", chunks: ["a1", "a2"] },
+      { header: "H2", chunks: ["b1"] },
+    ]);
+
+    const [call] = fetchCalls();
+    expect(call.url).toBe("https://api.voyageai.com/v1/contextualizedembeddings");
+    expect(call.body).toEqual({
+      model: "voyage-context-4",
+      input_type: "document",
+      output_dimension: 1024,
+      inputs: [
+        ["H1", "a1", "a2"],
+        ["H2", "b1"],
+      ],
+    });
+    // Seeds 0 and 3 belong to the headers.
+    expect(result).toEqual([[makeFakeVector(1), makeFakeVector(2)], [makeFakeVector(4)]]);
+  });
+
+  it("splits a long article into parts that each keep the header", async () => {
+    mockFetch.mockImplementation(contextualizedEcho());
+    const chunk = "y".repeat(40_000); // ~13K estimated tokens each
+
+    const result = await embedArticleChunks([{ header: "H", chunks: [chunk, chunk, chunk] }]);
+
+    const inputs = fetchCalls().flatMap((call) => call.body.inputs as string[][]);
+    expect(inputs.length).toBeGreaterThan(1);
+    for (const part of inputs) expect(part[0]).toBe("H");
+    expect(inputs.flatMap((part) => part.slice(1))).toEqual([chunk, chunk, chunk]);
+    expect(result[0]).toHaveLength(3);
+  });
+
+  it("sends an empty chunk as the header, since Voyage rejects empty strings", async () => {
+    mockFetch.mockImplementation(contextualizedEcho());
+
+    const result = await embedArticleChunks([{ header: "H", chunks: ["", "  \n"] }]);
+
+    expect(fetchCalls()[0].body.inputs).toEqual([["H", "H", "H"]]);
+    expect(result[0]).toHaveLength(2);
+  });
+
+  it("rejects a response with the wrong chunk count", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ data: [{ index: 0, data: [{ index: 0, embedding: makeFakeVector(0) }] }] })
+    );
+
+    await expect(embedArticleChunks([{ header: "H", chunks: ["a"] }])).rejects.toThrow(
+      /wrong chunk count/
+    );
+  });
+
+  it("rejects vectors of the wrong dimension", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        data: [
+          {
+            index: 0,
+            data: [
+              { index: 0, embedding: [0.1] },
+              { index: 1, embedding: [0.1] },
+            ],
+          },
+        ],
+      })
+    );
+
+    await expect(embedArticleChunks([{ header: "H", chunks: ["a"] }])).rejects.toThrow(
+      /expected 1024/
+    );
+  });
+});
 
 describe("embedDocuments", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Default for most tests: no retries. Individual retry tests opt in.
-    _setQuotaRetryDelaysForTests([]);
+  it("sends caption text and the image as a data URL, and restores input order", async () => {
+    mockFetch.mockImplementation(multimodalEcho());
+
+    const result = await embedDocuments([
+      { text: "caption one", imageBase64: "AAAA", imageMimeType: "image/webp" },
+      { text: "caption two" },
+    ]);
+
+    const [call] = fetchCalls();
+    expect(call.url).toBe("https://api.voyageai.com/v1/multimodalembeddings");
+    expect(call.body).toEqual({
+      model: "voyage-multimodal-3.5",
+      input_type: "document",
+      output_dimension: 1024,
+      inputs: [
+        {
+          content: [
+            { type: "text", text: "caption one" },
+            { type: "image_base64", image_base64: "data:image/webp;base64,AAAA" },
+          ],
+        },
+        { content: [{ type: "text", text: "caption two" }] },
+      ],
+    });
+    expect(result).toEqual([makeFakeVector(0), makeFakeVector(1)]);
   });
 
-  // Vertex rejects a multi-content embedContent for gemini-embedding-2:
-  // "The embedContent API for this model only supports one content at a
-  // time." Verified live against the API. This test previously asserted a
-  // single call carrying both contents — the mock accepted what the real
-  // endpoint refuses, so the double was encoding the bug.
-  it("embeds one content per request and returns vectors in input order", async () => {
-    mockEmbedContent
-      .mockResolvedValueOnce({ embeddings: [{ values: makeFakeVector(1) }] })
-      .mockResolvedValueOnce({ embeddings: [{ values: makeFakeVector(2) }] });
+  it("sends at most 16 photos per request", async () => {
+    mockFetch.mockImplementation(multimodalEcho());
+    const inputs = Array.from({ length: 20 }, (_, i) => ({ text: `caption ${i}` }));
 
-    const result = await embedDocuments([{ text: "first" }, { text: "second" }]);
-
-    expect(result).toHaveLength(2);
-    expect(result[0]).toEqual(makeFakeVector(1));
-    expect(result[1]).toEqual(makeFakeVector(2));
-    expect(mockEmbedContent).toHaveBeenCalledTimes(2);
-
-    type EmbedCall = {
-      model: string;
-      contents: Array<{ parts: Array<{ text: string }> }>;
-      config: { outputDimensionality: number; abortSignal?: AbortSignal };
-    };
-    const calls = mockEmbedContent.mock.calls.map(([c]) => c as EmbedCall);
-    for (const call of calls) {
-      expect(call.model).toBe("gemini-embedding-2");
-      expect(call.contents).toHaveLength(1);
-      // Step 2 wraps the call with AbortController, so the signal must be passed
-      expect(call.config.abortSignal).toBeDefined();
-    }
-    // Order is the contract: callers zip these back onto their own rows.
-    expect(calls.map((c) => c.contents[0].parts[0].text)).toEqual(["first", "second"]);
-  });
-
-  // The seed and backfill paths hand this function 50 inputs at a time. If
-  // it ever batches again, every one of those calls fails wholesale.
-  it("never sends more than one content per request, at any input size", async () => {
-    mockEmbedContent.mockImplementation(async () => ({
-      embeddings: [{ values: makeFakeVector(3) }],
-    }));
-
-    const inputs = Array.from({ length: 50 }, (_, i) => ({ text: `doc ${i}` }));
     const result = await embedDocuments(inputs);
 
-    expect(result).toHaveLength(50);
-    expect(mockEmbedContent).toHaveBeenCalledTimes(50);
-    for (const [call] of mockEmbedContent.mock.calls) {
-      expect((call as { contents: unknown[] }).contents).toHaveLength(1);
-    }
-  });
-
-  it("throws EmbedTimeoutError when embedContent hangs past the budget", async () => {
-    // Mock hangs forever. embedWithTimeout's Promise.race should still fire
-    // at timeoutMs even though the mock never honors the signal.
-    mockEmbedContent.mockImplementation(() => new Promise<never>(() => {}));
-
-    vi.useFakeTimers();
-    try {
-      // Pre-attach a rejection handler so the rejection is always observed
-      // synchronously when timers fire (avoids vitest's unhandled-rejection
-      // warning from the brief gap between the timer firing and a later await).
-      let caught: unknown;
-      const settled = embedDocuments([{ text: "never resolves" }]).catch((err) => {
-        caught = err;
-      });
-      await vi.advanceTimersByTimeAsync(30_100);
-      await settled;
-      expect(caught).toBeInstanceOf(EmbedTimeoutError);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("EmbedTimeoutError carries op name and timeout budget", async () => {
-    mockEmbedContent.mockImplementation(() => new Promise<never>(() => {}));
-
-    vi.useFakeTimers();
-    try {
-      let caught: unknown;
-      const settled = embedDocuments([{ text: "hung" }]).catch((err) => {
-        caught = err;
-      });
-      await vi.advanceTimersByTimeAsync(30_100);
-      await settled;
-      expect(caught).toBeInstanceOf(EmbedTimeoutError);
-      if (caught instanceof EmbedTimeoutError) {
-        expect(caught.op).toBe("embedDocuments.text");
-        expect(caught.timeoutMs).toBe(30_000);
-        expect(caught.name).toBe("EmbedTimeoutError");
-      }
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  // Was "throws on mismatched response length", which only had meaning
-  // while one request carried many documents. Per document, the same
-  // failure is a response that carries no embedding back.
-  it("throws when a document's response carries no embedding", async () => {
-    mockEmbedContent.mockResolvedValue({ embeddings: [] });
-
-    await expect(embedDocuments([{ text: "first" }, { text: "second" }])).rejects.toThrow(
-      /Invalid embedding dimensions/
-    );
-  });
-
-  it("throws on invalid embedding dimensions", async () => {
-    mockEmbedContent.mockResolvedValueOnce({
-      embeddings: [{ values: [1, 2, 3] }], // wrong dims
-    });
-
-    await expect(embedDocuments([{ text: "first" }])).rejects.toThrow(
-      /Invalid embedding dimensions/
-    );
+    expect(fetchCalls().map((call) => (call.body.inputs as unknown[]).length)).toEqual([16, 4]);
+    expect(result).toHaveLength(20);
   });
 
   it("returns empty array for empty input", async () => {
-    const result = await embedDocuments([]);
-    expect(result).toEqual([]);
-    expect(mockEmbedContent).not.toHaveBeenCalled();
+    await expect(embedDocuments([])).resolves.toEqual([]);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  // Multimodal partial-failure atomicity (Step 5)
-  // The image branch processes inputs sequentially. If any one throws,
-  // embedDocuments must throw the whole batch — never return an array
-  // with undefined holes that would silently poison the database.
+  it("retries a 429 on the batch delays, then throws QuotaExhaustedError", async () => {
+    _setQuotaRetryDelaysForTests([1, 1]);
+    mockFetch.mockImplementation(async () => jsonResponse({ detail: "rate limited" }, 429));
 
-  it("throws atomically when image #3 of 5 fails partway through", async () => {
-    // First call: text-batch (the function processes text-only inputs as one batch)
-    // Then 5 sequential image calls; we want the 3rd to throw.
-    let imageCallCount = 0;
-    mockEmbedContent.mockImplementation(
-      async (params: { contents: Array<{ parts: unknown[] }> }) => {
-        // Detect image input by checking for inlineData in parts
-        const parts = params.contents[0].parts as Array<{ text?: string; inlineData?: unknown }>;
-        const isImage = parts.some((p) => p.inlineData !== undefined);
-        if (!isImage) {
-          // text batch, return one vector per input
-          return {
-            embeddings: params.contents.map((_, i) => ({ values: makeFakeVector(i + 100) })),
-          };
-        }
-        // image input
-        imageCallCount++;
-        if (imageCallCount === 3) {
-          throw new Error("simulated image #3 failure");
-        }
-        return { embeddings: [{ values: makeFakeVector(imageCallCount) }] };
-      }
-    );
+    const err = await embedDocuments([{ text: "c" }]).catch((e: unknown) => e);
 
-    const inputs = [
-      { text: "img1", imageBase64: "AAA", imageMimeType: "image/jpeg" },
-      { text: "img2", imageBase64: "BBB", imageMimeType: "image/jpeg" },
-      { text: "img3", imageBase64: "CCC", imageMimeType: "image/jpeg" },
-      { text: "img4", imageBase64: "DDD", imageMimeType: "image/jpeg" },
-      { text: "img5", imageBase64: "EEE", imageMimeType: "image/jpeg" },
-    ];
-
-    await expect(embedDocuments(inputs)).rejects.toThrow(
-      /Multimodal embedding failed on image 3 of 5/
-    );
-
-    // Critical: subsequent images should NOT have been called (atomic abort)
-    expect(imageCallCount).toBe(3);
+    expect(err).toBeInstanceOf(QuotaExhaustedError);
+    expect((err as QuotaExhaustedError).op).toBe("embedDocuments");
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
-  it("throws when image branch returns malformed embedding", async () => {
-    mockEmbedContent.mockResolvedValueOnce({
-      embeddings: [], // empty — malformed for an image call
-    });
+  it("recovers when a transient 429 clears", async () => {
+    _setQuotaRetryDelaysForTests([1]);
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ detail: "rate limited" }, 429))
+      .mockImplementationOnce(multimodalEcho(7));
 
-    await expect(embedDocuments([{ text: "x", imageBase64: "AAA" }])).rejects.toThrow(
-      /Failed to generate multimodal embedding/
-    );
+    await expect(embedDocuments([{ text: "c" }])).resolves.toEqual([makeFakeVector(7)]);
   });
 
-  // QuotaExhaustedError detection (Step 6 / issue 0028)
-  // Gemini may surface 429 RESOURCE_EXHAUSTED in several shapes; we detect
-  // any of them and rethrow as a typed error so callers can early-abort.
+  it("does not retry or reclassify a 500", async () => {
+    _setQuotaRetryDelaysForTests([1, 1]);
+    mockFetch.mockResolvedValue(jsonResponse({ detail: "boom" }, 500));
 
-  it("throws QuotaExhaustedError when SDK error has code: 429", async () => {
-    const quotaErr = Object.assign(new Error("rate limit"), { code: 429 });
-    mockEmbedContent.mockRejectedValueOnce(quotaErr);
+    const err = await embedDocuments([{ text: "c" }]).catch((e: unknown) => e);
 
-    await expect(embedDocuments([{ text: "x" }])).rejects.toBeInstanceOf(QuotaExhaustedError);
+    expect(err).not.toBeInstanceOf(QuotaExhaustedError);
+    expect(String(err)).toMatch(/Voyage HTTP 500/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("throws QuotaExhaustedError when SDK error has nested error.code: 429", async () => {
-    const quotaErr = Object.assign(new Error("rate limit"), {
-      error: { code: 429, status: "RESOURCE_EXHAUSTED" },
-    });
-    mockEmbedContent.mockRejectedValueOnce(quotaErr);
-
-    await expect(embedDocuments([{ text: "x" }])).rejects.toBeInstanceOf(QuotaExhaustedError);
+  it("throws when the response is missing vectors", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ data: [] }));
+    await expect(embedDocuments([{ text: "c" }])).rejects.toThrow(/0 vectors for 1 inputs/);
   });
 
-  it("throws QuotaExhaustedError when error message contains RESOURCE_EXHAUSTED", async () => {
-    const quotaErr = new Error(
-      'Embedding batch error: {"error":{"code":429,"message":"You exceeded your current quota","status":"RESOURCE_EXHAUSTED"}}'
-    );
-    mockEmbedContent.mockRejectedValueOnce(quotaErr);
-
-    await expect(embedDocuments([{ text: "x" }])).rejects.toBeInstanceOf(QuotaExhaustedError);
-  });
-
-  it("does NOT classify a generic 500 error as QuotaExhaustedError", async () => {
-    const otherErr = Object.assign(new Error("server error"), { code: 500 });
-    mockEmbedContent.mockRejectedValueOnce(otherErr);
-
-    const promise = embedDocuments([{ text: "x" }]);
-    await expect(promise).rejects.not.toBeInstanceOf(QuotaExhaustedError);
-    await expect(promise).rejects.toThrow(/server error/);
-  });
-
-  it("QuotaExhaustedError preserves the underlying cause + op name", async () => {
-    const quotaErr = Object.assign(new Error("rate limit"), { code: 429 });
-    mockEmbedContent.mockRejectedValueOnce(quotaErr);
-
-    try {
-      await embedDocuments([{ text: "x" }]);
-      throw new Error("expected QuotaExhaustedError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(QuotaExhaustedError);
-      if (err instanceof QuotaExhaustedError) {
-        expect(err.op).toBe("embedDocuments.text");
-        expect(err.cause).toBe(quotaErr);
-        expect(err.name).toBe("QuotaExhaustedError");
-      }
-    }
-  });
-
-  // Exponential backoff on transient quota (issue 0028 follow-up).
-  // A per-minute RPM trip often recovers within 1–2 seconds; a daily
-  // quota will just fall through all retries and surface normally.
-
-  it("retries embedDocuments on transient quota error with exponential backoff", async () => {
-    _setQuotaRetryDelaysForTests([1_000, 2_000, 4_000]);
+  it("throws EmbedTimeoutError when a request hangs past its budget", async () => {
     vi.useFakeTimers();
     try {
-      const quotaErr = Object.assign(new Error("rate limit"), { code: 429 });
-      mockEmbedContent
-        .mockRejectedValueOnce(quotaErr)
-        .mockRejectedValueOnce(quotaErr)
-        .mockResolvedValueOnce({
-          embeddings: [{ values: new Array(768).fill(0.1) }],
-        });
-
-      const promise = embedDocuments([{ text: "recovers" }]);
-      // Silence unhandled-rejection noise in case the chain still throws.
+      mockFetch.mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_, reject) => {
+            init.signal?.addEventListener("abort", () =>
+              reject(Object.assign(new Error("aborted"), { name: "AbortError" }))
+            );
+          })
+      );
+      const promise = embedDocuments([{ text: "c" }]);
       promise.catch(() => {});
-      // 1s backoff after attempt 1, 2s after attempt 2 → 3s total.
-      await vi.advanceTimersByTimeAsync(3_000);
-      const result = await promise;
-
-      expect(result).toHaveLength(1);
-      expect(mockEmbedContent).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(60_000);
+      const err = await promise.catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(EmbedTimeoutError);
+      expect((err as EmbedTimeoutError).timeoutMs).toBe(60_000);
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it("gives up after 3 retries and throws QuotaExhaustedError", async () => {
-    _setQuotaRetryDelaysForTests([1_000, 2_000, 4_000]);
-    vi.useFakeTimers();
-    try {
-      const quotaErr = Object.assign(new Error("rate limit"), { code: 429 });
-      mockEmbedContent.mockRejectedValue(quotaErr);
-
-      const promise = embedDocuments([{ text: "never recovers" }]);
-      promise.catch(() => {});
-      // 1 + 2 + 4 = 7s across the three retry gaps.
-      await vi.advanceTimersByTimeAsync(7_000);
-
-      await expect(promise).rejects.toBeInstanceOf(QuotaExhaustedError);
-      // 1 initial + 3 retries
-      expect(mockEmbedContent).toHaveBeenCalledTimes(4);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("does not retry non-quota errors", async () => {
-    const serverErr = Object.assign(new Error("server exploded"), { code: 500 });
-    mockEmbedContent.mockRejectedValue(serverErr);
-
-    await expect(embedDocuments([{ text: "hard-fail" }])).rejects.toThrow(/server exploded/);
-    expect(mockEmbedContent).toHaveBeenCalledTimes(1);
-  });
-
-  it("succeeds when text and image branches both complete (mixed batch)", async () => {
-    let imgCount = 0;
-    mockEmbedContent.mockImplementation(
-      async (params: { contents: Array<{ parts: unknown[] }> }) => {
-        const parts = params.contents[0].parts as Array<{ text?: string; inlineData?: unknown }>;
-        const isImage = parts.some((p) => p.inlineData !== undefined);
-        if (!isImage) {
-          // One content per request now, so seed the vector from the text
-          // itself rather than from a position within a batch.
-          const text = String(parts[0].text ?? "");
-          return { embeddings: [{ values: makeFakeVector(text === "text1" ? 0 : 1) }] };
-        }
-        imgCount++;
-        return { embeddings: [{ values: makeFakeVector(500 + imgCount) }] };
-      }
-    );
-
-    const inputs = [
-      { text: "text1" },
-      { text: "img1", imageBase64: "AAA" },
-      { text: "text2" },
-      { text: "img2", imageBase64: "BBB" },
-    ];
-
-    const result = await embedDocuments(inputs);
-
-    expect(result).toHaveLength(4);
-    // No undefined holes
-    for (let i = 0; i < result.length; i++) {
-      expect(result[i]).toBeDefined();
-      expect(result[i]).toHaveLength(768);
-    }
-    // text1 and text2 keep their input positions in the result
-    expect(result[0]).toEqual(makeFakeVector(0));
-    expect(result[2]).toEqual(makeFakeVector(1));
-    // images came from sequential image calls
-    expect(result[1]).toEqual(makeFakeVector(501));
-    expect(result[3]).toEqual(makeFakeVector(502));
   });
 });
 
 describe("embedding input identity", () => {
   it("versions text chunks and image inputs separately", () => {
-    expect(EMBEDDING_INPUT_VERSION).toBe("article-chunk-v1");
-    expect(IMAGE_EMBEDDING_INPUT_VERSION).toBe("article-image-v1");
+    expect(EMBEDDING_INPUT_VERSION).toBe("article-chunk-voyage-v1");
+    expect(IMAGE_EMBEDDING_INPUT_VERSION).toBe("article-image-voyage-v1");
   });
 
-  it("changes the fingerprint when canonical text, image bytes, or version changes", () => {
-    const base = { text: "title: One | text: Body" };
+  it("changes the fingerprint when header, text, image bytes, or version changes", () => {
+    const base = { header: "H", text: "Body" };
     const first = embeddingInputFingerprint(base);
     expect(embeddingInputFingerprint(base)).toBe(first);
-    expect(embeddingInputFingerprint({ text: `${base.text}.` })).not.toBe(first);
-    expect(embeddingInputFingerprint(base, "article-chunk-v2")).not.toBe(first);
+    expect(embeddingInputFingerprint({ ...base, header: "H2" })).not.toBe(first);
+    expect(embeddingInputFingerprint({ ...base, text: "Body." })).not.toBe(first);
+    expect(embeddingInputFingerprint(base, "article-chunk-voyage-v2")).not.toBe(first);
+
+    const photo = { text: "caption", imageBase64: "bytes", imageMimeType: "image/webp" };
+    const photoPrint = embeddingInputFingerprint(photo, IMAGE_EMBEDDING_INPUT_VERSION);
     expect(
-      embeddingInputFingerprint({
-        ...base,
-        imageBase64: "different-bytes",
-        imageMimeType: "image/jpeg",
-      })
-    ).not.toBe(first);
+      embeddingInputFingerprint({ ...photo, imageBase64: "other" }, IMAGE_EMBEDDING_INPUT_VERSION)
+    ).not.toBe(photoPrint);
   });
 });
 
-// ─── embedQuery ─────────────────────────────────────────────────
-// embedQuery has its own error-conversion try/catch separate from
-// embedWithTimeout (it rolls its own timer). These tests cover the
-// pre-aborted signal short-circuit (Step 3) and the quota-exhaustion
-// conversion at the embedQuery call site (Step 5 — previously only
-// tested indirectly through ask-route.test.ts's MockQuotaExhaustedError).
-
 describe("embedQuery", () => {
-  beforeEach(() => {
-    vi.unstubAllEnvs();
-    _clearQueryEmbeddingCacheForTests();
-    // mockReset clears both history AND any leaked mockImplementation from
-    // the embedDocuments block (notably the persistent mixed-batch impl).
-    // clearAllMocks only clears history, so queued mockRejectedValueOnce
-    // calls would otherwise fall back to a stale impl after one call.
-    mockEmbedContent.mockReset();
+  it("embeds a text query alone with the chunk model", async () => {
+    mockFetch.mockImplementation(contextualizedEcho(4));
+
+    await expect(embedQuery("Who edited the paper in 1962?")).resolves.toEqual(makeFakeVector(4));
+
+    const [call] = fetchCalls();
+    expect(call.url).toBe("https://api.voyageai.com/v1/contextualizedembeddings");
+    expect(call.body).toEqual({
+      model: "voyage-context-4",
+      input_type: "query",
+      output_dimension: 1024,
+      inputs: [["Who edited the paper in 1962?"]],
+    });
   });
 
-  // gemini-embedding-2 has no taskType parameter — the task rides along as
-  // an inline prefix, so this string IS the task selector. Measured on the
-  // frozen golden catalog over two runs each: 87.0% / 95.7% source recall
-  // with "question answering" against 78.3% / 73.9% with "search result".
-  // Changing it shifts the query side of the vector space away from the
-  // documents, which nothing downstream validates, so it is pinned here.
-  it("asks the model for question answering, not general search", async () => {
-    mockEmbedContent.mockResolvedValue({ embeddings: [{ values: makeFakeVector(4) }] });
+  it("embeds a photo query with the image model", async () => {
+    mockFetch.mockImplementation(multimodalEcho(9));
 
-    await embedQuery("Who edited the paper in 1962?");
-
-    const call = mockEmbedContent.mock.calls[0][0] as {
-      contents: Array<{ parts: Array<{ text: string }> }>;
-    };
-    expect(call.contents[0].parts[0].text).toBe(
-      "task: question answering | query: Who edited the paper in 1962?"
+    await expect(embedQuery("photos of protests", { kind: "image" })).resolves.toEqual(
+      makeFakeVector(9)
     );
+
+    const [call] = fetchCalls();
+    expect(call.url).toBe("https://api.voyageai.com/v1/multimodalembeddings");
+    expect(call.body).toMatchObject({
+      model: "voyage-multimodal-3.5",
+      input_type: "query",
+      inputs: [{ content: [{ type: "text", text: "photos of protests" }] }],
+    });
+  });
+
+  it("caches per model, so a photo query never reuses a text vector", async () => {
+    mockFetch
+      .mockImplementationOnce(contextualizedEcho(1))
+      .mockImplementationOnce(multimodalEcho(2));
+
+    await embedQuery("same words");
+    await embedQuery("same words");
+    await embedQuery("same words", { kind: "image" });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it("bypasses the query embedding cache in evaluation mode", async () => {
     vi.stubEnv("RAG_EVALUATION_MODE", "1");
     vi.stubEnv("RAG_EVALUATION_RUN_ID", "embedding-cache-test");
     vi.stubEnv("RAG_CORPUS_VERSION", "legacy-test");
-    mockEmbedContent.mockResolvedValue({
-      embeddings: [{ values: makeFakeVector(7) }],
-    });
+    mockFetch.mockImplementation(contextualizedEcho(7));
 
     await embedQuery("repeat exactly");
     await embedQuery("repeat exactly");
 
-    expect(mockEmbedContent).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
-  it("throws immediately when signal is pre-aborted (no SDK call)", async () => {
+  it("throws immediately when signal is pre-aborted (no API call)", async () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(
-      embedQuery("step3 abort test query", { signal: controller.signal })
-    ).rejects.toThrow(/signal already aborted/);
-
-    // Must NOT have called the real SDK — short-circuited before dispatch
-    expect(mockEmbedContent).not.toHaveBeenCalled();
+    await expect(embedQuery("abort test", { signal: controller.signal })).rejects.toThrow(
+      /signal already aborted/
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("still runs normally when signal is provided but not aborted", async () => {
-    mockEmbedContent.mockResolvedValueOnce({
-      embeddings: [{ values: makeFakeVector(42) }],
-    });
-    const controller = new AbortController();
+  // A live query embed backs off twice before giving up, on real delays,
+  // so the rejection is driven through fake timers.
+  it("converts a 429 into QuotaExhaustedError after the live retries", async () => {
+    mockFetch.mockImplementation(async () => jsonResponse({ detail: "rate limited" }, 429));
 
-    const result = await embedQuery("step3 not-aborted query", {
-      signal: controller.signal,
-    });
-
-    expect(result).toHaveLength(768);
-    expect(mockEmbedContent).toHaveBeenCalledTimes(1);
-  });
-
-  // A live query embed now backs off twice before giving up, so these
-  // rejections are driven through fake timers the same way the
-  // embedDocuments retry tests are. The assertions are unchanged.
-  async function drainWithBackoff<T>(run: () => Promise<T>): Promise<unknown> {
     vi.useFakeTimers();
     try {
-      const promise = run();
+      const promise = embedQuery("quota test");
       promise.catch(() => {});
       await vi.advanceTimersByTimeAsync(3_000);
-      return await promise.then(
-        () => {
-          throw new Error("expected a rejection");
-        },
-        (err: unknown) => err
-      );
+      const err = await promise.catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(QuotaExhaustedError);
+      expect((err as QuotaExhaustedError).op).toBe("embedQuery");
+      // One attempt plus the two live backoff retries.
+      expect(mockFetch).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
-  }
-
-  it("converts 429 Gemini errors into QuotaExhaustedError at the embedQuery call site", async () => {
-    const quotaErr = Object.assign(new Error("rate limit hit"), { code: 429 });
-    mockEmbedContent.mockRejectedValue(quotaErr);
-
-    const err = await drainWithBackoff(() => embedQuery("step5 quota test query"));
-    expect(err).toBeInstanceOf(QuotaExhaustedError);
-    if (err instanceof QuotaExhaustedError) {
-      expect(err.op).toBe("embedQuery");
-      expect(err.cause).toBe(quotaErr);
-    }
-    // One attempt plus the two live backoff retries.
-    expect(mockEmbedContent).toHaveBeenCalledTimes(3);
   });
 
   it("recovers when a transient query-embed quota trip clears", async () => {
-    mockEmbedContent
-      .mockRejectedValueOnce(Object.assign(new Error("rate limit hit"), { code: 429 }))
-      .mockResolvedValueOnce({ embeddings: [{ values: makeFakeVector(3) }] });
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ detail: "rate limited" }, 429))
+      .mockImplementationOnce(contextualizedEcho(3));
 
     vi.useFakeTimers();
     try {
-      const promise = embedQuery("step5 transient quota query");
+      const promise = embedQuery("transient quota");
       promise.catch(() => {});
       await vi.advanceTimersByTimeAsync(1_000);
-      await expect(promise).resolves.toHaveLength(768);
-      expect(mockEmbedContent).toHaveBeenCalledTimes(2);
+      await expect(promise).resolves.toHaveLength(1024);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("converts nested RESOURCE_EXHAUSTED error into QuotaExhaustedError", async () => {
-    const quotaErr = Object.assign(new Error("quota"), {
-      error: { code: 429, status: "RESOURCE_EXHAUSTED" },
-    });
-    mockEmbedContent.mockRejectedValue(quotaErr);
-
-    await expect(
-      drainWithBackoff(() => embedQuery("step5 nested-quota test query"))
-    ).resolves.toBeInstanceOf(QuotaExhaustedError);
-  });
-
   it("does NOT convert a generic 500 error into QuotaExhaustedError", async () => {
-    const otherErr = Object.assign(new Error("server boom"), { code: 500 });
-    mockEmbedContent.mockRejectedValueOnce(otherErr);
+    mockFetch.mockResolvedValueOnce(jsonResponse({ detail: "server boom" }, 500));
 
-    const promise = embedQuery("step5 generic-error test query");
+    const promise = embedQuery("generic error");
     await expect(promise).rejects.not.toBeInstanceOf(QuotaExhaustedError);
     await expect(promise).rejects.toThrow(/server boom/);
+  });
+
+  it("fails without a Voyage key", async () => {
+    vi.stubEnv("VOYAGE_API_KEY", "");
+    await expect(embedQuery("no key")).rejects.toThrow(/VOYAGE_API_KEY/);
+  });
+});
+
+describe("request pacing (VOYAGE_MAX_RPM / VOYAGE_MAX_TPM)", () => {
+  it("holds the fourth request of a minute until the window frees", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubEnv("VOYAGE_MAX_RPM", "3");
+      mockFetch.mockImplementation(contextualizedEcho());
+      const queries = ["a", "b", "c", "d"].map((q) => embedQuery(q));
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mockFetch).toHaveBeenCalledTimes(4);
+      await expect(Promise.all(queries)).resolves.toHaveLength(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps each model's window separate", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubEnv("VOYAGE_MAX_RPM", "1");
+      mockFetch.mockImplementation(async (url: string, init: RequestInit) =>
+        url.endsWith("/multimodalembeddings")
+          ? multimodalEcho()(url, init)
+          : contextualizedEcho()(url, init)
+      );
+      const both = Promise.all([embedQuery("text"), embedQuery("photo", { kind: "image" })]);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      await both;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("packs chunk requests under the token limit and waits on the tokens actually used", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubEnv("VOYAGE_MAX_TPM", "1000");
+      let calls = 0;
+      mockFetch.mockImplementation(async (url: string, init: RequestInit) => {
+        calls += 1;
+        const response = await contextualizedEcho()(url, init);
+        const body = await response.json();
+        return jsonResponse({ ...body, usage: { total_tokens: 800 } });
+      });
+      // Two articles of ~600 estimated tokens: too big to share one request.
+      const documents = [
+        { header: "H1", chunks: ["x".repeat(1_800)] },
+        { header: "H2", chunks: ["y".repeat(1_800)] },
+      ];
+      const done = embedArticleChunks(documents);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(calls).toBe(1); // 800 used of a 900 budget: the second waits
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(calls).toBe(2);
+      await expect(done).resolves.toHaveLength(2);
+      for (const call of fetchCalls()) {
+        expect((call.body.inputs as string[][]).length).toBe(1);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never waits when the limits are unset", async () => {
+    mockFetch.mockImplementation(contextualizedEcho());
+    await Promise.all(Array.from({ length: 10 }, (_, i) => embedQuery(`q${i}`)));
+    expect(mockFetch).toHaveBeenCalledTimes(10);
   });
 });

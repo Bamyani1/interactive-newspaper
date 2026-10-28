@@ -151,15 +151,15 @@ describe("generateAnswer", () => {
     expect(createMock).not.toHaveBeenCalled();
   });
 
-  it("uses Sonnet at low effort with structured output", async () => {
+  it("uses Sonnet at the profile's medium effort with structured output", async () => {
     createMock.mockResolvedValue(jsonResponse("Answer [Source 1]."));
     await generateAnswer("What happened?", [makeArticle()]);
 
     const call = createMock.mock.calls[0][0];
     expect(call.model).toBe("claude-sonnet-5-5");
-    expect(call.output_config.effort).toBe("low");
+    expect(call.output_config.effort).toBe("medium");
     expect(call.output_config.format.type).toBe("json_schema");
-    expect(call.max_tokens).toBe(8192);
+    expect(call.max_tokens).toBe(16_384);
     // Claude does not enforce maxLength; the SDK keeps it as guidance.
     expect(call.output_config.format.schema.properties.answer.description).toContain(
       "maxLength: 12000"
@@ -432,7 +432,7 @@ describe("generateAnswerStream", () => {
 
     const call = streamMock.mock.calls[0][0];
     expect(call.model).toBe("claude-sonnet-5-5");
-    expect(call.output_config.effort).toBe("low");
+    expect(call.output_config.effort).toBe("medium");
   });
 
   it("streams incremental deltas as the answer field arrives across chunks", async () => {

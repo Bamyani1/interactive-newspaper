@@ -21,26 +21,34 @@ import { fileURLToPath } from "node:url";
 
 const PAGE_SIZE = 400;
 
-/** Table -> (file, keyset query). Table names are constants, never input. */
+/**
+ * The column holding a build's vectors: 1024-dimension builds (0013) use
+ * embedding_1024, older ones embedding. Exports always call it `embedding`.
+ */
+export function vectorColumn(buildRow) {
+  return Number(buildRow.embedding_dims) === 1024 ? "embedding_1024" : "embedding";
+}
+
+/** Table -> (file, keyset query). Table and column names are constants, never input. */
 const TABLES = [
   {
     table: "article_chunks",
     file: "article_chunks.jsonl",
-    text: `SELECT id, index_build_id, article_id, chunk_index, chunk_text,
-                      embedding::text AS embedding, embedding_model,
+    text: (column) => `SELECT id, index_build_id, article_id, chunk_index, chunk_text,
+                      context_text, ${column}::text AS embedding, embedding_model,
                       embedding_input_version, embedding_input_hash, content_revision_id
                FROM article_chunks
-               WHERE index_build_id = $1 AND embedding IS NOT NULL AND id > $2
+               WHERE index_build_id = $1 AND ${column} IS NOT NULL AND id > $2
                ORDER BY id LIMIT $3`,
   },
   {
     table: "article_images",
     file: "article_images.jsonl",
-    text: `SELECT id, index_build_id, article_id, image_index, image_url, caption,
-                      embedding::text AS embedding, embedding_model,
+    text: (column) => `SELECT id, index_build_id, article_id, image_index, image_url, caption,
+                      ${column}::text AS embedding, embedding_model,
                       embedding_input_version, embedding_input_hash, content_revision_id
                FROM article_images
-               WHERE index_build_id = $1 AND embedding IS NOT NULL AND id > $2
+               WHERE index_build_id = $1 AND ${column} IS NOT NULL AND id > $2
                ORDER BY id LIMIT $3`,
   },
 ];
@@ -69,6 +77,7 @@ export async function exportBuildVectors(
     params: [buildId],
   });
   if (!buildRow) throw new Error(`Unknown index build ${buildId}.`);
+  const column = vectorColumn(buildRow);
   writeFileSync(path.join(dir, "rag_index_builds.json"), `${JSON.stringify(buildRow, null, 2)}\n`);
 
   const exported = {};
@@ -78,7 +87,7 @@ export async function exportBuildVectors(
     let count = 0;
     while (count < maxRowsPerTable) {
       const rows = await executor.query({
-        text,
+        text: text(column),
         params: [buildId, cursor, Math.min(PAGE_SIZE, maxRowsPerTable - count)],
       });
       if (rows.length === 0) break;
@@ -93,14 +102,15 @@ export async function exportBuildVectors(
   const [dbCounts] = await executor.query({
     text: `SELECT
                    (SELECT COUNT(*)::int FROM article_chunks
-                    WHERE index_build_id = $1 AND embedding IS NOT NULL) AS chunks,
+                    WHERE index_build_id = $1 AND ${column} IS NOT NULL) AS chunks,
                    (SELECT COUNT(*)::int FROM article_images
-                    WHERE index_build_id = $1 AND embedding IS NOT NULL) AS images`,
+                    WHERE index_build_id = $1 AND ${column} IS NOT NULL) AS images`,
     params: [buildId],
   });
 
   const manifest = {
     buildId,
+    embeddingDims: column === "embedding_1024" ? 1024 : 768,
     files: {},
     dbCounts: { chunks: Number(dbCounts.chunks), images: Number(dbCounts.images) },
   };

@@ -164,6 +164,7 @@ describe("canonical RAG retrieval", () => {
     expect(embedQueryMock).toHaveBeenCalledWith("semantic", {
       signal: controller.signal,
       requestId: "req-1",
+      kind: "text",
     });
     expect(queryArticlesByEmbeddingMock).toHaveBeenCalledWith([0.1, 0.2], {
       limit: 20,
@@ -184,6 +185,14 @@ describe("canonical RAG retrieval", () => {
         vector: { status: "success", count: 1 },
       },
     });
+  });
+
+  it("embeds a photo search with the image model's query vector", async () => {
+    await retrieveCandidates(candidateParams({ onlyWithImages: true }));
+    expect(embedQueryMock).toHaveBeenCalledWith(
+      "semantic",
+      expect.objectContaining({ kind: "image" })
+    );
   });
 
   it("stratifies across months for wide date ranges but not narrow ones", async () => {

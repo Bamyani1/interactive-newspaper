@@ -39,7 +39,8 @@ describe("article chunking", () => {
     };
     const records = buildArticleChunkRecords(article);
     expect(records[0].id).toBe("1965-03-15-4:0000");
-    expect(records[0].embeddingInput.text).toContain("title: Campus Event");
+    expect(records[0].embeddingInput.header).toContain("Headline: Campus Event");
+    expect(records[0].embeddingInput.text).toBe("First sentence. Second sentence.");
     expect(records[0].embeddingInputHash).toMatch(/^[a-f0-9]{64}$/);
     expect(buildArticleChunkRecords(article)).toEqual(records);
     expect(

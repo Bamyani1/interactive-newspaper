@@ -10,7 +10,8 @@
  *   legacy_content_aliases: revision row ids hash per-run content-item ULIDs
  *   (see scripts/db/backfill-identities.mjs) and are never portable between
  *   identity backfills. Rows whose article has no alias in the target abort
- *   the import.
+ *   the import, unless the export left them unlinked too (populate stores a
+ *   null revision for an article without an alias).
  * - Idempotent: all inserts are ON CONFLICT (id) DO NOTHING, and the final
  *   embedded-row counts must equal the manifest's dbCounts exactly.
  * - The build's corpus_version must already be registered in the target's
@@ -27,6 +28,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { vectorColumn } from "./export-build-vectors.mjs";
 // The migration runner and Neon executor are loaded lazily inside main()
 // (mirroring build-rag-index.mjs) so importing this module's library
 // functions never drags the database driver into test processes.
@@ -39,13 +41,14 @@ const CHUNK_COLS = [
   "article_id",
   "chunk_index",
   "chunk_text",
+  "context_text",
   "embedding",
   "embedding_model",
   "embedding_input_version",
   "embedding_input_hash",
   "content_revision_id",
 ];
-const CHUNK_CASTS = [null, null, null, "::int", null, "::vector", null, null, null, null];
+const CHUNK_CASTS = [null, null, null, "::int", null, null, "::vector", null, null, null, null];
 const IMAGE_COLS = [
   "id",
   "index_build_id",
@@ -66,6 +69,8 @@ const BUILD_IDENTITY_COLUMNS = [
   "corpus_version",
   "pipeline_version",
   "embedding_model",
+  "image_embedding_model",
+  "embedding_dims",
   "text_embedding_input_version",
   "image_embedding_input_version",
 ];
@@ -139,27 +144,30 @@ async function insertBuildRow(executor, sourceRow) {
   }
 }
 
-async function importTable(executor, dir, table, file, cols, casts, revisionMap, log) {
+async function importTable(executor, dir, table, file, cols, casts, column, revisionMap, log) {
   const rows = loadJsonl(dir, file).map((row) => {
     const localRevision = revisionMap.get(row.article_id);
-    if (!localRevision) {
+    if (!localRevision && row.content_revision_id != null) {
       throw new Error(`No target revision alias for article ${row.article_id} (${table}).`);
     }
-    return { ...row, content_revision_id: localRevision };
+    return { ...row, content_revision_id: localRevision ?? null };
   });
   let inserted = 0;
   for (let offset = 0; offset < rows.length; offset += BATCH_ROWS) {
     const batch = rows.slice(offset, offset + BATCH_ROWS);
     const params = [];
     const tuples = batch.map((row) => {
-      const parts = cols.map((column, i) => {
-        params.push(row[column]);
+      const parts = cols.map((name, i) => {
+        // Exports made before 0013 carry no context_text.
+        params.push(row[name] ?? null);
         return `$${params.length}${casts[i] ?? ""}`;
       });
       return `(${parts.join(", ")})`;
     });
+    // Exports name the vector `embedding`; it lands in the build's column.
+    const targetCols = cols.map((name) => (name === "embedding" ? column : name));
     const returned = await executor.query({
-      text: `INSERT INTO ${table} (${cols.join(", ")}) VALUES ${tuples.join(", ")}
+      text: `INSERT INTO ${table} (${targetCols.join(", ")}) VALUES ${tuples.join(", ")}
                    ON CONFLICT (id) DO NOTHING RETURNING 1`,
       params,
     });
@@ -198,6 +206,14 @@ export async function importBuildVectors(executor, { dir, log = () => {} } = {})
     );
   }
 
+  const column = vectorColumn(buildRow);
+  const buildDims = column === "embedding_1024" ? 1024 : 768;
+  if (manifest.embeddingDims !== undefined && manifest.embeddingDims !== buildDims) {
+    throw new Error(
+      `manifest embeddingDims ${manifest.embeddingDims} does not match the build row's ${buildDims}.`
+    );
+  }
+
   await insertBuildRow(executor, buildRow);
   const revisionMap = await loadRevisionMap(executor);
 
@@ -208,6 +224,7 @@ export async function importBuildVectors(executor, { dir, log = () => {} } = {})
     "article_chunks.jsonl",
     CHUNK_COLS,
     CHUNK_CASTS,
+    column,
     revisionMap,
     log
   );
@@ -219,6 +236,7 @@ export async function importBuildVectors(executor, { dir, log = () => {} } = {})
         "article_images.jsonl",
         IMAGE_COLS,
         IMAGE_CASTS,
+        column,
         revisionMap,
         log
       )
@@ -227,9 +245,9 @@ export async function importBuildVectors(executor, { dir, log = () => {} } = {})
   const [counts] = await executor.query({
     text: `SELECT
                    (SELECT COUNT(*)::int FROM article_chunks
-                    WHERE index_build_id = $1 AND embedding IS NOT NULL) AS chunks,
+                    WHERE index_build_id = $1 AND ${column} IS NOT NULL) AS chunks,
                    (SELECT COUNT(*)::int FROM article_images
-                    WHERE index_build_id = $1 AND embedding IS NOT NULL) AS images`,
+                    WHERE index_build_id = $1 AND ${column} IS NOT NULL) AS images`,
     params: [manifest.buildId],
   });
   const embedded = { chunks: Number(counts.chunks), images: Number(counts.images) };

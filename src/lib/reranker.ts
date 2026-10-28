@@ -12,10 +12,14 @@
  */
 
 import { getClaudeClient, jsonOutputFormat, messageText } from "@/src/lib/claude-client";
-import { executeTrackedGenerationCall } from "@/src/lib/cost-tracker";
+import {
+  executeTrackedEmbeddingCall,
+  executeTrackedGenerationCall,
+  type VoyageUsage,
+} from "@/src/lib/cost-tracker";
 import { QuotaExhaustedError } from "@/src/lib/embeddings";
 import { isAbortError, isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
-import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
+import { RAG_MODEL_CONFIG, RAG_RERANK_MODEL } from "@/src/lib/rag-model-config";
 import type { RetrievedArticle } from "@/src/lib/db";
 
 const RERANKER_MODEL = RAG_MODEL_CONFIG.rerank.model;
@@ -131,26 +135,45 @@ function articleDocument(a: RetrievedArticle, index: number | null, bodyChars: n
   return `${label}"${a.headline}" (${a.editionDate}, ${a.category})\nSummary: ${a.summary || "(none)"}\nExcerpt: ${bodyExcerpt}\nImage captions: ${imageCaptions || "(none)"}`;
 }
 
-const VOYAGE_RERANK_MODEL = "rerank-2.5";
 const VOYAGE_RERANK_URL = "https://api.voyageai.com/v1/rerank";
 const VOYAGE_TIMEOUT_MS = 5_000;
+/** rerank-3 reads 32K tokens a document, so it gets longer excerpts than the judge. */
+const VOYAGE_DOCUMENT_BODY_CHARS = 4_000;
+/**
+ * Candidates the judge sees after rerank-3 orders them in voyage+claude
+ * mode. At 20 the judge's excerpt budget gives each its full length.
+ */
+const VOYAGE_CASCADE_CANDIDATES = 20;
+
+type RerankerMode = "claude" | "voyage" | "voyage+claude";
 
 /**
- * Dedicated cross-encoder reranking via Voyage. Active only when
- * RAG_RERANKER=voyage and VOYAGE_API_KEY are both set: the key also serves
- * embeddings, and its presence alone must not switch reranking to an
- * unmeasured path. Any failure falls back to the LLM judge. Voyage
- * relevance scores (0..1) are mapped onto the pipeline's 0-10 scale.
+ * RAG_RERANKER picks the ranking: the Claude judge (default), rerank-3
+ * alone, or rerank-3 narrowing the candidates for the judge. Voyage modes
+ * also need VOYAGE_API_KEY; the key serves embeddings too, so its presence
+ * alone never switches ranking to an unmeasured path.
+ */
+function rerankerMode(): RerankerMode {
+  const mode = process.env.RAG_RERANKER?.trim();
+  if ((mode === "voyage" || mode === "voyage+claude") && process.env.VOYAGE_API_KEY?.trim()) {
+    return mode;
+  }
+  return "claude";
+}
+
+/**
+ * Dedicated cross-encoder reranking via Voyage rerank-3. Returns every
+ * article, best first, with relevance scores (0..1) mapped onto the
+ * pipeline's 0-10 scale, or null on any failure so the caller falls back
+ * to the LLM judge.
  */
 async function voyageRerank(
   question: string,
   articles: RetrievedArticle[],
-  minScore: number,
-  maxArticles: number,
   options: RerankOptions
 ): Promise<RankedArticle[] | null> {
-  const apiKey = process.env.VOYAGE_API_KEY;
-  if (process.env.RAG_RERANKER !== "voyage" || !apiKey) return null;
+  const apiKey = process.env.VOYAGE_API_KEY?.trim();
+  if (!apiKey) return null;
   const started = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), VOYAGE_TIMEOUT_MS);
@@ -158,23 +181,31 @@ async function voyageRerank(
     ? AbortSignal.any([options.signal, controller.signal])
     : controller.signal;
   try {
-    const res = await fetch(VOYAGE_RERANK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+    const payload = await executeTrackedEmbeddingCall({
+      model: RAG_RERANK_MODEL,
+      requestId: options.requestId,
+      op: "rerank.voyage",
+      call: async () => {
+        const res = await fetch(VOYAGE_RERANK_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: RAG_RERANK_MODEL,
+            query: question,
+            documents: articles.map((a) => articleDocument(a, null, VOYAGE_DOCUMENT_BODY_CHARS)),
+          }),
+          signal: combinedSignal,
+        });
+        if (!res.ok) throw new Error(`Voyage rerank HTTP ${res.status}`);
+        return (await res.json()) as {
+          data?: Array<{ index: number; relevance_score: number }>;
+          usage?: VoyageUsage;
+        };
       },
-      body: JSON.stringify({
-        model: VOYAGE_RERANK_MODEL,
-        query: question,
-        documents: articles.map((a) => articleDocument(a, null, bodyCharsFor(articles.length))),
-      }),
-      signal: combinedSignal,
     });
-    if (!res.ok) throw new Error(`Voyage rerank HTTP ${res.status}`);
-    const payload = (await res.json()) as {
-      data?: Array<{ index: number; relevance_score: number }>;
-    };
     const data = payload.data;
     if (!Array.isArray(data) || data.length === 0) {
       throw new Error("Voyage rerank returned no results");
@@ -185,9 +216,7 @@ async function voyageRerank(
         ...articles[r.index],
         relevanceScore: Math.max(0, Math.min(10, r.relevance_score * 10)),
       }))
-      .filter((a) => a.relevanceScore >= minScore)
-      .sort((a, b) => b.relevanceScore - a.relevanceScore)
-      .slice(0, maxArticles);
+      .sort((a, b) => b.relevanceScore - a.relevanceScore);
     console.warn(
       JSON.stringify({
         level: "info",
@@ -195,9 +224,8 @@ async function voyageRerank(
         requestId: options.requestId,
         stage: "rerank",
         provider: "voyage",
-        model: VOYAGE_RERANK_MODEL,
+        model: RAG_RERANK_MODEL,
         docCount: articles.length,
-        keptCount: ranked.length,
         latencyMs: Date.now() - started,
       })
     );
@@ -309,12 +337,20 @@ export async function rerankArticles(
   // Nothing to rerank
   if (articles.length === 0) return [];
 
-  const voyageRanked = await voyageRerank(question, articles, minScore, maxArticles, options);
-  if (voyageRanked !== null) return voyageRanked;
+  const mode = rerankerMode();
+  let candidates = articles;
+  if (mode !== "claude") {
+    const voyageRanked = await voyageRerank(question, articles, options);
+    if (voyageRanked !== null && mode === "voyage") {
+      return voyageRanked.filter((a) => a.relevanceScore >= minScore).slice(0, maxArticles);
+    }
+    // The judge rescores the cascade's survivors from scratch.
+    if (voyageRanked !== null) candidates = voyageRanked.slice(0, VOYAGE_CASCADE_CANDIDATES);
+  }
 
   try {
-    const bodyChars = bodyCharsFor(articles.length);
-    let judged = articles;
+    const bodyChars = bodyCharsFor(candidates.length);
+    let judged = candidates;
     let scores: number[] | null;
     try {
       scores = await judgeScores(question, judged, bodyChars, options);
@@ -325,9 +361,9 @@ export async function rerankArticles(
       // Ask once more about the top of the fused order at the same excerpt
       // length, so the retry prompt is half the size instead of the same
       // excerpt budget spread over fewer articles.
-      judged = articles.slice(
+      judged = candidates.slice(
         0,
-        Math.min(RERANKER_TIMEOUT_RETRY_CANDIDATES, Math.ceil(articles.length / 2))
+        Math.min(RERANKER_TIMEOUT_RETRY_CANDIDATES, Math.ceil(candidates.length / 2))
       );
       console.warn(
         JSON.stringify({
@@ -336,14 +372,14 @@ export async function rerankArticles(
           requestId: options.requestId,
           stage: "rerank",
           msg: "reranker timed out; retrying with fewer candidates",
-          articleCount: articles.length,
+          articleCount: candidates.length,
           retryCount: judged.length,
         })
       );
       scores = await judgeScores(question, judged, bodyChars, options);
     }
 
-    if (!scores) return failOpen(articles, maxArticles);
+    if (!scores) return failOpen(candidates, maxArticles);
 
     // Attach scores, filter, sort, and cap
     return judged
@@ -373,7 +409,7 @@ export async function rerankArticles(
     // generator is about to 429 as well, so an unvetted candidate set would
     // only buy a worse answer.
     if (quota) throw new QuotaExhaustedError("rerank", err);
-    return failOpen(articles, maxArticles);
+    return failOpen(candidates, maxArticles);
   }
 }
 

@@ -242,6 +242,41 @@ describe("scoreRun recall counts an any-of list as one unit", () => {
   });
 });
 
+describe("scoreRun fact recall", () => {
+  const records = [
+    makeRecord({ questionId: "qf1", text: "The Board met in GRAY CHAPEL in 1968.", totalMs: 1000 }),
+    makeRecord({ questionId: "qf2", text: "Nothing relevant here.", totalMs: 1000 }),
+    makeRecord({ questionId: "qf3", text: "No facts were expected.", totalMs: 1000 }),
+  ];
+  const scores = scoreRun({
+    runFile: finalizeRunFile({
+      schemaVersion: 1,
+      runId: RUN_ID,
+      datasetId: DATASET_ID,
+      split: "development",
+      config: records[0].config,
+      startedAt: null,
+      records,
+      totals: computeRunTotals(records),
+      selfSha256: null,
+    }),
+    evidence: {
+      datasetId: DATASET_ID,
+      split: "development",
+      questions: [
+        // Both groups hit, one of them case-insensitively.
+        { id: "qf1", expectedFactsAny: [["Gray Chapel", "Slocum"], ["1968"]] },
+        { id: "qf2", expectedFactsAny: [["moratorium"]] },
+        { id: "qf3" },
+      ],
+    },
+  });
+
+  it("averages the share of fact groups each answer covers: (2/2 + 0/1) / 2", () => {
+    expect(scores.metrics.factRecall).toBe(0.5);
+  });
+});
+
 describe("scoreRun citation and answer metrics", () => {
   const scores = scoreRun({ runFile: makeRunFile(), evidence });
 

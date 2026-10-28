@@ -335,7 +335,7 @@ export async function runEvalQuestions(options: RunEvalOptions): Promise<RunEval
 // ─── CLI entry point ────────────────────────────────────────────
 
 interface CliArgs {
-  dataset: "dev" | "holdout";
+  dataset: "dev" | "dev2" | "holdout";
   mode: "legacy" | "versioned";
   build: string | null;
   out: string;
@@ -370,8 +370,8 @@ function parseArgs(argv: string[]): CliArgs {
     switch (flag) {
       case "--dataset": {
         const value = next();
-        if (value !== "dev" && value !== "holdout") {
-          throw new Error(`--dataset must be dev or holdout, got ${value}`);
+        if (value !== "dev" && value !== "dev2" && value !== "holdout") {
+          throw new Error(`--dataset must be dev, dev2 or holdout, got ${value}`);
         }
         args.dataset = value;
         break;
@@ -492,7 +492,9 @@ async function main(): Promise<void> {
   const datasetPath =
     args.dataset === "dev"
       ? path.resolve("tests/api/rag-golden-questions.json")
-      : path.resolve("evaluation/rag/holdout/rag-holdout-v1.json");
+      : args.dataset === "dev2"
+        ? path.resolve("tests/api/rag-dev-v2-questions.json")
+        : path.resolve("evaluation/rag/holdout/rag-holdout-v1.json");
   const catalog = loadBlindQuestions(datasetPath);
   // Smoke passes: --limit truncates by question COUNT in catalog order.
   // Only the blind-safe identity fields are ever touched, so the

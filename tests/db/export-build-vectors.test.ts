@@ -15,8 +15,10 @@ import {
 import { exportBuildVectors } from "../../scripts/db/export-build-vectors.mjs";
 import { importBuildVectors } from "../../scripts/db/import-build-vectors.mjs";
 import {
+  RAG_EMBEDDING_DIMS,
   RAG_EMBEDDING_MODEL,
   RAG_IMAGE_EMBEDDING_INPUT_VERSION,
+  RAG_IMAGE_EMBEDDING_MODEL,
   RAG_PIPELINE_VERSION,
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "../../src/lib/rag-model-config";
@@ -94,14 +96,22 @@ describe("export-build-vectors round trip", () => {
       corpusVersion: CORPUS,
       pipelineVersion: RAG_PIPELINE_VERSION,
       embeddingModel: RAG_EMBEDDING_MODEL,
+      imageEmbeddingModel: RAG_IMAGE_EMBEDDING_MODEL,
+      embeddingDims: RAG_EMBEDDING_DIMS,
       textInputVersion: RAG_TEXT_EMBEDDING_INPUT_VERSION,
       imageInputVersion: RAG_IMAGE_EMBEDDING_INPUT_VERSION,
     });
     await populateBuildRecords(source.executor, buildId);
     await embedBuildText(source.executor, buildId, {
-      embedFn: async (inputs: Array<{ text: string }>) =>
-        inputs.map(() => Array.from({ length: 768 }, (_, i) => i / 1000)),
+      embedChunksFn: async (documents: Array<{ chunks: string[] }>) =>
+        documents.map((doc) =>
+          doc.chunks.map(() => Array.from({ length: RAG_EMBEDDING_DIMS }, (_, i) => i / 1000))
+        ),
     });
+    await source.pg.query(
+      `UPDATE article_chunks SET context_text = 'A dormitory fire drill.' WHERE index_build_id = $1`,
+      [buildId]
+    );
     await finalizeBuild(source.executor, buildId);
     dir = mkdtempSync(path.join(tmpdir(), "export-rt-"));
   }, 120_000);
@@ -124,6 +134,8 @@ describe("export-build-vectors round trip", () => {
     const full = await exportBuildVectors(source.executor, { buildId, dir });
     expect(full.complete).toBe(true);
     expect(full.onDisk.chunks).toBe(full.dbCounts.chunks);
+    const manifest = JSON.parse(readFileSync(path.join(dir, "manifest.json"), "utf8"));
+    expect(manifest.embeddingDims).toBe(RAG_EMBEDDING_DIMS);
     // The resumed run appended after the partial cursor — no duplicates.
     const ids = readFileSync(path.join(dir, "article_chunks.jsonl"), "utf8")
       .trimEnd()
@@ -136,5 +148,16 @@ describe("export-build-vectors round trip", () => {
     const result = await importBuildVectors(target.executor, { dir });
     expect(result.buildId).toBe(buildId);
     expect(result.embedded.chunks).toBeGreaterThan(0);
+
+    // Context lines travel with the vectors and are indexed on arrival.
+    const { rows } = await target.pg.query<{ total: number; matched: number }>(
+      `SELECT count(*)::int AS total,
+              count(*) FILTER (WHERE search_vector @@ plainto_tsquery('english', 'dormitory'))::int
+                AS matched
+         FROM article_chunks WHERE index_build_id = $1`,
+      [buildId]
+    );
+    expect(rows[0].total).toBe(result.embedded.chunks);
+    expect(rows[0].matched).toBe(rows[0].total);
   });
 });

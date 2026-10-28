@@ -18,11 +18,12 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import type { EmbedContentResponse } from "@google/genai";
 import {
-  RAG_ANSWER_MODEL,
+  RAG_ANSWER_PROFILES,
   RAG_EMBEDDING_MODEL,
   RAG_GENERATION_MODEL,
+  RAG_IMAGE_EMBEDDING_MODEL,
+  RAG_RERANK_MODEL,
 } from "@/src/lib/rag-model-config";
 import { getRagEvaluationConfig } from "@/src/lib/rag-evaluation";
 import { runWithDbTimeout } from "@/src/lib/db-timeout";
@@ -33,12 +34,17 @@ interface TokenPrice {
 }
 
 // USD per 1,000,000 tokens for standard online requests. Haiku 5.5 bills a
-// prompt over 100K tokens at a higher rate for the whole call.
+// prompt over 100K tokens at a higher rate for the whole call. Voyage rates
+// are list prices, so calls inside the free allowance are counted too.
 const PRICE_PER_MTOKEN: Record<string, TokenPrice & { longPrompt?: TokenPrice }> = {
   [RAG_GENERATION_MODEL]: { input: 0.1, output: 0.5, longPrompt: { input: 0.5, output: 2.5 } },
-  [RAG_ANSWER_MODEL]: { input: 2, output: 10 },
-  [RAG_EMBEDDING_MODEL]: { input: 0.2, output: 0 },
+  [RAG_ANSWER_PROFILES["sonnet-medium"].model]: { input: 2, output: 10 },
+  [RAG_EMBEDDING_MODEL]: { input: 0.12, output: 0 },
+  [RAG_IMAGE_EMBEDDING_MODEL]: { input: 0.12, output: 0 },
+  [RAG_RERANK_MODEL]: { input: 0.05, output: 0 },
 };
+// voyage-multimodal-3.5 bills pixels apart from text tokens.
+const VOYAGE_USD_PER_BILLION_PIXELS = 0.6;
 const LONG_PROMPT_TOKENS = 100_000;
 // Claude bills cache reads at a tenth of the input rate and 5-minute cache
 // writes at 1.25 times it.
@@ -52,7 +58,14 @@ export interface GenerationUsage {
   cache_creation_input_tokens?: number | null;
   cache_read_input_tokens?: number | null;
 }
-const GEMINI_EMBEDDING_2_IMAGE_USD = 0.00012;
+
+/** The usage block on a Voyage response (embeddings or rerank). */
+export interface VoyageUsage {
+  total_tokens: number;
+  /** Multimodal embeddings only, with image_pixels. */
+  text_tokens?: number;
+  image_pixels?: number;
+}
 
 // The daily cap comes from RAG_DAILY_BUDGET_USD so it can be raised for a
 // launch or lowered for a quiet month without a deploy. The hard maximum is
@@ -294,31 +307,19 @@ export function computeCostUsd(model: string, usage: GenerationUsage | undefined
   return (inputUsd + usage.output_tokens * price.output) / 1_000_000;
 }
 
-export function embeddingTokenCount(response: EmbedContentResponse): number {
-  const exact = response.embeddings?.reduce(
-    (sum, embedding) => sum + (embedding.statistics?.tokenCount ?? 0),
-    0
-  );
-  if (exact && exact > 0) return exact;
-
-  // Vertex exposes billable characters even when per-item token statistics
-  // are absent. The fallback is explicitly an estimate and is only used for
-  // the local spend guard/telemetry, never billing reconciliation.
-  const billableChars = response.metadata?.billableCharacterCount ?? 0;
-  return Math.ceil(billableChars / 4);
+/** Billable tokens: the multimodal model counts text apart from pixels. */
+export function voyageTokenCount(usage: VoyageUsage | undefined): number {
+  if (!usage) return 0;
+  return usage.text_tokens ?? usage.total_tokens;
 }
 
-export function computeEmbeddingCostUsd(
-  model: string,
-  response: EmbedContentResponse,
-  options: { imageCount?: number } = {}
-): number {
+/** Prices a Voyage embeddings or rerank call from its usage block. */
+export function computeEmbeddingCostUsd(model: string, usage: VoyageUsage | undefined): number {
   const price = PRICE_PER_MTOKEN[model];
-  if (!price) return 0;
-  const textCost = (embeddingTokenCount(response) * price.input) / 1_000_000;
-  const imageCost =
-    model === RAG_EMBEDDING_MODEL ? (options.imageCount ?? 0) * GEMINI_EMBEDDING_2_IMAGE_USD : 0;
-  return textCost + imageCost;
+  if (!price || !usage) return 0;
+  const textCost = (voyageTokenCount(usage) * price.input) / 1_000_000;
+  const pixelCost = ((usage.image_pixels ?? 0) * VOYAGE_USD_PER_BILLION_PIXELS) / 1_000_000_000;
+  return textCost + pixelCost;
 }
 
 /** Execute, reserve, settle, and record one non-streaming generation call. */
@@ -347,12 +348,11 @@ export async function executeTrackedGenerationCall<T extends { usage?: Generatio
   }
 }
 
-/** Execute, reserve, settle, and record one embedding call. */
-export async function executeTrackedEmbeddingCall<T extends EmbedContentResponse>(options: {
+/** Execute, reserve, settle, and record one Voyage call (embeddings or rerank). */
+export async function executeTrackedEmbeddingCall<T extends { usage?: VoyageUsage }>(options: {
   model: string;
   requestId?: string;
   op: string;
-  imageCount?: number;
   call: () => Promise<T>;
 }): Promise<T> {
   const reservation = reserveEvaluationGoogleCall({
@@ -366,15 +366,12 @@ export async function executeTrackedEmbeddingCall<T extends EmbedContentResponse
     if (reservation) {
       settleEvaluationGoogleCall(
         reservation,
-        computeEmbeddingCostUsd(options.model, response, {
-          imageCount: options.imageCount,
-        })
+        computeEmbeddingCostUsd(options.model, response.usage)
       );
     }
-    void recordEmbeddingUsage(options.model, response, {
+    void recordEmbeddingUsage(options.model, response.usage, {
       requestId: options.requestId,
       op: options.op,
-      imageCount: options.imageCount,
       evaluationCostAlreadyRecorded: Boolean(reservation),
     });
     return response;
@@ -517,18 +514,15 @@ export async function recordUsage(
 
 export async function recordEmbeddingUsage(
   model: string,
-  response: EmbedContentResponse,
+  usage: VoyageUsage | undefined,
   context: {
     requestId?: string;
     op: string;
-    imageCount?: number;
     evaluationCostAlreadyRecorded?: boolean;
   }
 ): Promise<void> {
-  const tokens = embeddingTokenCount(response);
-  const cost = computeEmbeddingCostUsd(model, response, {
-    imageCount: context.imageCount,
-  });
+  const tokens = voyageTokenCount(usage);
+  const cost = computeEmbeddingCostUsd(model, usage);
   if (cost === 0) return;
   const evaluation = getRagEvaluationConfig();
   let evaluationTotalUsd: number | undefined;
@@ -571,7 +565,7 @@ export async function recordEmbeddingUsage(
       requestId: context.requestId,
       model,
       inputTokens: tokens,
-      imageCount: context.imageCount ?? 0,
+      imagePixels: usage?.image_pixels ?? 0,
       costUsd: cost,
       evaluationRunId: evaluation.runId ?? undefined,
       evaluationTotalUsd,

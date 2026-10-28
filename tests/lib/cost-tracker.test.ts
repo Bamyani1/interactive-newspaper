@@ -20,7 +20,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL ?? "postgres://fake/test";
 import {
   computeCostUsd,
   computeEmbeddingCostUsd,
-  embeddingTokenCount,
+  voyageTokenCount,
   checkDailyBudget,
   recordUsage,
   secondsUntilBudgetReset,
@@ -38,7 +38,13 @@ import {
   reserveEvaluationGoogleCall,
   settleEvaluationGoogleCall,
 } from "@/src/lib/cost-tracker";
-import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
+import {
+  RAG_ANSWER_PROFILES,
+  RAG_EMBEDDING_MODEL,
+  RAG_IMAGE_EMBEDDING_MODEL,
+  RAG_MODEL_CONFIG,
+  RAG_RERANK_MODEL,
+} from "@/src/lib/rag-model-config";
 
 const ORIGINAL_BUDGET = 0.5;
 
@@ -62,6 +68,17 @@ describe("computeCostUsd", () => {
     expect(computeCostUsd(model, { input_tokens: 1_000, output_tokens: 1_000 })).toBeGreaterThan(0);
   });
 
+  it.each(Object.entries(RAG_ANSWER_PROFILES))("prices the %s profile", (_name, { model }) => {
+    expect(computeCostUsd(model, { input_tokens: 1_000, output_tokens: 1_000 })).toBeGreaterThan(0);
+  });
+
+  it.each([RAG_EMBEDDING_MODEL, RAG_IMAGE_EMBEDDING_MODEL, RAG_RERANK_MODEL])(
+    "prices the Voyage model %s",
+    (model) => {
+      expect(computeEmbeddingCostUsd(model, { total_tokens: 1_000 })).toBeGreaterThan(0);
+    }
+  );
+
   it("multiplies tokens by the model's input+output rate", () => {
     // 1M input at $2/M + 1M output (thinking included) at $10/M.
     const cost = computeCostUsd("claude-sonnet-5-5", {
@@ -72,11 +89,11 @@ describe("computeCostUsd", () => {
   });
 
   it("handles embedding model with zero output price", () => {
-    const cost = computeCostUsd("gemini-embedding-2", {
+    const cost = computeCostUsd("voyage-context-4", {
       input_tokens: 1_000_000,
       output_tokens: 0,
     });
-    expect(cost).toBeCloseTo(0.2, 6);
+    expect(cost).toBeCloseTo(0.12, 6);
   });
 
   it("bills cache reads at a tenth and cache writes at 1.25 times the input rate", () => {
@@ -106,29 +123,26 @@ describe("computeCostUsd", () => {
 });
 
 describe("embedding cost", () => {
-  it("uses exact Vertex token statistics and the per-image charge", () => {
-    const response = {
-      embeddings: [
-        { values: [], statistics: { tokenCount: 600 } },
-        { values: [], statistics: { tokenCount: 400 } },
-      ],
-      metadata: { billableCharacterCount: 999_999 },
-    };
-    expect(embeddingTokenCount(response)).toBe(1000);
-    expect(
-      computeEmbeddingCostUsd("gemini-embedding-2", response, {
-        imageCount: 2,
-      })
-    ).toBeCloseTo(0.00044, 8);
+  it("prices text tokens from Voyage's usage block", () => {
+    expect(computeEmbeddingCostUsd("voyage-context-4", { total_tokens: 1_000_000 })).toBeCloseTo(
+      0.12,
+      8
+    );
+    expect(computeEmbeddingCostUsd("rerank-3", { total_tokens: 1_000_000 })).toBeCloseTo(0.05, 8);
   });
 
-  it("falls back to billable characters when token statistics are absent", () => {
-    expect(
-      embeddingTokenCount({
-        embeddings: [{ values: [] }],
-        metadata: { billableCharacterCount: 400 },
-      })
-    ).toBe(100);
+  it("prices multimodal text tokens and pixels separately", () => {
+    const usage = { total_tokens: 3_000, text_tokens: 1_000, image_pixels: 1_000_000 };
+    expect(voyageTokenCount(usage)).toBe(1_000);
+    expect(computeEmbeddingCostUsd("voyage-multimodal-3.5", usage)).toBeCloseTo(
+      (1_000 * 0.12) / 1e6 + (1_000_000 * 0.6) / 1e9,
+      10
+    );
+  });
+
+  it("prices nothing without usage or for an unknown model", () => {
+    expect(computeEmbeddingCostUsd("voyage-context-4", undefined)).toBe(0);
+    expect(computeEmbeddingCostUsd("unknown-model", { total_tokens: 100 })).toBe(0);
   });
 });
 

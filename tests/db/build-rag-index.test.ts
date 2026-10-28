@@ -4,24 +4,31 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
-import type { EmbedContentResponse } from "@google/genai";
+import sharp from "sharp";
 import { runMigrations } from "../../scripts/db/lib/migration-runner";
 import {
   activateBuild,
+  contextualizeBuildChunks,
   createIndexBuild,
   dryRunReport,
   embedBuildImages,
   embedBuildText,
   finalizeBuild,
+  fitImageForVoyage,
   populateBuildRecords,
+  registerCorpus,
   rollbackActivation,
+  sniffImageMime,
 } from "../../scripts/db/build-rag-index.mjs";
 import { buildArticleChunkRecords } from "../../src/lib/article-chunking";
-import { buildEmbeddingInput } from "../../src/lib/embeddings";
-import { computeEmbeddingCostUsd } from "../../src/lib/cost-tracker";
+import { buildChunkHeader, buildEmbeddingInput, type ChunkedDocument } from "../../src/lib/embeddings";
+import { computeCostUsd, computeEmbeddingCostUsd } from "../../src/lib/cost-tracker";
 import {
+  RAG_EMBEDDING_DIMS,
   RAG_EMBEDDING_MODEL,
+  RAG_GENERATION_MODEL,
   RAG_IMAGE_EMBEDDING_INPUT_VERSION,
+  RAG_IMAGE_EMBEDDING_MODEL,
   RAG_PIPELINE_VERSION,
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "../../src/lib/rag-model-config";
@@ -45,6 +52,8 @@ const BUILD_OPTIONS = {
   corpusVersion: CORPUS,
   pipelineVersion: RAG_PIPELINE_VERSION,
   embeddingModel: RAG_EMBEDDING_MODEL,
+  imageEmbeddingModel: RAG_IMAGE_EMBEDDING_MODEL,
+  embeddingDims: RAG_EMBEDDING_DIMS,
   textInputVersion: RAG_TEXT_EMBEDDING_INPUT_VERSION,
   imageInputVersion: RAG_IMAGE_EMBEDDING_INPUT_VERSION,
 } as const;
@@ -134,7 +143,24 @@ function deterministicVector(text: string): number[] {
   for (let index = 0; index < text.length; index += 1) {
     acc = (acc * 31 + text.charCodeAt(index)) % 997;
   }
-  return Array.from({ length: 768 }, (_, i) => ((acc + i) % 100) / 100);
+  return Array.from({ length: RAG_EMBEDDING_DIMS }, (_, i) => ((acc + i) % 100) / 100);
+}
+
+interface FakeEmbedChunksFn {
+  (documents: ChunkedDocument[]): Promise<number[][][]>;
+  calls: number;
+  documents: ChunkedDocument[];
+}
+
+function makeEmbedChunksFn(): FakeEmbedChunksFn {
+  const fn = (async (documents: ChunkedDocument[]) => {
+    fn.calls += 1;
+    fn.documents.push(...documents);
+    return documents.map((doc) => doc.chunks.map((chunk) => deterministicVector(chunk)));
+  }) as FakeEmbedChunksFn;
+  fn.calls = 0;
+  fn.documents = [];
+  return fn;
 }
 
 interface FakeEmbedFn {
@@ -151,14 +177,11 @@ function makeEmbedFn(): FakeEmbedFn {
   return fn;
 }
 
-function fakeWebpBuffer(): Buffer {
-  const payload = Buffer.alloc(24, 7);
-  const buffer = Buffer.alloc(12 + payload.length);
-  buffer.write("RIFF", 0, "ascii");
-  buffer.writeUInt32LE(4 + payload.length, 4);
-  buffer.write("WEBP", 8, "ascii");
-  payload.copy(buffer, 12);
-  return buffer;
+/** A real (tiny) webp: the build decodes images to check their size. */
+async function webpBuffer(): Promise<Buffer> {
+  return sharp({ create: { width: 8, height: 8, channels: 3, background: "#777" } })
+    .webp()
+    .toBuffer();
 }
 
 /** Serves the object as a two-part async iterable to exercise streaming. */
@@ -169,9 +192,9 @@ function streamOf(buffer: Buffer): AsyncIterable<Buffer> {
   })();
 }
 
-function syntheticResponse(tokenCount: number): EmbedContentResponse {
-  return { embeddings: [{ statistics: { tokenCount } }] } as EmbedContentResponse;
-}
+// The build script cannot see photo sizes before reading them, so it prices
+// each photo at this estimate (ESTIMATED_PIXELS_PER_IMAGE in the script).
+const ESTIMATED_PIXELS = 1_500_000;
 
 async function insertFixture(pg: PGlite): Promise<void> {
   await pg.query(
@@ -253,6 +276,29 @@ describe("build-rag-index against PGlite", () => {
     expect(rows[0]).toEqual({ status: "building", corpus_version: CORPUS });
   });
 
+  it("createIndexBuild registers its corpus", async () => {
+    const { rows } = await db.pg.query<{ id: string }>(
+      "SELECT id FROM corpus_versions WHERE id = $1",
+      [CORPUS]
+    );
+    expect(rows).toEqual([{ id: CORPUS }]);
+  });
+
+  it("registerCorpus inserts once and is idempotent", async () => {
+    expect(await registerCorpus(db.executor, "corpus-register-test")).toEqual({
+      id: "corpus-register-test",
+      inserted: true,
+    });
+    expect(await registerCorpus(db.executor, "corpus-register-test")).toEqual({
+      id: "corpus-register-test",
+      inserted: false,
+    });
+    const { rows } = await db.pg.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM corpus_versions WHERE id = 'corpus-register-test'"
+    );
+    expect(rows[0].n).toBe(1);
+  });
+
   it("populates build-scoped records with alias-derived content_revision_id", async () => {
     const counts = await populateBuildRecords(db.executor, buildA);
     expect(counts).toEqual({ articles: 3, chunks: TOTAL_CHUNKS, images: 2 });
@@ -313,22 +359,30 @@ describe("build-rag-index against PGlite", () => {
   });
 
   it("embeds every text chunk with cost-tracker pricing", async () => {
-    const embedFn = makeEmbedFn();
-    const result = await embedBuildText(db.executor, buildA, { embedFn });
+    const embedChunksFn = makeEmbedChunksFn();
+    const result = await embedBuildText(db.executor, buildA, { embedChunksFn });
     expect(result.planned).toBe(TOTAL_CHUNKS);
     expect(result.embedded).toBe(TOTAL_CHUNKS);
     expect(result.skipped).toBe(0);
     expect(result.failed).toEqual([]);
     expect(result.textTokens).toBeGreaterThan(0);
     expect(result.costUsd).toBeCloseTo(
-      computeEmbeddingCostUsd(RAG_EMBEDDING_MODEL, syntheticResponse(result.textTokens)),
+      computeEmbeddingCostUsd(RAG_EMBEDDING_MODEL, { total_tokens: result.textTokens }),
       12
     );
-    expect(embedFn.calls).toBe(Math.ceil(TOTAL_CHUNKS / 50));
+    expect(embedChunksFn.calls).toBe(1); // 3 articles fit one batch
+
+    // One document per article, led by its header, chunks in order.
+    expect(embedChunksFn.documents).toEqual(
+      expectedChunkRecords().map(({ article, records }) => ({
+        header: buildChunkHeader(article),
+        chunks: records.map((record) => record.embeddingInput.text),
+      }))
+    );
 
     const { rows } = await db.pg.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM article_chunks
-             WHERE index_build_id = $1 AND embedding IS NOT NULL
+             WHERE index_build_id = $1 AND embedding_1024 IS NOT NULL
                AND embedding_model = $2 AND embedding_input_version = $3`,
       [buildA, RAG_EMBEDDING_MODEL, RAG_TEXT_EMBEDDING_INPUT_VERSION]
     );
@@ -336,13 +390,13 @@ describe("build-rag-index against PGlite", () => {
   });
 
   it("exact-hash resumability: a second text pass never calls the model", async () => {
-    const embedFn = makeEmbedFn();
-    const result = await embedBuildText(db.executor, buildA, { embedFn });
+    const embedChunksFn = makeEmbedChunksFn();
+    const result = await embedBuildText(db.executor, buildA, { embedChunksFn });
     expect(result.planned).toBe(0);
     expect(result.embedded).toBe(0);
     expect(result.skipped).toBe(TOTAL_CHUNKS);
     expect(result.failed).toEqual([]);
-    expect(embedFn.calls).toBe(0);
+    expect(embedChunksFn.calls).toBe(0);
   });
 
   it("streams images one at a time and isolates per-item failures", async () => {
@@ -350,7 +404,7 @@ describe("build-rag-index against PGlite", () => {
     const goodKey = `ocr-assets/${HEX64}.webp`;
     const fetchObject = async (key: string) => {
       fetchedKeys.push(key);
-      if (key === goodKey) return streamOf(fakeWebpBuffer());
+      if (key === goodKey) return streamOf(await webpBuffer());
       throw new Error(`NoSuchKey: ${key}`);
     };
     const embedFn = makeEmbedFn();
@@ -381,8 +435,10 @@ describe("build-rag-index against PGlite", () => {
     });
     const imageTokens = Math.ceil(imageInput.text.length / 4);
     expect(result.costUsd).toBeCloseTo(
-      computeEmbeddingCostUsd(RAG_EMBEDDING_MODEL, syntheticResponse(imageTokens), {
-        imageCount: 1,
+      computeEmbeddingCostUsd(RAG_IMAGE_EMBEDDING_MODEL, {
+        total_tokens: imageTokens,
+        text_tokens: imageTokens,
+        image_pixels: ESTIMATED_PIXELS,
       }),
       12
     );
@@ -392,7 +448,7 @@ describe("build-rag-index against PGlite", () => {
       has_embedding: boolean;
       embedding_input_hash: string | null;
     }>(
-      `SELECT id, (embedding IS NOT NULL) AS has_embedding, embedding_input_hash
+      `SELECT id, (embedding_1024 IS NOT NULL) AS has_embedding, embedding_input_hash
              FROM article_images WHERE index_build_id = $1 ORDER BY id`,
       [buildA]
     );
@@ -430,9 +486,9 @@ describe("build-rag-index against PGlite", () => {
 
   it("no-force invariant: finalized builds are immutable; a rebuild is a NEW id", async () => {
     await expect(finalizeBuild(db.executor, buildA)).rejects.toThrow(/immutable/);
-    await expect(embedBuildText(db.executor, buildA, { embedFn: makeEmbedFn() })).rejects.toThrow(
-      /immutable/
-    );
+    await expect(
+      embedBuildText(db.executor, buildA, { embedChunksFn: makeEmbedChunksFn() })
+    ).rejects.toThrow(/immutable/);
     await expect(populateBuildRecords(db.executor, buildA)).rejects.toThrow(/immutable/);
 
     const rebuild = await createIndexBuild(db.executor, BUILD_OPTIONS);
@@ -455,7 +511,7 @@ describe("build-rag-index against PGlite", () => {
     // A second validated build of the same corpus cannot activate on top.
     const rival = await createIndexBuild(db.executor, BUILD_OPTIONS);
     await populateBuildRecords(db.executor, rival);
-    await embedBuildText(db.executor, rival, { embedFn: makeEmbedFn() });
+    await embedBuildText(db.executor, rival, { embedChunksFn: makeEmbedChunksFn() });
     await finalizeBuild(db.executor, rival);
     await expect(activateBuild(db.executor, rival)).rejects.toThrow(/already has active build/);
 
@@ -474,38 +530,97 @@ describe("build-rag-index against PGlite", () => {
     await rollbackActivation(db.executor, rival);
   });
 
+  it("writes Claude context lines once and indexes them for keyword search", async () => {
+    const build = await createIndexBuild(db.executor, BUILD_OPTIONS);
+    await populateBuildRecords(db.executor, build);
+
+    interface ContextRequest {
+      custom_id: string;
+      params: Record<string, unknown>;
+    }
+    const usage = { input_tokens: 1_000, output_tokens: 40 };
+    const sent: ContextRequest[] = [];
+    let blankFirst = true;
+    const runBatch = async (requests: ContextRequest[]) => {
+      sent.push(...requests);
+      const results = requests.map((request, index) => ({
+        custom_id: request.custom_id,
+        text: blankFirst && index === 0 ? "  " : "A courtroom contest staged by students.",
+        usage,
+      }));
+      blankFirst = false;
+      return results;
+    };
+
+    const first = await contextualizeBuildChunks(db.executor, build, { runBatch });
+    expect(first.planned).toBe(TOTAL_CHUNKS);
+    expect(first.written).toBe(TOTAL_CHUNKS - 1);
+    expect(first.failed).toHaveLength(1);
+    // Batch API: half the online price, and a blank answer was still billed.
+    expect(first.costUsd).toBeCloseTo(
+      computeCostUsd(RAG_GENERATION_MODEL, usage) * 0.5 * TOTAL_CHUNKS,
+      12
+    );
+    for (const request of sent) {
+      expect(request.custom_id).toMatch(/^[a-f0-9]{48}$/);
+      expect(request.params.model).toBe(RAG_GENERATION_MODEL);
+    }
+
+    // The trigger indexes the line with the chunk.
+    const { rows } = await db.pg.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM article_chunks
+             WHERE index_build_id = $1
+               AND search_vector @@ plainto_tsquery('english', 'courtroom contest')`,
+      [build]
+    );
+    expect(rows[0].n).toBe(TOTAL_CHUNKS - 1);
+
+    // A re-run sends only the chunk still without a line.
+    sent.length = 0;
+    const second = await contextualizeBuildChunks(db.executor, build, { runBatch });
+    expect(sent).toHaveLength(1);
+    expect(second).toMatchObject({ planned: 1, written: 1, failed: [] });
+
+    await expect(contextualizeBuildChunks(db.executor, buildA, { runBatch })).rejects.toThrow(
+      /immutable/
+    );
+  });
+
   it("per-batch text failure isolation, and finalize reports pending coverage", async () => {
     const buildC = await createIndexBuild(db.executor, BUILD_OPTIONS);
     await populateBuildRecords(db.executor, buildC);
 
     let calls = 0;
-    const flaky = async (inputs: Array<{ text: string }>) => {
+    const embedChunks = makeEmbedChunksFn();
+    const flaky = async (documents: ChunkedDocument[]) => {
       calls += 1;
       if (calls === 1) throw new Error("simulated batch outage");
-      return inputs.map((input) => deterministicVector(input.text));
+      return embedChunks(documents);
     };
+    // batchSize counts articles: the first batch is A1 alone.
+    const a1Chunks = expectedChunkRecords()[0].records.length;
     const result = await embedBuildText(db.executor, buildC, {
-      embedFn: flaky,
-      batchSize: 2,
+      embedChunksFn: flaky,
+      batchSize: 1,
     });
     expect(result.planned).toBe(TOTAL_CHUNKS);
-    expect(result.failed).toHaveLength(2);
+    expect(result.failed).toHaveLength(a1Chunks);
     for (const failure of result.failed) {
       expect(failure.reason).toBe("simulated batch outage");
     }
-    expect(result.embedded).toBe(TOTAL_CHUNKS - 2); // later batches still ran
+    expect(result.embedded).toBe(TOTAL_CHUNKS - a1Chunks); // later batches still ran
 
     const finalized = await finalizeBuild(db.executor, buildC);
     expect(finalized.status).toBe("failed");
-    expect(finalized.pendingChunks).toBe(2);
-    expect(finalized.failureReason).toContain("2 text chunk(s)");
+    expect(finalized.pendingChunks).toBe(a1Chunks);
+    expect(finalized.failureReason).toContain(`${a1Chunks} text chunk(s)`);
     expect(finalized.failureReason).toContain("2 image(s)");
     const { rows } = await db.pg.query<{ status: string; failure_reason: string }>(
       "SELECT status, failure_reason FROM rag_index_builds WHERE id = $1",
       [buildC]
     );
     expect(rows[0].status).toBe("failed");
-    expect(rows[0].failure_reason).toContain("2 text chunk(s)");
+    expect(rows[0].failure_reason).toContain(`${a1Chunks} text chunk(s)`);
   });
 
   it("keeps concurrent builds disjoint; embedding one never touches the other", async () => {
@@ -524,12 +639,12 @@ describe("build-rag-index against PGlite", () => {
     );
     expect(counts[0]).toEqual({ d: TOTAL_CHUNKS, e: TOTAL_CHUNKS, overlap: 0 });
 
-    await embedBuildText(db.executor, buildD, { embedFn: makeEmbedFn() });
+    await embedBuildText(db.executor, buildD, { embedChunksFn: makeEmbedChunksFn() });
     const { rows } = await db.pg.query<{ d_pending: number; e_pending: number }>(
       `SELECT (SELECT count(*)::int FROM article_chunks
-                     WHERE index_build_id = $1 AND embedding IS NULL) AS d_pending,
+                     WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS d_pending,
                     (SELECT count(*)::int FROM article_chunks
-                     WHERE index_build_id = $2 AND embedding IS NULL) AS e_pending`,
+                     WHERE index_build_id = $2 AND embedding_1024 IS NULL) AS e_pending`,
       [buildD, buildE]
     );
     expect(rows[0].d_pending).toBe(0);
@@ -547,7 +662,7 @@ describe("build-rag-index against PGlite", () => {
 
     const buildF = await createIndexBuild(db.executor, BUILD_OPTIONS);
     await populateBuildRecords(db.executor, buildF);
-    await embedBuildText(db.executor, buildF, { embedFn: makeEmbedFn() });
+    await embedBuildText(db.executor, buildF, { embedChunksFn: makeEmbedChunksFn() });
 
     const { rows: legacy } = await db.pg.query<{
       chunk_text: string;
@@ -556,7 +671,7 @@ describe("build-rag-index against PGlite", () => {
       has_embedding: boolean;
     }>(
       `SELECT chunk_text, embedding_model, embedding_input_hash,
-                    (embedding IS NOT NULL) AS has_embedding
+                    (embedding_1024 IS NOT NULL) AS has_embedding
              FROM article_chunks WHERE id = $1 AND index_build_id IS NULL`,
       [`${A3}:0000`]
     );
@@ -601,9 +716,12 @@ describe("build-rag-index against PGlite", () => {
     const after = await db.pg.query<{ n: number }>("SELECT count(*)::int AS n FROM article_chunks");
     expect(after.rows[0].n).toBe(before.rows[0].n); // read-only
 
+    // Each article's header is sent once, ahead of its chunks.
     const expectedChars = expectedChunkRecords().reduce(
       (sum, entry) =>
-        sum + entry.records.reduce((inner, record) => inner + record.embeddingInput.text.length, 0),
+        sum +
+        entry.records[0].embeddingInput.header.length +
+        entry.records.reduce((inner, record) => inner + record.embeddingInput.text.length, 0),
       0
     );
     expect(report.corpusVersion).toBe(CORPUS);
@@ -615,17 +733,103 @@ describe("build-rag-index against PGlite", () => {
 
     // Pinned to the tracker's own pricing (imported, not re-stated).
     expect(report.estTextUsd).toBeCloseTo(
-      computeEmbeddingCostUsd(RAG_EMBEDDING_MODEL, syntheticResponse(report.estTextTokens)),
+      computeEmbeddingCostUsd(RAG_EMBEDDING_MODEL, { total_tokens: report.estTextTokens }),
       12
     );
-    expect(report.estTextUsd).toBeCloseTo((expectedChars / 4 / 1_000_000) * 0.2, 6);
+    expect(report.estTextUsd).toBeCloseTo((expectedChars / 4 / 1_000_000) * 0.12, 6);
     expect(report.estImageUsd).toBeCloseTo(
-      computeEmbeddingCostUsd(RAG_EMBEDDING_MODEL, {} as EmbedContentResponse, {
-        imageCount: report.images,
+      computeEmbeddingCostUsd(RAG_IMAGE_EMBEDDING_MODEL, {
+        total_tokens: 0,
+        text_tokens: 0,
+        image_pixels: report.images * ESTIMATED_PIXELS,
       }),
       12
     );
-    expect(report.estImageUsd).toBeCloseTo(report.images * 0.00012, 12);
+    // $0.60 per billion pixels.
+    expect(report.estImageUsd).toBeCloseTo(report.images * 0.0009, 12);
     expect(report.totalUsd).toBeCloseTo(report.estTextUsd + report.estImageUsd, 12);
   });
+});
+
+async function solidImage(
+  width: number,
+  height: number,
+  format: "jpeg" | "webp" | "png"
+): Promise<Buffer> {
+  return sharp({ create: { width, height, channels: 3, background: "#888" } })
+    .toFormat(format)
+    .toBuffer();
+}
+
+async function pixelsOf(bytes: Buffer): Promise<{ width: number; height: number }> {
+  const { width = 0, height = 0 } = await sharp(bytes).metadata();
+  return { width, height };
+}
+
+describe("fitImageForVoyage", () => {
+  it("fitImageForVoyage leaves an image under the limit untouched", async () => {
+    const bytes = await solidImage(200, 100, "jpeg");
+    const result = await fitImageForVoyage(bytes, "image/jpeg", 30_000);
+    expect(result.bytes).toBe(bytes);
+    expect(result.resized).toBe(false);
+    expect(result.mimeType).toBe("image/jpeg");
+  });
+
+  it("fitImageForVoyage shrinks an oversized jpeg under the limit", async () => {
+    const bytes = await solidImage(4100, 4000, "jpeg");
+    const result = await fitImageForVoyage(bytes, "image/jpeg");
+    const { width, height } = await pixelsOf(result.bytes);
+    expect(width * height).toBeLessThanOrEqual(16_000_000);
+    expect(Math.abs(width / height - 4100 / 4000) / (4100 / 4000)).toBeLessThan(0.01);
+    expect(result.resized).toBe(true);
+    expect(result.mimeType).toBe("image/jpeg");
+  }, 60_000);
+
+  it("fitImageForVoyage handles webp and png input", async () => {
+    for (const [format, mime] of [
+      ["webp", "image/webp"],
+      ["png", "image/png"],
+    ] as const) {
+      const result = await fitImageForVoyage(await solidImage(300, 300, format), mime, 40_000);
+      const { width, height } = await pixelsOf(result.bytes);
+      expect(width * height).toBeLessThanOrEqual(40_000);
+      expect(sniffImageMime(result.bytes)).toBe(result.mimeType);
+    }
+  });
+});
+
+describe("embed-images with an oversized photo", () => {
+  let db: TestDb;
+
+  beforeAll(async () => {
+    db = await createTestDb();
+    await runMigrations(db.executor, { dir: MIGRATIONS_DIR });
+    await insertFixture(db.pg);
+  }, 120_000);
+
+  afterAll(async () => {
+    await db.close();
+  });
+
+  it("embed-images sends a resized photo for an oversized object", async () => {
+    const oversized = await solidImage(4100, 4000, "jpeg");
+    const buildId = await createIndexBuild(db.executor, BUILD_OPTIONS);
+    await populateBuildRecords(db.executor, buildId);
+    const sent: Array<{ imageBase64?: string }> = [];
+    const embedFn = async (inputs: Array<{ text: string; imageBase64?: string }>) => {
+      sent.push(...inputs);
+      return inputs.map((input) => deterministicVector(input.text));
+    };
+    const result = await embedBuildImages(db.executor, buildId, {
+      embedFn,
+      fetchObject: async () => streamOf(oversized),
+    });
+
+    expect(result.failed).toEqual([]);
+    expect(sent.length).toBeGreaterThan(0);
+    for (const input of sent) {
+      const { width, height } = await pixelsOf(Buffer.from(input.imageBase64 ?? "", "base64"));
+      expect(width * height).toBeLessThanOrEqual(16_000_000);
+    }
+  }, 120_000);
 });

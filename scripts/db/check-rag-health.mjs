@@ -44,6 +44,7 @@ export function servingPlan(config) {
     return {
       table: "articles",
       buildScoped: false,
+      vectorColumn: "embedding",
       where: "embedding IS NOT NULL AND embedding_model = $1",
       params: [config.embeddingModel],
     };
@@ -51,10 +52,31 @@ export function servingPlan(config) {
   return {
     table: "article_chunks",
     buildScoped: true,
+    vectorColumn: "embedding_1024",
     where:
-      "embedding IS NOT NULL AND index_build_id = $1 AND embedding_model = $2 " +
+      "embedding_1024 IS NOT NULL AND index_build_id = $1 AND embedding_model = $2 " +
       "AND embedding_input_version = $3",
     params: [config.activeIndexBuildId, config.embeddingModel, config.textEmbeddingInputVersion],
+  };
+}
+
+/**
+ * The photo search's filter (db.ts, onlyWithImages). Photos have their own
+ * model, so a build can serve text and still match no photo. Legacy mode
+ * has no photo vectors.
+ */
+export function imageServingPlan(config) {
+  if (config.mode === "legacy") return null;
+  return {
+    table: "article_images",
+    where:
+      "embedding_1024 IS NOT NULL AND index_build_id = $1 AND embedding_model = $2 " +
+      "AND embedding_input_version = $3",
+    params: [
+      config.activeIndexBuildId,
+      config.imageEmbeddingModel,
+      config.imageEmbeddingInputVersion,
+    ],
   };
 }
 
@@ -84,6 +106,7 @@ export async function checkBuildRow(executor, config) {
 
   const rows = await executor.query({
     text: `SELECT id, corpus_version, status, pipeline_version, embedding_model,
+                      image_embedding_model, embedding_dims,
                       text_embedding_input_version, image_embedding_input_version,
                       (SELECT COUNT(*)::int FROM rag_index_builds active
                        WHERE active.corpus_version = build.corpus_version
@@ -108,6 +131,8 @@ export async function checkBuildRow(executor, config) {
     predicate("corpus_version", config.corpusVersion, build.corpus_version),
     predicate("pipeline_version", config.pipelineVersion, build.pipeline_version),
     predicate("embedding_model", config.embeddingModel, build.embedding_model),
+    predicate("image_embedding_model", config.imageEmbeddingModel, build.image_embedding_model),
+    predicate("embedding_dims", config.embeddingDims, build.embedding_dims),
     predicate(
       "text_embedding_input_version",
       config.textEmbeddingInputVersion,
@@ -155,7 +180,7 @@ export async function readServedStamps(executor, plan) {
   const rows = await executor.query({
     text: `SELECT embedding_model, embedding_input_version, COUNT(*)::int AS rows
                  FROM ${plan.table}
-                WHERE embedding IS NOT NULL
+                WHERE ${plan.vectorColumn} IS NOT NULL
                 GROUP BY embedding_model, embedding_input_version
                 ORDER BY embedding_model, embedding_input_version`,
     params: [],
@@ -179,7 +204,7 @@ export async function countServedPredicate(executor, plan) {
 export async function readCoverage(executor, plan, config) {
   const scoped = plan.buildScoped;
   const rows = await executor.query({
-    text: `SELECT COUNT(*)::int AS total, COUNT(embedding)::int AS embedded
+    text: `SELECT COUNT(*)::int AS total, COUNT(${plan.vectorColumn})::int AS embedded
                  FROM ${plan.table}
                 ${scoped ? "WHERE index_build_id = $1" : ""}`,
     params: scoped ? [config.activeIndexBuildId] : [],
@@ -215,11 +240,19 @@ export async function checkRagHealth(executor, deps) {
   const stamps = await readServedStamps(executor, plan);
   const predicateCount = await countServedPredicate(executor, plan);
   const coverage = await readCoverage(executor, plan, config);
+  const imagePlan = imageServingPlan(config);
+  const imageCount = imagePlan ? await countServedPredicate(executor, imagePlan) : null;
 
   if (predicateCount === 0) {
     failures.push(
       `served.predicate matched 0 rows in ${plan.table}: the serving filter reaches ` +
         `nothing, so retrieval's vector leg returns zero rows without erroring`
+    );
+  }
+  if (imageCount === 0) {
+    failures.push(
+      `served.images matched 0 rows in ${imagePlan.table}: photo searches reach no ` +
+        `photo vectors and return nothing from the vector leg`
     );
   }
   const configuredStamp = stamps.find(
@@ -245,6 +278,8 @@ export async function checkRagHealth(executor, deps) {
       corpusVersion: config.corpusVersion,
       pipelineVersion: config.pipelineVersion,
       embeddingModel: config.embeddingModel,
+      imageEmbeddingModel: config.imageEmbeddingModel,
+      embeddingDims: config.embeddingDims,
       textEmbeddingInputVersion: config.textEmbeddingInputVersion,
       imageEmbeddingInputVersion: config.imageEmbeddingInputVersion,
     },
@@ -258,6 +293,14 @@ export async function checkRagHealth(executor, deps) {
         params: plan.params,
         count: predicateCount,
       },
+      images: imagePlan
+        ? {
+            table: imagePlan.table,
+            where: imagePlan.where,
+            params: imagePlan.params,
+            count: imageCount,
+          }
+        : null,
     },
     coverage,
     failures,
@@ -297,6 +340,12 @@ export function formatReport(report) {
     `${mark(report.served.predicate.count > 0)} served.predicate        ` +
       `${report.served.predicate.count} row(s) match WHERE ${report.served.predicate.where}`
   );
+  if (report.served.images) {
+    lines.push(
+      `${mark(report.served.images.count > 0)} served.images           ` +
+        `${report.served.images.count} photo(s) match WHERE ${report.served.images.where}`
+    );
+  }
   lines.push(
     `     coverage.ratio          ${
       report.coverage.ratio === null

@@ -8,6 +8,8 @@ export interface RagRetrievalConfig {
   corpusVersion: string;
   pipelineVersion: string;
   embeddingModel: string;
+  imageEmbeddingModel: string;
+  embeddingDims: number;
   textEmbeddingInputVersion: string;
   imageEmbeddingInputVersion: string;
   cacheIdentity: string;
@@ -43,6 +45,8 @@ export function getRagRetrievalConfig(env: NodeJS.ProcessEnv = process.env): Rag
     `index=${mode === "legacy" ? "legacy" : `${mode}:${activeIndexBuildId}`}`,
     `pipeline=${RAG_PIPELINE_VERSION}`,
     `embedding=${RAG_EMBEDDING_MODEL}`,
+    `imageEmbedding=${RAG_IMAGE_EMBEDDING_MODEL}`,
+    `dims=${RAG_EMBEDDING_DIMS}`,
     `textInput=${RAG_TEXT_EMBEDDING_INPUT_VERSION}`,
     `imageInput=${RAG_IMAGE_EMBEDDING_INPUT_VERSION}`,
   ];
@@ -52,6 +56,8 @@ export function getRagRetrievalConfig(env: NodeJS.ProcessEnv = process.env): Rag
     corpusVersion,
     pipelineVersion: RAG_PIPELINE_VERSION,
     embeddingModel: RAG_EMBEDDING_MODEL,
+    imageEmbeddingModel: RAG_IMAGE_EMBEDDING_MODEL,
+    embeddingDims: RAG_EMBEDDING_DIMS,
     textEmbeddingInputVersion: RAG_TEXT_EMBEDDING_INPUT_VERSION,
     imageEmbeddingInputVersion: RAG_IMAGE_EMBEDDING_INPUT_VERSION,
     cacheIdentity: identityParts.join("|"),
@@ -62,8 +68,10 @@ export function shouldServeVersionedRetrieval(env: NodeJS.ProcessEnv = process.e
   return getRagRetrievalConfig(env).mode === "versioned";
 }
 import {
+  RAG_EMBEDDING_DIMS,
   RAG_EMBEDDING_MODEL,
   RAG_IMAGE_EMBEDDING_INPUT_VERSION,
+  RAG_IMAGE_EMBEDDING_MODEL,
   RAG_PIPELINE_VERSION,
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/rag-model-config";
