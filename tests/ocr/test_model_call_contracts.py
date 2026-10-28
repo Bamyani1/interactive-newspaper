@@ -80,6 +80,7 @@ def test_ultra_high_is_applied_to_each_image_part():
 
 
 def test_retry_has_one_three_attempt_budget_and_never_changes_model(monkeypatch):
+    monkeypatch.setenv("OCR_LLM_PROVIDER", "gemini")
     class TransientError(RuntimeError):
         status_code = 503
 

@@ -17,13 +17,16 @@ from typing import Any, Iterator
 from google import genai
 from google.genai import types
 
-from ..config.model_calls import STAGE_TIMEOUT_SECONDS
+from ..config.claude_client import ClaudeOCRClient
+from ..config.model_calls import stage_timeout_seconds
 from .console import warning as _console_warning
 
 logger = logging.getLogger(__name__)
 
-_RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+_RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504, 529}
 _RETRYABLE_EXCEPTION_NAMES = {
+    "APIConnectionError",
+    "APITimeoutError",
     "ConnectError",
     "ConnectTimeout",
     "DeadlineExceeded",
@@ -39,8 +42,9 @@ _RETRYABLE_EXCEPTION_NAMES = {
     "WriteTimeout",
 }
 _MAX_ATTEMPTS = 3
-# Rate limits and overload clear on Google's side: wait longer, try more often.
-_RATE_LIMIT_STATUS_CODES = {429, 503}
+# Rate limits and overload clear on the provider's side: wait longer, try more often.
+# 529 is Claude's overloaded status.
+_RATE_LIMIT_STATUS_CODES = {429, 503, 529}
 _RATE_LIMIT_MAX_ATTEMPTS = 8
 _RATE_LIMIT_BASE_DELAY_S = 5.0
 _MAX_DELAY_S = 60.0
@@ -130,9 +134,18 @@ def _generate_content(
     model: str,
     contents: list,
     config: types.GenerateContentConfig,
+    stage: str,
     timeout_seconds: int,
 ) -> genai.types.GenerateContentResponse:
     _wait_for_global_call_slot()
+    if isinstance(client, ClaudeOCRClient):
+        return client.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+            stage=stage,
+            timeout_seconds=timeout_seconds,
+        )
     return client.models.generate_content(
         model=model,
         contents=contents,
@@ -161,7 +174,7 @@ def gemini_generate_with_retry(
     requested model and complete generation config are preserved on every
     attempt; there is no fallback model.
     """
-    timeout_seconds = STAGE_TIMEOUT_SECONDS.get(stage, 240)
+    timeout_seconds = stage_timeout_seconds(stage)
     schema_retries = 0
     last_response: genai.types.GenerateContentResponse | None = None
     attempt_contents = contents
@@ -174,6 +187,7 @@ def gemini_generate_with_retry(
                 model=model,
                 contents=attempt_contents,
                 config=config,
+                stage=stage,
                 timeout_seconds=timeout_seconds,
             )
         except Exception as exc:

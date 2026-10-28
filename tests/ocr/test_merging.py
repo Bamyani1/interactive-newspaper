@@ -69,7 +69,8 @@ def _response(parsed):
     return SimpleNamespace(parsed=parsed, text=parsed.model_dump_json(), usage_metadata=None)
 
 
-def test_locked_calls_use_38_flash_with_medium_thinking():
+def test_locked_calls_use_38_flash_with_medium_thinking(monkeypatch):
+    monkeypatch.setenv("OCR_LLM_PROVIDER", "gemini")
     client = MagicMock()
     response = SimpleNamespace(parsed=None, text="", usage_metadata=None)
     with patch(

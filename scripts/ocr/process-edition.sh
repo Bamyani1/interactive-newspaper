@@ -212,16 +212,25 @@ if [[ -f "$ROOT_DIR/.env.local" ]]; then
   done < "$ROOT_DIR/.env.local"
 fi
 
-export GOOGLE_GENAI_USE_VERTEXAI=true
-export GOOGLE_CLOUD_LOCATION=global
+# OCR runs on Claude and makes no Google call; OCR_LLM_PROVIDER=gemini keeps the
+# old Vertex route until it is deleted. Seeding never calls a model.
+export OCR_LLM_PROVIDER="${OCR_LLM_PROVIDER:-claude}"
+if [[ "$OCR_LLM_PROVIDER" == "claude" ]]; then
+  export OCR_FORBID_GOOGLE=1
+else
+  export GOOGLE_GENAI_USE_VERTEXAI=true
+  export GOOGLE_CLOUD_LOCATION=global
+fi
 export OCR_ENVIRONMENT=production
 
-if [[ "$MODE" == "normal" || "$MODE" == "repair-seed" ]]; then
-  [[ -n "${GOOGLE_CLOUD_PROJECT:-}" ]] || fail 2 "preflight" "GOOGLE_CLOUD_PROJECT is required for Vertex AI ADC"
-fi
 if [[ "$MODE" == "normal" ]]; then
-  [[ -n "${DOCUMENT_AI_PROCESSOR_ID:-}" ]] || fail 2 "preflight" "DOCUMENT_AI_PROCESSOR_ID is required for OCR"
-  [[ -n "${DOCUMENT_AI_LOCATION:-}" ]] || fail 2 "preflight" "DOCUMENT_AI_LOCATION is required for OCR"
+  if [[ "$OCR_LLM_PROVIDER" == "claude" ]]; then
+    [[ -n "${ANTHROPIC_API_KEY:-}" ]] || fail 2 "preflight" "ANTHROPIC_API_KEY is required for OCR"
+  else
+    [[ -n "${GOOGLE_CLOUD_PROJECT:-}" ]] || fail 2 "preflight" "GOOGLE_CLOUD_PROJECT is required for Vertex AI ADC"
+    [[ -n "${DOCUMENT_AI_PROCESSOR_ID:-}" ]] || fail 2 "preflight" "DOCUMENT_AI_PROCESSOR_ID is required for OCR"
+    [[ -n "${DOCUMENT_AI_LOCATION:-}" ]] || fail 2 "preflight" "DOCUMENT_AI_LOCATION is required for OCR"
+  fi
   detector_licenses="${OCR_DETECTOR_LICENSES_ACCEPTED:-}"
   case "$detector_licenses" in
     1|true|TRUE|True) ;;

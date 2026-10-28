@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image
 
 from ..config.constants import MIN_AD_IMAGE_AREA_PIXELS
+from ..config.model_calls import uses_claude
 from ..contracts.content_models import ArticleImage, OtherContent, PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer
 from ..detection.american_stories_provider import detect_layout_boxes
@@ -18,6 +19,7 @@ from ..image_linking.cropper import crop_and_save_images, crop_regions, draw_reg
 from ..image_linking.visual_matcher import match_images_visual
 from ..postprocessing.coverage import uncovered_blocks
 from ..preprocessing.image_preprocessor import check_page_quality, prepare_page_image_paths
+from ..recognition.claude_reader import read_page_text
 from ..recognition.docai_provider import extract_page_text
 from ..recognition.page_extractor import _extract_page_number_from_filename, process_page_with_docai
 from ..shared.console import error, info, status, substep, warning
@@ -29,6 +31,7 @@ def extract_page_docai(
     image_path: str,
     diag: PageDiagnostics | None = None,
     work_dir: str | None = None,
+    client=None,
 ):
     """Create explicit image branches, run DocAI, and detect source visuals.
 
@@ -64,18 +67,25 @@ def extract_page_docai(
     if quality.message:
         warning(f"{base_name}: {quality.message}; cloud processing will still run")
 
-    # Found on the OCR derivative itself, so boxes share Document AI's geometry.
-    layout = detect_layout_boxes(ocr_derivative)
-    substep(f"Layout: {len(layout)} box(es)")
-    response_path = None
-    if owned_temp is None and os.getenv("OCR_SAVE_DOCAI_JSON", "").strip().lower() in {
-        "1",
-        "true",
-    }:
-        response_path = os.path.join(work_dir, f"{Path(image_path).stem}.docai.json")
-    docai_result = extract_page_text(
-        ocr_derivative, layout=layout, response_path=response_path
-    )
+    save_outputs = owned_temp is None and os.getenv(
+        "OCR_SAVE_DOCAI_JSON", ""
+    ).strip().lower() in {"1", "true"}
+    if uses_claude():
+        # Claude reads the page itself: no Document AI and no layout model.
+        save_prefix = os.path.join(work_dir, Path(image_path).stem) if save_outputs else None
+        docai_result = read_page_text(
+            client, ocr_derivative, save_prefix=save_prefix, diag=diag
+        )
+    else:
+        # Found on the OCR derivative itself, so boxes share Document AI's geometry.
+        layout = detect_layout_boxes(ocr_derivative)
+        substep(f"Layout: {len(layout)} box(es)")
+        response_path = None
+        if save_outputs:
+            response_path = os.path.join(work_dir, f"{Path(image_path).stem}.docai.json")
+        docai_result = extract_page_text(
+            ocr_derivative, layout=layout, response_path=response_path
+        )
     substep(
         f"DocAI: {len(docai_result.raw_text)} chars, "
         f"mean_conf={docai_result.mean_confidence:.2f}"

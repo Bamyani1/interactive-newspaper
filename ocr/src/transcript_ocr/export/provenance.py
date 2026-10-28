@@ -26,8 +26,7 @@ def write_provenance(
     edition_dir: str | os.PathLike[str],
     manifest_path: str | None,
     outcomes: Iterable[PageOutcome],
-    project: str,
-    location: str,
+    provider: dict[str, str],
     model_routes: dict[str, dict],
 ) -> None:
     source_root = Path(edition_dir)
@@ -50,20 +49,14 @@ def write_provenance(
             }
         )
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "edition_date": edition_date,
         "source": {
             "manifest_url": manifest_url,
             "manifest_filename": Path(manifest_path).name if manifest_path else "",
             "derivative": "full-resolution IIIF image derivative",
         },
-        "google_cloud": {
-            "auth": "application_default_credentials",
-            "project": project,
-            "location": location,
-            "api_version": "v1",
-            "document_ai_processor_version": "stable",
-        },
+        "provider": provider,
         "models": model_routes,
         "pages": pages,
     }

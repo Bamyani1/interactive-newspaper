@@ -30,8 +30,15 @@ def has_google_ai_credentials() -> bool:
     return bool(os.getenv("GOOGLE_CLOUD_PROJECT"))
 
 
+def ensure_google_allowed() -> None:
+    """Fail loudly when a run forbids every Google call (OCR_FORBID_GOOGLE=1)."""
+    if os.getenv("OCR_FORBID_GOOGLE", "").strip().lower() in {"1", "true"}:
+        raise RuntimeError("Google calls are forbidden in this run (OCR_FORBID_GOOGLE=1)")
+
+
 def create_genai_client():
     """Create a Google Gen AI client using the configured auth mode."""
+    ensure_google_allowed()
     _load_repo_env()
 
     from google import genai
@@ -57,6 +64,7 @@ def create_genai_client():
 
 __all__ = [
     "create_genai_client",
+    "ensure_google_allowed",
     "has_google_ai_credentials",
     "uses_vertex_ai",
 ]

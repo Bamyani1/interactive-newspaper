@@ -41,6 +41,8 @@ class DocAIParagraph:
     bounds: tuple[float, float, float, float] | None = None
     # Layout class around the block, for the page text check; never sent to the model.
     label: str = ""
+    # Whether the first printed line is indented; set only by the Claude reader.
+    indented: bool | None = None
 
 
 # (class name, normalized left, top, right, bottom) from the layout detector
@@ -56,6 +58,10 @@ def _get_docai_client():
     global _docai_client
     if _docai_client is None:
         from google.cloud import documentai
+
+        from ..config.google_clients import ensure_google_allowed
+
+        ensure_google_allowed()
 
         location = os.getenv("DOCUMENT_AI_LOCATION")
         if not location:

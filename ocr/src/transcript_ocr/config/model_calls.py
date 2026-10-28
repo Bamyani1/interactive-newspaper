@@ -9,6 +9,7 @@ per-image media resolution do not.
 from __future__ import annotations
 
 import io
+import os
 from typing import Any
 
 from PIL import Image
@@ -34,6 +35,50 @@ STAGE_TIMEOUT_SECONDS = {
     "ad_enrichment": 120,
     "content_triage": 120,
 }
+
+# Every stage runs on Claude. OCR_LLM_PROVIDER=gemini keeps the old route until it is deleted.
+CLAUDE_MODELS = {
+    # Claude-only stage: reads the page text that Document AI used to supply.
+    "text_reading": {"name": "claude-haiku-5-5", "effort": "xhigh"},
+    "page_structuring": {"name": "claude-haiku-5-5", "effort": "xhigh"},
+    "image_matching": {"name": "claude-haiku-5-5", "effort": "high"},
+    "merge": {"name": "claude-sonnet-5-5", "effort": "high"},
+    "seam_repair": {"name": "claude-sonnet-5-5", "effort": "high"},
+    "ad_enrichment": {"name": "claude-haiku-5-5", "effort": "high"},
+    "content_triage": {"name": "claude-haiku-5-5", "effort": "high"},
+}
+
+# Claude streams, so the budget covers long thinking instead of a 504 at 240 s.
+CLAUDE_STAGE_TIMEOUT_SECONDS = {
+    "text_reading": 600,
+    "page_structuring": 900,
+    "image_matching": 600,
+    "merge": 900,
+    "seam_repair": 600,
+    "ad_enrichment": 300,
+    "content_triage": 300,
+}
+
+
+def llm_provider() -> str:
+    provider = os.getenv("OCR_LLM_PROVIDER", "claude").strip().lower() or "claude"
+    if provider not in {"gemini", "claude"}:
+        raise ValueError(f"OCR_LLM_PROVIDER must be gemini or claude, got {provider!r}")
+    return provider
+
+
+def uses_claude() -> bool:
+    return llm_provider() == "claude"
+
+
+def stage_timeout_seconds(stage: str) -> int:
+    if uses_claude():
+        return CLAUDE_STAGE_TIMEOUT_SECONDS.get(stage, 600)
+    return STAGE_TIMEOUT_SECONDS.get(stage, 240)
+
+
+def model_routes() -> dict[str, dict]:
+    return CLAUDE_MODELS if uses_claude() else MODELS
 
 
 def build_generation_config(
@@ -80,13 +125,19 @@ def image_part_ultra_high(image: Image.Image) -> types.Part:
 
 
 def model_name(stage: str) -> str:
-    return str(MODELS[stage]["name"])
+    return str(model_routes()[stage]["name"])
 
 
 __all__ = [
+    "CLAUDE_MODELS",
+    "CLAUDE_STAGE_TIMEOUT_SECONDS",
     "SAFETY_OFF",
     "STAGE_TIMEOUT_SECONDS",
     "build_generation_config",
     "image_part_ultra_high",
+    "llm_provider",
     "model_name",
+    "model_routes",
+    "stage_timeout_seconds",
+    "uses_claude",
 ]

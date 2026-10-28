@@ -9,6 +9,10 @@ from ..contracts.diagnostics_models import TokenUsage
 MODEL_RATES_PER_MILLION = {
     "gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50},
     "gemini-3.8-flash": {"input": 1.50, "output": 7.50},
+    # Haiku's base tier; prompts over 100K tokens cost $0.50/$2.50, and OCR
+    # prompts stay well under that.
+    "claude-haiku-5-5": {"input": 0.10, "output": 0.50},
+    "claude-sonnet-5-5": {"input": 2.00, "output": 10.00},
 }
 
 

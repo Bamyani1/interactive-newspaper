@@ -12,7 +12,7 @@ from typing import Literal
 from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..config.model_calls import build_generation_config, model_name
+from ..config.model_calls import CLAUDE_MODELS, build_generation_config, model_name, uses_claude
 from ..contracts.content_models import (
     EditionContent,
     MergedArticle,
@@ -167,9 +167,10 @@ def _generate_locked_content(
     """
     stage = "merge" if response_schema is EditionGroupingResponse else "seam_repair"
     configured_model = model_name(stage)
-    if configured_model != _LOCKED_MERGE_MODEL:
+    locked_model = CLAUDE_MODELS[stage]["name"] if uses_claude() else _LOCKED_MERGE_MODEL
+    if configured_model != locked_model:
         raise RuntimeError(
-            f"Locked {stage} model must be {_LOCKED_MERGE_MODEL}, got {configured_model}"
+            f"Locked {stage} model must be {locked_model}, got {configured_model}"
         )
     config = build_generation_config(
         stage,
