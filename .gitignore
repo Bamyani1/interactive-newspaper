@@ -96,6 +96,8 @@ scripts/dev/data/
 # "Do Not Modify" list. Tests at tests/weather/ depend on this being
 # available in CI, not just locally.
 !public/data/weather/ohio/index/*.json
+# Three editions CI seeds into its throwaway Postgres (.github/workflows/nextjs-ci.yml).
+!tests/fixtures/ci-editions/*/edition.json
 
 # Large Files
 public/GOPR0363 copy.png
