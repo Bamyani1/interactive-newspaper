@@ -7,6 +7,8 @@ import io
 import json
 import math
 import sys
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -170,6 +172,32 @@ def test_truncated_or_invalid_output_is_left_unparsed_for_the_schema_retry():
             timeout_seconds=5,
         )
         assert response.parsed is None
+
+
+def test_a_stream_that_never_ends_times_out_at_the_deadline():
+    # The SDK drops ping events, and each one resets the read timeout, so a
+    # stalled stream that only sends pings yields nothing and never times out.
+    class _StalledStream(_FakeStream):
+        def __iter__(self):
+            threading.Event().wait()
+            return iter([])
+
+        def get_final_message(self):
+            threading.Event().wait()
+
+    fake = _FakeAnthropic([None])
+    fake.messages = SimpleNamespace(stream=lambda **_request: _StalledStream(None))
+
+    started = time.monotonic()
+    with pytest.raises(TimeoutError, match="page_structuring exceeded 1s"):
+        ClaudeOCRClient(fake).generate_content(
+            model="claude-haiku-5-5",
+            contents=["x"],
+            config=_config(),
+            stage="page_structuring",
+            timeout_seconds=1,
+        )
+    assert time.monotonic() - started < 5
 
 
 def test_retry_routes_claude_client_with_claude_model_and_timeout(monkeypatch):
