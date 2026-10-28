@@ -9,15 +9,32 @@
  * Read-only by default (--list). Destruction requires BOTH --prune <id>
  * AND --yes, and never touches an 'active' build.
  *
+ * --prune-unpinned deletes every finished build the serving pointer (0014)
+ * does not pin: it keeps the current and previous builds, anything still
+ * 'building', and any 'active' build.
+ *
  * Usage (tsx required):
  *   DATABASE_URL=... npx tsx scripts/db/gc-index-builds.mjs --list
  *   DATABASE_URL=... npx tsx scripts/db/gc-index-builds.mjs --prune <buildId> --yes
+ *   DATABASE_URL=... npx tsx scripts/db/gc-index-builds.mjs --prune-unpinned --yes
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+async function readPointer(executor) {
+  try {
+    const [row] = await executor.query({
+      text: "SELECT index_build_id, previous_build_id FROM rag_serving_pointer WHERE id = 1",
+    });
+    return row ?? null;
+  } catch {
+    return null; // before migration 0014
+  }
+}
+
 export async function listBuilds(executor) {
-  return executor.query({
+  const pointer = await readPointer(executor);
+  const rows = await executor.query({
     text: `SELECT b.id, b.corpus_version, b.status, b.created_at, b.activated_at,
                       (SELECT COUNT(*)::int FROM article_chunks c WHERE c.index_build_id = b.id) AS chunk_rows,
                       (SELECT COUNT(*)::int FROM article_images i WHERE i.index_build_id = b.id) AS image_rows
@@ -25,6 +42,76 @@ export async function listBuilds(executor) {
                ORDER BY b.created_at`,
     params: [],
   });
+  return rows.map((row) => ({
+    ...row,
+    pinned:
+      row.id === pointer?.index_build_id
+        ? "current"
+        : row.id === pointer?.previous_build_id
+          ? "previous"
+          : null,
+  }));
+}
+
+/**
+ * Delete every 'validated' or 'failed' build the serving pointer does not
+ * pin. Each delete re-checks the pointer inside its own statement, so a
+ * concurrent --switch can never lose the build it just pinned.
+ */
+export async function pruneUnpinned(executor) {
+  const pointer = await readPointer(executor);
+  if (!pointer) {
+    throw new Error("No serving pointer: run build-rag-index.mjs --switch before --prune-unpinned.");
+  }
+  const builds = await executor.query({
+    text: "SELECT id, status FROM rag_index_builds ORDER BY created_at, id",
+  });
+  const deleted = [];
+  const kept = [];
+  for (const build of builds) {
+    const pinned = build.id === pointer.index_build_id || build.id === pointer.previous_build_id;
+    if (pinned || (build.status !== "validated" && build.status !== "failed")) {
+      kept.push(String(build.id));
+      continue;
+    }
+    const [result] = await executor.query({
+      text: `WITH gate AS (
+                   SELECT 1 FROM rag_index_builds b
+                   WHERE b.id = $1 AND b.status IN ('validated', 'failed')
+                     AND EXISTS (SELECT 1 FROM rag_serving_pointer)
+                     AND NOT EXISTS (
+                       SELECT 1 FROM rag_serving_pointer p
+                       WHERE p.index_build_id = b.id OR p.previous_build_id = b.id
+                     )
+               ), del_chunks AS (
+                   DELETE FROM article_chunks
+                   WHERE index_build_id = $1 AND EXISTS (SELECT 1 FROM gate)
+                   RETURNING 1
+               ), del_images AS (
+                   DELETE FROM article_images
+                   WHERE index_build_id = $1 AND EXISTS (SELECT 1 FROM gate)
+                   RETURNING 1
+               ), del_build AS (
+                   DELETE FROM rag_index_builds
+                   WHERE id = $1 AND EXISTS (SELECT 1 FROM gate)
+                   RETURNING 1
+               )
+               SELECT (SELECT COUNT(*)::int FROM del_chunks) AS chunks,
+                      (SELECT COUNT(*)::int FROM del_images) AS images,
+                      (SELECT COUNT(*)::int FROM del_build) AS build`,
+      params: [build.id],
+    });
+    if (Number(result.build) === 0) {
+      kept.push(String(build.id));
+      continue;
+    }
+    deleted.push({
+      buildId: String(build.id),
+      deletedChunks: Number(result.chunks),
+      deletedImages: Number(result.images),
+    });
+  }
+  return { deleted, kept };
 }
 
 export async function pruneBuild(executor, buildId) {
@@ -110,6 +197,15 @@ async function main() {
   const { createNeonExecutor } = executorModule.default ?? executorModule;
   const { assertMigrationsCurrent } = runnerModule.default ?? runnerModule;
   const executor = createNeonExecutor(databaseUrl);
+
+  if (process.argv.includes("--prune-unpinned")) {
+    if (!process.argv.includes("--yes")) {
+      throw new Error("--prune-unpinned permanently deletes rows. Re-run with --yes to confirm.");
+    }
+    await assertMigrationsCurrent(executor);
+    console.log(JSON.stringify(await pruneUnpinned(executor), null, 2));
+    return;
+  }
 
   const pruneId = argValue("--prune");
   if (pruneId) {
