@@ -250,4 +250,63 @@ describe("import-build-vectors round trip", () => {
     expect(result.embedded.chunks).toBeGreaterThan(0);
     await bare.close();
   }, 60_000);
+
+  /** Re-export the build with ARTICLES[1]'s rows as populate leaves an unaliased article. */
+  function exportWithUnlinkedArticle(revision: string | null): string {
+    const buildRow = JSON.parse(
+      readFileSync(path.join(exportDir, "rag_index_builds.json"), "utf8")
+    );
+    const rows = readFileSync(path.join(exportDir, "article_chunks.jsonl"), "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .map((row) =>
+        row.article_id === ARTICLES[1] ? { ...row, content_revision_id: revision } : row
+      );
+    const dir = mkdtempSync(path.join(tmpdir(), "vector-export-unlinked-"));
+    exportBuild(dir, buildRow, rows);
+    return dir;
+  }
+
+  it("imports rows of an article that has no alias on either side, unlinked", async () => {
+    const bare = await createTestDb();
+    await runMigrations(bare.executor, { dir: MIGRATIONS_DIR });
+    await seedFixture(bare.pg, "bare");
+    await bare.pg.query("DELETE FROM legacy_content_aliases WHERE legacy_id = $1", [ARTICLES[1]]);
+    const dir = exportWithUnlinkedArticle(null);
+    try {
+      const result = await importBuildVectors(bare.executor, { dir });
+      expect(result.embedded.chunks).toBe(result.insertedChunks);
+      const { rows } = await bare.pg.query<{
+        article_id: string;
+        content_revision_id: string | null;
+      }>("SELECT article_id, content_revision_id FROM article_chunks WHERE index_build_id = $1", [
+        buildId,
+      ]);
+      expect(rows.some((row) => row.article_id === ARTICLES[1])).toBe(true);
+      for (const row of rows) {
+        if (row.article_id === ARTICLES[1]) expect(row.content_revision_id).toBeNull();
+        else expect(row.content_revision_id).toMatch(/^bare-crev-/);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      await bare.close();
+    }
+  }, 60_000);
+
+  it("still refuses a linked row whose article has no alias in the target", async () => {
+    const bare = await createTestDb();
+    await runMigrations(bare.executor, { dir: MIGRATIONS_DIR });
+    await seedFixture(bare.pg, "bare");
+    await bare.pg.query("DELETE FROM legacy_content_aliases WHERE legacy_id = $1", [ARTICLES[1]]);
+    const dir = exportWithUnlinkedArticle("src-crev-1");
+    try {
+      await expect(importBuildVectors(bare.executor, { dir })).rejects.toThrow(
+        /No target revision alias for article 1950-03-15-1/
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      await bare.close();
+    }
+  }, 60_000);
 });

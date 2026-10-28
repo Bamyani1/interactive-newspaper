@@ -10,7 +10,8 @@
  *   legacy_content_aliases: revision row ids hash per-run content-item ULIDs
  *   (see scripts/db/backfill-identities.mjs) and are never portable between
  *   identity backfills. Rows whose article has no alias in the target abort
- *   the import.
+ *   the import, unless the export left them unlinked too (populate stores a
+ *   null revision for an article without an alias).
  * - Idempotent: all inserts are ON CONFLICT (id) DO NOTHING, and the final
  *   embedded-row counts must equal the manifest's dbCounts exactly.
  * - The build's corpus_version must already be registered in the target's
@@ -146,10 +147,10 @@ async function insertBuildRow(executor, sourceRow) {
 async function importTable(executor, dir, table, file, cols, casts, column, revisionMap, log) {
   const rows = loadJsonl(dir, file).map((row) => {
     const localRevision = revisionMap.get(row.article_id);
-    if (!localRevision) {
+    if (!localRevision && row.content_revision_id != null) {
       throw new Error(`No target revision alias for article ${row.article_id} (${table}).`);
     }
-    return { ...row, content_revision_id: localRevision };
+    return { ...row, content_revision_id: localRevision ?? null };
   });
   let inserted = 0;
   for (let offset = 0; offset < rows.length; offset += BATCH_ROWS) {
