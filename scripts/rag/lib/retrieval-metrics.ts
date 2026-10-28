@@ -37,7 +37,7 @@ export function percentile(values: number[], p: number): number {
 }
 
 /** Small seeded PRNG so a bootstrap run can be repeated exactly. */
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
     state = (state + 0x6d2b79f5) >>> 0;

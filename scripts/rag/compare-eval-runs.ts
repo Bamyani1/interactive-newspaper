@@ -11,9 +11,14 @@
  * A question passes when every fact group appears in the answer, or, for a
  * question without facts, when it cites an expected source.
  *
+ * With judged files (scripts/rag/judge-eval.ts, one per judge and run), it
+ * also reports each judge's paired difference on sentence support and
+ * nugget scores, and whether the judges agree on the direction; a change
+ * counts only when they do.
+ *
  *   node --import tsx scripts/rag/compare-eval-runs.ts \
  *     --a <run-1.json> --b <run-2.json> --evidence tests/api/rag-dev-v2-questions.json \
- *     [--out <report.md>]
+ *     [--judged-a <a.judged-haiku.json,a.judged-sonnet.json> --judged-b <...>] [--out <report.md>]
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -21,6 +26,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EvalRunFile, EvalRunRecord } from "./lib/eval-records";
 import type { EvidenceCatalog, EvidenceQuestion } from "./score-eval";
+import type { JudgedRun } from "./judge-eval";
 import { pairedBootstrap } from "./lib/retrieval-metrics";
 
 // z for a two-sided 5% test plus z for 80% power.
@@ -111,10 +117,48 @@ export function compareRuns(
   };
 }
 
+const JUDGED_METRICS = ["supportScore", "nuggetScore", "vitalNuggetScore"] as const;
+type JudgedMetric = (typeof JUDGED_METRICS)[number];
+
+/**
+ * Per judge, the paired B − A difference on each judged score; the judges
+ * agree when every judge's mean difference has the same nonzero sign.
+ */
+export function judgeDirections(a: JudgedRun[], b: JudgedRun[], { seed }: { seed: number }) {
+  const bByJudge = new Map(b.map((run) => [run.judge, run]));
+  for (const run of a) {
+    if (!bByJudge.has(run.judge)) throw new Error(`Run B has no ${run.judge} judgments.`);
+  }
+  const result = {} as Record<
+    JudgedMetric,
+    { byJudge: Record<string, ReturnType<typeof pairedBootstrap>>; agree: boolean }
+  >;
+  for (const metric of JUDGED_METRICS) {
+    const byJudge: Record<string, ReturnType<typeof pairedBootstrap>> = {};
+    for (const runA of a) {
+      const scoresB = new Map(
+        (bByJudge.get(runA.judge) as JudgedRun).questions.map((q) => [q.questionId, q[metric]])
+      );
+      const diffs = runA.questions.flatMap((q) => {
+        const scoreA = q[metric];
+        const scoreB = scoresB.get(q.questionId);
+        return scoreA === null || scoreB === null || scoreB === undefined ? [] : [scoreB - scoreA];
+      });
+      byJudge[runA.judge] = pairedBootstrap(diffs, { seed });
+    }
+    const signs = Object.values(byJudge).map((ci) => (ci.n === 0 ? 0 : Math.sign(ci.mean)));
+    result[metric] = {
+      byJudge,
+      agree: signs.length > 0 && signs.every((sign) => sign !== 0 && sign === signs[0]),
+    };
+  }
+  return result;
+}
+
 function parseArgs(argv: string[]) {
   const args: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 2) {
-    if (!["--a", "--b", "--evidence", "--out"].includes(argv[i])) {
+    if (!["--a", "--b", "--evidence", "--out", "--judged-a", "--judged-b"].includes(argv[i])) {
       throw new Error(`Unknown argument: ${argv[i]}`);
     }
     args[argv[i].slice(2)] = argv[i + 1];
@@ -129,6 +173,15 @@ function main() {
   const a = read<EvalRunFile>(args.a);
   const b = read<EvalRunFile>(args.b);
   const result = compareRuns(a, b, read<EvidenceCatalog>(args.evidence), { seed: 20261028 });
+  if (Boolean(args["judged-a"]) !== Boolean(args["judged-b"])) {
+    throw new Error("--judged-a and --judged-b go together");
+  }
+  const readJudged = (list: string) => list.split(",").map((file) => read<JudgedRun>(file.trim()));
+  const directions = args["judged-a"]
+    ? judgeDirections(readJudged(args["judged-a"]), readJudged(args["judged-b"]), {
+        seed: 20261028,
+      })
+    : null;
   const pct = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(1)}%`);
   const lines = [
     `# ${a.runId} vs ${b.runId}`,
@@ -141,6 +194,20 @@ function main() {
     "",
     `Flipped: ${result.flipped.join(", ") || "none"}`,
   ];
+  if (directions) {
+    lines.push("", "## Judged scores (B − A, paired 95% CI)", "");
+    for (const metric of JUDGED_METRICS) {
+      const { byJudge, agree } = directions[metric];
+      const perJudge = Object.entries(byJudge)
+        .map(([judge, ci]) =>
+          ci.n === 0
+            ? `${judge} —`
+            : `${judge} ${pct(ci.mean)} [${pct(ci.low)}, ${pct(ci.high)}] (n=${ci.n})`
+        )
+        .join("; ");
+      lines.push(`- ${metric}: ${perJudge}; judges agree on direction: ${agree ? "yes" : "no"}`);
+    }
+  }
   const markdown = `${lines.join("\n")}\n`;
   if (args.out) writeFileSync(args.out, markdown);
   console.log(markdown);
