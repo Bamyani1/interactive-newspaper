@@ -25,9 +25,9 @@ manifest inventory -> lossless source conversion -> per-page image branches
           |                                      /                 \
           |                         grayscale OCR derivative   color source master
           |                                   |                     |
-          |                             Document AI        hybrid visual detector
+          |                          Claude page reading    hybrid visual detector
           |                                   \                     /
-          |                                    Gemini page structuring
+          |                                    Claude page structuring
           |                                             |
           v                                             v
 canvas state accounting <----------------------- visual dispositions
@@ -65,9 +65,8 @@ state but do not erase the content extracted from surviving pages.
 
 `application.edition_pipeline.process_edition()` builds one candidate under the
 root supplied by the caller. `scripts/ocr/process-edition.sh` loads
-`.env.local`, activates `ocr/.venv`, forces Vertex `global` and
-`OCR_ENVIRONMENT=production`, and refuses to start without
-`GOOGLE_CLOUD_PROJECT`, `DOCUMENT_AI_PROCESSOR_ID`, `DOCUMENT_AI_LOCATION`, and
+`.env.local`, activates `ocr/.venv`, forces `OCR_ENVIRONMENT=production`, and
+refuses to start without `ANTHROPIC_API_KEY` and
 `OCR_DETECTOR_LICENSES_ACCEPTED=true`. It creates the candidate root under
 `public/editions/.staging/` (the same filesystem as `public/editions/`), holds
 an edition-specific lock, and performs the transaction:
@@ -121,7 +120,7 @@ verification. A bad TIFF fails only its mapped canvas; other canvases continue.
 
 - **Source master:** native-resolution, EXIF-normalized color; transparency is
   composited on white. Detection and all public crops use this branch.
-- **OCR derivative:** lossless 8-bit grayscale. Document AI and Gemini page
+- **OCR derivative:** lossless 8-bit grayscale. Claude page reading and page
   structuring use this branch.
 
 Deskew uses a fixed projection-profile search from `-2.0` to `+2.0` degrees in
@@ -130,27 +129,23 @@ least `0.2` degrees. A best score at either boundary is considered unreliable
 and leaves the page unrotated. Applied rotations use bicubic resampling, canvas
 expansion, and white fill.
 
-No stage applies resize, upscale, contrast enhancement, sharpening, CLAHE,
-morphology, binarization, or automatic border crop to the OCR derivative.
-Document AI transport only encodes those pixels as lossless PNG.
+No stage applies upscale, contrast enhancement, sharpening, CLAHE, morphology,
+binarization, or automatic border crop to the OCR derivative. Images go to
+Claude as lossless PNG, downscaled only to Claude's vision limits.
 
-## Document AI
+## Page reading
 
-`recognition.docai_provider.extract_page_text()` calls Enterprise OCR using:
+`recognition.claude_reader.read_page_text()` cuts the OCR derivative into
+full-width strips (cuts across a page fall between printed lines). Each strip
+carries tinted context above and below; Claude transcribes only the clear area,
+so every line is read once, and returns positioned text blocks with whether
+each block's first line is indented. Lines read by both strips at a seam are
+kept once. The result is a `contracts.page_text.PageText`.
 
-- `GOOGLE_CLOUD_PROJECT`
-- `DOCUMENT_AI_PROCESSOR_ID`
-- `DOCUMENT_AI_LOCATION`
-- `/processorVersions/stable`
-
-It returns raw text, paragraph anchors, token confidence, and low-confidence
-words. Empty text is a valid response because a page can be visual-only or
-blank. Continuation-marker regex extraction is disabled: raw printed markers
-remain in the transcript, while semantic continuation decisions belong to the
-page-structuring and grouping contracts.
-
-Document AI has three total attempts for transient failures. Permanent client
-errors surface immediately. A failed final attempt marks the canvas `failed`.
+Empty text is a valid response because a page can be visual-only or blank.
+Raw printed continuation markers remain in the transcript, while semantic
+continuation decisions belong to the page-structuring and grouping contracts.
+A strip that fails after its retries marks the canvas `failed`.
 
 ## Local visual detection
 
@@ -178,47 +173,42 @@ SHA-256 pinned; `AMERICAN_STORIES_MODEL_PATH` may point at a local copy but
 cannot change the route. The detector route is fixed; environment overrides
 cannot bypass American Stories or its DocLayout table fallback.
 
-## Gemini request policy
+## Claude request policy
 
-All OCR Gemini clients are created in `config.google_clients` with Vertex AI,
-ADC, project `GOOGLE_CLOUD_PROJECT`, location `global`, API `v1`, and SDK-level
-automatic retries set to one attempt so the pipeline owns retry behavior.
+`config.claude_client.create_claude_client()` builds the one Anthropic client
+from `ANTHROPIC_API_KEY`, with SDK retries off so the pipeline owns retry
+behavior. Each request streams; a worker thread reads the stream and the
+caller gives up at the stage deadline, closing the stream.
 
-Each stage's model and thinking level live in `ocr/src/prompts.json`;
-timeouts, safety, seed, and media resolution are fixed in `config.model_calls`,
-and each stage module sets its own output cap:
+Each stage's model, effort and timeout live in `config.model_calls`, and each
+stage module sets its own output cap:
 
-| Stage | Model | Thinking | Max output | Timeout | Media |
+| Stage | Model | Effort | Max output | Timeout | Images |
 |---|---|---|---:|---:|---|
-| Page structuring | `gemini-3.5-flash-lite` | `HIGH` | 65,536 | 240 s | OCR page `ULTRA_HIGH` |
-| Visual assignment | `gemini-3.5-flash-lite` | `MEDIUM` | 65,536 | 180 s | annotated page and crops `ULTRA_HIGH` |
-| Article grouping | `gemini-3.8-flash` | `MEDIUM` | 65,536 | 240 s | none |
-| Seam review | `gemini-3.8-flash` | `MEDIUM` | 65,536 | 240 s | none |
-| Ad enrichment | `gemini-3.5-flash-lite` | `MINIMAL` | 65,536 | 120 s | none |
-| Final content review | `gemini-3.5-flash-lite` | `MEDIUM` | 16,384 | 120 s | none |
+| Page reading | `claude-haiku-5-5` | `xhigh` | 65,536 | 600 s | page strips |
+| Page structuring | `claude-haiku-5-5` | `xhigh` | 65,536 | 900 s | OCR page |
+| Visual assignment | `claude-haiku-5-5` | `high` | 65,536 | 600 s | annotated page and crops |
+| Article grouping | `claude-sonnet-5-5` | `high` | 65,536 | 900 s | none |
+| Seam review | `claude-sonnet-5-5` | `high` | 65,536 | 600 s | none |
+| Ad enrichment | `claude-haiku-5-5` | `high` | 65,536 | 300 s | none |
+| Final content review | `claude-haiku-5-5` | `high` | 16,384 | 300 s | none |
 
-Every request uses:
+Every request uses adaptive thinking, a JSON-schema output format built from
+the stage's Pydantic contract, and no sampling controls.
 
-- one candidate;
-- seed `0`;
-- `include_thoughts=false`;
-- safety thresholds `OFF` for the configured harm categories;
-- typed JSON response contracts where applicable;
-- no `temperature`, `topP`, `topK`, or thinking-budget override.
-
-`shared.retry.gemini_generate_with_retry()` owns a single three-attempt budget.
+`shared.retry.generate_with_retry()` owns a single three-attempt budget.
 Transient transport failures and the one allowed invalid-schema correction
-consume the same budget. Retries preserve the exact model, thinking level,
-media resolution, prompt, and response schema. There is no fallback model.
-Request starts are globally spaced by 0.5 seconds by default
-(`GEMINI_CALL_SPACING_S` overrides it); responses may still overlap across page
-workers. Retries wait for `Retry-After` when present, otherwise a full-jitter
-exponential delay (up to 2 s, then 4 s).
+consume the same budget; rate limits and overload (429, 503, 529) may use up to
+eight attempts with 5–60 s waits. Retries preserve the exact model, effort,
+prompt, and response schema. There is no fallback model. Request starts are
+globally spaced by 0.5 seconds by default (`OCR_CALL_SPACING_S` overrides it);
+responses may still overlap across page workers. Retries wait for
+`Retry-After` when present, otherwise a full-jitter exponential delay.
 
 ## Page structuring and historical text
 
-`recognition.page_extractor` sends the Document AI paragraphs and the grayscale
-page to Gemini 3.5 Flash-Lite. The transcript is the text source of truth; the
+`recognition.page_extractor` sends the page-text blocks and the grayscale page
+to Claude Haiku. The transcript is the text source of truth; the
 image supplies layout, reading order, and printed-caption placement.
 
 The output `PageContent` contains `articles`, `ads`, `other_content`,
@@ -254,10 +244,10 @@ removed.
 `application.page_pipeline.structure_and_link_page()` creates 10%-padded clean
 crops and an annotated full source page. `image_linking.visual_matcher` sends
 the full page plus at most 40 requested region crops per call; the full page is
-repeated when multiple batches are necessary. Every image part is
-`ULTRA_HIGH`.
+repeated when multiple batches are necessary. Every image part is lossless
+PNG.
 
-For every global region ID, Gemini returns two independent decisions:
+For every global region ID, Claude returns two independent decisions:
 
 - visual kind: photograph, illustration, table/chart/map, logo, typographic
   display ad, plain text, scanner/decorative artifact, or unresolved;
@@ -285,7 +275,7 @@ an ad, or preserved as standalone content.
 ### Grouping call
 
 Each available article fragment gets an immutable run-local ID. One
-edition-level Gemini 3.8 Flash call receives every fragment with page,
+edition-level Claude Sonnet call receives every fragment with page,
 headline/byline fields, structured continuation fields, first and last two
 sentence-like units, and bounded raw head/tail fallbacks. It must return a
 complete partition of all IDs, including singleton groups, in merge order. It
@@ -293,7 +283,7 @@ does not return rewritten text or metadata.
 
 Python validates exact coverage, uniqueness, known IDs, and the presence of a
 structured continuation role for every edge in a multi-fragment group. Printed
-folio digits remain evidence for Gemini rather than a Python veto because the
+folio digits remain evidence for Claude rather than a Python veto because the
 source newspaper can misprint them. Python does not use punctuation,
 capitalization, body-similarity, or continuation regexes to preselect calls or
 make semantic grouping decisions. An invalid partition becomes all singletons.
@@ -301,7 +291,7 @@ make semantic grouping decisions. An invalid partition becomes all singletons.
 ### Seam call
 
 Every adjacent boundary in every accepted multi-fragment group is included in
-one edition-level Gemini 3.8 Flash request, regardless of punctuation or
+one edition-level Claude Sonnet request, regardless of punctuation or
 capitalization. A three-piece article contributes two boundary records, but not
 two API calls. Each boundary returns:
 
@@ -318,7 +308,7 @@ the earliest non-empty metadata and preserve every body, image, and source page.
 
 ## Ad enrichment and final review
 
-Ad enrichment uses Gemini 3.5 Flash-Lite once per edition, split only when the
+Ad enrichment uses Claude Haiku once per edition, split only when the
 edition has more than 50 ads. The model returns deltas keyed by stable ad IDs.
 `business_name`, source body, and image files are copied from the original ad
 and cannot be rewritten. Phone, address, and price must be found in that ad's
@@ -335,7 +325,7 @@ The final review does not inspect every item. Deterministic code selects only:
 - visual-kind conflicts;
 - explicit unresolved classification states.
 
-Gemini 3.5 Flash-Lite may change only item type or article category, and a
+Claude Haiku may change only item type or article category, and a
 decision is applied only at confidence `>= 0.90`. It cannot rewrite text,
 names, metadata, source pages, captions, or image associations. Schedules and
 standings remain other content unless the supplied evidence shows authored
@@ -401,15 +391,15 @@ Snapshot, raw-response, issue-report, and run-comparison helpers have been
 removed. Run-owned source masters, OCR derivatives, annotated pages, crops,
 candidates, and rollback directories are cleaned up after success or failure.
 
-Gemini cost accounting uses global standard rates:
+Claude cost accounting uses standard rates:
 
 | Model | Input / 1M tokens | Output / 1M tokens |
 |---|---:|---:|
-| `gemini-3.5-flash-lite` | $0.30 | $2.50 |
-| `gemini-3.8-flash` | $1.50 | $7.50 |
+| `claude-haiku-5-5` | $0.10 | $0.50 |
+| `claude-sonnet-5-5` | $2.00 | $10.00 |
 
-`toolUsePromptTokenCount` is input; `thoughtsTokenCount` is output. Cached-token
-fields remain separate in telemetry.
+Thinking tokens bill as output. Cached-token fields remain separate in
+telemetry.
 
 ## Code map
 
@@ -418,7 +408,7 @@ fields remain separate in telemetry.
 | Transaction orchestration | `application/edition_pipeline.py`, `scripts/ocr/process-edition.sh` |
 | IIIF inventory/download | `ingestion/manifest.py`, `ingestion/download.py`, `scripts/iiif/download.py` |
 | Source preparation | `preprocessing/image_converter.py`, `image_preprocessor.py`, `skew.py` |
-| OCR and page structuring | `recognition/docai_provider.py`, `recognition/page_extractor.py` |
+| Page reading and structuring | `recognition/claude_reader.py`, `recognition/page_extractor.py` |
 | Visual detection | `detection/visual_provider.py`, `american_stories_provider.py`, `hybrid_provider.py`, `yolo_provider.py` |
 | Visual assignment | `image_linking/visual_matcher.py`, `assignment_applier.py`, `cropper.py` |
 | Grouping and seams | `merging/llm_merge.py`, `merging/merge_sanitizer.py` |
@@ -442,14 +432,14 @@ python -m pytest -q tests/ocr
 
 CI runs only `tests/ocr/architecture/`; the rest of the suite runs locally.
 
-They cover exact model/thinking/media routing, shared retry ceilings, token cost
+They cover exact model/effort routing, shared retry ceilings, token cost
 classification, manifest state accounting, pixel preservation, deskew policy,
-Document AI behavior, hybrid detector routing, complete visual disposition,
+Claude page reading, hybrid detector routing, complete visual disposition,
 group partition validation, all-boundary seam batching, repair-anchor safety,
 lossless fallbacks, asset constraints, shell promotion invariants, and the
 no-debug-artifact rule.
 
-Live ADC smoke tests and frozen-gold scoring are separate because they incur
-cloud cost. The February 21, 1990 twelve-page gold candidate is the primary
+Live Claude runs and frozen-gold scoring are separate because they incur API
+cost. The February 21, 1990 twelve-page gold candidate is the primary
 calibration reference; detector evaluation must use the same hybrid mode as the
 hosted path.

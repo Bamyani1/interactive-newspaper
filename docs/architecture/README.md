@@ -5,7 +5,7 @@ if you're new; the glossary and operator shortcuts below answer narrower questio
 
 ## Reading order
 
-1. **[ocr-pipeline.md](ocr-pipeline.md)** — How raw scanned TIF images become structured `edition.json` with articles, ads, and image crops: manifest accounting, lossless conversion, Document AI + local visual detection, Gemini page structuring, grouping and seam review, enrichment, then candidate validation and atomic promotion.
+1. **[ocr-pipeline.md](ocr-pipeline.md)** — How raw scanned TIF images become structured `edition.json` with articles, ads, and image crops: manifest accounting, lossless conversion, Claude page reading + local visual detection, Claude page structuring, grouping and seam review, enrichment, then candidate validation and atomic promotion.
 2. **[data-model.md](data-model.md)** — How `edition.json` becomes DB rows. Schema, the `ocr-adapter` boundary, embeddings and immutable index builds, HNSW, migrations, and R2 storage.
 3. **[rag-pipeline.md](rag-pipeline.md)** — How DB rows become answers. `/api/ask` end-to-end: reformulate → retrieve (embedding + FTS, fused) → rerank → generate, with a coverage step for absence/count/exhaustive questions, plus the agent loop for complex queries, SSE streaming, dedup, budget, and the error taxonomy.
 
@@ -43,7 +43,7 @@ Common troubleshooting:
 | Answers look keyword-only          | `npm run rag:health`; [data-model.md § Investigate a slow query](data-model.md#investigate-a-slow-query) |
 | Vector search feels slow           | [data-model.md § Investigate a slow query](data-model.md#investigate-a-slow-query)                       |
 | New editions missing from Ask      | [data-model.md § Build and activate a new index](data-model.md#build-and-activate-a-new-index)           |
-| OCR pipeline hung on a page        | [ocr-pipeline.md § Gemini request policy](ocr-pipeline.md#gemini-request-policy) (per-stage timeouts)    |
+| OCR pipeline hung on a page        | [ocr-pipeline.md § Claude request policy](ocr-pipeline.md#claude-request-policy) (per-stage timeouts)    |
 | Seed wiped embeddings unexpectedly | [data-model.md § Embedding preservation](data-model.md#embedding-preservation--canonical-identity)       |
 | Daily budget blown before noon     | [rag-pipeline.md § Cost accounting](rag-pipeline.md#cost-accounting)                                     |
 

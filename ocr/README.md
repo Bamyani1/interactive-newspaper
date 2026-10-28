@@ -21,32 +21,34 @@ The detailed runtime design is in
   reclassified as a blank page, and a page whose structured text still leaves
   out most of an OCR story block after one retry fails (blocks inside detected
   ads, tables and photos are not checked).
-- Document AI supplies OCR text. Gemini structures that text and may use images
-  for layout or visual association, but it may not invent historical wording.
+- Claude reads the page text, strip by strip, then structures that text and may
+  use images for layout or visual association, but it may not invent historical
+  wording.
 - Visual detection and crops use a native-resolution color source master;
-  Document AI and page structuring use a separate lossless grayscale derivative.
-- Gemini always uses Vertex AI, Application Default Credentials, `global`, and
-  the stable `v1` API. API keys and cross-model fallback are disabled.
+  page reading and structuring use a separate lossless grayscale derivative.
+- Every model call goes to the Anthropic API with `ANTHROPIC_API_KEY`. The
+  pipeline makes no Google call and has no cross-model fallback.
 - Production does not retain prompts, OCR transcripts, raw responses,
   snapshots, issue reports, or per-run directories.
 
 ## Models and calls
 
-| Call | Model | Thinking | Image resolution |
+| Call | Model | Effort | Images |
 |---|---|---|---|
-| Page structuring | `gemini-3.5-flash-lite` | `HIGH` | page: `ULTRA_HIGH` |
-| Visual assignment | `gemini-3.5-flash-lite` | `MEDIUM` | full page and crops: `ULTRA_HIGH` |
-| Article grouping | `gemini-3.8-flash` | `MEDIUM` | none |
-| Seam review | `gemini-3.8-flash` | `MEDIUM` | none |
-| Ad enrichment | `gemini-3.5-flash-lite` | `MINIMAL` | none |
-| Final content review | `gemini-3.5-flash-lite` | `MEDIUM` | none |
+| Page reading | `claude-haiku-5-5` | `xhigh` | page strips |
+| Page structuring | `claude-haiku-5-5` | `xhigh` | page |
+| Visual assignment | `claude-haiku-5-5` | `high` | full page and crops |
+| Article grouping | `claude-sonnet-5-5` | `high` | none |
+| Seam review | `claude-sonnet-5-5` | `high` | none |
+| Ad enrichment | `claude-haiku-5-5` | `high` | none |
+| Final content review | `claude-haiku-5-5` | `high` | none |
 
-Every call requests one candidate with seed `0` (the page text check's one
-retry uses seed `1`), disabled safety filters, and
-`include_thoughts=false`. Gemini 3 sampling controls (`temperature`, `topP`, and
-`topK`) and thinking budgets are intentionally absent. A logical stage has at
-most three total attempts; transient and schema-correction retries share that
-budget and keep the same model and configuration.
+Routes live in `config/model_calls.py`. Every call streams with adaptive
+thinking and a JSON-schema output format; images go as lossless PNG, resized to
+Claude's vision limits. Sampling controls are intentionally absent. A logical
+stage has at most three total attempts (rate limits and overload up to eight);
+transient and schema-correction retries share that budget and keep the same
+model and configuration.
 
 ## Setup
 
@@ -60,28 +62,12 @@ pip install -r requirements.txt
 cd ..
 ```
 
-The OCR pipeline locks the Python Google Gen AI SDK to
-`google-genai==2.20.0`.
-
-Enable Vertex AI and Document AI in the intended Google Cloud project, then
-authenticate locally with ADC:
-
-```bash
-gcloud auth application-default login
-gcloud auth application-default set-quota-project YOUR_PROJECT_ID
-```
-
-Add the cloud identifiers to the repository-root `.env.local`:
+The OCR pipeline locks the Anthropic Python SDK in `requirements.txt`. Add the
+API key to the repository-root `.env.local`:
 
 ```dotenv
-GOOGLE_CLOUD_PROJECT=your-project-id
-DOCUMENT_AI_PROCESSOR_ID=your-enterprise-ocr-processor-id
-DOCUMENT_AI_LOCATION=us
+ANTHROPIC_API_KEY=...
 ```
-
-The Gemini location is locked to `global`; the Document AI location remains the
-location of the configured processor. Document AI uses the current `stable`
-processor-version alias.
 
 Normal publication also needs the R2 variables used by
 `scripts/db/upload-images.mjs` whenever the edition contains referenced images:
@@ -157,17 +143,18 @@ validation. OCR stage resumption and run IDs are intentionally unsupported.
 3. Create two run-scoped branches per page: a native color source master and an
    8-bit grayscale OCR derivative. The only optional geometric change is fixed
    deskew over -2.0 to +2.0 degrees in 0.1-degree steps, applied from 0.2 degrees.
-4. Run Document AI Enterprise OCR on the grayscale derivative. No CLAHE,
-   morphology, sharpening, binarization, resize, or border crop is applied.
+4. Claude reads the grayscale derivative in full-width strips, each with tinted
+   context above and below, and returns positioned text blocks. No CLAHE,
+   morphology, sharpening, binarization, or border crop is applied.
 5. Run the default hybrid visual detector on the color source master: American
    Stories supplies newspaper visuals and DocLayout supplies non-overlapping
    tables.
-6. Structure each page with Gemini 3.5 Flash-Lite, then assign every proposed
+6. Structure each page with Claude Haiku, then assign every proposed
    visual using the annotated page and 10%-padded crops. Batches contain at most
    40 regions. Invalid or failed assignments remain unresolved standalone
    evidence; there is no spatial semantic fallback.
-7. Group all available article fragments with one Gemini 3.8 Flash call. Review
-   all accepted adjacent seams in one additional Gemini 3.8 Flash call. Unsafe
+7. Group all available article fragments with one Claude Sonnet call. Review
+   all accepted adjacent seams in one additional Claude Sonnet call. Unsafe
    decisions fall back to the original fragments without losing text.
 8. Enrich ads in batches of at most 50, then run the narrow deterministic final
    type/category review. Either stage abstains safely on failure.
@@ -254,13 +241,11 @@ For any edition with `gold/<date>/gold-edition.json` and its scans in
 `ocr/inbox/`, one command runs extraction, validates, and scores:
 
 ```bash
-scripts/ocr/eval-edition.sh 1989-11-29      # writes ocr/runs/eval/<date>/<time>-<commit>/
-python ocr/check_blocks.py ocr/runs/eval/<date>/<run>/work \
-  --gold-edition gold/<date>/gold-edition.json -v   # re-check block building offline
+scripts/ocr/eval-edition.sh 1989-11-29      # writes ocr/runs/eval/<date>/<time>-<commit>-claude/
 ```
 
-The run keeps each page's Document AI response, so block-building changes can be
-compared on the same OCR without new API calls. `score.md` has word error rates,
+The run keeps each page's strips and Claude's transcription under `work/`.
+`score.md` has word error rates,
 paragraph-break precision/recall, the worst items and an edition-wide count of
 gold words missing from every item (text filed under a different item is not
 missing); `diff.md` lists every word difference.
@@ -288,12 +273,9 @@ fallbacks, asset limits, publication behavior, and the no-debug-artifact rule.
 
 ## Troubleshooting
 
-- **ADC or project error:** run
-  `gcloud auth application-default print-access-token`, confirm the quota
-  project, and verify the ADC principal has Vertex AI and Document AI access.
-- **Document AI error:** confirm `DOCUMENT_AI_PROCESSOR_ID` belongs to
-  `GOOGLE_CLOUD_PROJECT` in `DOCUMENT_AI_LOCATION` and exposes the `stable`
-  version alias.
+- **Anthropic error:** confirm `ANTHROPIC_API_KEY` in `.env.local`. Rate limits
+  and overload (429, 529) are retried with longer waits; `OCR_CALL_SPACING_S`
+  (default 0.5) sets the minimum gap between call starts.
 - **Detector startup error:** install `ocr/requirements.txt`, confirm
   `ocr/models/` is writable, and satisfy the hosted license gate.
 - **Below 70%:** inspect the terminal summary and sanitized entries in
