@@ -6,7 +6,7 @@
 //
 // Usage: npm run archive:run -- --count N --target local|production [--decade 1980s] [--max-usd X] --yes
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statfsSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,6 +71,8 @@ export interface RunDeps {
   readText(file: string): string | null;
   dirExists(dir: string): boolean;
   pidAlive(pid: number): boolean;
+  /** True once the runner has been sent SIGINT, SIGTERM or SIGHUP. */
+  interrupted(): boolean;
   pid: number;
   random(): number;
   prodDatabaseUrl: string | undefined;
@@ -87,6 +89,8 @@ export interface EditionResult {
   costUsd: number;
   note: string;
   seeded: boolean;
+  /** Why the run must stop after this edition. */
+  stop?: string;
 }
 
 export interface RunSummary {
@@ -96,6 +100,11 @@ export interface RunSummary {
   stopReason: string | null;
   spentUsd: number;
 }
+
+const ALREADY_PUBLISHED =
+  "already in public/editions: check its seed and backup (--repair-seed, editions:backup) instead of re-running OCR";
+const backupNote = (date: string) =>
+  `published; R2 backup not verified: run editions:backup -- --date ${date} --verify`;
 
 const manifestUrl = (pointer: number) =>
   `${DEFAULT_BASE_URL}/iiif/info/${DEFAULT_COLLECTION}/${pointer}/manifest.json`;
@@ -132,6 +141,21 @@ async function runEdition(
     await update({ ...fields, status, last_error: note, ocr_cost_usd: costUsd });
     return { pointer: row.pointer, date, status, costUsd, note: note ?? "", seeded: false };
   };
+  // Ends the run without counting this attempt; the edition is picked up next time.
+  const halt = async (
+    status: SourceStatus,
+    costUsd: number,
+    reason: string,
+    fields: RowUpdate = {}
+  ) => ({
+    ...(await finish(status, costUsd, reason, { ...fields, attempts: row.attempts })),
+    stop: reason,
+  });
+
+  // A run killed after promotion leaves the row behind; OCR again would pay twice and overwrite it.
+  if (deps.readText(path.join("public/editions", date, "edition.json")) !== null) {
+    return finish("needs_review", 0, ALREADY_PUBLISHED);
+  }
   await update({ attempts, last_run_id: runId });
 
   let dir = row.local_dir && deps.dirExists(row.local_dir) ? row.local_dir : null;
@@ -146,12 +170,16 @@ async function runEdition(
       "1",
     ]);
     if (code !== 0) {
+      if (deps.interrupted() || code >= 128) {
+        return halt(row.status, 0, "interrupted", { local_dir: null });
+      }
       const outcome = statusAfterFailure(`download exited ${code}`, attempts);
       return finish(outcome.status, 0, outcome.error, { local_dir: null });
     }
     dir = target;
     await update({ status: "downloaded", local_dir: dir });
   }
+  if (deps.interrupted()) return halt("downloaded", 0, "interrupted");
 
   const env =
     args.target === "production" ? { DATABASE_URL: deps.prodDatabaseUrl ?? "" } : undefined;
@@ -162,6 +190,11 @@ async function runEdition(
   // Without a provenance file the OCR spend is unknown; charge the reserve.
   const cost =
     recorded === null ? Math.max(failedCalls, EDITION_RESERVE_USD) : recorded + failedCalls;
+
+  if (outcome.stop) {
+    // A preflight or spawn failure ran no OCR; an interrupted one may have.
+    return halt(outcome.status, outcome.stop === "interrupted" ? cost : failedCalls, outcome.stop);
+  }
 
   if (code === 50) {
     return finish(outcome.status, cost, outcome.error, { local_dir: null, seeded_target: null });
@@ -174,12 +207,25 @@ async function runEdition(
   const result =
     backup === 0
       ? await finish("backed_up", cost, null)
-      : await finish(
-          "needs_review",
-          cost,
-          `published; R2 backup not verified: run editions:backup -- --date ${date} --verify`
-        );
+      : await finish("needs_review", cost, backupNote(date));
   return { ...result, seeded: true };
+}
+
+/** Finishes an edition a dead run published but never backed up. */
+async function resumeBackup(row: CandidateRow, deps: RunDeps): Promise<EditionResult> {
+  const date = row.edition_date;
+  const backup = await deps.exec("node", [BACKUP, "--date", date, "--verify"]);
+  const status: SourceStatus = backup === 0 ? "backed_up" : "needs_review";
+  const error = backup === 0 ? null : backupNote(date);
+  await deps.store.update(row.pointer, { status, last_error: error });
+  return {
+    pointer: row.pointer,
+    date,
+    status,
+    costUsd: 0,
+    note: error ?? "backup resumed",
+    seeded: false,
+  };
 }
 
 function pickSpotChecks(results: EditionResult[], count: number, random: () => number) {
@@ -248,29 +294,54 @@ export async function runArchive(args: RunArgs, deps: RunDeps): Promise<RunSumma
   let consecutiveFailures = 0;
   let stop: string | null = null;
   try {
-    const queue = pickNext(await deps.store.candidates(), args);
+    const rows = await deps.store.candidates();
+    for (const row of rows.filter((candidate) => candidate.status === "published")) {
+      deps.log(`[archive:run] ${row.edition_date}: resuming its backup`);
+      results.push(await resumeBackup(row, deps));
+    }
+    const queue = pickNext(rows, args);
     if (queue.length === 0) stop = "no runnable editions left";
     deps.log(
       `[archive:run] ${runId}: ${queue.length} edition(s), target ${args.target}, cap $${args.maxUsd.toFixed(2)}`
     );
     for (const row of queue) {
-      stop = stopReason({
-        holdPresent: deps.holdPresent(),
-        ownsLock: await deps.store.holdsLock(runId),
-        freeBytes: deps.freeBytes(),
-        spentUsd,
-        maxUsd: args.maxUsd,
-        consecutiveFailures,
-      });
+      stop = deps.interrupted()
+        ? "interrupted"
+        : stopReason({
+            holdPresent: deps.holdPresent(),
+            ownsLock: await deps.store.holdsLock(runId),
+            freeBytes: deps.freeBytes(),
+            spentUsd,
+            maxUsd: args.maxUsd,
+            consecutiveFailures,
+          });
       if (stop) break;
       deps.log(`[archive:run] ${row.edition_date} (pointer ${row.pointer}) starting`);
-      const result = await runEdition(row, args, runId, deps);
+      let result: EditionResult;
+      try {
+        result = await runEdition(row, args, runId, deps);
+      } catch (error) {
+        // Keep the run and its report; the spend is unknown, so charge the reserve.
+        const message = error instanceof Error ? error.message : String(error);
+        result = {
+          pointer: row.pointer,
+          date: row.edition_date,
+          status: "failed",
+          costUsd: EDITION_RESERVE_USD,
+          note: `run error: ${message}`,
+          seeded: false,
+        };
+      }
       results.push(result);
       spentUsd += result.costUsd;
       consecutiveFailures = result.status === "backed_up" ? 0 : consecutiveFailures + 1;
       deps.log(
         `[archive:run] ${result.date}: ${result.status} $${result.costUsd.toFixed(2)}${result.note ? ` (${result.note})` : ""}`
       );
+      if (result.stop) {
+        stop = result.stop;
+        break;
+      }
     }
     if (stop) deps.log(`[archive:run] stopped: ${stop}`);
 
@@ -300,12 +371,13 @@ export async function runArchive(args: RunArgs, deps: RunDeps): Promise<RunSumma
   }
 }
 
-function sqlStore(executor: QueryExecutor): RunStore {
+export function sqlStore(executor: QueryExecutor): RunStore {
   return {
     async candidates() {
+      // `published` only lasts between a seed and its backup, so a row left there was orphaned.
       const rows = await executor.query({
         text: `SELECT pointer, edition_date, status, attempts, local_dir FROM ops.source_editions
-               WHERE status IN ('downloaded', 'pending', 'failed')`,
+               WHERE status IN ('downloaded', 'pending', 'failed', 'published')`,
       });
       return rows.map((row) => ({
         pointer: Number(row.pointer),
@@ -326,14 +398,23 @@ function sqlStore(executor: QueryExecutor): RunStore {
       });
     },
     async acquireLock(runId, pid, isAlive) {
-      const [held] = await executor.query({ text: "SELECT pid FROM ops.run_lock WHERE id = 1" });
-      if (held && isAlive(Number(held.pid))) return false;
-      await executor.query({
-        text: `INSERT INTO ops.run_lock (id, run_id, pid) VALUES (1, $1, $2)
-               ON CONFLICT (id) DO UPDATE SET run_id = EXCLUDED.run_id, pid = EXCLUDED.pid, started_at = now()`,
-        params: [runId, pid],
+      const [held] = await executor.query({
+        text: "SELECT run_id, pid FROM ops.run_lock WHERE id = 1",
       });
-      return true;
+      if (held && isAlive(Number(held.pid))) return false;
+      // Compare-and-swap: take the row only if it is still free, or still the dead run's.
+      const taken = held
+        ? await executor.query({
+            text: `UPDATE ops.run_lock SET run_id = $1, pid = $2, started_at = now()
+                   WHERE id = 1 AND run_id = $3 AND pid = $4 RETURNING run_id`,
+            params: [runId, pid, String(held.run_id), Number(held.pid)],
+          })
+        : await executor.query({
+            text: `INSERT INTO ops.run_lock (id, run_id, pid) VALUES (1, $1, $2)
+                   ON CONFLICT (id) DO NOTHING RETURNING run_id`,
+            params: [runId, pid],
+          });
+      return taken.length === 1;
     },
     async holdsLock(runId) {
       const rows = await executor.query({
@@ -358,13 +439,38 @@ function sqlStore(executor: QueryExecutor): RunStore {
 }
 
 function realDeps(executor: QueryExecutor): RunDeps {
+  let current: ChildProcess | null = null;
+  let interrupted = false;
+  // Children run in their own process group, so each signal reaches them once,
+  // forwarded from here, and the run records the edition before it exits.
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.on(signal, () => {
+      interrupted = true;
+      console.error(`[archive:run] ${signal}: stopping after the current step`);
+      if (current?.pid) {
+        try {
+          process.kill(-current.pid, signal);
+        } catch {
+          // The child has already exited.
+        }
+      }
+    });
+  }
   return {
     store: sqlStore(executor),
     exec: (command, args, env) =>
       new Promise((resolve) => {
-        const child = spawn(command, args, { stdio: "inherit", env: { ...process.env, ...env } });
+        const child = spawn(command, args, {
+          stdio: "inherit",
+          env: { ...process.env, ...env },
+          detached: true,
+        });
+        current = child;
         child.on("error", () => resolve(127));
-        child.on("close", (code, signal) => resolve(code ?? (signal ? 128 : 1)));
+        child.on("close", (code, signal) => {
+          current = null;
+          resolve(code ?? (signal ? 128 : 1));
+        });
       }),
     now: () => new Date(),
     freeBytes: () => {
@@ -388,6 +494,7 @@ function realDeps(executor: QueryExecutor): RunDeps {
         return (error as NodeJS.ErrnoException).code === "EPERM";
       }
     },
+    interrupted: () => interrupted,
     pid: process.pid,
     random: Math.random,
     prodDatabaseUrl: process.env.PROD_DATABASE_URL || undefined,

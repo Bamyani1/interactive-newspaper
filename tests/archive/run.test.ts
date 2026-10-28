@@ -30,11 +30,14 @@ function harness(
     hold?: () => boolean;
     lockedBy?: { pid: number; alive: boolean };
     existingDirs?: string[];
+    files?: Record<string, string>;
+    interrupted?: () => boolean;
+    failUpdate?: (pointer: number, fields: RowUpdate) => boolean;
   } = {}
 ) {
   const state = new Map<number, Row>(rows.map((row) => [row.pointer, { ...row }]));
   const calls: Call[] = [];
-  const files = new Map<string, string>();
+  const files = new Map<string, string>(Object.entries(options.files ?? {}));
   const reports = new Map<string, string>();
   const revalidations: string[] = [];
   let lock = options.lockedBy ? { runId: "old-run", pid: options.lockedBy.pid } : null;
@@ -45,6 +48,7 @@ function harness(
       return [...state.values()].map((row) => ({ ...row }));
     },
     async update(pointer, fields) {
+      if (options.failUpdate?.(pointer, fields)) throw new Error("fetch failed");
       Object.assign(state.get(pointer)!, fields);
     },
     async acquireLock(runId, pid, isAlive) {
@@ -99,6 +103,7 @@ function harness(
     readText: (file) => files.get(file) ?? null,
     dirExists: (dir) => options.existingDirs?.includes(dir) ?? false,
     pidAlive: (pid) => (options.lockedBy?.pid === pid ? options.lockedBy.alive : false),
+    interrupted: options.interrupted ?? (() => false),
     pid: 4242,
     random: () => 0,
     prodDatabaseUrl: "postgresql://prod.example/neondb",
@@ -283,6 +288,116 @@ describe("runArchive", () => {
     expect(summary.results).toHaveLength(3);
     expect(summary.stopReason).toContain("3 failures in a row");
     expect(h.state.get(4)!.status).toBe("pending");
+  });
+
+  it("never re-runs an edition already in public/editions: review, no download, no OCR", async () => {
+    const h = harness([pending(1, "1980-01-01"), pending(2, "1980-02-01")], {
+      files: { "public/editions/1980-01-01/edition.json": "{}" },
+    });
+    const summary = await runArchive(args({ count: 2 }), h.deps);
+    expect(h.state.get(1)).toMatchObject({
+      status: "needs_review",
+      attempts: 0,
+      ocr_cost_usd: 0,
+      last_error:
+        "already in public/editions: check its seed and backup (--repair-seed, editions:backup) instead of re-running OCR",
+    });
+    expect(h.calls.map((call) => call.args[1])).not.toContain(
+      path.join("ocr/inbox", "1980-01-01 contentdm-1")
+    );
+    expect(h.state.get(2)!.status).toBe("backed_up");
+    expect(summary.spentUsd).toBeCloseTo(0.4);
+  });
+
+  it("an interrupted process step stops the run without spending an attempt", async () => {
+    const h = harness([pending(1, "1980-01-01"), pending(2, "1980-02-01")], {
+      processExit: () => 130,
+    });
+    const summary = await runArchive(args({ count: 2 }), h.deps);
+    expect(summary.stopReason).toBe("interrupted");
+    expect(summary.results).toHaveLength(1);
+    expect(h.state.get(1)).toMatchObject({
+      status: "downloaded",
+      attempts: 0,
+      local_dir: path.join("ocr/inbox", "1980-01-01 contentdm-1"),
+      last_error: "interrupted",
+    });
+    expect(h.state.get(2)!.status).toBe("pending");
+    expect(h.reports.get(summary.reportPath)).toContain("Stopped: interrupted");
+  });
+
+  it("an interrupted download stops the run and leaves the edition pending", async () => {
+    const h = harness([pending(1, "1980-01-01"), pending(2, "1980-02-01")], {
+      downloadExit: 130,
+    });
+    const summary = await runArchive(args({ count: 2 }), h.deps);
+    expect(summary.stopReason).toBe("interrupted");
+    expect(h.state.get(1)).toMatchObject({ status: "pending", attempts: 0 });
+    expect(h.calls.map((call) => call.script)).toEqual(["download.py"]);
+  });
+
+  it("stops between editions once the runner has been signalled", async () => {
+    let signalled = false;
+    const h = harness([pending(1, "1980-01-01"), pending(2, "1980-02-01")], {
+      interrupted: () => signalled,
+      processExit: () => {
+        signalled = true;
+        return 0;
+      },
+    });
+    const summary = await runArchive(args({ count: 2 }), h.deps);
+    expect(summary.results).toHaveLength(1);
+    expect(summary.stopReason).toBe("interrupted");
+    expect(h.state.get(1)!.status).toBe("backed_up");
+  });
+
+  it("a preflight failure stops the run and charges nothing", async () => {
+    const h = harness([pending(1, "1980-01-01"), pending(2, "1980-02-01")], {
+      processExit: () => 2,
+    });
+    const summary = await runArchive(args({ count: 2 }), h.deps);
+    expect(summary.stopReason).toBe("process-edition preflight failed (exit 2)");
+    expect(summary.spentUsd).toBe(0);
+    expect(h.state.get(1)).toMatchObject({ status: "downloaded", attempts: 0, ocr_cost_usd: 0 });
+    expect(h.state.get(2)!.status).toBe("pending");
+  });
+
+  it("backs up an edition a dead run left published, before new work", async () => {
+    const h = harness([
+      { ...pending(9, "1979-05-05"), status: "published", attempts: 1 },
+      pending(1, "1980-01-01"),
+    ]);
+    const summary = await runArchive(args({ count: 1 }), h.deps);
+    expect(h.calls[0]).toMatchObject({
+      script: "backup-editions.mjs",
+      args: ["scripts/db/backup-editions.mjs", "--date", "1979-05-05", "--verify"],
+    });
+    expect(h.state.get(9)!.status).toBe("backed_up");
+    expect(h.state.get(1)!.status).toBe("backed_up");
+    expect(summary.results.map((result) => result.date)).toEqual(["1979-05-05", "1980-01-01"]);
+  });
+
+  it("records an error inside one edition and still runs the next and writes the report", async () => {
+    const h = harness([pending(1, "1980-01-01"), pending(2, "1980-02-01")], {
+      failUpdate: (pointer, fields) => pointer === 1 && fields.status === "published",
+    });
+    const summary = await runArchive(args({ count: 2 }), h.deps);
+    expect(summary.results[0]).toMatchObject({
+      date: "1980-01-01",
+      status: "failed",
+      note: "run error: fetch failed",
+      costUsd: 0.75,
+    });
+    expect(h.state.get(2)!.status).toBe("backed_up");
+    expect(h.reports.get(summary.reportPath)).toContain("run error: fetch failed");
+    expect(h.lock()).toBeNull();
+  });
+
+  it("charges a discarded candidate's logged cost when it is above the reserve", async () => {
+    const h = harness([pending(1, "1982-01-01")], { processExit: () => 20, failedCallCost: 1.8 });
+    const summary = await runArchive(args({ count: 1, maxUsd: 5 }), h.deps);
+    expect(h.state.get(1)!.ocr_cost_usd).toBeCloseTo(1.8);
+    expect(summary.spentUsd).toBeCloseTo(1.8);
   });
 
   it("refuses to start while a live run holds the lock, and takes over a dead one's", async () => {

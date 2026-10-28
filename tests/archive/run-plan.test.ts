@@ -93,6 +93,22 @@ describe("statusAfterProcess", () => {
   ])("exit %i on attempt %i → %s", (code, attempts, status, error) => {
     expect(statusAfterProcess(code, attempts)).toEqual({ status, error });
   });
+
+  it("sends an asset-lock failure to review: OCR is paid for, and the edition may be promoted", () => {
+    expect(statusAfterProcess(75, 1)).toEqual({
+      status: "needs_review",
+      error: "asset lock (exit 75): check public/editions before a rerun",
+    });
+  });
+
+  it.each([
+    [130, "interrupted"],
+    [143, "interrupted"],
+    [2, "process-edition preflight failed (exit 2)"],
+    [127, "could not start process-edition (exit 127)"],
+  ])("exit %i stops the run and leaves the scans for the next one: %s", (code, error) => {
+    expect(statusAfterProcess(code, 1)).toEqual({ status: "downloaded", error, stop: error });
+  });
 });
 
 describe("stopReason", () => {

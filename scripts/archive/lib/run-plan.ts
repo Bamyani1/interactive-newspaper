@@ -108,16 +108,37 @@ export function statusAfterFailure(
     : { status: "failed", error };
 }
 
-export function statusAfterProcess(
-  exitCode: number,
-  attempts: number
-): { status: SourceStatus; error: string | null } {
+export interface ProcessOutcome {
+  status: SourceStatus;
+  error: string | null;
+  /** Set when the run must stop; the edition keeps its scans and its attempt. */
+  stop?: string;
+}
+
+/** Exits that are not the edition's fault: a signal, a bad setup, or no bash. */
+function runStopFor(exitCode: number): string | null {
+  if (exitCode >= 128 && exitCode < 160) return "interrupted";
+  if (exitCode === 2) return "process-edition preflight failed (exit 2)";
+  if (exitCode === 127) return "could not start process-edition (exit 127)";
+  return null;
+}
+
+export function statusAfterProcess(exitCode: number, attempts: number): ProcessOutcome {
   if (exitCode === 0) return { status: "published", error: null };
   if (exitCode === 20)
     return { status: "needs_review", error: "failed publish checks; scans kept" };
   if (exitCode === 50) {
     return { status: "needs_review", error: "published, seed failed: run --repair-seed" };
   }
+  // The OCR is paid for, and the lock may have failed after promotion: a blind retry pays twice.
+  if (exitCode === 75) {
+    return {
+      status: "needs_review",
+      error: "asset lock (exit 75): check public/editions before a rerun",
+    };
+  }
+  const stop = runStopFor(exitCode);
+  if (stop) return { status: "downloaded", error: stop, stop };
   return statusAfterFailure(`process-edition exited ${exitCode}`, attempts);
 }
 
