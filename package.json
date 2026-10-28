@@ -96,7 +96,7 @@
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^5",
-    "vitest": "4.1.11",
+    "vitest": "4.1.12",
     "youtubei.js": "^18.0.0"
   }
 }
