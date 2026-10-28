@@ -197,7 +197,8 @@ else
   [[ "$DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail 2 "arguments" "repair date must be YYYY-MM-DD"
 fi
 
-# Load simple KEY=VALUE entries without evaluating shell code.
+# Load simple KEY=VALUE entries without evaluating shell code. Variables the
+# caller already set win (npm run with-prod -- sets DATABASE_URL).
 if [[ -f "$ROOT_DIR/.env.local" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
@@ -206,6 +207,7 @@ if [[ -f "$ROOT_DIR/.env.local" ]]; then
     value="${line#*=}"
     key="${key//[[:space:]]/}"
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    [[ -n "${!key+x}" ]] && continue
     value="${value%\"}"; value="${value#\"}"
     value="${value%\'}"; value="${value#\'}"
     export "$key=$value"
