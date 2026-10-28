@@ -174,6 +174,79 @@ describe("voyage rerank path", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
+  describe("voyage+gate mode", () => {
+    const articles = Array.from({ length: 4 }, (_, i) => makeArticle({ id: `a-${i}` }));
+    // rerank-3 orders a-3, a-2, a-1, a-0.
+    const voyageOrder = () =>
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: articles.map((_, i) => ({ index: i, relevance_score: (i + 1) / 10 })),
+        }),
+      });
+
+    beforeEach(() => {
+      vi.stubEnv("RAG_RERANKER", "voyage+gate");
+      vi.stubEnv("VOYAGE_API_KEY", "test-voyage-key");
+    });
+
+    it("keeps the gate's picks in rerank-3 order and reports sufficiency", async () => {
+      vi.stubGlobal("fetch", voyageOrder());
+      createMock.mockResolvedValue(
+        reply(JSON.stringify({ keep: [false, true, true, false], sufficient: true }))
+      );
+      const onVerdict = vi.fn();
+
+      const result = await rerankArticles("question", articles, { minScore: 4, onVerdict });
+
+      expect(result.map((a) => a.id)).toEqual(["a-2", "a-1"]);
+      expect(onVerdict).toHaveBeenCalledWith({ sufficient: true });
+      const prompt = JSON.stringify(createMock.mock.calls[0][0]);
+      expect(prompt).toContain("rerank score");
+    });
+
+    it("returns nothing and an insufficient verdict when the gate drops every article", async () => {
+      vi.stubGlobal("fetch", voyageOrder());
+      createMock.mockResolvedValue(
+        reply(JSON.stringify({ keep: [false, false, false, false], sufficient: true }))
+      );
+      const onVerdict = vi.fn();
+
+      const result = await rerankArticles("question", articles, { minScore: 4, onVerdict });
+
+      expect(result).toEqual([]);
+      expect(onVerdict).toHaveBeenCalledWith({ sufficient: false });
+    });
+
+    it("falls back to the rerank-3 order when the gate times out", async () => {
+      vi.stubGlobal("fetch", voyageOrder());
+      createMock.mockRejectedValue(new APIUserAbortError());
+      const onVerdict = vi.fn();
+
+      const result = await rerankArticles("question", articles, { minScore: 2.5, onVerdict });
+
+      expect(result.map((a) => a.id)).toEqual(["a-3", "a-2"]);
+      expect(onVerdict).not.toHaveBeenCalled();
+    });
+
+    it("tells rerank-3 about the question's date range", async () => {
+      const fetchMock = voyageOrder();
+      vi.stubGlobal("fetch", fetchMock);
+      createMock.mockResolvedValue(
+        reply(JSON.stringify({ keep: [true, true, true, true], sufficient: true }))
+      );
+
+      await rerankArticles("question", articles, {
+        dateRange: { startDate: "1960-01-01", endDate: "1969-12-31" },
+      });
+
+      const query = JSON.parse(fetchMock.mock.calls[0][1].body).query as string;
+      expect(query).toContain("1960-01-01");
+      expect(query).toContain("1969-12-31");
+      expect(query).toContain("question");
+    });
+  });
+
   // The retrieval eval runs every ranking side by side in one process.
   it("lets a caller pick the ranking over RAG_RERANKER", async () => {
     vi.stubEnv("RAG_RERANKER", "voyage");
