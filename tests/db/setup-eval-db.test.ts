@@ -17,8 +17,6 @@ import {
 import schemaSnapshot from "../../scripts/db/schema-snapshot.json";
 import { MIGRATIONS_DIR, createTestDb, introspectSchema, type TestDb } from "./helpers/pglite";
 
-const EMBEDDING = `[${Array.from({ length: 768 }, (_, i) => (i % 5 === 0 ? "0.5" : "0")).join(",")}]`;
-
 /** SYNTHETIC frozen-corpus metadata matching the seeded fixture (2/2/1). */
 const SYNTHETIC_CORPUS = {
   schemaVersion: 2,
@@ -37,17 +35,16 @@ async function seedSourceFixtures(db: TestDb): Promise<void> {
   await db.executor.query({
     text: `INSERT INTO articles
                    (id, edition_date, position, category, headline, summary, full_text,
-                    body_plain, byline, page, is_hero, image_urls, image_captions, embedding,
+                    body_plain, byline, page, is_hero, image_urls, image_captions,
                     embedding_model, embedding_input_hash, embedding_input_version)
                VALUES
                    ('art-1', '1955-03-09', 1, 'News', 'Canal Reopens', 'The canal reopens.',
                     'The canal reopens after repairs.', 'The canal reopens after repairs.',
-                    'A. Reporter', 1, TRUE, '[]', '[]', $1, 'gemini-embedding-2', 'hash-1',
+                    'A. Reporter', 1, TRUE, '[]', '[]', 'gemini-embedding-2', 'hash-1',
                     'article-chunk-v1'),
                    ('art-2', '1955-03-09', 2, 'Sports', 'Nine Wins Opener', 'The nine wins.',
                     'The town nine wins its opener.', 'The town nine wins its opener.',
-                    NULL, 2, FALSE, '[]', '[]', NULL, NULL, NULL, NULL)`,
-    params: [EMBEDDING],
+                    NULL, 2, FALSE, '[]', '[]', NULL, NULL, NULL)`,
   });
   await db.executor.query({
     text: `INSERT INTO ads (edition_date, position, title, body, category, phone, image_urls)

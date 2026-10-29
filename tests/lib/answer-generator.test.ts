@@ -141,7 +141,7 @@ describe("generateAnswer", () => {
         earliestEditionDate: "1960-01-01",
         latestEditionDate: "1961-12-31",
         corpusVersion: "corpus-v1",
-        retrievalTarget: "legacy",
+        retrievalTarget: "versioned",
       },
     });
     expect(result.answer).toContain("No matching evidence was found");
@@ -211,7 +211,7 @@ describe("generateAnswer", () => {
           earliestEditionDate: "1960-01-07",
           latestEditionDate: "1969-12-18",
           corpusVersion: "corpus-v1",
-          retrievalTarget: "legacy",
+          retrievalTarget: "versioned",
         },
       }
     );

@@ -14,7 +14,7 @@ function coverage(overrides: Partial<ArchiveCoverage> = {}): ArchiveCoverage {
     earliestEditionDate: "1960-01-07",
     latestEditionDate: "1969-12-18",
     corpusVersion: "corpus-v1",
-    retrievalTarget: "legacy",
+    retrievalTarget: "versioned",
     ...overrides,
   };
 }

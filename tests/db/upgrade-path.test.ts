@@ -204,20 +204,15 @@ describe("branch-draft upgrade path", () => {
     expect(snapshotUpgraded).toEqual(snapshotFresh);
   });
 
-  it("build-scoped chunk row, its build id, and its embedding survive (expand-only)", async () => {
+  it("build-scoped chunk row and its build id survive; 0015 drops only its Gemini vector", async () => {
     const rows = await db.pg.query<{
       index_build_id: string;
       chunk_text: string;
-      dims: number;
-    }>(
-      `SELECT index_build_id, chunk_text, vector_dims(embedding) AS dims
-             FROM article_chunks WHERE id = $1`,
-      [chunkId]
-    );
+    }>("SELECT index_build_id, chunk_text FROM article_chunks WHERE id = $1", [chunkId]);
     expect(rows.rows).toHaveLength(1);
     expect(rows.rows[0].index_build_id).toBe(buildId);
     expect(rows.rows[0].chunk_text).toBe("draft chunk text");
-    expect(Number(rows.rows[0].dims)).toBe(768);
+    expect(columnNames(snapshotUpgraded, "article_chunks")).not.toContain("embedding");
 
     const builds = await db.pg.query<{ id: string }>(
       "SELECT id FROM rag_index_builds WHERE id = $1",

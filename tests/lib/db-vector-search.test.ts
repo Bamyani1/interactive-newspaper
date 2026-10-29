@@ -69,7 +69,10 @@ describe("queryArticlesByEmbedding", () => {
   beforeEach(() => {
     mockSql.mockReset();
     mockSql.transaction.mockReset();
-    _setRagV2TablesAvailableForTests(false);
+    // The served build's chunk vectors: two SET LOCALs, then the ranked rows.
+    _setRagV2TablesAvailableForTests(true);
+    _setRagIndexBuildReadyForTests(true);
+    vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "test-index-build");
   });
 
   it("returns mapped results with correct fields and source 'vector'", async () => {
@@ -77,8 +80,7 @@ describe("queryArticlesByEmbedding", () => {
       makeVectorRow({ id: "1960-01-07-0", distance: "0.2500" }),
       makeVectorRow({ id: "1960-01-07-1", headline: "Second Article", distance: "0.4000" }),
     ];
-    // sql.transaction returns [SET_LOCAL_result, SELECT_result]
-    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+    mockSql.transaction.mockResolvedValueOnce([[], [], rows]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -122,24 +124,24 @@ describe("queryArticlesByEmbedding", () => {
   });
 
   it("respects the limit option", async () => {
-    mockSql.transaction.mockResolvedValueOnce([[], []]);
+    mockSql.transaction.mockResolvedValueOnce([[], [], []]);
 
     await queryArticlesByEmbedding(DUMMY_EMBEDDING, { limit: 5 });
 
     expect(mockSql.transaction).toHaveBeenCalledTimes(1);
   });
 
-  it("never compares a stable query vector with an old-model article vector", async () => {
-    mockSql.transaction.mockResolvedValueOnce([[], []]);
+  it("never compares a stable query vector with another model's vector", async () => {
+    mockSql.transaction.mockResolvedValueOnce([[], [], []]);
     await queryArticlesByEmbedding(DUMMY_EMBEDDING);
     const renderedSql = mockSql.mock.calls
       .map((call) => (Array.isArray(call[0]) ? call[0].join(" ") : ""))
       .join(" ");
-    expect(renderedSql).toContain("a.embedding_model =");
+    expect(renderedSql).toContain("c.embedding_model =");
   });
 
   it("returns empty array when no rows match", async () => {
-    mockSql.transaction.mockResolvedValueOnce([[], []]);
+    mockSql.transaction.mockResolvedValueOnce([[], [], []]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -148,7 +150,7 @@ describe("queryArticlesByEmbedding", () => {
 
   it("handles null byline correctly", async () => {
     const rows = [makeVectorRow({ byline: null })];
-    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+    mockSql.transaction.mockResolvedValueOnce([[], [], rows]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -157,7 +159,7 @@ describe("queryArticlesByEmbedding", () => {
 
   it("coalesces null distance to null (not NaN) — issue 0006", async () => {
     const rows = [makeVectorRow({ distance: null })];
-    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+    mockSql.transaction.mockResolvedValueOnce([[], [], rows]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -167,7 +169,7 @@ describe("queryArticlesByEmbedding", () => {
 
   it("coalesces undefined distance to null (not NaN) — issue 0006", async () => {
     const rows = [makeVectorRow({ distance: undefined })];
-    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+    mockSql.transaction.mockResolvedValueOnce([[], [], rows]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -176,7 +178,7 @@ describe("queryArticlesByEmbedding", () => {
 
   it("coalesces 'NaN' string distance to null — issue 0006", async () => {
     const rows = [makeVectorRow({ distance: "NaN" })];
-    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+    mockSql.transaction.mockResolvedValueOnce([[], [], rows]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -185,7 +187,7 @@ describe("queryArticlesByEmbedding", () => {
 
   it("coalesces non-numeric distance string to null — issue 0006", async () => {
     const rows = [makeVectorRow({ distance: "not a number" })];
-    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+    mockSql.transaction.mockResolvedValueOnce([[], [], rows]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -194,7 +196,7 @@ describe("queryArticlesByEmbedding", () => {
 
   it("preserves valid decimal distance", async () => {
     const rows = [makeVectorRow({ distance: "0.1234" })];
-    mockSql.transaction.mockResolvedValueOnce([[], rows]);
+    mockSql.transaction.mockResolvedValueOnce([[], [], rows]);
 
     const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
 
@@ -264,16 +266,6 @@ describe("queryArticlesByEmbedding with RAG v2 tables", () => {
     _setRagIndexBuildReadyForTests(true);
     vi.stubEnv("RAG_RETRIEVAL_MODE", "versioned");
     vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "test-index-build");
-  });
-
-  it("does not activate from table existence while retrieval mode is legacy", async () => {
-    vi.stubEnv("RAG_RETRIEVAL_MODE", "legacy");
-    mockSql.transaction.mockResolvedValueOnce([[], [makeVectorRow()]]);
-
-    const results = await queryArticlesByEmbedding(DUMMY_EMBEDDING);
-
-    expect(results).toHaveLength(1);
-    expect(mockSql.transaction.mock.calls[0][0]).toHaveLength(2);
   });
 
   it("aggregates multiple matching chunks into article-local evidence", async () => {

@@ -365,7 +365,8 @@ async function main(): Promise<void> {
              ${articleEmbeddingModel} AS embedding_model,
              ${articleEmbeddingInputHash} AS embedding_input_hash,
              ${articleEmbeddingInputVersion} AS embedding_input_version,
-             (embedding IS NOT NULL) AS has_embedding
+             -- articles.embedding (Gemini) was dropped in 0015; vectors live per build.
+             false AS has_embedding
       FROM articles
       ORDER BY edition_date, position, id
     `,
@@ -394,7 +395,7 @@ async function main(): Promise<void> {
     queries.push(sql`
       SELECT id, article_id, chunk_index, chunk_text, embedding_model,
              embedding_input_version, embedding_input_hash,
-             (embedding IS NOT NULL) AS has_embedding
+             (embedding_1024 IS NOT NULL) AS has_embedding
       FROM article_chunks
       ORDER BY article_id, chunk_index, id
     `);
@@ -403,7 +404,7 @@ async function main(): Promise<void> {
     queries.push(sql`
       SELECT id, article_id, image_index, image_url, caption, embedding_model,
              embedding_input_version, embedding_input_hash,
-             (embedding IS NOT NULL) AS has_embedding
+             (embedding_1024 IS NOT NULL) AS has_embedding
       FROM article_images
       ORDER BY article_id, image_index, id
     `);

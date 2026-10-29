@@ -207,7 +207,7 @@ export async function importBuildVectors(executor, { dir, log = () => {} } = {})
   }
 
   const column = vectorColumn(buildRow);
-  const buildDims = column === "embedding_1024" ? 1024 : 768;
+  const buildDims = 1024;
   if (manifest.embeddingDims !== undefined && manifest.embeddingDims !== buildDims) {
     throw new Error(
       `manifest embeddingDims ${manifest.embeddingDims} does not match the build row's ${buildDims}.`

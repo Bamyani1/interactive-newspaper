@@ -17,8 +17,7 @@ interface LoaderDeps {
 
 /**
  * Loads rag_serving_pointer into rag-index-config's cache. It reads only when
- * the config could use it: versioned or shadow mode with no
- * RAG_ACTIVE_INDEX_BUILD_ID override. Concurrent callers share one read; a
+ * the config could use it: no RAG_ACTIVE_INDEX_BUILD_ID override. Concurrent callers share one read; a
  * failed read keeps the last good pointer.
  */
 export function createServingPointerLoader(deps: LoaderDeps): () => Promise<void> {
@@ -26,8 +25,7 @@ export function createServingPointerLoader(deps: LoaderDeps): () => Promise<void
   let inflight: Promise<void> | null = null;
 
   return async function loadServingPointer() {
-    const mode = deps.env.RAG_RETRIEVAL_MODE?.trim().toLowerCase() || "legacy";
-    if (mode === "legacy" || deps.env.RAG_ACTIVE_INDEX_BUILD_ID?.trim()) return;
+    if (deps.env.RAG_ACTIVE_INDEX_BUILD_ID?.trim()) return;
     if (deps.now() < freshUntil) return;
     inflight ??= deps
       .read()
