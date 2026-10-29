@@ -139,6 +139,9 @@ ocr/runs/
 # onnxruntime telemetry session id, written to the working directory
 :memory:.ses
 ocr/logs/
+ocr/reports/
+# archive:run refuses to start while this marker exists
+ocr/.hold
 
 # OCR scan staging (large TIFFs)
 ocr/inbox/

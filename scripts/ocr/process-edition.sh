@@ -83,11 +83,16 @@ log_failure_metadata() {
   if [[ -z "$DATE" || ! -f "$OCR_ROOT/log_failure.py" ]]; then
     return 0
   fi
+  # A candidate discarded after OCR still cost money; archive:run reads it from the log.
+  local cost_args=()
+  if [[ -n "$CANDIDATE_EDITION" && -f "$CANDIDATE_EDITION/provenance.json" ]]; then
+    cost_args=(--provenance "$CANDIDATE_EDITION/provenance.json")
+  fi
   python3 "$OCR_ROOT/log_failure.py" \
     --edition "$DATE" \
     --stage "$FAILURE_STAGE" \
     --status "$status" \
-    --error "$reason" >/dev/null 2>&1 || true
+    --error "$reason" ${cost_args[@]+"${cost_args[@]}"} >/dev/null 2>&1 || true
 }
 
 restore_rollback_if_needed() {
@@ -265,6 +270,13 @@ validate_edition_dir() {
   python "$OCR_ROOT/validate_candidate.py" "$edition_dir/edition.json" --date "$DATE"
 }
 
+# Bulk-run checks (every page read, cost cap, no empty or duplicate articles,
+# every image uploaded). Fresh publications only: repairs re-validate editions
+# published before provenance recorded pages and cost.
+check_publishable() {
+  python "$OCR_ROOT/check_publishable.py" "$1" --stage "$2"
+}
+
 make_candidate_root() {
   CANDIDATE_ROOT="$(mktemp -d "$STAGING_PARENT/$DATE.XXXXXX")"
   CANDIDATE_EDITION="$CANDIDATE_ROOT/$DATE"
@@ -385,6 +397,7 @@ fi
 
 FAILURE_STAGE="candidate-validation"
 validate_edition_dir "$CANDIDATE_EDITION" || fail 20 "$FAILURE_STAGE" "OCR candidate failed structural validation"
+check_publishable "$CANDIDATE_EDITION" candidate || fail 20 "$FAILURE_STAGE" "OCR candidate failed publish checks"
 
 acquire_asset_lock
 FAILURE_STAGE="upload"
@@ -392,6 +405,7 @@ run_upload "$CANDIDATE_ROOT" || fail 30 "$FAILURE_STAGE" "asset optimization or 
 
 FAILURE_STAGE="post-upload-validation"
 validate_edition_dir "$CANDIDATE_EDITION" || fail 20 "$FAILURE_STAGE" "uploaded candidate failed structural validation"
+check_publishable "$CANDIDATE_EDITION" post-upload || fail 20 "$FAILURE_STAGE" "uploaded candidate failed publish checks"
 
 promote_candidate || fail 40 "promotion" "atomic public replacement failed"
 release_asset_lock || fail 75 "asset-lock" "could not release asset publication lock"

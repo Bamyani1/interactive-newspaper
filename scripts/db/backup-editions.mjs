@@ -11,6 +11,7 @@
  *   npm run editions:backup               # upload new or changed files
  *   npm run editions:backup -- --dry-run  # report what would upload
  *   npm run editions:backup -- --restore  # download files missing locally
+ *   npm run editions:backup -- --date 1983-04-21 --verify  # one date, then check R2
  */
 
 import { createHash } from "node:crypto";
@@ -31,12 +32,13 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const md5 = (body) => createHash("md5").update(body).digest("hex");
 
 /**
- * @param {{ editionsDir: string, client: { head: (key: string) => Promise<{ etag: string } | null>, put: (key: string, body: Buffer) => Promise<void> }, dryRun?: boolean, log?: (message: string) => void }} options
+ * @param {{ editionsDir: string, client: { head: (key: string) => Promise<{ etag: string } | null>, put: (key: string, body: Buffer) => Promise<void> }, dates?: string[], dryRun?: boolean, log?: (message: string) => void }} options
  */
-export async function backupEditions({ editionsDir, client, dryRun = false, log = console.log }) {
+export async function backupEditions({ editionsDir, client, dates, dryRun = false, log = console.log }) {
   let uploaded = 0;
   let unchanged = 0;
-  for (const date of readdirSync(editionsDir).filter((name) => DATE_PATTERN.test(name)).sort()) {
+  const allDates = readdirSync(editionsDir).filter((name) => DATE_PATTERN.test(name)).sort();
+  for (const date of dates ? allDates.filter((name) => dates.includes(name)) : allDates) {
     for (const file of BACKED_UP_FILES) {
       const localPath = path.join(editionsDir, date, file);
       if (!existsSync(localPath)) continue;
@@ -53,6 +55,29 @@ export async function backupEditions({ editionsDir, client, dryRun = false, log 
     }
   }
   return { uploaded, unchanged };
+}
+
+/**
+ * Re-reads R2 after a backup: every local JSON file of the date must be stored
+ * with a matching ETag (R2's single-part ETag is the MD5). Returns one line per
+ * problem; an empty list means the backup is complete.
+ *
+ * @param {{ editionsDir: string, date: string, client: { head: (key: string) => Promise<{ etag: string } | null> } }} options
+ */
+export async function verifyBackup({ editionsDir, date, client }) {
+  if (!existsSync(path.join(editionsDir, date, "edition.json"))) {
+    return [`no local edition.json for ${date}`];
+  }
+  const problems = [];
+  for (const file of BACKED_UP_FILES) {
+    const localPath = path.join(editionsDir, date, file);
+    if (!existsSync(localPath)) continue;
+    const key = `${PREFIX}${date}/${file}`;
+    const stored = await client.head(key);
+    if (!stored) problems.push(`missing ${key}`);
+    else if (stored.etag !== md5(readFileSync(localPath))) problems.push(`mismatched ${key}`);
+  }
+  return problems;
 }
 
 /**
@@ -141,8 +166,17 @@ async function r2Client() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { values } = parseArgs({
-    options: { "dry-run": { type: "boolean" }, restore: { type: "boolean" } },
+    options: {
+      "dry-run": { type: "boolean" },
+      restore: { type: "boolean" },
+      date: { type: "string" },
+      verify: { type: "boolean" },
+    },
   });
+  if (values.date && !DATE_PATTERN.test(values.date)) {
+    console.error("ERROR: --date must be YYYY-MM-DD");
+    process.exit(2);
+  }
   const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
   const editionsDir = path.join(rootDir, "public/editions");
   loadEnvLocal(rootDir);
@@ -155,6 +189,21 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const client = await r2Client();
   const result = values.restore
     ? await restoreEditions({ editionsDir, client })
-    : await backupEditions({ editionsDir, client, dryRun: values["dry-run"] });
+    : await backupEditions({
+        editionsDir,
+        client,
+        dates: values.date ? [values.date] : undefined,
+        dryRun: values["dry-run"],
+      });
   console.log(JSON.stringify(result));
+  if (values.verify) {
+    const dates = values.date
+      ? [values.date]
+      : readdirSync(editionsDir).filter((name) => DATE_PATTERN.test(name));
+    const problems = [];
+    for (const date of dates) problems.push(...(await verifyBackup({ editionsDir, date, client })));
+    for (const problem of problems) console.error(`BACKUP_PROBLEM ${problem}`);
+    if (problems.length) process.exit(1);
+    console.log(`VERIFIED ${dates.length} edition(s)`);
+  }
 }

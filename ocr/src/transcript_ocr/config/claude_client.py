@@ -9,10 +9,11 @@ API call and returns a response with the attributes the stages and
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import math
 import os
-import time
+import threading
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
@@ -173,14 +174,32 @@ class ClaudeOCRClient:
                 raise TypeError(f"Claude {stage} needs a string system_instruction")
             request["system"] = config.system_instruction
 
-        # The read timeout only bounds gaps between events; this bounds the call.
-        deadline = time.monotonic() + timeout_seconds
-        with self._client.messages.stream(**request) as stream:
-            for _event in stream:
-                if time.monotonic() > deadline:
-                    raise TimeoutError(f"Claude {stage} exceeded {timeout_seconds}s")
-            message = stream.get_final_message()
-        return _to_response(message, schema)
+        # The read timeout only bounds gaps between bytes, and the SDK drops the
+        # ping events that keep a stalled stream alive, so read it on a worker
+        # thread and give up at the deadline.
+        outcome: dict[str, Any] = {}
+        done = threading.Event()
+
+        def read_stream() -> None:
+            try:
+                with self._client.messages.stream(**request) as stream:
+                    outcome["stream"] = stream
+                    outcome["message"] = stream.get_final_message()
+            except BaseException as error:  # re-raised on the caller's thread
+                outcome["error"] = error
+            finally:
+                done.set()
+
+        threading.Thread(target=read_stream, name=f"claude-{stage}", daemon=True).start()
+        if not done.wait(timeout_seconds):
+            stream = outcome.get("stream")
+            if stream is not None:
+                with contextlib.suppress(Exception):
+                    stream.close()
+            raise TimeoutError(f"Claude {stage} exceeded {timeout_seconds}s")
+        if "error" in outcome:
+            raise outcome["error"]
+        return _to_response(outcome["message"], schema)
 
 
 def create_claude_client() -> ClaudeOCRClient:
