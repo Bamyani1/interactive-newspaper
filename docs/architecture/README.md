@@ -39,7 +39,7 @@ Common troubleshooting:
 | Symptom                            | Where to look                                                                                            |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `/api/ask` returning 504s          | [rag-pipeline.md § Deadlines and cancellation](rag-pipeline.md#deadlines-and-cancellation)               |
-| Every answer is an error           | Check Google Cloud billing and Vertex access first: every Gemini call bills the Cloud project            |
+| Every answer is an error           | Check the Anthropic and Voyage keys and their rate limits, then today's `ai_spend_by_scope` budget row   |
 | Answers look keyword-only          | `npm run rag:health`; [data-model.md § Investigate a slow query](data-model.md#investigate-a-slow-query) |
 | Vector search feels slow           | [data-model.md § Investigate a slow query](data-model.md#investigate-a-slow-query)                       |
 | New editions missing from Ask      | [data-model.md § Build and activate a new index](data-model.md#build-and-activate-a-new-index)           |
