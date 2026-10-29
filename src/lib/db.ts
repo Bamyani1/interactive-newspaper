@@ -7,7 +7,7 @@ import {
   RAG_IMAGE_EMBEDDING_INPUT_VERSION,
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "@/src/lib/rag-model-config";
-import { getRagRetrievalConfig, shouldServeVersionedRetrieval } from "@/src/lib/rag-index-config";
+import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
 import { DbTimeoutError, runWithDbTimeout } from "@/src/lib/db-timeout";
 import { loadServingPointer } from "@/src/lib/rag-serving-pointer";
 
@@ -58,9 +58,6 @@ async function assertConfiguredIndexBuildReady(signal: AbortSignal): Promise<str
   await loadServingPointer();
   const config = getRagRetrievalConfig();
   const indexBuildId = config.activeIndexBuildId;
-  if (!indexBuildId || config.mode === "legacy") {
-    throw new Error("Versioned retrieval requires an explicit index build.");
-  }
   if (ragIndexBuildReadyOverride !== null) {
     if (!ragIndexBuildReadyOverride) {
       throw new Error(`RAG index build ${indexBuildId} is not ready.`);
@@ -89,7 +86,6 @@ async function assertConfiguredIndexBuildReady(signal: AbortSignal): Promise<str
   if (!build) {
     throw new Error(`Configured RAG index build ${indexBuildId} does not exist.`);
   }
-  const allowedStatuses = config.mode === "versioned" ? ["active"] : ["validated", "active"];
   const mismatches = [
     build.corpus_version !== config.corpusVersion && "corpus_version",
     build.pipeline_version !== config.pipelineVersion && "pipeline_version",
@@ -100,8 +96,8 @@ async function assertConfiguredIndexBuildReady(signal: AbortSignal): Promise<str
       "text_embedding_input_version",
     build.image_embedding_input_version !== config.imageEmbeddingInputVersion &&
       "image_embedding_input_version",
-    !allowedStatuses.includes(String(build.status)) && "status",
-    config.mode === "versioned" && Number(build.active_count) !== 1 && "active_count",
+    build.status !== "active" && "status",
+    Number(build.active_count) !== 1 && "active_count",
   ].filter(Boolean);
   if (mismatches.length > 0) {
     throw new Error(
@@ -184,7 +180,7 @@ export interface ArchiveCoverageStats {
   articleCount: number;
   earliestEditionDate: string | null;
   latestEditionDate: string | null;
-  retrievalTarget: "legacy" | "versioned";
+  retrievalTarget: "versioned";
 }
 
 /**
@@ -216,68 +212,40 @@ export async function queryArchiveCoverage(
     "queryArchiveCoverage",
     async (signal) => {
       await loadServingPointer();
-      const target: "legacy" | "versioned" = shouldServeVersionedRetrieval()
-        ? "versioned"
-        : "legacy";
-      let rows: Record<string, unknown>[];
-
-      if (target === "versioned") {
-        if (!(await hasRagV2Tables(signal))) {
-          throw new Error(
-            "Versioned RAG coverage was selected, but its required tables are unavailable."
-          );
-        }
-        const indexBuildId = await assertConfiguredIndexBuildReady(signal);
-        rows = (await sql.query(
-          `WITH indexed_articles AS (
-             SELECT DISTINCT a.id, a.edition_date
-               FROM articles a
-              WHERE ($1::text IS NULL OR a.edition_date >= $1)
-                AND ($2::text IS NULL OR a.edition_date <= $2)
-                AND ($3::text IS NULL OR a.category = $3)
-                AND (
-                  EXISTS (
-                    SELECT 1 FROM article_chunks c
-                     WHERE c.article_id = a.id
-                       AND c.index_build_id = $4
-                  )
-                  OR EXISTS (
-                    SELECT 1 FROM article_images i
-                     WHERE i.article_id = a.id
-                       AND i.index_build_id = $4
-                  )
-                )
-           )
-           SELECT COUNT(DISTINCT edition_date)::int AS edition_count,
-                  COUNT(*)::int AS article_count,
-                  MIN(edition_date)::text AS earliest_edition_date,
-                  MAX(edition_date)::text AS latest_edition_date
-             FROM indexed_articles`,
-          [startDate, endDate, category, indexBuildId],
-          { fetchOptions: { signal } }
-        )) as Record<string, unknown>[];
-      } else {
-        rows = (await sql.query(
-          `WITH scoped_editions AS (
-             SELECT date
-               FROM editions
-              WHERE ($1::text IS NULL OR date >= $1)
-                AND ($2::text IS NULL OR date <= $2)
-           ), scoped_articles AS (
-             SELECT id
-               FROM articles
-              WHERE ($1::text IS NULL OR edition_date >= $1)
-                AND ($2::text IS NULL OR edition_date <= $2)
-                AND ($3::text IS NULL OR category = $3)
-           )
-           SELECT (SELECT COUNT(*)::int FROM scoped_editions) AS edition_count,
-                  (SELECT COUNT(*)::int FROM scoped_articles) AS article_count,
-                  (SELECT MIN(date)::text FROM scoped_editions) AS earliest_edition_date,
-                  (SELECT MAX(date)::text FROM scoped_editions) AS latest_edition_date`,
-          [startDate, endDate, category],
-          { fetchOptions: { signal } }
-        )) as Record<string, unknown>[];
+      if (!(await hasRagV2Tables(signal))) {
+        throw new Error(
+          "Versioned RAG coverage was selected, but its required tables are unavailable."
+        );
       }
+      const indexBuildId = await assertConfiguredIndexBuildReady(signal);
+      const rows = (await sql.query(
+        `WITH indexed_articles AS (
+           SELECT DISTINCT a.id, a.edition_date
+             FROM articles a
+            WHERE ($1::text IS NULL OR a.edition_date >= $1)
+              AND ($2::text IS NULL OR a.edition_date <= $2)
+              AND ($3::text IS NULL OR a.category = $3)
+              AND (
+                EXISTS (
+                  SELECT 1 FROM article_chunks c
+                   WHERE c.article_id = a.id
+                     AND c.index_build_id = $4
+                )
+                OR EXISTS (
+                  SELECT 1 FROM article_images i
+                   WHERE i.article_id = a.id
+                     AND i.index_build_id = $4
+                )
+              )
+         )
+         SELECT COUNT(DISTINCT edition_date)::int AS edition_count,
+                COUNT(*)::int AS article_count,
+                MIN(edition_date)::text AS earliest_edition_date,
+                MAX(edition_date)::text AS latest_edition_date
+           FROM indexed_articles`,
+        [startDate, endDate, category, indexBuildId],
+        { fetchOptions: { signal } }
+      )) as Record<string, unknown>[];
 
       const row = rows[0] ?? {};
       return {
@@ -287,7 +255,7 @@ export async function queryArchiveCoverage(
           typeof row.earliest_edition_date === "string" ? row.earliest_edition_date : null,
         latestEditionDate:
           typeof row.latest_edition_date === "string" ? row.latest_edition_date : null,
-        retrievalTarget: target,
+        retrievalTarget: "versioned",
       };
     },
     timeoutMs,
@@ -466,8 +434,6 @@ export interface RetrievedArticle {
  */
 export type RetrievalMethod = "hybrid" | "fts" | "vector" | "none";
 
-type RetrievalTarget = "legacy" | "versioned";
-
 interface VectorSearchOptions {
   limit?: number;
   category?: string | null;
@@ -476,7 +442,6 @@ interface VectorSearchOptions {
   onlyWithImages?: boolean;
   timeoutMs?: number;
   signal?: AbortSignal;
-  retrievalTarget?: RetrievalTarget;
   /**
    * Stratify candidate selection across the months of the requested date
    * range instead of pure similarity order. For broad survey questions
@@ -779,48 +744,7 @@ async function queryRagV2ByEmbedding(
   return aggregateEvidenceRows(rows, "vector", limit);
 }
 
-async function queryLegacyArticlesByEmbedding(
-  embeddingVec: number[],
-  options: VectorSearchOptions
-): Promise<RetrievedArticle[]> {
-  const limit = options.limit ?? 10;
-  const category = options.category ?? null;
-  const startDate = options.startDate ?? null;
-  const endDate = options.endDate ?? null;
-  const onlyWithImages = options.onlyWithImages ?? false;
-  const timeoutMs = options.timeoutMs ?? HYBRID_SEARCH_TIMEOUT_MS;
-  const vecStr = `[${embeddingVec.join(",")}]`;
-  return runWithDbTimeout(
-    "queryArticlesByEmbedding.legacy",
-    async (signal) => {
-      const [, rows] = await sql.transaction(
-        [
-          sql`SET LOCAL hnsw.ef_search = 100`,
-          sql`
-          SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-                 a.byline, a.body_plain, a.image_urls, a.image_captions,
-                 (a.embedding <=> ${vecStr}::vector) AS distance
-          FROM articles a
-          WHERE a.embedding IS NOT NULL
-            AND a.embedding_model = ${RAG_EMBEDDING_MODEL}
-            AND (${category}::text IS NULL OR a.category = ${category})
-            AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-            AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-            AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
-          ORDER BY a.embedding <=> ${vecStr}::vector
-          LIMIT ${limit}
-        `,
-        ],
-        { readOnly: true, fetchOptions: { signal } }
-      );
-      return rows.map((row) => retrievedFromRow(row, "vector"));
-    },
-    timeoutMs,
-    options.signal
-  );
-}
-
-/** Retrieve articles using chunk vectors, or the legacy article index pre-migration. */
+/** Retrieve articles using the serving build's chunk vectors. */
 export async function queryArticlesByEmbedding(
   embeddingVec: number[],
   options: VectorSearchOptions = {}
@@ -830,12 +754,6 @@ export async function queryArticlesByEmbedding(
     throw new DbTimeoutError("queryArticlesByEmbedding", timeoutMs);
   }
   await loadServingPointer();
-  const serveVersioned =
-    options.retrievalTarget === "versioned" ||
-    (options.retrievalTarget === undefined && shouldServeVersionedRetrieval());
-  if (!serveVersioned) {
-    return queryLegacyArticlesByEmbedding(embeddingVec, options);
-  }
   // One shared budget for the schema probe, build-readiness validation, AND
   // the vector query — mirroring searchArticlesForRag. Sequential wrappers
   // would let the versioned leg burn up to 3× timeoutMs right after a cold
@@ -921,7 +839,6 @@ export interface SearchArticlesForRagOptions {
   onlyWithImages?: boolean;
   timeoutMs?: number;
   signal?: AbortSignal;
-  retrievalTarget?: RetrievalTarget;
 }
 
 export async function searchArticlesForRag(
@@ -939,146 +856,117 @@ export async function searchArticlesForRag(
     "searchArticlesForRag",
     async (signal) => {
       await loadServingPointer();
-      const serveVersioned =
-        options.retrievalTarget === "versioned" ||
-        (options.retrievalTarget === undefined && shouldServeVersionedRetrieval());
-      if (serveVersioned) {
-        if (!(await hasRagV2Tables(signal))) {
-          throw new Error(
-            "Versioned RAG retrieval was selected, but its required tables are unavailable."
-          );
-        }
-        const indexBuildId = await assertConfiguredIndexBuildReady(signal);
-        const evidencePerArticle = 3;
-        const [rows] = await sql.transaction(
-          [
-            sql`
-            WITH query AS (
-              SELECT websearch_to_tsquery('english', ${query}) AS value
-            ), article_matches AS (
-              SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-                     a.byline, a.body_plain, a.image_urls, a.image_captions,
-                     ts_headline(
-                       'english', a.body_plain, q.value,
-                       'MaxFragments=2, MinWords=15, MaxWords=55'
-                     ) AS chunk_text,
-                     NULL::text AS matched_caption,
-                     NULL::text AS matched_image_url,
-                     ts_rank(a.search_vector, q.value) AS evidence_score,
-                     0 AS evidence_position,
-                     1 AS evidence_type
-              FROM articles a
-              CROSS JOIN query q
-              WHERE a.search_vector @@ q.value
-                AND EXISTS (
-                  SELECT 1 FROM article_chunks indexed
-                  WHERE indexed.article_id = a.id
-                    AND indexed.index_build_id = ${indexBuildId}
-                )
-                AND (${category}::text IS NULL OR a.category = ${category})
-                AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-                AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-                AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
-            ), chunk_matches AS (
-              SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-                     a.byline, a.body_plain, a.image_urls, a.image_captions,
-                     c.chunk_text,
-                     NULL::text AS matched_caption,
-                     NULL::text AS matched_image_url,
-                     ts_rank(c.search_vector, q.value) AS evidence_score,
-                     c.chunk_index AS evidence_position,
-                     2 AS evidence_type
-              FROM article_chunks c
-              JOIN articles a ON a.id = c.article_id
-              CROSS JOIN query q
-              WHERE c.search_vector @@ q.value
-                AND c.index_build_id = ${indexBuildId}
-                AND (${category}::text IS NULL OR a.category = ${category})
-                AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-                AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-                AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
-            ), caption_matches AS (
-              SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-                     a.byline, a.body_plain, a.image_urls, a.image_captions,
-                     NULL::text AS chunk_text,
-                     i.caption AS matched_caption,
-                     i.image_url AS matched_image_url,
-                     ts_rank(
-                       to_tsvector('english', coalesce(i.caption, '')),
-                       q.value
-                     ) AS evidence_score,
-                     i.image_index AS evidence_position,
-                     3 AS evidence_type
-              FROM article_images i
-              JOIN articles a ON a.id = i.article_id
-              CROSS JOIN query q
-              WHERE to_tsvector('english', coalesce(i.caption, '')) @@ q.value
-                AND i.index_build_id = ${indexBuildId}
-                AND (${category}::text IS NULL OR a.category = ${category})
-                AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-                AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-                AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
-            ), all_evidence AS (
-              SELECT * FROM article_matches
-              UNION ALL
-              SELECT * FROM chunk_matches
-              UNION ALL
-              SELECT * FROM caption_matches
-            ), ranked_evidence AS (
-              SELECT e.*,
-                     MAX(e.evidence_score) OVER (PARTITION BY e.id) AS article_rank,
-                     ROW_NUMBER() OVER (
-                       PARTITION BY e.id
-                       ORDER BY e.evidence_score DESC,
-                                e.evidence_type,
-                                e.evidence_position
-                     ) AS evidence_rank
-              FROM all_evidence e
-            ), ranked_articles AS (
-              SELECT id, MAX(article_rank) AS article_rank
-              FROM ranked_evidence
-              GROUP BY id
-              ORDER BY article_rank DESC, id
-              LIMIT ${limit}
-            )
-            SELECT e.id, e.edition_date, e.category, e.headline, e.summary,
-                   e.byline, e.body_plain, e.image_urls, e.image_captions,
-                   e.chunk_text, e.matched_caption, e.matched_image_url,
-                   r.article_rank AS rank
-            FROM ranked_articles r
-            JOIN ranked_evidence e ON e.id = r.id
-            WHERE e.evidence_rank <= ${evidencePerArticle}
-            ORDER BY r.article_rank DESC, r.id, e.evidence_rank
-          `,
-          ],
-          { readOnly: true, fetchOptions: { signal } }
+      if (!(await hasRagV2Tables(signal))) {
+        throw new Error(
+          "Versioned RAG retrieval was selected, but its required tables are unavailable."
         );
-        return aggregateEvidenceRows(rows, "fts", limit);
       }
-
+      const indexBuildId = await assertConfiguredIndexBuildReady(signal);
+      const evidencePerArticle = 3;
       const [rows] = await sql.transaction(
         [
           sql`
-          SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
-                 a.byline, a.body_plain, a.image_urls, a.image_captions,
-                 ts_headline(
-                   'english', a.body_plain, q,
-                   'MaxFragments=3, MinWords=20, MaxWords=70'
-                 ) AS chunk_text,
-                 ts_rank(a.search_vector, q) AS rank
-          FROM articles a, websearch_to_tsquery('english', ${query}) q
-          WHERE a.search_vector @@ q
-            AND (${category}::text IS NULL OR a.category = ${category})
-            AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
-            AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
-            AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
-          ORDER BY rank DESC
-          LIMIT ${limit}
+          WITH query AS (
+            SELECT websearch_to_tsquery('english', ${query}) AS value
+          ), article_matches AS (
+            SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+                   a.byline, a.body_plain, a.image_urls, a.image_captions,
+                   ts_headline(
+                     'english', a.body_plain, q.value,
+                     'MaxFragments=2, MinWords=15, MaxWords=55'
+                   ) AS chunk_text,
+                   NULL::text AS matched_caption,
+                   NULL::text AS matched_image_url,
+                   ts_rank(a.search_vector, q.value) AS evidence_score,
+                   0 AS evidence_position,
+                   1 AS evidence_type
+            FROM articles a
+            CROSS JOIN query q
+            WHERE a.search_vector @@ q.value
+              AND EXISTS (
+                SELECT 1 FROM article_chunks indexed
+                WHERE indexed.article_id = a.id
+                  AND indexed.index_build_id = ${indexBuildId}
+              )
+              AND (${category}::text IS NULL OR a.category = ${category})
+              AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+              AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+              AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
+          ), chunk_matches AS (
+            SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+                   a.byline, a.body_plain, a.image_urls, a.image_captions,
+                   c.chunk_text,
+                   NULL::text AS matched_caption,
+                   NULL::text AS matched_image_url,
+                   ts_rank(c.search_vector, q.value) AS evidence_score,
+                   c.chunk_index AS evidence_position,
+                   2 AS evidence_type
+            FROM article_chunks c
+            JOIN articles a ON a.id = c.article_id
+            CROSS JOIN query q
+            WHERE c.search_vector @@ q.value
+              AND c.index_build_id = ${indexBuildId}
+              AND (${category}::text IS NULL OR a.category = ${category})
+              AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+              AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+              AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
+          ), caption_matches AS (
+            SELECT a.id, a.edition_date, a.category, a.headline, a.summary,
+                   a.byline, a.body_plain, a.image_urls, a.image_captions,
+                   NULL::text AS chunk_text,
+                   i.caption AS matched_caption,
+                   i.image_url AS matched_image_url,
+                   ts_rank(
+                     to_tsvector('english', coalesce(i.caption, '')),
+                     q.value
+                   ) AS evidence_score,
+                   i.image_index AS evidence_position,
+                   3 AS evidence_type
+            FROM article_images i
+            JOIN articles a ON a.id = i.article_id
+            CROSS JOIN query q
+            WHERE to_tsvector('english', coalesce(i.caption, '')) @@ q.value
+              AND i.index_build_id = ${indexBuildId}
+              AND (${category}::text IS NULL OR a.category = ${category})
+              AND (${startDate}::text IS NULL OR a.edition_date >= ${startDate})
+              AND (${endDate}::text IS NULL OR a.edition_date <= ${endDate})
+              AND (${onlyWithImages}::boolean = false OR jsonb_array_length(a.image_urls) > 0)
+          ), all_evidence AS (
+            SELECT * FROM article_matches
+            UNION ALL
+            SELECT * FROM chunk_matches
+            UNION ALL
+            SELECT * FROM caption_matches
+          ), ranked_evidence AS (
+            SELECT e.*,
+                   MAX(e.evidence_score) OVER (PARTITION BY e.id) AS article_rank,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY e.id
+                     ORDER BY e.evidence_score DESC,
+                              e.evidence_type,
+                              e.evidence_position
+                   ) AS evidence_rank
+            FROM all_evidence e
+          ), ranked_articles AS (
+            SELECT id, MAX(article_rank) AS article_rank
+            FROM ranked_evidence
+            GROUP BY id
+            ORDER BY article_rank DESC, id
+            LIMIT ${limit}
+          )
+          SELECT e.id, e.edition_date, e.category, e.headline, e.summary,
+                 e.byline, e.body_plain, e.image_urls, e.image_captions,
+                 e.chunk_text, e.matched_caption, e.matched_image_url,
+                 r.article_rank AS rank
+          FROM ranked_articles r
+          JOIN ranked_evidence e ON e.id = r.id
+          WHERE e.evidence_rank <= ${evidencePerArticle}
+          ORDER BY r.article_rank DESC, r.id, e.evidence_rank
         `,
         ],
         { readOnly: true, fetchOptions: { signal } }
       );
-      return rows.map((row) => retrievedFromRow(row, "fts"));
+      return aggregateEvidenceRows(rows, "fts", limit);
     },
     timeoutMs,
     options.signal

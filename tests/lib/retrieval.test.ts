@@ -135,6 +135,8 @@ function resetHappyPath() {
 describe("canonical RAG retrieval", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "build-test");
+    vi.stubEnv("RAG_CORPUS_VERSION", "corpus-test");
     vi.clearAllMocks();
     resetHappyPath();
   });
@@ -158,7 +160,6 @@ describe("canonical RAG retrieval", () => {
       onlyWithImages: false,
       timeoutMs: 5000,
       signal: controller.signal,
-      retrievalTarget: "legacy",
       temporalStratify: false,
     });
     expect(embedQueryMock).toHaveBeenCalledWith("semantic", {
@@ -174,12 +175,10 @@ describe("canonical RAG retrieval", () => {
       onlyWithImages: false,
       timeoutMs: 5000,
       signal: controller.signal,
-      retrievalTarget: "legacy",
       temporalStratify: false,
     });
     expect(result).toMatchObject({
       method: "hybrid",
-      servedTarget: "legacy",
       signals: {
         fts: { status: "success", count: 1 },
         vector: { status: "success", count: 1 },
@@ -215,65 +214,6 @@ describe("canonical RAG retrieval", () => {
       [0.1, 0.2],
       expect.objectContaining({ temporalStratify: false })
     );
-  });
-
-  it("serves legacy while measuring a versioned shadow with one embedding call", async () => {
-    vi.stubEnv("RAG_RETRIEVAL_MODE", "shadow");
-    vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "candidate-a");
-    vi.stubEnv("RAG_CORPUS_VERSION", "corpus-a");
-    const shadowFts = { ...ftsCandidate, id: "shadow-fts" };
-    const shadowVector = { ...vectorCandidate, id: "shadow-vector" };
-    searchArticlesForRagMock
-      .mockResolvedValueOnce([ftsCandidate])
-      .mockResolvedValueOnce([shadowFts]);
-    queryArticlesByEmbeddingMock
-      .mockResolvedValueOnce([vectorCandidate])
-      .mockResolvedValueOnce([shadowVector]);
-    fuseArticleResultsMock.mockImplementation(
-      (vector: (typeof vectorCandidate)[], fts: (typeof ftsCandidate)[]) => [...fts, ...vector]
-    );
-
-    const result = await retrieveCandidates(candidateParams());
-
-    expect(result.servedTarget).toBe("legacy");
-    expect(result.identity.activeIndexBuildId).toBe("candidate-a");
-    expect(result.articles.map((article) => article.id)).toEqual([
-      ftsCandidate.id,
-      vectorCandidate.id,
-    ]);
-    expect(result.shadow?.articles.map((article) => article.id)).toEqual([
-      "shadow-fts",
-      "shadow-vector",
-    ]);
-    expect(embedQueryMock).toHaveBeenCalledTimes(1);
-    expect(searchArticlesForRagMock).toHaveBeenCalledTimes(2);
-    expect(queryArticlesByEmbeddingMock).toHaveBeenCalledTimes(2);
-    expect(searchArticlesForRagMock.mock.calls[0][1]).toMatchObject({
-      retrievalTarget: "legacy",
-    });
-    expect(searchArticlesForRagMock.mock.calls[1][1]).toMatchObject({
-      retrievalTarget: "versioned",
-    });
-  });
-
-  it("never lets a failed shadow candidate alter the served legacy result", async () => {
-    vi.stubEnv("RAG_RETRIEVAL_MODE", "shadow");
-    vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "candidate-a");
-    searchArticlesForRagMock
-      .mockResolvedValueOnce([ftsCandidate])
-      .mockRejectedValueOnce(new Error("candidate FTS unavailable"));
-    queryArticlesByEmbeddingMock
-      .mockResolvedValueOnce([vectorCandidate])
-      .mockRejectedValueOnce(new Error("candidate vector unavailable"));
-
-    const result = await retrieveCandidates(candidateParams());
-
-    expect(result.servedTarget).toBe("legacy");
-    expect(result.method).toBe("hybrid");
-    expect(result.articles).toEqual([{ ...ftsCandidate, source: "both" }]);
-    expect(result.shadow?.articles).toEqual([]);
-    expect(result.shadow?.signals.fts.status).toBe("failed");
-    expect(result.shadow?.signals.vector.status).toBe("failed");
   });
 
   it("returns FTS results when query embedding fails", async () => {
@@ -357,19 +297,6 @@ describe("canonical RAG retrieval", () => {
         embeddingModel: RAG_EMBEDDING_MODEL,
         embeddingInputVersion: RAG_TEXT_EMBEDDING_INPUT_VERSION,
       },
-    });
-    warn.mockRestore();
-  });
-
-  it("names the legacy served table when legacy retrieval's vector leg goes dark", async () => {
-    queryArticlesByEmbeddingMock.mockResolvedValue([]);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    await retrieveCandidates(candidateParams());
-
-    expect(darkVectorWarning(warn)).toMatchObject({
-      servedTable: "articles",
-      vectorFilter: { indexBuildId: null },
     });
     warn.mockRestore();
   });

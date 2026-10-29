@@ -22,11 +22,19 @@ import { fileURLToPath } from "node:url";
 const PAGE_SIZE = 400;
 
 /**
- * The column holding a build's vectors: 1024-dimension builds (0013) use
- * embedding_1024, older ones embedding. Exports always call it `embedding`.
+ * The column holding a build's vectors, embedding_1024 (0013). Older
+ * 768-dimension builds lost theirs when 0015 dropped `embedding`. Exports
+ * always call it `embedding`.
  */
 export function vectorColumn(buildRow) {
-  return Number(buildRow.embedding_dims) === 1024 ? "embedding_1024" : "embedding";
+  const dims = buildRow.embedding_dims ?? 768;
+  if (Number(dims) !== 1024) {
+    throw new Error(
+      `Index build ${buildRow.id} has ${dims}-dimension vectors, which 0015 dropped; ` +
+        `only 1024-dimension builds can be exported or imported.`
+    );
+  }
+  return "embedding_1024";
 }
 
 /** Table -> (file, keyset query). Table and column names are constants, never input. */
@@ -110,7 +118,7 @@ export async function exportBuildVectors(
 
   const manifest = {
     buildId,
-    embeddingDims: column === "embedding_1024" ? 1024 : 768,
+    embeddingDims: 1024,
     files: {},
     dbCounts: { chunks: Number(dbCounts.chunks), images: Number(dbCounts.images) },
   };

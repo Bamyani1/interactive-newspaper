@@ -10,11 +10,10 @@
  * ai_spend_counter, ai_spend_by_scope, or the schema_migrations ledger.
  *
  * Documented decisions:
- * - Excluded columns: articles.search_vector only. It is a derived tsvector
- *   maintained by the articles_search_vector_trig trigger, its binary form
- *   does not round-trip through JSONL, and the trigger regenerates it on
- *   import. articles.embedding IS exported: pgvector's text form round-trips
- *   cleanly and embeddings are derived from public article text.
+ * - Excluded columns: articles.search_vector, a derived tsvector maintained
+ *   by the articles_search_vector_trig trigger whose binary form does not
+ *   round-trip through JSONL (the trigger regenerates it on import), and the
+ *   identity metadata of the Gemini-era article vector that 0015 dropped.
  * - Schema provenance: the manifest records migration ids + checksums read
  *   from the ON-DISK migration files (discoverMigrations), never from the
  *   schema_migrations ledger, so the exporter performs zero reads of the
@@ -120,27 +119,18 @@ export const EXCLUDED_COLUMNS: ReadonlyArray<{
   },
   {
     table: "articles",
-    column: "embedding",
-    reason:
-      "Legacy article vectors are gemini-embedding-2-preview or unlabeled; runtime " +
-      "SQL excludes them, so production's effective retrieval is lexical-only and the " +
-      "evaluation baseline matches it exactly without copying ~100 MB of inert vectors. " +
-      "Candidate vectors are built fresh, build-scoped, in the evaluation environment.",
-  },
-  {
-    table: "articles",
     column: "embedding_model",
-    reason: "Identity metadata for the excluded legacy vector column.",
+    reason: "Identity metadata of the Gemini-era article vector, which 0015 dropped.",
   },
   {
     table: "articles",
     column: "embedding_input_hash",
-    reason: "Identity metadata for the excluded legacy vector column.",
+    reason: "Identity metadata of the Gemini-era article vector, which 0015 dropped.",
   },
   {
     table: "articles",
     column: "embedding_input_version",
-    reason: "Identity metadata for the excluded legacy vector column.",
+    reason: "Identity metadata of the Gemini-era article vector, which 0015 dropped.",
   },
 ]);
 

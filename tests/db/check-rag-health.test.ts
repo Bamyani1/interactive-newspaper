@@ -1,7 +1,7 @@
 /** @vitest-environment node */
 // The defect this script exists to catch is silent: a serving filter that
 // matches no rows. These cases pin the ways the check must speak up — a
-// healthy versioned build, a legacy filter that reaches nothing, one broken
+// healthy versioned build, a build whose filter reaches nothing, one broken
 // readiness predicate named individually, a served-table stamp mismatch, and
 // a photo filter that reaches nothing.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -53,7 +53,7 @@ interface Predicate {
   actual: unknown;
 }
 
-// `build` is a union (legacy / missing / present), so narrow at the read site.
+// `build` is a union (missing / present), so narrow at the read site.
 function predicates(report: { build: unknown }): Array<[string, Predicate]> {
   const { row } = report.build as { row?: Record<string, Predicate> };
   return Object.entries(row ?? {});
@@ -179,22 +179,21 @@ describe("check-rag-health", () => {
     expect(predicates(report).every(([, check]) => check.ok)).toBe(true);
   });
 
-  it("fails legacy mode whose serving filter reaches nothing", async () => {
-    // The corpus lives in article_chunks under a build; articles.embedding
-    // is NULL, so the legacy filter matches zero rows. This is the exact
-    // silent defect: retrieval would degrade to full-text without erroring.
+  it("fails a configured build whose serving filter reaches nothing", async () => {
+    // No rows carry this build id, so the filter matches zero rows. This is the
+    // exact silent defect: retrieval would degrade to full-text without erroring.
     const report = await checkRagHealth(db.executor, {
-      config: config({ mode: "legacy", activeIndexBuildId: null }),
+      config: config({ activeIndexBuildId: "build-missing" }),
       ...deps,
     });
 
     expect(report.healthy).toBe(false);
-    expect(report.served.table).toBe("articles");
+    expect(report.served.table).toBe("article_chunks");
     expect(report.served.predicate.count).toBe(0);
-    expect(report.served.stamps).toEqual([]);
-    expect(report.failures.join("\n")).toMatch(/served\.predicate matched 0 rows in articles/);
-    // Legacy retrieval has no build row, and the check must not invent one.
-    expect(report.build).toMatchObject({ applicable: false });
+    expect(report.failures.join("\n")).toMatch(
+      /served\.predicate matched 0 rows in article_chunks/
+    );
+    expect(report.build).toMatchObject({ exists: false });
   });
 
   it("names the single readiness predicate that failed", async () => {
@@ -288,12 +287,12 @@ describe("check-rag-health", () => {
 
     const broken = formatReport(
       await checkRagHealth(db.executor, {
-        config: config({ mode: "legacy", activeIndexBuildId: null }),
+        config: config({ activeIndexBuildId: "build-missing" }),
         ...deps,
       })
     );
     expect(broken).toMatch(/FAIL served\.predicate {8}0 row\(s\) match WHERE/);
-    expect(broken).toMatch(/build\.row {15}n\/a/);
+    expect(broken).toMatch(/FAIL build\.row {15}missing/);
     expect(broken).toMatch(/Mismatches:/);
   });
 
@@ -307,13 +306,6 @@ describe("check-rag-health", () => {
         "AND embedding_input_version = $3",
       params: [BUILD, MODEL, TEXT_INPUT],
     });
-    expect(servingPlan(config({ mode: "legacy", activeIndexBuildId: null }))).toMatchObject({
-      table: "articles",
-      buildScoped: false,
-      vectorColumn: "embedding",
-      where: "embedding IS NOT NULL AND embedding_model = $1",
-      params: [MODEL],
-    });
     expect(imageServingPlan(config())).toMatchObject({
       table: "article_images",
       where:
@@ -321,7 +313,6 @@ describe("check-rag-health", () => {
         "AND embedding_input_version = $3",
       params: [BUILD, IMAGE_MODEL, IMAGE_INPUT],
     });
-    expect(imageServingPlan(config({ mode: "legacy", activeIndexBuildId: null }))).toBeNull();
   });
 
   it("reads the serving pointer, and null before there is one or without its table", async () => {

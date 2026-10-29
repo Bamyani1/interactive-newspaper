@@ -13,7 +13,6 @@ import { createTestDb, type TestDb } from "./helpers/pglite";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const SEED_PATH = path.resolve(testDir, "../../scripts/db/seed.mjs");
-const BACKFILL_PATH = path.resolve(testDir, "../../scripts/db/backfill-rag-records.mjs");
 
 const DDL_PATTERN =
   /CREATE TABLE|ALTER TABLE|CREATE INDEX|CREATE EXTENSION|DROP TABLE|CREATE TRIGGER|CREATE OR REPLACE FUNCTION/i;
@@ -34,11 +33,8 @@ describe("seed.mjs is data-only", () => {
 
   // Build rows carry `{buildId}:` ids that are never on the keep-list, so an
   // unfiltered delete emptied the active build for every reseeded article.
-  it.each([
-    ["seed.mjs", SEED_PATH],
-    ["backfill-rag-records.mjs", BACKFILL_PATH],
-  ])("%s deletes only chunk and image rows outside any index build", (_name, scriptPath) => {
-    const source = readFileSync(scriptPath, "utf8");
+  it("deletes only chunk and image rows outside any index build", () => {
+    const source = readFileSync(SEED_PATH, "utf8");
     const deletes = source.match(/DELETE FROM article_(chunks|images)[\s\S]*?`/g) ?? [];
     expect(deletes.length).toBeGreaterThanOrEqual(3);
     for (const statement of deletes) expect(statement).toContain("index_build_id IS NULL");
