@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { DbTimeoutError, fetchArticleForRag, queryEditions } from "@/src/lib/db";
-import { isQuotaFailure, retryAfterSecFromQuotaError } from "@/src/lib/gemini-quota";
+import { isQuotaFailure, retryAfterSecFromQuotaError } from "@/src/lib/model-errors";
 import { searchAndRankArchive } from "@/src/lib/retrieval";
 import type { RetrievalFilters } from "@/src/lib/retrieval";
 

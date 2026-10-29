@@ -884,6 +884,9 @@ test.describe("visual Ask sources", () => {
       name: `Read: ${VISUAL_ASK_SOURCE_HEADLINE}`,
     });
     await expectMinimumTarget(sourceRead, "source read control");
+    // A touch screen never hovers, so park the pointer off the card: the
+    // hint has to pass contrast without hover lifting it.
+    await page.mouse.move(0, 0);
     await sourceRead.focus();
     for (const [selector, label] of [
       [".ask-source-card-category", "source category"],
