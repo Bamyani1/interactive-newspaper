@@ -131,29 +131,14 @@
   text-transform: uppercase;
   color: var(--color-accent);
   cursor: pointer;
-  /* Muted rather than hidden. It used to be opacity:0 until the card was
-     hovered, so on a touch screen and to a keyboard reader the only way
-     into the article was invisible. */
-  opacity: 0.7;
-  transition: opacity var(--duration-fast) ease;
+  /* Full strength, never muted: a touch screen has no hover to lift it,
+     and at opacity 0.7 the red fell to 3.8:1 against the paper. */
   align-self: flex-end;
-}
-
-.ask-source-card:hover .ask-source-card-hint,
-.ask-source-card-hint:hover,
-.ask-source-card-hint:focus-visible {
-  opacity: 1;
 }
 
 .ask-source-card-hint:focus-visible {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ask-source-card-hint {
-    transition: none;
-  }
 }
 
 .ask-source-card-thumb {

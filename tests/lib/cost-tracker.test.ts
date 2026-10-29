@@ -35,9 +35,9 @@ import {
   _getOutageSpendForTests,
   _resetOutageSpendForTests,
   executeTrackedGenerationCall,
-  releaseEvaluationGoogleCall,
-  reserveEvaluationGoogleCall,
-  settleEvaluationGoogleCall,
+  releaseEvaluationModelCall,
+  reserveEvaluationModelCall,
+  settleEvaluationModelCall,
 } from "@/src/lib/cost-tracker";
 import {
   RAG_ANSWER_PROFILES,
@@ -443,7 +443,7 @@ describe("hard evaluation reservations", () => {
   });
 
   it("rejects parallel calls before their conservative maxima can cross the cap", () => {
-    const first = reserveEvaluationGoogleCall({
+    const first = reserveEvaluationModelCall({
       model: "claude-haiku-5-5",
       op: "first",
       maxOutputTokens: 8192,
@@ -451,23 +451,23 @@ describe("hard evaluation reservations", () => {
     expect(first).not.toBeNull();
     expect(_getEvaluationReservedForTests()).toBeGreaterThan(1);
     expect(() =>
-      reserveEvaluationGoogleCall({
+      reserveEvaluationModelCall({
         model: "claude-haiku-5-5",
         op: "second",
         maxOutputTokens: 8192,
       })
     ).toThrow(DailyBudgetExceededError);
-    releaseEvaluationGoogleCall(first);
+    releaseEvaluationModelCall(first);
     expect(_getEvaluationReservedForTests()).toBe(0);
   });
 
   it("atomically replaces a reservation with actual usage", () => {
-    const reservation = reserveEvaluationGoogleCall({
+    const reservation = reserveEvaluationModelCall({
       model: "claude-haiku-5-5",
       op: "settle",
       maxOutputTokens: 8192,
     });
-    settleEvaluationGoogleCall(reservation, 0.0125);
+    settleEvaluationModelCall(reservation, 0.0125);
     expect(_getEvaluationReservedForTests()).toBe(0);
     expect(_getEvaluationSpendForTests()).toBeCloseTo(0.0125, 8);
   });

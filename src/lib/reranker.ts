@@ -18,7 +18,7 @@ import {
   type VoyageUsage,
 } from "@/src/lib/cost-tracker";
 import { QuotaExhaustedError } from "@/src/lib/embeddings";
-import { isAbortError, isQuotaError, retryOnQuota } from "@/src/lib/gemini-quota";
+import { isAbortError, isQuotaError, retryOnQuota } from "@/src/lib/model-errors";
 import { RAG_MODEL_CONFIG, RAG_RERANK_MODEL } from "@/src/lib/rag-model-config";
 import type { RetrievedArticle } from "@/src/lib/db";
 

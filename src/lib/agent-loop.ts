@@ -13,9 +13,9 @@ import type { AskAgentProgressEvent } from "@/src/lib/ask-stream-events";
 import {
   computeCostUsd,
   recordUsage,
-  releaseEvaluationGoogleCall,
-  reserveEvaluationGoogleCall,
-  settleEvaluationGoogleCall,
+  releaseEvaluationModelCall,
+  reserveEvaluationModelCall,
+  settleEvaluationModelCall,
 } from "@/src/lib/cost-tracker";
 import { RAG_MODEL_CONFIG } from "@/src/lib/rag-model-config";
 import { AGENT_TOOL_DECLARATIONS, executeTool } from "@/src/lib/agent-tools";
@@ -28,7 +28,7 @@ import {
   kindForQuota,
   retryAfterSecFromQuotaError,
   retryOnQuota,
-} from "@/src/lib/gemini-quota";
+} from "@/src/lib/model-errors";
 import { groundAgentAnswer } from "@/src/lib/answer-grounding";
 import {
   applyCoverageAnswerPolicy,
@@ -501,7 +501,7 @@ async function generateStreamedTurn(params: {
   onDelta?: (text: string) => void;
 }): Promise<ModelTurn> {
   const client = getClaudeClient();
-  const reservation = reserveEvaluationGoogleCall({
+  const reservation = reserveEvaluationModelCall({
     model: AGENT_MODEL,
     maxOutputTokens: MAX_OUTPUT_TOKENS,
     requestId: params.requestId,
@@ -546,7 +546,7 @@ async function generateStreamedTurn(params: {
     if (!calledTool && !streaming && held) params.onDelta?.(held);
 
     if (reservation) {
-      settleEvaluationGoogleCall(reservation, computeCostUsd(AGENT_MODEL, message.usage));
+      settleEvaluationModelCall(reservation, computeCostUsd(AGENT_MODEL, message.usage));
       settled = true;
     }
     void recordUsage(AGENT_MODEL, message.usage, {
@@ -564,7 +564,7 @@ async function generateStreamedTurn(params: {
       finishReason: message.stop_reason ?? undefined,
     };
   } catch (err) {
-    if (!settled) releaseEvaluationGoogleCall(reservation);
+    if (!settled) releaseEvaluationModelCall(reservation);
     throw err;
   }
 }

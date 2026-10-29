@@ -46,7 +46,7 @@ import {
   isQuotaError,
   kindForQuota,
   retryAfterSecFromQuotaError,
-} from "@/src/lib/gemini-quota";
+} from "@/src/lib/model-errors";
 import { getClientIp } from "@/src/lib/rate-limit";
 import {
   checkDailyBudget,
@@ -630,7 +630,7 @@ function askStreamErrorKind(err: unknown): {
 //   - { type: "metadata", question, mode, sourceArticles, meta }
 //                                              — emitted after retrieval+rerank
 //                                              — so the client can render the
-//                                              — citation panel before Gemini
+//                                              — citation panel before Claude
 //                                              — streams the answer text
 //   - { type: "delta", text }                  — partial answer token(s)
 //   - { type: "done", answer, citations, confidence, outcome, meta }
@@ -1295,7 +1295,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // ── Daily budget kill switch ──
   // Fail fast if the project has already burned through today's AI
   // spend ceiling. Covers both streaming and non-streaming paths
-  // before any Gemini call is issued.
+  // before any model call is issued.
   try {
     await checkDailyBudget();
   } catch (err) {
@@ -1705,7 +1705,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           route: "/api/ask",
           requestId,
           stage: "pipeline",
-          msg: "gemini quota exhausted",
+          msg: "model quota exhausted",
           retryAfterSec,
         })
       );

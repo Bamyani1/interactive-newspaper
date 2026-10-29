@@ -22,8 +22,7 @@ Thanks for taking a look. This is a solo portfolio project, so the primary autho
 ```bash
 # Install (Node 24+ with npm; Python 3.12 for the OCR pipeline)
 npm ci
-cp .env.example .env.local     # fill DATABASE_URL and Google Cloud project/location
-gcloud auth application-default login
+cp .env.example .env.local     # fill DATABASE_URL, ANTHROPIC_API_KEY and VOYAGE_API_KEY
 
 # Run locally
 npm run dev                    # http://localhost:3000
