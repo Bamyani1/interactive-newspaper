@@ -366,6 +366,7 @@ export async function rerankWithCorrectiveRetry(params: {
       maxArticles: params.maxArticles,
       minScore: params.mode === "visual" ? 3 : 4,
       mode: params.mode,
+      dateRange: params.filters,
       signal: params.signal,
       requestId: params.requestId,
     })
@@ -408,6 +409,7 @@ export async function rerankWithCorrectiveRetry(params: {
       maxArticles: params.maxArticles,
       minScore: params.mode === "visual" ? 2 : 3,
       mode: params.mode,
+      dateRange: params.filters,
       signal: params.signal,
       requestId: params.requestId,
     })
