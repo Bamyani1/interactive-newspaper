@@ -145,6 +145,19 @@ export function parseLabels<L extends string>(
   return labels as L[];
 }
 
+/** Calls the judge, asking once more when its reply doesn't parse (e.g. one label too many). */
+export async function labelsWithRetry<L extends string>(
+  call: () => Promise<string>,
+  count: number,
+  allowed: readonly L[]
+): Promise<L[]> {
+  try {
+    return parseLabels(await call(), count, allowed);
+  } catch {
+    return parseLabels(await call(), count, allowed);
+  }
+}
+
 export function summarizeJudged(questions: JudgedQuestion[]) {
   const judged = questions.filter((q) => !q.error);
   const meanOf = (values: Array<number | null>) => {
@@ -401,28 +414,31 @@ async function main() {
       .digest("hex");
     const cached = cache.get(key);
     if (cached) return parseLabels(JSON.stringify({ labels: cached }), count, allowed);
-    const response = await executeTrackedGenerationCall({
-      model: judge.model,
-      maxOutputTokens: 16_000,
-      op: `eval.judge.${kind}`,
-      requestId,
-      call: () =>
-        client.messages.create(
-          {
-            model: judge.model,
-            max_tokens: 16_000,
-            system,
-            thinking: { type: "adaptive" },
-            output_config: {
-              effort: judge.effort,
-              format: jsonOutputFormat(labelsSchema(allowed)),
-            },
-            messages: [{ role: "user", content: prompt }],
-          },
-          { signal: AbortSignal.timeout(300_000) }
-        ),
-    });
-    const labels = parseLabels(messageText(response), count, allowed);
+    const ask = async () =>
+      messageText(
+        await executeTrackedGenerationCall({
+          model: judge.model,
+          maxOutputTokens: 16_000,
+          op: `eval.judge.${kind}`,
+          requestId,
+          call: () =>
+            client.messages.create(
+              {
+                model: judge.model,
+                max_tokens: 16_000,
+                system,
+                thinking: { type: "adaptive" },
+                output_config: {
+                  effort: judge.effort,
+                  format: jsonOutputFormat(labelsSchema(allowed)),
+                },
+                messages: [{ role: "user", content: prompt }],
+              },
+              { signal: AbortSignal.timeout(300_000) }
+            ),
+        })
+      );
+    const labels = await labelsWithRetry(ask, count, allowed);
     cache.set(key, labels);
     calls += 1;
     if (calls % 20 === 0) {

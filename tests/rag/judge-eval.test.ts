@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   judgeTargets,
+  labelsWithRetry,
   parseLabels,
   summarizeJudged,
   type JudgedQuestion,
@@ -59,6 +60,31 @@ describe("parseLabels", () => {
   it("rejects a wrong count or an unknown label", () => {
     expect(() => parseLabels('{"labels":["full"]}', 2, ["full"])).toThrow(/1 labels for 2/);
     expect(() => parseLabels('{"labels":["maybe"]}', 1, ["full"])).toThrow(/maybe/);
+  });
+});
+
+describe("labelsWithRetry", () => {
+  it("asks once more when the judge's reply has the wrong count", async () => {
+    const replies = ['{"labels":["full","full","none"]}', '{"labels":["full","none"]}'];
+    let calls = 0;
+    const labels = await labelsWithRetry(async () => replies[calls++], 2, ["full", "none"]);
+    expect(labels).toEqual(["full", "none"]);
+    expect(calls).toBe(2);
+  });
+
+  it("gives up after the second malformed reply", async () => {
+    let calls = 0;
+    await expect(
+      labelsWithRetry(
+        async () => {
+          calls += 1;
+          return '{"labels":["full"]}';
+        },
+        2,
+        ["full"]
+      )
+    ).rejects.toThrow(/1 labels for 2/);
+    expect(calls).toBe(2);
   });
 });
 
