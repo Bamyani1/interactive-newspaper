@@ -25,7 +25,7 @@
  *   npm run rag:health -- --json
  *
  * Reads .env.local like the rest of scripts/db/; an exported DATABASE_URL
- * or RAG_RETRIEVAL_MODE still wins, so a one-off check against another
+ * or RAG_ACTIVE_INDEX_BUILD_ID still wins, so a one-off check against another
  * deployment is a prefix away.
  *
  * Exit: 0 healthy, 1 mismatch, 2 usage/connection error.

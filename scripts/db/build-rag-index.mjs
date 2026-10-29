@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Versioned RAG index builder — the build-scoped successor to embed.mjs.
+ * Versioned RAG index builder.
  *
  * FIRST writer of rag_index_builds: no other code anywhere inserts rows into
  * that table (migration 0004 created it empty by design). Every evidence row
  * this tool writes carries index_build_id, so it can never collide with the
- * legacy NULL-build rows embed.mjs maintains (partial uniques
+ * NULL-build rows db:seed maintains (partial uniques
  * uq_article_chunks_build / uq_article_images_build vs uq_*_legacy).
  *
  * Build lifecycle (no --force anywhere — a changed input, model, or version
@@ -994,8 +994,9 @@ export async function finalizeBuild(executor, buildId) {
  * Promote a validated build to 'active'. Single-active-per-corpus is
  * enforced twice: this guard produces a clear error, and migration 0004's
  * partial unique index makes any concurrent race lose at the database.
- * Serving only switches when RAG_RETRIEVAL_MODE selects the build — this
- * transition alone never changes what production serves.
+ * Serving only switches when the serving pointer (--switch) or
+ * RAG_ACTIVE_INDEX_BUILD_ID names the build — this transition alone never
+ * changes what production serves.
  */
 export async function activateBuild(executor, buildId) {
   const build = await getBuild(executor, buildId);
@@ -1026,9 +1027,9 @@ export async function activateBuild(executor, buildId) {
 
 /**
  * Demote an active build back to 'validated'. Order matters during an
- * incident: flip RAG_RETRIEVAL_MODE to legacy FIRST (instant,
- * serving-safe), then demote — a versioned-mode config pointing at a
- * non-active build fails its readiness check by design.
+ * incident: move serving off this build FIRST (--switch-back, or --switch
+ * to another build), then demote — a config pointing at a non-active build
+ * fails its readiness check by design.
  */
 export async function rollbackActivation(executor, buildId) {
   const build = await getBuild(executor, buildId);

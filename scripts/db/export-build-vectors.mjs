@@ -30,7 +30,7 @@ export function vectorColumn(buildRow) {
   const dims = buildRow.embedding_dims ?? 768;
   if (Number(dims) !== 1024) {
     throw new Error(
-      `Index build ${buildRow.id} has ${dims}-dimension vectors, which 0015 dropped; ` +
+      `Index build ${buildRow.id} has ${dims}-dimension vectors, which 0015 drops; ` +
         `only 1024-dimension builds can be exported or imported.`
     );
   }
