@@ -7,6 +7,7 @@ import type { ConversationTurn } from "@/src/lib/conversation-store";
 import { rerankArticles } from "@/src/lib/reranker";
 import type { RankedArticle } from "@/src/lib/reranker";
 import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
+import { loadServingPointer } from "@/src/lib/rag-serving-pointer";
 
 export interface RetrievalFilters {
   category?: string;
@@ -153,6 +154,7 @@ export async function retrieveCandidates(params: {
   requestId?: string;
 }): Promise<CandidateRetrievalResult> {
   const started = Date.now();
+  await loadServingPointer();
   const identity = getRagRetrievalConfig();
   const servedTarget = identity.mode === "versioned" ? "versioned" : "legacy";
   // Month-stratified vector selection for wide date ranges (>= ~3

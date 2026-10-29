@@ -15,16 +15,36 @@ export interface RagRetrievalConfig {
   cacheIdentity: string;
 }
 
+/** The rag_serving_pointer row: the build Ask serves and its corpus. */
+export interface ServingPointer {
+  indexBuildId: string;
+  corpusVersion: string;
+}
+
+// Filled by loadServingPointer() (rag-serving-pointer.ts), which request
+// handlers and scripts await before reading the config.
+let servingPointer: ServingPointer | null = null;
+
+export function setServingPointer(pointer: ServingPointer | null): void {
+  servingPointer = pointer;
+}
+
 /**
  * Resolve the retrieval/index selection from runtime configuration.
  *
  * Safety properties:
  * - absence always means legacy retrieval;
  * - an invalid value fails closed instead of guessing;
- * - candidate modes require an explicit immutable build identity;
- * - database table existence never selects a retrieval implementation.
+ * - candidate modes require an explicit immutable build identity: the env's
+ *   RAG_ACTIVE_INDEX_BUILD_ID + RAG_CORPUS_VERSION when set (an override, as
+ *   a pair), otherwise the serving pointer's build and corpus;
+ * - database table existence never selects a retrieval implementation (the
+ *   mode is env-only; the pointer only names a build).
  */
-export function getRagRetrievalConfig(env: NodeJS.ProcessEnv = process.env): RagRetrievalConfig {
+export function getRagRetrievalConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  pointer: ServingPointer | null = servingPointer
+): RagRetrievalConfig {
   const rawMode = env.RAG_RETRIEVAL_MODE?.trim().toLowerCase() || "legacy";
   if (!RAG_RETRIEVAL_MODES.includes(rawMode as RagRetrievalMode)) {
     throw new Error(
@@ -33,13 +53,19 @@ export function getRagRetrievalConfig(env: NodeJS.ProcessEnv = process.env): Rag
   }
 
   const mode = rawMode as RagRetrievalMode;
-  const configuredBuildId = env.RAG_ACTIVE_INDEX_BUILD_ID?.trim() || null;
+  const envBuildId = env.RAG_ACTIVE_INDEX_BUILD_ID?.trim() || null;
+  const fromPointer = mode !== "legacy" && !envBuildId && pointer !== null;
+  const configuredBuildId = fromPointer ? pointer.indexBuildId : envBuildId;
   if (mode !== "legacy" && !configuredBuildId) {
-    throw new Error(`RAG_ACTIVE_INDEX_BUILD_ID is required when RAG_RETRIEVAL_MODE=${mode}.`);
+    throw new Error(
+      `RAG_ACTIVE_INDEX_BUILD_ID or a serving pointer is required when RAG_RETRIEVAL_MODE=${mode}.`
+    );
   }
 
   const activeIndexBuildId = mode === "legacy" ? null : configuredBuildId;
-  const corpusVersion = env.RAG_CORPUS_VERSION?.trim() || "legacy-unversioned";
+  const corpusVersion = fromPointer
+    ? pointer.corpusVersion
+    : env.RAG_CORPUS_VERSION?.trim() || "legacy-unversioned";
   const identityParts = [
     `corpus=${corpusVersion}`,
     `index=${mode === "legacy" ? "legacy" : `${mode}:${activeIndexBuildId}`}`,

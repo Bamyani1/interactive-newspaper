@@ -9,6 +9,7 @@ import {
 } from "@/src/lib/rag-model-config";
 import { getRagRetrievalConfig, shouldServeVersionedRetrieval } from "@/src/lib/rag-index-config";
 import { DbTimeoutError, runWithDbTimeout } from "@/src/lib/db-timeout";
+import { loadServingPointer } from "@/src/lib/rag-serving-pointer";
 
 // The timeout race lives in db-timeout.ts so callers that must not import
 // this module (it builds a Neon client below, at module load) can still
@@ -54,6 +55,7 @@ export function _setRagIndexBuildReadyForTests(value: boolean | null): void {
 }
 
 async function assertConfiguredIndexBuildReady(signal: AbortSignal): Promise<string> {
+  await loadServingPointer();
   const config = getRagRetrievalConfig();
   const indexBuildId = config.activeIndexBuildId;
   if (!indexBuildId || config.mode === "legacy") {
@@ -213,6 +215,7 @@ export async function queryArchiveCoverage(
   return runWithDbTimeout(
     "queryArchiveCoverage",
     async (signal) => {
+      await loadServingPointer();
       const target: "legacy" | "versioned" = shouldServeVersionedRetrieval()
         ? "versioned"
         : "legacy";
@@ -826,6 +829,7 @@ export async function queryArticlesByEmbedding(
   if (options.signal?.aborted) {
     throw new DbTimeoutError("queryArticlesByEmbedding", timeoutMs);
   }
+  await loadServingPointer();
   const serveVersioned =
     options.retrievalTarget === "versioned" ||
     (options.retrievalTarget === undefined && shouldServeVersionedRetrieval());
@@ -934,6 +938,7 @@ export async function searchArticlesForRag(
   return runWithDbTimeout(
     "searchArticlesForRag",
     async (signal) => {
+      await loadServingPointer();
       const serveVersioned =
         options.retrievalTarget === "versioned" ||
         (options.retrievalTarget === undefined && shouldServeVersionedRetrieval());

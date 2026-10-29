@@ -1438,6 +1438,52 @@
         "rag_index_builds_status_check CHECK ((status = ANY (ARRAY['building'::text, 'validated'::text, 'active'::text, 'failed'::text, 'retired'::text])))"
       ]
     },
+    "rag_serving_pointer": {
+      "columns": [
+        {
+          "name": "corpus_version",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "dataType": "smallint",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "index_build_id",
+          "dataType": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "previous_build_id",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "previous_corpus_version",
+          "dataType": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "switched_at",
+          "dataType": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "constraints": [
+        "rag_serving_pointer_id_check CHECK ((id = 1))",
+        "rag_serving_pointer_index_build_id_fkey FOREIGN KEY (index_build_id) REFERENCES rag_index_builds(id)",
+        "rag_serving_pointer_pkey PRIMARY KEY (id)",
+        "rag_serving_pointer_previous_build_id_fkey FOREIGN KEY (previous_build_id) REFERENCES rag_index_builds(id) ON DELETE SET NULL"
+      ]
+    },
     "schema_migrations": {
       "columns": [
         {
@@ -1677,6 +1723,7 @@
     "publication_run_events_pkey": "CREATE UNIQUE INDEX publication_run_events_pkey ON public.publication_run_events USING btree (id)",
     "publication_runs_pkey": "CREATE UNIQUE INDEX publication_runs_pkey ON public.publication_runs USING btree (id)",
     "rag_index_builds_pkey": "CREATE UNIQUE INDEX rag_index_builds_pkey ON public.rag_index_builds USING btree (id)",
+    "rag_serving_pointer_pkey": "CREATE UNIQUE INDEX rag_serving_pointer_pkey ON public.rag_serving_pointer USING btree (id)",
     "schema_migrations_pkey": "CREATE UNIQUE INDEX schema_migrations_pkey ON public.schema_migrations USING btree (id)",
     "source_records_pkey": "CREATE UNIQUE INDEX source_records_pkey ON public.source_records USING btree (id)",
     "source_records_source_system_pointer_key": "CREATE UNIQUE INDEX source_records_source_system_pointer_key ON public.source_records USING btree (source_system, pointer)",

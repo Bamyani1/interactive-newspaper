@@ -513,6 +513,8 @@ async function main(): Promise<void> {
   }
 
   const indexModule = await import("../../src/lib/rag-index-config");
+  const pointerModule = await import("../../src/lib/rag-serving-pointer");
+  await pointerModule.loadServingPointer();
   const identity = indexModule.getRagRetrievalConfig();
   const config: EvalRunConfig = {
     retrievalMode: identity.mode,

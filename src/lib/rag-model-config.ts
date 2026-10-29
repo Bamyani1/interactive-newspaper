@@ -70,6 +70,9 @@ export const RAG_MODEL_CONFIG = {
 
 /**
  * Bump when retrieval inputs, ranking behavior, or answer semantics change.
- * It deliberately participates in in-memory cache keys.
+ * It deliberately participates in in-memory cache keys. Ask's readiness check
+ * requires the served build's pipeline_version to equal this, so a bump ships
+ * with a new build (`--create`, `--reuse` keeps it cheap) and `--switch`;
+ * a bump alone drops Ask to keyword-only search.
  */
 export const RAG_PIPELINE_VERSION = "rag-v4-voyage";
