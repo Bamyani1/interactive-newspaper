@@ -1,6 +1,6 @@
-"""Claude client for OCR stages (``OCR_LLM_PROVIDER=claude``).
+"""Claude client for OCR stages.
 
-Each stage still builds its Gemini-shaped request (contents, config, Pydantic
+Each stage builds its request (contents, ``GenerationConfig``, Pydantic
 response schema).  This module turns that request into one streamed Messages
 API call and returns a response with the attributes the stages and
 ``shared.retry`` read: ``parsed``, ``text``, ``usage_metadata``, ``candidates``.
@@ -19,12 +19,11 @@ from types import SimpleNamespace
 from typing import Any
 
 import anthropic
-from google.genai import types
 from PIL import Image
 from pydantic import BaseModel, ValidationError
 
-from .google_clients import _load_repo_env
-from .model_calls import CLAUDE_MODELS
+from .env import load_repo_env
+from .model_calls import CLAUDE_MODELS, GenerationConfig, ImagePart
 
 # High-resolution vision limits (Claude 4.7 and later): larger images are
 # downscaled by the API anyway, so resize here and keep requests small.
@@ -85,13 +84,13 @@ def _image_block(data: bytes, *, max_long_edge: int) -> dict[str, Any]:
 
 
 def _inline_image(item: object) -> bytes | None:
-    if isinstance(item, types.Part) and item.inline_data and item.inline_data.data:
-        return item.inline_data.data
+    if isinstance(item, ImagePart) and item.data:
+        return item.data
     return None
 
 
 def to_claude_content(contents: list) -> list[dict[str, Any]]:
-    """Translate Gemini contents (strings and Parts) to Claude content blocks."""
+    """Translate request contents (strings and ImageParts) to Claude content blocks."""
     image_count = sum(1 for item in contents if _inline_image(item) is not None)
     max_long_edge = _MANY_IMAGES_LONG_EDGE if image_count > _MANY_IMAGES else _MAX_LONG_EDGE
     blocks: list[dict[str, Any]] = []
@@ -148,7 +147,7 @@ class ClaudeOCRClient:
         *,
         model: str,
         contents: list,
-        config: types.GenerateContentConfig,
+        config: GenerationConfig,
         stage: str,
         timeout_seconds: int,
     ) -> ClaudeResponse:
@@ -203,10 +202,10 @@ class ClaudeOCRClient:
 
 
 def create_claude_client() -> ClaudeOCRClient:
-    _load_repo_env()
+    load_repo_env()
     if not os.getenv("ANTHROPIC_API_KEY"):
-        raise RuntimeError("ANTHROPIC_API_KEY is required for OCR_LLM_PROVIDER=claude")
-    # shared.retry owns the retry policy, as with the Gemini client.
+        raise RuntimeError("ANTHROPIC_API_KEY is required for OCR")
+    # shared.retry owns the retry policy.
     return ClaudeOCRClient(anthropic.Anthropic(max_retries=0))
 
 

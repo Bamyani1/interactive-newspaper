@@ -9,7 +9,7 @@ import {
   LIVE_QUOTA_RETRY_DELAYS_MS,
   retryAfterSecFromQuotaError,
   retryOnQuota,
-} from "@/src/lib/gemini-quota";
+} from "@/src/lib/model-errors";
 
 const quotaError = () => Object.assign(new Error("rate limit"), { code: 429 });
 

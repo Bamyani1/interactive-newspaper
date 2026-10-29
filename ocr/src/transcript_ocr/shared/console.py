@@ -213,7 +213,7 @@ def print_page_table(page_diagnostics: list[PageDiagnostics]) -> None:
             status_str = "[success]\u2713 OK[/success]"
             ok_count += 1
 
-        total_tok = pd.gemini_tokens.total_tokens + pd.reading_tokens.total_tokens
+        total_tok = pd.structuring_tokens.total_tokens + pd.reading_tokens.total_tokens
 
         total_arts += pd.final_article_count
         total_ads += pd.final_ad_count

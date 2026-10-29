@@ -1,4 +1,4 @@
-"""Sanitize literal "null" strings from Gemini structured output."""
+"""Sanitize literal "null" strings from structured model output."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ _AD_STRING_FIELDS = ("business_name",)
 def _sanitize_null_strings(page_content: PageContent) -> PageContent:
     """Replace literal 'null'/'None'/'N/A' strings with empty strings on optional fields.
 
-    Runs after Gemini parse, before deduplication. Mutates in place and returns
+    Runs after the model's parse, before deduplication. Mutates in place and returns
     the same object for convenience.
     """
     for article in page_content.articles:

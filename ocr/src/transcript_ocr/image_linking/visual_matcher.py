@@ -1,14 +1,10 @@
-"""Gemini visual-type and content-attachment matching."""
+"""Claude visual-type and content-attachment matching."""
 
 from __future__ import annotations
 
 from PIL import Image
 
-from ..config.model_calls import (
-    build_generation_config,
-    image_part_ultra_high,
-    model_name,
-)
+from ..config.model_calls import GenerationConfig, image_part, model_name
 from ..contracts.content_models import (
     ImageRegionAssignment,
     ImageRegionAssignments,
@@ -17,7 +13,7 @@ from ..contracts.content_models import (
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer, TokenUsage
 from ..recognition.prompts import IMAGE_MATCHING_PROMPT
 from ..shared.console import error, substep, warning
-from ..shared.retry import gemini_generate_with_retry
+from ..shared.retry import generate_with_retry
 from ..shared.text import split_sentences
 
 
@@ -131,7 +127,7 @@ def _assignment_validation_reason(
         if assignment.attachment != "reject" and assignment.rejection_reason:
             return f"region {assignment.region_number} has a reason but is not rejected."
         # Pixel area is enforced deterministically after this call.  The
-        # response contract carries the final disposition, but Gemini must not
+        # response contract carries the final disposition, but the model must not
         # manufacture it from apparent on-screen size.
         if assignment.rejection_reason == "rejected_small_ad_visual":
             return f"region {assignment.region_number} selected a caller-only reason."
@@ -193,8 +189,7 @@ def match_images_visual(
         diag.visual_matching.attempted = True
 
     content_list, caption_slots = _build_content_context(page_content)
-    generation_config = build_generation_config(
-        "image_matching",
+    generation_config = GenerationConfig(
         response_mime_type="application/json",
         response_schema=ImageRegionAssignments,
         max_output_tokens=65536,
@@ -215,7 +210,7 @@ def match_images_visual(
         # and page layout remain interpretable.
         contents: list = [
             "Annotated full page (region numbers are global across this page):",
-            image_part_ultra_high(annotated_image),
+            image_part(annotated_image),
         ]
         for region_id in batch_ids:
             crop_index = region_id - 1
@@ -223,7 +218,7 @@ def match_images_visual(
                 contents.extend(
                     [
                         f"Evidence crop for global region {region_id}:",
-                        image_part_ultra_high(evidence_images[crop_index]),
+                        image_part(evidence_images[crop_index]),
                     ]
                 )
         contents.append(prompt)
@@ -237,7 +232,7 @@ def match_images_visual(
             )
 
         try:
-            response = gemini_generate_with_retry(
+            response = generate_with_retry(
                 client,
                 model=model_name("image_matching"),
                 contents=contents,

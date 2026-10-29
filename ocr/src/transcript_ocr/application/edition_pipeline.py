@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..config.model_calls import model_name, model_routes, uses_claude
+from ..config.model_calls import model_name, model_routes
 from ..contracts.content_models import (
     EditionContent,
     MergedArticle,
@@ -25,7 +25,7 @@ from ..contracts.content_models import (
 )
 from ..contracts.diagnostics_models import PageDiagnostics, PipelineReport, TokenUsage
 from ..contracts.page_state import PageOutcome, PageState, may_publish, publication_ratio
-from ..diagnostics.costing import estimate_gemini_cost
+from ..diagnostics.costing import estimate_cost
 from ..diagnostics.failure_log import append_failure
 from ..export.edition_writer import align_existing_image_files, finalize_and_write_edition_json, write_edition_json
 from ..export.provenance import write_provenance
@@ -36,11 +36,11 @@ from ..ingestion.pathing import RunPaths
 from ..merging.llm_merge import merge_edition_articles
 from ..preprocessing.image_converter import convert_edition_images_tolerant
 from ..shared.console import banner, error, stage, success, warning
-from ..shared.retry import observe_gemini_failures
+from ..shared.retry import observe_model_failures
 from ..shared.text import normalize_whitespace
 from .ad_enrichment import enrich_edition
 from .content_rescue import triage_edition
-from .page_pipeline import extract_page_docai, structure_and_link_page
+from .page_pipeline import extract_page, structure_and_link_page
 
 
 class EditionPipelineError(RuntimeError):
@@ -54,7 +54,7 @@ class EditionRunResult:
     manifest_canvas_count: int
     pass_ratio: float
     outcomes: tuple[PageOutcome, ...]
-    estimated_gemini_cost_usd: float
+    estimated_cost_usd: float
 
 
 def _log_failure(edition: str, stage_name: str, exc: BaseException | str, **metadata) -> None:
@@ -209,17 +209,7 @@ def _usage_from_event(event: dict[str, Any]) -> TokenUsage:
 
 
 def _provider_provenance() -> dict[str, str]:
-    if uses_claude():
-        # Claude reads the page text itself; no Document AI.
-        return {"name": "anthropic", "api": "messages", "text_reading": "claude"}
-    return {
-        "name": "google_vertex",
-        "auth": "application_default_credentials",
-        "project": os.getenv("GOOGLE_CLOUD_PROJECT", ""),
-        "location": "global",
-        "api_version": "v1",
-        "document_ai_processor_version": "stable",
-    }
+    return {"name": "anthropic", "api": "messages", "text_reading": "claude"}
 
 
 def _estimate_report_cost(
@@ -228,19 +218,19 @@ def _estimate_report_cost(
 ) -> float:
     total = 0.0
     for page in report.page_diagnostics:
-        total += estimate_gemini_cost(
-            model_name("page_structuring"), page.gemini_tokens
+        total += estimate_cost(
+            model_name("page_structuring"), page.structuring_tokens
         ).usd
         if page.reading_tokens.prompt_tokens:
-            total += estimate_gemini_cost(model_name("text_reading"), page.reading_tokens).usd
+            total += estimate_cost(model_name("text_reading"), page.reading_tokens).usd
         if page.visual_matching.attempted:
-            total += estimate_gemini_cost(
+            total += estimate_cost(
                 model_name("image_matching"), page.visual_matching.tokens
             ).usd
     if report.merge_pass is not None:
-        total += estimate_gemini_cost(model_name("merge"), report.merge_pass.tokens).usd
+        total += estimate_cost(model_name("merge"), report.merge_pass.tokens).usd
     for event in extra_model_events or []:
-        total += estimate_gemini_cost(
+        total += estimate_cost(
             str(event["model"]),
             _usage_from_event(event),
         ).usd
@@ -304,16 +294,16 @@ def process_edition(
                 or usage.thoughts_tokens
             ):
                 extra_model_events.append(token_event)
-            estimated = estimate_gemini_cost(model, usage).usd if model else None
+            estimated = estimate_cost(model, usage).usd if model else None
             _log_failure(
                 edition_date,
-                str(event.get("stage") or "gemini"),
-                str(event.get("error") or "Gemini attempt failed"),
+                str(event.get("stage") or "model"),
+                str(event.get("error") or "Claude attempt failed"),
                 canvas=canvas,
                 page=page,
                 attempt=event.get("attempt"),
                 model=model,
-                config_id=f"{event.get('stage', 'gemini')}-v1",
+                config_id=f"{event.get('stage', 'model')}-v1",
                 status=str(event.get("status") or "failed"),
                 finish_reason=str(event.get("finish_reason") or ""),
                 latency_ms=event.get("latency_ms"),
@@ -355,7 +345,7 @@ def process_edition(
             for page in inventory.pages
             if page.local_path is not None and page.index not in outcomes_by_canvas
         ]
-        stage("Document AI + source visual detection", 1, 5)
+        stage("Page reading + source visual detection", 1, 5)
         extracted: dict[int, tuple] = {}
         diagnostics: dict[int, PageDiagnostics] = {}
 
@@ -363,7 +353,7 @@ def process_edition(
             diag = PageDiagnostics(filename=Path(page.local_path or "").name)
             page_work = work_root / f"canvas-{page.index:04d}"
             page_work.mkdir(parents=True, exist_ok=True)
-            result = extract_page_docai(
+            result = extract_page(
                 page.local_path or "",
                 diag=diag,
                 work_dir=str(page_work),
@@ -387,26 +377,26 @@ def process_edition(
                     )
                     _log_failure(
                         edition_date,
-                        "document_ai_or_detection",
+                        "text_reading_or_detection",
                         exc,
                         canvas=page.index,
                         page=str(page.index),
-                        model="document-ai-enterprise-ocr+hybrid-layout",
-                        config_id="processorVersions/stable",
+                        model=model_name("text_reading"),
+                        config_id="text_reading-v1",
                     )
 
-        stage("Gemini page structuring + visual assignment", 2, 5)
+        stage("Page structuring + visual assignment", 2, 5)
 
         def structure_one(page: PageExpectation):
-            docai, ocr_image, regions, source_image = extracted[page.index]
+            page_text, ocr_image, regions, source_image = extracted[page.index]
             diag = diagnostics[page.index]
-            with observe_gemini_failures(
+            with observe_model_failures(
                 attempt_failure_observer(page.index, str(page.index))
             ):
                 content = structure_and_link_page(
                     client,
                     page.local_path or "",
-                    docai,
+                    page_text,
                     ocr_image,
                     regions,
                     str(candidate),
@@ -476,7 +466,7 @@ def process_edition(
         page_results = [page_results_by_canvas[index] for index in sorted(page_results_by_canvas)]
         stage("Edition article grouping + seam review", 3, 5)
         try:
-            with observe_gemini_failures(attempt_failure_observer()):
+            with observe_model_failures(attempt_failure_observer()):
                 merged = merge_edition_articles(
                     client,
                     page_results,
@@ -513,7 +503,7 @@ def process_edition(
             json.loads(edition_json_path.read_text(encoding="utf-8"))
         )
         try:
-            with observe_gemini_failures(attempt_failure_observer()):
+            with observe_model_failures(attempt_failure_observer()):
                 enrich_edition(
                     str(edition_json_path),
                     client,
@@ -529,7 +519,7 @@ def process_edition(
             json.loads(edition_json_path.read_text(encoding="utf-8"))
         )
         try:
-            with observe_gemini_failures(attempt_failure_observer()):
+            with observe_model_failures(attempt_failure_observer()):
                 triage_edition(
                     str(edition_json_path),
                     client,
@@ -568,7 +558,7 @@ def process_edition(
             manifest_canvas_count=expected,
             pass_ratio=ratio,
             outcomes=tuple(outcomes),
-            estimated_gemini_cost_usd=estimated_cost,
+            estimated_cost_usd=estimated_cost,
         )
     except Exception as exc:
         error(str(exc))

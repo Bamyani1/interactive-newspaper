@@ -12,7 +12,7 @@ application/    — Orchestration (edition_pipeline, page_pipeline, ad_enrichmen
 ingestion/      — IIIF manifest inventory, downloads, file discovery, path resolution
 preprocessing/  — Lossless TIFF conversion, source/OCR image branches, deskew
 detection/      — American Stories plus DocLayout table detection
-recognition/    — Document AI OCR, Gemini page structuring, prompts
+recognition/    — Claude page reading and structuring, prompts
 postprocessing/ — Text deduplication, byline cleanup, and page normalization
 merging/        — Model-decided grouping and batched seam review
 image_linking/  — Model-decided visual disposition (no spatial fallback)
@@ -27,7 +27,7 @@ shared/         — Console, retry, atomic file writes, text and timing helpers
 ```
 scripts/ocr/process-edition.sh  (preflight, locks, validate, upload, atomic promotion, optional seed)
   → ocr/convert_scans.py  (thin wrapper, adds src/ to sys.path)
-    → cli/convert_scans.py::main()  (arg parse, manifest inventory, Gemini client)
+    → cli/convert_scans.py::main()  (arg parse, manifest inventory, Claude client)
       → application/edition_pipeline.py::process_edition()  (validated candidate under --output-root)
 ```
 
