@@ -60,7 +60,7 @@ Ohio Wesleyan University's student newspaper, _The Transcript_, has been publish
 **The approach, end-to-end:**
 
 1. **Ingest** raw TIF scans from the ContentDM IIIF archive (custom discovery and download tools in `scripts/iiif/`).
-2. **OCR** each page through a Python pipeline combining Google Document AI Enterprise OCR (page text with token confidence), a hybrid visual detector (the American Stories newspaper-layout model for photos, cartoons and ads, plus DocLayout-YOLO for tables), and Google Gemini (structuring articles, headlines, bylines and ads, and deciding what each detected visual is).
+2. **OCR** each page through a Python pipeline combining Claude page reading (each page read in strips), a hybrid visual detector (the American Stories newspaper-layout model for photos, cartoons and ads, plus DocLayout-YOLO for tables), and Claude structuring (articles, headlines, bylines and ads, and deciding what each detected visual is).
 3. **Merge** articles that span multiple pages, review every page seam, enrich ads with structured metadata, then validate and atomically publish the edition with its images on Cloudflare R2.
 4. **Store** the structured output in Neon Postgres with `tsvector` full-text search, then build an immutable index of 768-dim `pgvector` embeddings: sentence-aware text chunks plus one multimodal vector per photo.
 5. **Serve** a Next.js 16 application with a period-accurate reading UI, keyword search, and an "Ask the Archive" research workspace powered by a full RAG pipeline that routes complex questions to a function-calling agent.
@@ -81,7 +81,7 @@ Ohio Wesleyan University's student newspaper, _The Transcript_, has been publish
 - **Export a conversation.** Any Ask thread exports to a formatted PDF client-side (`jspdf` + `html2canvas`).
 - **Budget-aware by default.** A per-environment daily spend cap (`RAG_DAILY_BUDGET_USD`, default $2) refuses new questions before a runaway loop can run up the Vertex AI bill.
 - **Multimodal visual queries.** "Show me protest photos" searches per-photo vectors and captions, inlines up to three grounded photos in the answer, and lists the rest in a "More pictures" grid with a full-screen lightbox.
-- **End-to-end OCR pipeline.** A five-stage Python pipeline turns raw TIF scans into a validated `edition.json`: Document AI OCR, hybrid visual detection, Gemini page structuring and visual assignment, edition-wide article grouping with seam review, ad enrichment, and a targeted final review. A shell wrapper then uploads content-addressed images to R2 and atomically promotes the edition.
+- **End-to-end OCR pipeline.** A five-stage Python pipeline turns raw TIF scans into a validated `edition.json`: Claude page reading, hybrid visual detection, Claude page structuring and visual assignment, edition-wide article grouping with seam review, ad enrichment, and a targeted final review. A shell wrapper then uploads content-addressed images to R2 and atomically promotes the edition.
 - **Historical context.** The reader's sidebar shows that day's Delaware, Ohio weather (offline archive for 1950–2000, live NOAA/Open-Meteo lookup beyond it) and that month's US top-10 songs (1958–2010) with an embedded player.
 - **Light and dark themes**, applied before first paint, plus mobile-specific navigation and Ask actions. The landing page's daily question deep-links into Ask.
 
@@ -128,7 +128,7 @@ flowchart LR
   classDef data fill:#4C5158,stroke:#B80D3E,color:#E8E8E8,stroke-width:1px
 
   IIIF["OCLC ContentDM<br/>IIIF scans"]:::data
-  OCR["Python OCR pipeline<br/>Document AI · layout models · Gemini"]:::brand
+  OCR["Python OCR pipeline<br/>Claude · layout models"]:::brand
   R2[("Cloudflare R2<br/>image CDN · edition backups")]:::data
   DB[("Neon Postgres<br/>tsvector + pgvector<br/>index builds · sessions · spend")]:::data
   IDX["rag:index:build<br/>immutable vector builds"]:::brand
@@ -164,7 +164,7 @@ flowchart LR
 For production-level deep-dives on each subsystem — intended for contributors and senior engineers reviewing the code:
 
 - **[docs/architecture/README.md](./docs/architecture/README.md)** — reading order, glossary, and troubleshooting shortcuts
-- **[docs/architecture/ocr-pipeline.md](./docs/architecture/ocr-pipeline.md)** — stage-by-stage OCR design, manifest accounting, Gemini request policy, asset publication, failure logging
+- **[docs/architecture/ocr-pipeline.md](./docs/architecture/ocr-pipeline.md)** — stage-by-stage OCR design, manifest accounting, Claude request policy, asset publication, failure logging
 - **[docs/architecture/rag-pipeline.md](./docs/architecture/rag-pipeline.md)** — `/api/ask` end-to-end: simple pipeline, agent loop, streaming, dedup, budget, error taxonomy
 - **[docs/architecture/data-model.md](./docs/architecture/data-model.md)** — schema, `edition.json` contract, embeddings and index builds, HNSW, migrations, the ocr-adapter boundary
 
@@ -192,7 +192,6 @@ The three deep-dives cross-reference each other and share a glossary. Read them 
 **AI / Machine Learning**
 
 - **Google Gemini** (`@google/genai`) — answers and reranking on `gemini-3.8-flash`, query reformulation on `gemini-3.5-flash-lite`, and 768-dimensional `gemini-embedding-2` vectors, plus the independently configured OCR stages. Vertex AI everywhere: ADC locally and for the data pipeline, a service account (`GOOGLE_SERVICE_ACCOUNT_JSON`) on the Vercel serving runtime (production and previews). There is no API-key mode: without `GOOGLE_CLOUD_PROJECT` every Gemini client refuses to start.
-- **Google Document AI** — Enterprise OCR processor for page text with token-level confidence
 - **American Stories layout model + DocLayout-YOLO** — hybrid visual detector: the American Stories ONNX checkpoint finds photos, cartoons, and ads; DocLayout-YOLO adds tables it missed
 
 **Python OCR Pipeline**
@@ -267,15 +266,15 @@ application → (recognition | preprocessing | detection | merging |
 
 No stage layer can import `application`; `contracts` and `shared` can't import `application` or the processing stages. The `evaluation/` layer is offline analysis outside the runtime chain and may never import `application`. AST-based static checks live in `tests/ocr/architecture/`.
 
-For the stage-by-stage design, manifest accounting, Gemini request and retry policy, asset publication, and failure logging, see **[docs/architecture/ocr-pipeline.md](./docs/architecture/ocr-pipeline.md)**.
+For the stage-by-stage design, manifest accounting, Claude request and retry policy, asset publication, and failure logging, see **[docs/architecture/ocr-pipeline.md](./docs/architecture/ocr-pipeline.md)**.
 
 ### Stages
 
 | Stage   | Purpose                                                                                     | Output                                                 |
 | ------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | 0       | IIIF manifest inventory; lossless TIFF → PNG, every frame pixel-verified                    | one expected entry per canvas                          |
-| 1       | Per page: color source master + grayscale OCR derivative; Document AI OCR; hybrid detection | paragraphs + token confidence; visual regions          |
-| 2       | Per page: Gemini page structuring + visual assignment                                       | articles, ads, other content; a disposition per region |
+| 1       | Per page: color source master + grayscale OCR derivative; Claude text OCR; hybrid detection | text blocks; visual regions                            |
+| 2       | Per page: Claude page structuring + visual assignment                                       | articles, ads, other content; a disposition per region |
 | gate    | At least 70% of manifest canvases must pass                                                 | publish or abort                                       |
 | 3       | Edition-wide article grouping + all-boundary seam review                                    | lossless cross-page merges; candidate `edition.json`   |
 | 4       | Ad enrichment + targeted final type/category review                                         | source-grounded ad fields; high-confidence fixes only  |
@@ -432,10 +431,10 @@ About 125 Vitest files:
 
 ### Python (pytest)
 
-31 test files in `tests/ocr/`:
+30 test files in `tests/ocr/`:
 
 - **Unit** — merging, null sanitizing, image conversion, byline cleanup, asset policy
-- **DocAI / preprocessing** — provider, image preparation, page quality, region filters
+- **Preprocessing** — image preparation, page quality, region filters
 - **Failure paths and shell orchestration** — static checks of the wrapper's failure handling
 - **Architecture / import-boundary tests** (run in CI) — `tests/ocr/architecture/`
 - **Setup** — `source ocr/.venv/bin/activate && pip install pytest` (pytest is not in `ocr/requirements.txt`)
@@ -449,7 +448,7 @@ About 125 Vitest files:
 
 ## Getting Started
 
-**Prerequisites:** Node.js 24+ with npm, Python 3.12 (for OCR), a Neon Postgres database (or any Postgres with `pgvector`), a Google Cloud project with billing, Vertex AI, and Document AI enabled, and working Application Default Credentials.
+**Prerequisites:** Node.js 24+ with npm, Python 3.12 (for OCR), a Neon Postgres database (or any Postgres with `pgvector`), an Anthropic API key, and a Voyage AI API key.
 
 ```bash
 # 1. Clone and install
@@ -458,9 +457,7 @@ cd interactive-newspaper
 npm ci
 
 # 2. Configure
-cp .env.example .env.local      # DATABASE_URL, GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION=global
-gcloud auth application-default login
-npm run google:verify-adc       # read-only check of ADC, project, APIs, and the OCR processor
+cp .env.example .env.local      # DATABASE_URL, ANTHROPIC_API_KEY, VOYAGE_API_KEY
 
 # 3. Create the schema and load data
 npm run db:migrate                      # applies scripts/db/migrations/ (creates every table)
@@ -537,8 +534,6 @@ Create `.env.local` from `.env.example`:
 | Variable                                                                      | Required            | Purpose                                                                                                                       |
 | ----------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                                                | Yes                 | Neon Postgres connection string                                                                                               |
-| `GOOGLE_CLOUD_PROJECT`                                                        | Yes                 | Vertex AI / Document AI project. Required by every Gemini client; without it they refuse to start rather than use an API key  |
-| `GOOGLE_CLOUD_LOCATION`                                                       | Optional            | Vertex location; defaults to `global`, which `google:verify-adc` requires                                                     |
 | `GOOGLE_SERVICE_ACCOUNT_JSON`                                                 | Yes on Vercel       | Service-account key JSON (raw or base64) for Vertex where there is no ADC; a malformed value throws                           |
 | `GOOGLE_ADC_EXPECTED_PRINCIPAL`                                               | Recommended locally | Optional identity assertion used by the read-only ADC preflight                                                               |
 | `RAG_RETRIEVAL_MODE`                                                          | Yes                 | `versioned` in production; the code default `legacy` serves keyword-only results                                              |
@@ -550,17 +545,15 @@ Create `.env.local` from `.env.example`:
 | `ADMIN_REVALIDATE_TOKEN`                                                      | Optional            | Auth token for `/api/admin/revalidate`                                                                                        |
 | `IMAGE_BASE_URL`                                                              | Optional            | R2 public CDN base URL (falls back to a local API proxy in dev)                                                               |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | Scripts only        | Credentials for `images:upload`, `editions:backup`, `rag:index:build --embed-images`, and R2 GC; the web app never reads them |
-| `DOCUMENT_AI_PROCESSOR_ID`                                                    | Yes (OCR)           | Document AI OCR processor                                                                                                     |
-| `DOCUMENT_AI_LOCATION`                                                        | Yes (OCR)           | Typically `us`                                                                                                                |
 | `OCR_DETECTOR_LICENSES_ACCEPTED`                                              | Yes (OCR)           | `true` acknowledges the American Stories and DocLayout-YOLO license terms; the wrapper refuses to start without it            |
 | `VOYAGE_API_KEY`                                                              | Optional            | Swaps in the Voyage `rerank-2.5` reranker; falls back to Gemini on any failure                                                |
 | `GC_APPROVAL_TOKEN`                                                           | Optional            | Must match `--approval-token` for `images:gc -- --apply`                                                                      |
 | `FEEDBACK_RETENTION_DAYS`                                                     | Optional            | Overrides the 90-day `ask_feedback` retention window                                                                          |
 | `EVAL_DATABASE_URL`                                                           | Optional            | Separate database for the isolated evaluation harness                                                                         |
 | `OCR_WORKERS`                                                                 | Optional            | Parallel page workers for the OCR pipeline (default 1)                                                                        |
-| `GEMINI_CALL_SPACING_S`                                                       | Optional            | Minimum gap between OCR Gemini calls (default 0.5)                                                                            |
+| `OCR_CALL_SPACING_S`                                                          | Optional            | Minimum gap between OCR model calls (default 0.5)                                                                             |
 
-The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PLAIN`, `OCR_MIN_TEXT_LENGTH`, `DOCAI_CONFIDENCE_THRESHOLD`, `AMERICAN_STORIES_MODEL_PATH`) — see [`ocr/README.md`](./ocr/README.md).
+The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PLAIN`, `OCR_MAX_EDITION_USD`, `AMERICAN_STORIES_MODEL_PATH`) — see [`ocr/README.md`](./ocr/README.md).
 
 **Never commit `.env.local`** — it is already in `.gitignore`.
 
@@ -595,7 +588,6 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 | `npm run rag:smoke`                                           | Post every landing prompt at a running `/api/ask` (spends budget)                                                                                   |
 | `npm run db:export-build-vectors` / `db:import-build-vectors` | Move an index build between databases without re-embedding                                                                                          |
 | `npm run db:gc-index-builds -- --list`                        | List builds; `--prune <id> --yes` deletes a superseded one                                                                                          |
-| `npm run google:verify-adc`                                   | Read-only ADC, project, API, and OCR-processor check                                                                                                |
 | **Assets & backups**                                          |                                                                                                                                                     |
 | `npm run images:upload -- --date YYYY-MM-DD`                  | Optimize, content-address, and upload one edition's images to R2                                                                                    |
 | `npm run images:gc`                                           | Registry-driven R2 garbage collection (dry run unless `--apply`)                                                                                    |
@@ -673,7 +665,7 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 │
 ├── ocr/
 │   ├── src/transcript_ocr/       # Domain-driven package (see docs/architecture/ocr-pipeline.md)
-│   ├── src/prompts.json          # Gemini prompts + per-stage model/thinking routing
+│   ├── src/prompts.json          # Claude prompts per stage
 │   ├── convert_scans.py          # OCR entry point (called by scripts/ocr/process-edition.sh)
 │   ├── validate_candidate.py     # Candidate-edition validation
 │   ├── log_failure.py            # Appends to ocr/logs/failures.jsonl
@@ -687,7 +679,6 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 │   ├── iiif/                     # ContentDM IIIF discovery, download, inventory
 │   ├── weather/                  # Weather archive build/verify
 │   ├── dev/                      # Music archive builders, SVG generators
-│   ├── google/                   # ADC verification
 │   └── lib/                      # Local env loader
 │
 ├── docs/
@@ -773,9 +764,9 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 <details>
 <summary><strong>Computer vision / OCR</strong></summary>
 
-- Google Document AI Enterprise OCR integration with per-page parallelization
+- Claude page reading in strips with per-page parallelization
 - Hybrid visual detection: American Stories newspaper-layout model plus DocLayout-YOLO, with class/area filtering and NMS
-- Gemini visual assignment that decides what each detected region is and which article it belongs to
+- Claude visual assignment that decides what each detected region is and which article it belongs to
 - Lossless TIFF conversion with per-frame pixel verification and a manifest-accounted 70% publication gate
 
 </details>
