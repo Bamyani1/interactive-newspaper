@@ -18,17 +18,32 @@ export interface Nugget {
   echo: boolean;
 }
 
+const words = (text: string) => (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).join(" ");
+
+/**
+ * Whether the question states the phrase: it must start a word, and may end
+ * mid-word only after a letter ("Giant" in "Giants", but "1960" is not in
+ * "1960s" and "art" is not in "party").
+ */
+function asks(asked: string, phrase: string): boolean {
+  const wanted = words(phrase);
+  if (!wanted) return false;
+  // words() leaves only [a-z0-9 ], so the phrase needs no escaping.
+  const end = /[0-9]$/.test(wanted) ? "(?![a-z0-9])" : "";
+  return new RegExp(`(?<![a-z0-9])${wanted}${end}`).test(asked);
+}
+
 export function nuggetsFor(question: {
   question?: string;
   expectedFactsAny?: string[][];
   expectedFactsVital?: boolean[];
 }): Nugget[] {
-  const asked = (question.question ?? "").toLowerCase();
+  const asked = words(question.question ?? "");
   return (question.expectedFactsAny ?? []).map((phrases, index) => ({
     index,
     phrases,
     vital: question.expectedFactsVital?.[index] ?? true,
-    echo: phrases.some((phrase) => asked.includes(phrase.toLowerCase())),
+    echo: phrases.some((phrase) => asks(asked, phrase)),
   }));
 }
 

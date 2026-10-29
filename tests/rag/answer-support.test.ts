@@ -25,6 +25,22 @@ describe("nuggetsFor", () => {
     expect(nuggets.map((n) => n.echo)).toEqual([true, false]);
   });
 
+  it("matches whole words, so a decade in the question doesn't echo a year", () => {
+    const nuggets = nuggetsFor({
+      question: "What changed for women at OWU in the 1960s, at Kent State's meet?",
+      expectedFactsAny: [["1960"], ["Kent State"]],
+    });
+    expect(nuggets.map((n) => n.echo)).toEqual([false, true]);
+  });
+
+  it("lets a word take an ending but not start mid-word", () => {
+    const nuggets = nuggetsFor({
+      question: "Which New York Giants player spoke at the farmers' party?",
+      expectedFactsAny: [["New York Giant"], ["farm"], ["art"]],
+    });
+    expect(nuggets.map((n) => n.echo)).toEqual([true, true, false]);
+  });
+
   it("treats every group as vital until the owner marks it optional", () => {
     expect(
       nuggetsFor({ question: "Q?", expectedFactsAny: [["a"], ["b"]] }).map((n) => n.vital)

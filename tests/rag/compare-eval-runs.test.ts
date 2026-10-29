@@ -69,6 +69,38 @@ describe("compareRuns", () => {
   });
 });
 
+describe("compareRuns with echo facts", () => {
+  it("leaves fact groups the question already states out of pass and fact recall", () => {
+    const evidence = {
+      datasetId: "d",
+      split: "development",
+      questions: [
+        {
+          id: "q1",
+          question: "Why did Gray Chapel close?",
+          expectedFactsAny: [["Gray Chapel"], ["1968"]],
+          expectedSourceIdsAny: ["a1"],
+        },
+        {
+          id: "q2",
+          question: "Who ran Bashford Hall?",
+          expectedFactsAny: [["Bashford"]],
+          expectedSourceIdsAny: ["a2"],
+        },
+      ],
+    };
+    const a = runFile([
+      record("q1", "It closed in 1968.", []),
+      record("q2", "Bashford Hall, run by nobody we know.", []),
+    ]);
+    const result = compareRuns(a, a, evidence, { seed: 1 });
+    // q1 is scored on 1968 alone; q2 has only an echo group, so it passes on a cited source.
+    expect(result.factRecall.a).toBe(1);
+    expect(result.factRecall.ci.n).toBe(1);
+    expect(result.passRate.a).toBeCloseTo(0.5, 12);
+  });
+});
+
 describe("judgeDirections", () => {
   const judged = (judge: string, support: number[]): JudgedRun =>
     ({

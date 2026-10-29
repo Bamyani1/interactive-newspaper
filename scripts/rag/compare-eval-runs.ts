@@ -9,7 +9,8 @@
  * beat that noise.
  *
  * A question passes when every fact group appears in the answer, or, for a
- * question without facts, when it cites an expected source.
+ * question without facts, when it cites an expected source. Groups the
+ * question's own words already state (echoes) are left out of both.
  *
  * With judged files (scripts/rag/judge-eval.ts, one per judge and run), it
  * also reports each judge's paired difference on sentence support and
@@ -27,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import type { EvalRunFile, EvalRunRecord } from "./lib/eval-records";
 import type { EvidenceCatalog, EvidenceQuestion } from "./score-eval";
 import type { JudgedRun } from "./judge-eval";
+import { nuggetsFor } from "./lib/answer-support";
 import { pairedBootstrap } from "./lib/retrieval-metrics";
 
 // z for a two-sided 5% test plus z for 80% power.
@@ -39,9 +41,9 @@ interface Outcome {
 
 function outcomeFor(record: EvalRunRecord, question: EvidenceQuestion): Outcome {
   const answer = record.answer.text.toLowerCase();
-  const facts = question.expectedFactsAny ?? [];
+  const facts = nuggetsFor(question).filter((nugget) => !nugget.echo);
   const factRecall = facts.length
-    ? facts.filter((group) => group.some((p) => answer.includes(p.toLowerCase()))).length /
+    ? facts.filter((n) => n.phrases.some((p) => answer.includes(p.toLowerCase()))).length /
       facts.length
     : null;
   const expected = new Set(question.expectedSourceIdsAny ?? []);
