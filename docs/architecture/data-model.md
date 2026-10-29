@@ -90,7 +90,7 @@ npm run rag:index:build -- --create --corpus <id> --yes   → rag_index_builds, 
   --activate <b>      'validated' → 'active' (one per corpus)
 ```
 
-Serving switches only when `RAG_RETRIEVAL_MODE=versioned`, `RAG_ACTIVE_INDEX_BUILD_ID`, and `RAG_CORPUS_VERSION` name that build. `db:embed -- --legacy-unversioned` fills only the unversioned seed rows, which nothing reads.
+Serving switches when `rag_serving_pointer` (or the `RAG_ACTIVE_INDEX_BUILD_ID` + `RAG_CORPUS_VERSION` override) names that build. The unversioned seed rows carry no vectors and nothing reads them.
 
 ### C. Image CDN path
 
@@ -160,14 +160,13 @@ Columns grouped by access pattern:
 
 **Hot — read on every query**
 
-| Column          | Type                                      | Notes                                                                                                                                                                            |
-| --------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`            | `TEXT PRIMARY KEY`                        | `'{date}-{index}'`                                                                                                                                                               |
-| `edition_date`  | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target                                                                                                                                                             |
-| `headline`      | `TEXT NOT NULL DEFAULT ''`                | result display + FTS weight A                                                                                                                                                    |
-| `body_plain`    | `TEXT NOT NULL DEFAULT ''`                | canonical plain text and legacy fallback evidence                                                                                                                                |
-| `search_vector` | `TSVECTOR`                                | auto-populated by trigger; GIN indexed                                                                                                                                           |
-| `embedding`     | `VECTOR(768)`                             | read only when `RAG_RETRIEVAL_MODE=legacy` (the code default); every row is preview-stamped or `NULL`, so legacy mode serves no vectors; served vectors live in the child tables |
+| Column          | Type                                      | Notes                                             |
+| --------------- | ----------------------------------------- | ------------------------------------------------- |
+| `id`            | `TEXT PRIMARY KEY`                        | `'{date}-{index}'`                                |
+| `edition_date`  | `TEXT NOT NULL REFERENCES editions(date)` | filter + join target                              |
+| `headline`      | `TEXT NOT NULL DEFAULT ''`                | result display + FTS weight A                     |
+| `body_plain`    | `TEXT NOT NULL DEFAULT ''`                | canonical plain text and legacy fallback evidence |
+| `search_vector` | `TSVECTOR`                                | auto-populated by trigger; GIN indexed            |
 
 **Warm — read on result hydration**
 
@@ -217,7 +216,7 @@ Each row is one deterministic sentence-aware article segment. `id` is `{article_
 | `content_revision_id`     | `TEXT REFERENCES content_revisions(id)` | nullable; keys versioned rows to an immutable content revision; legacy rows keep `NULL`                                                                                                                                  |
 | `chunk_text`              | `TEXT NOT NULL`                         | evidence sent to reranking/generation when matched                                                                                                                                                                       |
 | `search_vector`           | `TSVECTOR`                              | trigger-maintained and GIN indexed                                                                                                                                                                                       |
-| `embedding`               | `VECTOR(768)`                           | HNSW cosine index                                                                                                                                                                                                        |
+| `embedding_1024`          | `VECTOR(1024)`                          | HNSW cosine index (0013); the 768-d `embedding` was dropped in 0015                                                                                                                                                      |
 | `embedding_model`         | `TEXT`                                  | must equal the query embedding model                                                                                                                                                                                     |
 | `embedding_input_version` | `TEXT`                                  | currently `article-chunk-v1`                                                                                                                                                                                             |
 | `embedding_input_hash`    | `TEXT NOT NULL`                         | SHA-256 identity of canonical model/version/input                                                                                                                                                                        |
@@ -236,7 +235,7 @@ Each row represents one image, not one article. `id` is `{article_id}:image:{ima
 | `content_revision_id`     | `TEXT REFERENCES content_revisions(id)` | nullable; legacy rows keep `NULL`                                                 |
 | `image_url`               | `TEXT NOT NULL`                         | source image/CDN identity                                                         |
 | `caption`                 | `TEXT`                                  | semantic text paired with the image                                               |
-| `embedding`               | `VECTOR(768)`                           | one multimodal vector; HNSW indexed                                               |
+| `embedding_1024`          | `VECTOR(1024)`                          | one multimodal vector; HNSW indexed (0013)                                        |
 | `embedding_model`         | `TEXT`                                  | current stable embedding model                                                    |
 | `embedding_input_version` | `TEXT`                                  | currently `article-image-v1`                                                      |
 | `embedding_input_hash`    | `TEXT`                                  | includes model, version, text, MIME type, and image bytes                         |
@@ -350,7 +349,7 @@ CREATE TABLE IF NOT EXISTS ask_feedback (
 
 Indexes: `idx_ask_feedback_request` on `(request_id)`, `idx_ask_feedback_created` on `(created_at DESC)`. Wired to `/api/ask/feedback`. Deleted after `FEEDBACK_RETENTION_DAYS` (default 90) by the nightly sweep.
 
-### `answer_cache`
+### `answer_cache` (dropped in 0015)
 
 Source: `scripts/db/migrations/0010_answer_cache.sql`.
 
@@ -368,7 +367,7 @@ CREATE INDEX IF NOT EXISTS answer_cache_scope_idx
   ON answer_cache (cache_identity, filters_hash, created_at DESC);
 ```
 
-Durable half of the former semantic answer cache (`answer-cache.ts`). Since `243f9d0` the route never reads or writes it — a paraphrase match could serve one reader another's answer — so every question runs the full pipeline. The table remains for a later migration to drop. See [rag-pipeline.md](./rag-pipeline.md#caching-and-conversations).
+Durable half of the former semantic answer cache (`answer-cache.ts`). Since `243f9d0` the route never reads or writes it — a paraphrase match could serve one reader another's answer — so every question runs the full pipeline. Migration 0015 dropped the table. See [rag-pipeline.md](./rag-pipeline.md#caching-and-conversations).
 
 ### `year_digests`
 
@@ -622,11 +621,10 @@ Iterative scanning improves recall when category/date/image filters would otherw
 
 Served vectors are written only by `npm run rag:index:build`. There is no `--force`: a changed model, input version, or pipeline version means a new build. Change the version in `src/lib/rag-model-config.ts` on a branch, run the build lifecycle from that branch (`--create` stamps the build with the code's versions), then ship the code and set `RAG_ACTIVE_INDEX_BUILD_ID` / `RAG_CORPUS_VERSION` together. Readiness (`db.ts`) rejects a build whose versions differ from the deployed code.
 
-| Command                                                | Effect                                          |
-| ------------------------------------------------------ | ----------------------------------------------- |
-| `npm run rag:index:build -- --dry-run --yes`           | Read-only plan and cost                         |
-| `npm run rag:index:build -- --status <b> --yes`        | Build row plus pending counts                   |
-| `npm run db:embed -- --legacy-unversioned [--dry-run]` | Unversioned seed rows only; nothing serves them |
+| Command                                         | Effect                        |
+| ----------------------------------------------- | ----------------------------- |
+| `npm run rag:index:build -- --dry-run --yes`    | Read-only plan and cost       |
+| `npm run rag:index:build -- --status <b> --yes` | Build row plus pending counts |
 
 - Text batch size: 50 chunks.
 - Images are embedded one at a time.
@@ -654,7 +652,7 @@ Articles appearing in both result sets get both scores summed and their `source`
 
 ## Migrations
 
-Canonical system: numbered SQL files in `scripts/db/migrations/` (`NNNN_snake_case.sql`, currently `0001`–`0012`), applied by `scripts/db/lib/migration-runner.ts` through the CLI `scripts/db/migrate.mjs`. All schema comes from here — nothing else runs DDL. `scripts/db/schema.sql` no longer exists; the old file is frozen as `tests/db/fixtures/legacy-draft-schema.sql`, where the upgrade-path tests prove the canonical migrations converge a database that was created from it.
+Canonical system: numbered SQL files in `scripts/db/migrations/` (`NNNN_snake_case.sql`, currently `0001`–`0015`), applied by `scripts/db/lib/migration-runner.ts` through the CLI `scripts/db/migrate.mjs`. All schema comes from here — nothing else runs DDL. `scripts/db/schema.sql` no longer exists; the old file is frozen as `tests/db/fixtures/legacy-draft-schema.sql`, where the upgrade-path tests prove the canonical migrations converge a database that was created from it.
 
 | Command                      | Effect                                                                                                                   |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -695,14 +693,14 @@ Each pending migration is submitted as **one non-interactive transaction** over 
 
 The pre-ledger one-off `migrate-*.mjs` scripts in `scripts/db/` are kept as production-history artifacts. The canonical migrations converge a database to the same shape regardless of whether they ever ran; do not run them for new work.
 
-| Script                         | Status                                                                                                                                                                  |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `migrate-ai-spend-counter.mjs` | Superseded by `0003_runtime_tables.sql`                                                                                                                                 |
-| `migrate-api-rate-bucket.mjs`  | Superseded by `0003_runtime_tables.sql`                                                                                                                                 |
-| `migrate-ask-sessions.mjs`     | Superseded by `0003_runtime_tables.sql`                                                                                                                                 |
-| `migrate-ask-feedback.mjs`     | Superseded by `0003_runtime_tables.sql`                                                                                                                                 |
-| `migrate-rag-v2.mjs`           | Renamed to `backfill-rag-records.mjs` (`npm run db:backfill:rag-records`); its DDL moved into `0005_rag_evidence_tables.sql`, leaving a deterministic DML-only backfill |
-| `migrate-rag-improvements.mjs` | Legacy whole-article migration, superseded by RAG v2                                                                                                                    |
+| Script                         | Status                                                                                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `migrate-ai-spend-counter.mjs` | Superseded by `0003_runtime_tables.sql`                                                                                                                |
+| `migrate-api-rate-bucket.mjs`  | Superseded by `0003_runtime_tables.sql`                                                                                                                |
+| `migrate-ask-sessions.mjs`     | Superseded by `0003_runtime_tables.sql`                                                                                                                |
+| `migrate-ask-feedback.mjs`     | Superseded by `0003_runtime_tables.sql`                                                                                                                |
+| `migrate-rag-v2.mjs`           | Renamed to `backfill-rag-records.mjs`, deleted with 0015; its DDL moved into `0005_rag_evidence_tables.sql`, leaving a deterministic DML-only backfill |
+| `migrate-rag-improvements.mjs` | Legacy whole-article migration; deleted with 0015                                                                                                      |
 
 Online embedding is deliberately separate from schema migration so it can be cost-previewed, stopped, and resumed (`rag:index:build`).
 

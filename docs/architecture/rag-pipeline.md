@@ -52,21 +52,21 @@ DATABASE_URL=postgresql://...
 GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=global
 RAG_CORPUS_VERSION=legacy-8b8207373510d69e
-RAG_RETRIEVAL_MODE=versioned    # `legacy` is the rollback value
+RAG_RETRIEVAL_MODE=versioned    # the only mode; may be left unset
 RAG_ACTIVE_INDEX_BUILD_ID=...   # the one active build for this corpus
 GOOGLE_SERVICE_ACCOUNT_JSON=... # Vercel only: Vertex service-account key
 ```
 
-`RAG_RETRIEVAL_MODE` defaults to `legacy` in code; production has set
-`versioned` since 2026-08-03. `shadow` and `versioned` require an explicit
-`RAG_ACTIVE_INDEX_BUILD_ID`; table existence never changes behavior.
+`versioned` is the only retrieval mode (the default); `legacy` and `shadow`
+were removed with migration 0015, and setting either fails closed. Ask serves
+the build named by `RAG_ACTIVE_INDEX_BUILD_ID` or, without it, the
+`rag_serving_pointer` row; with neither it refuses to serve. Table existence
+never changes behavior.
 The active build, corpus, pipeline, embedding model, and text/image input
 versions are part of retrieval telemetry and readiness. A versioned
 build must match every configured identity field and be in the allowed state;
-readiness is rechecked after a 30-second TTL. `versioned` additionally requires
-exactly one active build for the corpus. `shadow` serves legacy results while
-measuring a validated candidate, and a candidate failure never changes the
-served answer.
+readiness is rechecked after a 30-second TTL, and the build must be the one
+active build for its corpus.
 
 Local ADC setup is external to the application:
 
@@ -117,11 +117,9 @@ Each article image has its own record and vector:
 
 Visual queries search this index. The closest matched image is promoted to the first image position returned to the UI and model. Index builds read image bytes from R2; an object that can't be fetched fails that image only and never blocks text retrieval.
 
-### Legacy cutover behavior
+### Legacy vectors (removed)
 
-The old `articles.embedding` column remains for rollback. Legacy retrieval filters by `embedding_model = 'gemini-embedding-2'`, so it never compares a stable query vector against preview-model document vectors — but no row carries that stamp: all 11,705 articles are stamped `gemini-embedding-2-preview` (9,582) or `NULL` (2,123). The filtered query succeeds with zero rows, so nothing errors and no fallback fires; the pipeline silently degrades to keyword-only FTS. `RAG_RETRIEVAL_MODE=legacy` is therefore a way to keep answering during an incident, not a way to keep answering well, and production must run `versioned`. Restoring real legacy vectors would mean re-embedding `articles.embedding` under the current model, which nothing in the pipeline does any more.
-
-Retrieval never switches on table existence: `article_chunks` and `article_images` are served only when `RAG_RETRIEVAL_MODE=versioned` names an explicit build.
+Migration 0015 dropped the Gemini-era 768-dimension `embedding` columns on `articles`, `article_chunks` and `article_images`, their HNSW indexes, and the unused `answer_cache` table, together with the `legacy` and `shadow` retrieval modes that read them. Retrieval never switches on table existence: `article_chunks` and `article_images` are served only for an explicit build.
 
 ## Hybrid search
 
@@ -291,7 +289,7 @@ Build behavior:
 - rerunning resumes rows whose vector is missing, keyed by exact input hash;
 - there is no `--force`: a changed model, input, or version means a new build.
 
-The legacy NULL-build rows are maintained separately by `npm run db:embed -- --legacy-unversioned` (add `--dry-run` for cost); nothing serves them.
+Seed still writes NULL-build chunk and image rows; nothing embeds or serves them.
 
 Do not run migrations, backfills, or index builds against production merely to execute unit or read-only golden tests.
 
@@ -304,8 +302,6 @@ npm run typecheck
 npm run lint
 npm run test:run
 npm run build
-node --check scripts/db/backfill-rag-records.mjs
-node --check scripts/db/embed.mjs
 npm run rag:health     # read-only serving-filter check
 npm run rag:smoke      # live: posts every landing prompt at /api/ask (about 1¢ per question)
 ```
