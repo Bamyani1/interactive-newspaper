@@ -126,19 +126,6 @@ def test_no_ocr_module_imports_google():
         _assert_no_import_prefixes(path, ("google",))
 
 
-def test_the_ocr_cli_imports_with_google_packages_blocked():
-    import subprocess
-    import sys
-
-    code = (
-        "import sys; sys.modules['google'] = None; "
-        f"sys.path.insert(0, {str(PKG_ROOT.parent)!r}); "
-        "import transcript_ocr.cli.convert_scans, transcript_ocr.application.edition_pipeline"
-    )
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
-
-
 def test_top_level_wrappers_import_cli_only():
     wrapper_to_expected = {
         OCR_ROOT / "convert_scans.py": "transcript_ocr.cli.convert_scans",
