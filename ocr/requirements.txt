@@ -7,6 +7,6 @@ Pillow
 pydantic
 scipy
 doclayout-yolo==0.0.4
-onnxruntime==1.29.0
+onnxruntime==1.31.1
 huggingface_hub
 rich>=15.0.0
