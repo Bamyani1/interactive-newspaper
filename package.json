@@ -69,7 +69,7 @@
     "react-dom": "19.3.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "sanitize-html": "2.17.7"
+    "sanitize-html": "2.18.1"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
