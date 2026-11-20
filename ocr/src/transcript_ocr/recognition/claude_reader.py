@@ -1,10 +1,10 @@
-"""Claude reads the page text itself (``OCR_LLM_PROVIDER=claude``), replacing Document AI.
+"""Claude reads the page text itself.
 
 The page is cut into full-width strips; cuts across a page fall between
 printed lines, while cuts down a page would split lines.  Each strip carries
 some context above and below, tinted red.  Claude transcribes only the clear
 area, so every line is read once.  The blocks it returns keep their position
-on the page, which is what page structuring expects from Document AI.
+on the page, which is what page structuring expects.
 """
 
 from __future__ import annotations
@@ -14,16 +14,15 @@ import re
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 
-from google.genai import types
 from PIL import Image
 from pydantic import BaseModel, ConfigDict
 
 from ..config.claude_client import fit_image_size
-from ..config.model_calls import image_part_ultra_high, model_name
+from ..config.model_calls import GenerationConfig, image_part, model_name
 from ..contracts.diagnostics_models import PageDiagnostics, TokenUsage
+from ..contracts.page_text import PageParagraph, PageText
 from ..shared.console import substep
-from ..shared.retry import gemini_generate_with_retry, require_parsed
-from .docai_provider import DocAIParagraph, DocAIResult
+from ..shared.retry import generate_with_retry, require_parsed
 
 _CONTEXT_PX = 120
 _TINT = (255, 120, 120)
@@ -144,7 +143,7 @@ def render_strip(page: Image.Image, strip: Strip) -> tuple[Image.Image, float]:
 
 
 def _straight_quotes(text: str) -> str:
-    """Archive text uses straight quotes, as Document AI produced."""
+    """Archive text uses straight quotes, as the published archive does."""
     text = text.replace("‘‘", '"').replace("’’", '"')
     # Old type set double quotes as two single quotes.
     return text.translate(_STRAIGHT_QUOTES).replace("''", '"')
@@ -164,7 +163,7 @@ def _split_paragraphs(lines: list[str]) -> list[tuple[int, list[str], bool]]:
     return paragraphs
 
 
-def _under_same_column_block(block: DocAIParagraph, others: list[DocAIParagraph]) -> bool:
+def _under_same_column_block(block: PageParagraph, others: list[PageParagraph]) -> bool:
     """Another block of the strip ends just above this one, in the same column."""
     left, top, right, _bottom = block.bounds
     width = right - left
@@ -181,7 +180,7 @@ def _under_same_column_block(block: DocAIParagraph, others: list[DocAIParagraph]
     return False
 
 
-def _flush_only_at_column_tops(blocks: list[DocAIParagraph]) -> list[DocAIParagraph]:
+def _flush_only_at_column_tops(blocks: list[PageParagraph]) -> list[PageParagraph]:
     """Keep a flush mark only where text may run on from elsewhere.
 
     Mid-column, the reader starts a block at a paragraph break and often misses
@@ -204,10 +203,10 @@ def _same_line(a: str, b: str) -> bool:
 
 
 def _drop_seam_repeats(
-    upper: list[DocAIParagraph], lower: list[DocAIParagraph], seam: float, band: float
-) -> list[DocAIParagraph]:
+    upper: list[PageParagraph], lower: list[PageParagraph], seam: float, band: float
+) -> list[PageParagraph]:
     """Both strips read a line that straddles their seam; keep the upper copy."""
-    kept: list[DocAIParagraph] = []
+    kept: list[PageParagraph] = []
     for block in lower:
         left, top, right, bottom = block.bounds
         lines = block.text.split("\n")
@@ -236,7 +235,7 @@ def _drop_seam_repeats(
         text = "\n".join(lines)
         if text.strip():
             kept.append(
-                DocAIParagraph(
+                PageParagraph(
                     text=text, bounds=(left, top, right, bottom), indented=indented
                 )
             )
@@ -263,26 +262,26 @@ def read_page_text(
     *,
     save_prefix: str | None = None,
     diag: PageDiagnostics | None = None,
-) -> DocAIResult:
+) -> PageText:
     """Read every printed line on the page, strip by strip."""
-    config = types.GenerateContentConfig(
+    config = GenerationConfig(
         system_instruction=TEXT_READING_PROMPT,
         response_mime_type="application/json",
         response_schema=StripReading,
         max_output_tokens=65536,
     )
-    paragraphs: list[DocAIParagraph] = []
+    paragraphs: list[PageParagraph] = []
     saved: list[dict] = []
-    upper: list[DocAIParagraph] = []
+    upper: list[PageParagraph] = []
     strips = plan_strips(page.width, page.height)
     for index, strip in enumerate(strips, start=1):
         image, scale = render_strip(page, strip)
         if save_prefix:
             image.save(f"{save_prefix}.strip-{index}.png")
-        response = gemini_generate_with_retry(
+        response = generate_with_retry(
             client,
             model=model_name("text_reading"),
-            contents=[image_part_ultra_high(image), "Transcribe the clear area of this strip."],
+            contents=[image_part(image), "Transcribe the clear area of this strip."],
             config=config,
             stage="text_reading",
             response_validator=lambda candidate: getattr(candidate, "parsed", None) is not None,
@@ -300,7 +299,7 @@ def read_page_text(
             f"Read strip {index}/{len(strips)}: {len(reading.blocks)} block(s), "
             f"tokens {tokens}"
         )
-        blocks: list[DocAIParagraph] = []
+        blocks: list[PageParagraph] = []
         for block in reading.blocks:
             # A block that runs two printed paragraphs together is split at the indent.
             left, top, right, bottom = _page_bounds(block, strip, scale, page)
@@ -314,7 +313,7 @@ def read_page_text(
                         right,
                         top + (start + len(lines)) * line_height,
                     )
-                    blocks.append(DocAIParagraph(text=text, bounds=bounds, indented=indented))
+                    blocks.append(PageParagraph(text=text, bounds=bounds, indented=indented))
         blocks = _flush_only_at_column_tops(blocks)
         if upper:
             blocks = _drop_seam_repeats(
@@ -330,7 +329,7 @@ def read_page_text(
         with open(f"{save_prefix}.claude-read.json", "w", encoding="utf-8") as handle:
             json.dump(saved, handle, indent=1, ensure_ascii=False)
     texts = [paragraph.text for paragraph in paragraphs]
-    return DocAIResult(
+    return PageText(
         raw_text="\n\n".join(texts),
         paragraphs=texts,
         paragraph_regions=paragraphs,

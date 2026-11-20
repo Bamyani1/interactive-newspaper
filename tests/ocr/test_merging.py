@@ -9,7 +9,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.genai import types
 from pydantic import ValidationError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -69,12 +68,11 @@ def _response(parsed):
     return SimpleNamespace(parsed=parsed, text=parsed.model_dump_json(), usage_metadata=None)
 
 
-def test_locked_calls_use_38_flash_with_medium_thinking(monkeypatch):
-    monkeypatch.setenv("OCR_LLM_PROVIDER", "gemini")
+def test_merge_calls_use_sonnet_with_the_grouping_schema():
     client = MagicMock()
     response = SimpleNamespace(parsed=None, text="", usage_metadata=None)
     with patch(
-        "transcript_ocr.merging.llm_merge.gemini_generate_with_retry",
+        "transcript_ocr.merging.llm_merge.generate_with_retry",
         return_value=response,
     ) as transport:
         _generate_locked_content(
@@ -84,8 +82,7 @@ def test_locked_calls_use_38_flash_with_medium_thinking(monkeypatch):
         )
 
     kwargs = transport.call_args.kwargs
-    assert kwargs["model"] == "gemini-3.8-flash"
-    assert kwargs["config"].thinking_config.thinking_level == types.ThinkingLevel.MEDIUM
+    assert kwargs["model"] == "claude-sonnet-5-5"
     assert kwargs["config"].response_schema is EditionGroupingResponse
     assert kwargs["stage"] == "merge"
 

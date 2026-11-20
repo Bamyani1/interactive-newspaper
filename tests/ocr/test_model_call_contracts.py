@@ -1,7 +1,8 @@
-"""Focused tests for locked Gemini OCR call contracts."""
+"""Focused tests for locked OCR model call contracts."""
 
 from __future__ import annotations
 
+import io
 import sys
 import json
 from pathlib import Path
@@ -9,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from google.genai import _transformers
+import anthropic
 from PIL import Image
 
 
@@ -28,7 +29,7 @@ from transcript_ocr.application.content_rescue import (
     _build_candidates,
     triage_edition,
 )
-from transcript_ocr.config.model_calls import build_generation_config, image_part_ultra_high
+from transcript_ocr.config.model_calls import GenerationConfig, ImagePart, image_part
 from transcript_ocr.contracts.content_models import (
     Ad,
     AdEnrichmentDelta,
@@ -45,49 +46,43 @@ from transcript_ocr.contracts.content_models import (
 from transcript_ocr.image_linking.visual_matcher import _build_content_context
 from transcript_ocr.image_linking.visual_matcher import match_images_visual
 from transcript_ocr.merging.llm_merge import EditionGroupingResponse, EditionSeamResponse
-from transcript_ocr.recognition.page_extractor import process_page_with_docai
+from transcript_ocr.recognition.page_extractor import structure_page
 from transcript_ocr.shared import retry
 
 
-def test_generation_config_is_deterministic_without_sampling_controls():
-    config = build_generation_config(
-        "page_structuring",
+def test_generation_config_carries_only_the_request_fields():
+    config = GenerationConfig(
+        max_output_tokens=1024,
         response_schema=PageContent,
         response_mime_type="application/json",
-        max_output_tokens=1024,
+        system_instruction="Read the page.",
     )
 
-    assert config.candidate_count == 1
-    assert config.seed == 0
-    assert config.temperature is None
-    assert config.top_p is None
-    assert config.top_k is None
-    assert config.thinking_config.thinking_level.value == "HIGH"
-    assert config.thinking_config.include_thoughts is False
-    assert all(setting.threshold.value == "OFF" for setting in config.safety_settings)
+    assert config.max_output_tokens == 1024
+    assert config.response_schema is PageContent
+    assert config.response_mime_type == "application/json"
+    assert config.system_instruction == "Read the page."
+    assert not hasattr(config, "temperature")
 
 
-def test_a_deliberate_second_sample_can_change_only_the_seed():
-    config = build_generation_config("page_structuring", max_output_tokens=1024, seed=1)
+def test_image_part_is_a_lossless_png_of_the_whole_image():
+    part = image_part(Image.new("RGB", (8, 6), "white"))
 
-    assert config.seed == 1
-    assert config.temperature is None
-
-
-def test_ultra_high_is_applied_to_each_image_part():
-    part = image_part_ultra_high(Image.new("RGB", (8, 8), "white"))
-    assert part.media_resolution.level.value == "MEDIA_RESOLUTION_ULTRA_HIGH"
+    assert isinstance(part, ImagePart)
+    assert part.mime_type == "image/png"
+    with Image.open(io.BytesIO(part.data)) as decoded:
+        assert decoded.format == "PNG"
+        assert decoded.size == (8, 6)
 
 
 def test_retry_has_one_three_attempt_budget_and_never_changes_model(monkeypatch):
-    monkeypatch.setenv("OCR_LLM_PROVIDER", "gemini")
     class TransientError(RuntimeError):
         status_code = 503
 
     responses = [TransientError("unavailable"), SimpleNamespace(parsed=None), SimpleNamespace(parsed={"ok": True})]
     calls = []
 
-    class Models:
+    class Client:
         def generate_content(self, **kwargs):
             calls.append(kwargs)
             value = responses.pop(0)
@@ -95,14 +90,14 @@ def test_retry_has_one_three_attempt_budget_and_never_changes_model(monkeypatch)
                 raise value
             return value
 
-    client = SimpleNamespace(models=Models())
+    client = Client()
     failures = []
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
     monkeypatch.setattr(retry, "_retry_delay_seconds", lambda *_: 0)
 
-    config = build_generation_config("page_structuring", max_output_tokens=128)
-    with retry.observe_gemini_failures(failures.append):
-        response = retry.gemini_generate_with_retry(
+    config = GenerationConfig(max_output_tokens=128)
+    with retry.observe_model_failures(failures.append):
+        response = retry.generate_with_retry(
             client,
             model="locked-model",
             contents=["x"],
@@ -115,7 +110,7 @@ def test_retry_has_one_three_attempt_budget_and_never_changes_model(monkeypatch)
     assert response.parsed == {"ok": True}
     assert len(calls) == 3
     assert {call["model"] for call in calls} == {"locked-model"}
-    assert all(call["config"].http_options.timeout == 240_000 for call in calls)
+    assert all(call["timeout_seconds"] == 900 for call in calls)
     assert [(event["attempt"], event["status"]) for event in failures] == [
         (1, "transport_error"),
         (2, "schema_error"),
@@ -128,17 +123,17 @@ def test_schema_retry_adds_sanitized_contract_correction(monkeypatch):
     responses = [SimpleNamespace(parsed=None), SimpleNamespace(parsed={"ok": True})]
     calls = []
 
-    class Models:
+    class Client:
         def generate_content(self, **kwargs):
             calls.append(kwargs)
             return responses.pop(0)
 
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
-    response = retry.gemini_generate_with_retry(
-        SimpleNamespace(models=Models()),
+    response = retry.generate_with_retry(
+        Client(),
         model="locked-model",
         contents=["original"],
-        config=build_generation_config("image_matching", max_output_tokens=128),
+        config=GenerationConfig(max_output_tokens=128),
         stage="image_matching",
         response_validator=lambda candidate: candidate.parsed is not None,
         schema_retry_instruction=lambda _candidate: "region 3 is missing.",
@@ -161,7 +156,7 @@ def test_retry_retries_sdk_read_timeout_without_changing_request(monkeypatch):
         SimpleNamespace(parsed={"ok": True}),
     ]
 
-    class Models:
+    class Client:
         def generate_content(self, **kwargs):
             calls.append(kwargs)
             value = responses.pop(0)
@@ -169,12 +164,12 @@ def test_retry_retries_sdk_read_timeout_without_changing_request(monkeypatch):
                 raise value
             return value
 
-    client = SimpleNamespace(models=Models())
+    client = Client()
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
     monkeypatch.setattr(retry, "_retry_delay_seconds", lambda *_: 0)
-    config = build_generation_config("page_structuring", max_output_tokens=128)
+    config = GenerationConfig(max_output_tokens=128)
 
-    response = retry.gemini_generate_with_retry(
+    response = retry.generate_with_retry(
         client,
         model="locked-model",
         contents=["same content"],
@@ -197,7 +192,7 @@ def test_retry_retries_every_supported_transient_http_status(monkeypatch, status
     error.status_code = status_code
     calls = 0
 
-    class Models:
+    class Client:
         def generate_content(self, **_kwargs):
             nonlocal calls
             calls += 1
@@ -207,24 +202,24 @@ def test_retry_retries_every_supported_transient_http_status(monkeypatch, status
 
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
     monkeypatch.setattr(retry, "_retry_delay_seconds", lambda *_: 0)
-    response = retry.gemini_generate_with_retry(
-        SimpleNamespace(models=Models()),
+    response = retry.generate_with_retry(
+        Client(),
         model="locked-model",
         contents=["x"],
-        config=build_generation_config("page_structuring", max_output_tokens=128),
+        config=GenerationConfig(max_output_tokens=128),
     )
 
     assert response.parsed == {"ok": True}
     assert calls == 2
 
 
-def test_retry_does_not_retry_vertex_invalid_argument(monkeypatch):
+def test_retry_does_not_retry_an_invalid_request(monkeypatch):
     class InvalidArgument(RuntimeError):
         status_code = 400
 
     calls = 0
 
-    class Models:
+    class Client:
         def generate_content(self, **_kwargs):
             nonlocal calls
             calls += 1
@@ -232,11 +227,11 @@ def test_retry_does_not_retry_vertex_invalid_argument(monkeypatch):
 
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
     with pytest.raises(InvalidArgument):
-        retry.gemini_generate_with_retry(
-            SimpleNamespace(models=Models()),
+        retry.generate_with_retry(
+            Client(),
             model="locked-model",
             contents=["x"],
-            config=build_generation_config("page_structuring", max_output_tokens=128),
+            config=GenerationConfig(max_output_tokens=128),
         )
 
     assert calls == 1
@@ -248,7 +243,7 @@ def test_retry_exhausts_after_exactly_three_timeouts(monkeypatch):
 
     calls = 0
 
-    class Models:
+    class Client:
         def generate_content(self, **_kwargs):
             nonlocal calls
             calls += 1
@@ -257,11 +252,11 @@ def test_retry_exhausts_after_exactly_three_timeouts(monkeypatch):
     monkeypatch.setattr(retry, "_CALL_SPACING_S", 0)
     monkeypatch.setattr(retry, "_retry_delay_seconds", lambda *_: 0)
     with pytest.raises(ReadTimeout):
-        retry.gemini_generate_with_retry(
-            SimpleNamespace(models=Models()),
+        retry.generate_with_retry(
+            Client(),
             model="locked-model",
             contents=["x"],
-            config=build_generation_config("page_structuring", max_output_tokens=128),
+            config=GenerationConfig(max_output_tokens=128),
         )
 
     assert calls == 3
@@ -274,14 +269,14 @@ class _RateLimited(RuntimeError):
 def _rate_limited_models(failures_before_success):
     calls = []
 
-    class Models:
+    class Client:
         def generate_content(self, **kwargs):
             calls.append(kwargs)
             if failures_before_success is None or len(calls) <= failures_before_success:
                 raise _RateLimited("429 RESOURCE_EXHAUSTED")
             return SimpleNamespace(parsed={"ok": True})
 
-    return SimpleNamespace(models=Models()), calls
+    return Client(), calls
 
 
 def test_rate_limit_waits_longer_and_retries_past_three_attempts(monkeypatch):
@@ -291,11 +286,11 @@ def test_rate_limit_waits_longer_and_retries_past_three_attempts(monkeypatch):
     monkeypatch.setattr(retry.time, "sleep", sleeps.append)
     monkeypatch.setattr(retry.random, "uniform", lambda _low, high: high)
 
-    response = retry.gemini_generate_with_retry(
+    response = retry.generate_with_retry(
         client,
         model="locked-model",
         contents=["x"],
-        config=build_generation_config("page_structuring", max_output_tokens=128),
+        config=GenerationConfig(max_output_tokens=128),
     )
 
     assert response.parsed == {"ok": True}
@@ -309,11 +304,11 @@ def test_rate_limit_gives_up_after_its_own_budget(monkeypatch):
     monkeypatch.setattr(retry, "_retry_delay_seconds", lambda *_: 0)
 
     with pytest.raises(_RateLimited):
-        retry.gemini_generate_with_retry(
+        retry.generate_with_retry(
             client,
             model="locked-model",
             contents=["x"],
-            config=build_generation_config("page_structuring", max_output_tokens=128),
+            config=GenerationConfig(max_output_tokens=128),
         )
 
     assert len(calls) == 8
@@ -330,10 +325,8 @@ def test_rate_limit_gives_up_after_its_own_budget(monkeypatch):
         ContentReviewResponse,
     ],
 )
-def test_sdk_transformed_response_schemas_have_no_empty_enum_value(response_schema):
-    transformed = _transformers.t_schema(None, response_schema)
-    assert transformed is not None
-    schema = transformed.model_dump(mode="json", exclude_none=True)
+def test_claude_response_schemas_have_no_empty_enum_value(response_schema):
+    schema = anthropic.transform_schema(response_schema.model_json_schema())
 
     def enum_values(value):
         if isinstance(value, dict):
@@ -541,25 +534,25 @@ def test_page_structuring_never_substitutes_an_empty_page_on_schema_failure():
         prompt_feedback=None,
         candidates=[SimpleNamespace(finish_reason="MALFORMED_FUNCTION_CALL")],
     )
-    docai = SimpleNamespace(
+    page_text = SimpleNamespace(
         paragraphs=["Source paragraph."],
         raw_text="Source paragraph.",
     )
     with patch(
-        "transcript_ocr.recognition.page_extractor.gemini_generate_with_retry",
+        "transcript_ocr.recognition.page_extractor.generate_with_retry",
         return_value=response,
     ):
         with pytest.raises(RuntimeError, match="finish_reason"):
-            process_page_with_docai(
+            structure_page(
                 SimpleNamespace(),
                 "0001_Page 1.png",
-                docai,
+                page_text,
                 Image.new("L", (20, 20), "white"),
                 [],
             )
 
 
-def test_visual_call_marks_full_page_and_every_evidence_crop_ultra_high():
+def test_visual_call_sends_the_full_page_and_every_evidence_crop():
     parsed = ImageRegionAssignments(
         assignments=[
             ImageRegionAssignment(
@@ -579,7 +572,7 @@ def test_visual_call_marks_full_page_and_every_evidence_crop_ultra_high():
 
     empty_page = PageContent(articles=[], ads=[], other_content=[])
     with patch(
-        "transcript_ocr.image_linking.visual_matcher.gemini_generate_with_retry",
+        "transcript_ocr.image_linking.visual_matcher.generate_with_retry",
         side_effect=fake_generate,
     ):
         result = match_images_visual(
@@ -590,12 +583,8 @@ def test_visual_call_marks_full_page_and_every_evidence_crop_ultra_high():
             evidence_images=[Image.new("RGB", (10, 10), "black")],
         )
 
-    image_parts = [part for part in captured["contents"] if hasattr(part, "inline_data")]
+    image_parts = [part for part in captured["contents"] if isinstance(part, ImagePart)]
     assert len(image_parts) == 2
-    assert all(
-        part.media_resolution.level.value == "MEDIA_RESOLUTION_ULTRA_HIGH"
-        for part in image_parts
-    )
     assert result == parsed
 
 
@@ -622,7 +611,7 @@ def test_visual_calls_batch_global_region_ids_at_forty_and_repeat_full_page():
 
     evidence = [Image.new("RGB", (4, 4), "white") for _ in range(45)]
     with patch(
-        "transcript_ocr.image_linking.visual_matcher.gemini_generate_with_retry",
+        "transcript_ocr.image_linking.visual_matcher.generate_with_retry",
         side_effect=fake_generate,
     ):
         result = match_images_visual(
@@ -635,8 +624,8 @@ def test_visual_calls_batch_global_region_ids_at_forty_and_repeat_full_page():
 
     assert len(calls) == 2
     assert [assignment.region_number for assignment in result.assignments] == list(range(1, 46))
-    first_images = [part for part in calls[0]["contents"] if hasattr(part, "inline_data")]
-    second_images = [part for part in calls[1]["contents"] if hasattr(part, "inline_data")]
+    first_images = [part for part in calls[0]["contents"] if isinstance(part, ImagePart)]
+    second_images = [part for part in calls[1]["contents"] if isinstance(part, ImagePart)]
     assert len(first_images) == 41  # repeated full page + 40 crops
     assert len(second_images) == 6  # repeated full page + 5 crops
     assert "1, 2, 3" in calls[0]["contents"][-1]
@@ -675,7 +664,7 @@ def test_ad_enrichment_returns_deltas_and_preserves_source_fields(tmp_path):
     response = SimpleNamespace(parsed=parsed, usage_metadata=None)
 
     with patch(
-        "transcript_ocr.application.ad_enrichment.gemini_generate_with_retry",
+        "transcript_ocr.application.ad_enrichment.generate_with_retry",
         return_value=response,
     ):
         performed, _, _ = enrich_edition(str(edition_path), SimpleNamespace())
@@ -735,7 +724,7 @@ def test_ad_enrichment_batches_at_fifty(tmp_path):
         )
 
     with patch(
-        "transcript_ocr.application.ad_enrichment.gemini_generate_with_retry",
+        "transcript_ocr.application.ad_enrichment.generate_with_retry",
         side_effect=fake_generate,
     ):
         performed, tokens, _ = enrich_edition(
@@ -798,7 +787,7 @@ def test_final_review_emits_complete_success_and_error_telemetry(tmp_path):
     )
     success_events = []
     with patch(
-        "transcript_ocr.application.content_rescue.gemini_generate_with_retry",
+        "transcript_ocr.application.content_rescue.generate_with_retry",
         return_value=response,
     ):
         performed, tokens, _ = triage_edition(
@@ -820,7 +809,7 @@ def test_final_review_emits_complete_success_and_error_telemetry(tmp_path):
     edition_path.write_text(json.dumps(source), encoding="utf-8")
     error_events = []
     with patch(
-        "transcript_ocr.application.content_rescue.gemini_generate_with_retry",
+        "transcript_ocr.application.content_rescue.generate_with_retry",
         side_effect=RuntimeError("service unavailable"),
     ):
         performed, tokens, _ = triage_edition(

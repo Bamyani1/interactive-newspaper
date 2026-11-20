@@ -35,7 +35,7 @@ class TokenUsage:
 
     @classmethod
     def from_metadata(cls, usage) -> TokenUsage:
-        """Read a response's usage_metadata (Gemini's, or the Claude client's copy)."""
+        """Read a response's usage_metadata (the Claude client's copy)."""
         return cls(
             prompt_tokens=getattr(usage, "prompt_token_count", 0) or 0,
             candidates_tokens=getattr(usage, "candidates_token_count", 0) or 0,
@@ -96,9 +96,8 @@ class PageDiagnostics:
     original_dimensions: tuple[int, int] = (0, 0)
     preprocessed_dimensions: tuple[int, int] = (0, 0)
     skew_angle: float = 0.0
-    docai_mean_confidence: float = 0.0
     cv_info: CVRegionInfo = field(default_factory=CVRegionInfo)
-    gemini_tokens: TokenUsage = field(default_factory=TokenUsage)
+    structuring_tokens: TokenUsage = field(default_factory=TokenUsage)
     # Claude reads the page text itself, strip by strip.
     reading_tokens: TokenUsage = field(default_factory=TokenUsage)
     dedup_info: DeduplicationInfo = field(default_factory=DeduplicationInfo)
@@ -144,8 +143,8 @@ class PipelineReport:
         prompt = 0
         cand = 0
         for pd in self.page_diagnostics:
-            prompt += pd.gemini_tokens.prompt_tokens + pd.reading_tokens.prompt_tokens
-            cand += pd.gemini_tokens.candidates_tokens + pd.reading_tokens.candidates_tokens
+            prompt += pd.structuring_tokens.prompt_tokens + pd.reading_tokens.prompt_tokens
+            cand += pd.structuring_tokens.candidates_tokens + pd.reading_tokens.candidates_tokens
             if pd.visual_matching.attempted:
                 prompt += pd.visual_matching.tokens.prompt_tokens or 0
                 cand += pd.visual_matching.tokens.candidates_tokens or 0

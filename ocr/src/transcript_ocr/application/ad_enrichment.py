@@ -11,11 +11,11 @@ import unicodedata
 from collections.abc import Callable
 from typing import Any
 
-from ..config.model_calls import build_generation_config, model_name
+from ..config.model_calls import GenerationConfig, model_name
 from ..contracts.ad_models import AdEnrichmentDeltasResponse, EnrichedAd
 from ..recognition.ad_prompts import ENRICHMENT_SYSTEM_PROMPT, ENRICHMENT_USER_TEMPLATE
 from ..shared.console import error, file_written, info, status, substep, warning
-from ..shared.retry import gemini_generate_with_retry
+from ..shared.retry import generate_with_retry
 
 
 _MAX_ADS_PER_CALL = 50
@@ -166,8 +166,7 @@ def enrich_edition(
         user_message = ENRICHMENT_USER_TEMPLATE.format(
             ads_json=json.dumps(request_ads, indent=2)
         )
-        generation_config = build_generation_config(
-            "ad_enrichment",
+        generation_config = GenerationConfig(
             system_instruction=ENRICHMENT_SYSTEM_PROMPT,
             response_mime_type="application/json",
             response_schema=AdEnrichmentDeltasResponse,
@@ -177,7 +176,7 @@ def enrich_edition(
             return _delta_response_is_complete(candidate, list(ids))
         batch_call_start = time.time()
         try:
-            response = gemini_generate_with_retry(
+            response = generate_with_retry(
                 client,
                 model=model_name("ad_enrichment"),
                 contents=[user_message],

@@ -38,6 +38,8 @@ def test_gold_regression_cannot_publish_or_seed():
 
 def test_eval_edition_cannot_publish_seed_or_touch_the_inbox():
     source = _text(EVAL)
+    for google in ("OCR_LLM_PROVIDER", "GOOGLE_", "DOCAI", "gemini"):
+        assert google not in source
     assert "ocr/convert_scans.py" in source
     assert "ocr/runs/eval" in source
     for forbidden in (
@@ -69,8 +71,8 @@ def test_process_script_has_no_legacy_resume_or_debug_artifacts():
 
 def test_process_script_is_claude_only_and_database_is_seed_gated():
     source = _text(PROCESS)
-    assert 'export OCR_LLM_PROVIDER="${OCR_LLM_PROVIDER:-claude}"' in source
-    assert "export OCR_FORBID_GOOGLE=1" in source
+    for google in ("OCR_LLM_PROVIDER", "GOOGLE_", "DOCAI", "gemini", "Document AI"):
+        assert google not in source
     assert "export OCR_ENVIRONMENT=production" in source
     assert "ANTHROPIC_API_KEY is required for OCR" in source
     assert "OCR_DETECTOR_LICENSES_ACCEPTED=true is required for hosted OCR" in source

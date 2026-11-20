@@ -6,13 +6,11 @@ set -euo pipefail
 #
 #   scripts/ocr/eval-edition.sh YYYY-MM-DD
 #
-# Runs on Claude by default: Claude reads the page text itself and no Google client
-# may be created. work/ then keeps the strips Claude read and its transcription.
-# OCR_LLM_PROVIDER=gemini selects the old Google route until it is deleted.
+# Claude reads the page text itself. work/ keeps each page's OCR image, the strips
+# Claude read and its transcription.
 #
-# Writes ocr/runs/eval/<date>/<UTC time>-<commit>/: the candidate edition, run.log,
-# score.md (+ score.json), diff.md and blocks.txt. work/ keeps each page's OCR image
-# and Document AI response, so ocr/check_blocks.py can re-check blocks offline.
+# Writes ocr/runs/eval/<date>/<UTC time>-<commit>-claude/: the candidate edition,
+# run.log, score.md (+ score.json) and diff.md.
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd -P)"
 DATE="${1:-}"
@@ -44,20 +42,11 @@ fi
 
 COMMIT="$(git -C "$ROOT_DIR" rev-parse --short HEAD)"
 [[ -z "$(git -C "$ROOT_DIR" status --porcelain -- ocr/src)" ]] || COMMIT="$COMMIT-dirty"
-PROVIDER="${OCR_LLM_PROVIDER:-claude}"
-[[ "$PROVIDER" == "gemini" ]] || COMMIT="$COMMIT-$PROVIDER"
-RUN_DIR="$ROOT_DIR/ocr/runs/eval/$DATE/$(date -u +%Y%m%dT%H%M%SZ)-$COMMIT"
+RUN_DIR="$ROOT_DIR/ocr/runs/eval/$DATE/$(date -u +%Y%m%dT%H%M%SZ)-$COMMIT-claude"
 mkdir -p "$RUN_DIR"
 
-export OCR_LLM_PROVIDER="$PROVIDER"
-if [[ "$PROVIDER" == "claude" ]]; then
-  export OCR_FORBID_GOOGLE=1
-else
-  export GOOGLE_GENAI_USE_VERTEXAI=true
-  export GOOGLE_CLOUD_LOCATION=global
-fi
 export OCR_ENVIRONMENT=production
-export OCR_SAVE_DOCAI_JSON=1
+export OCR_SAVE_PAGE_TEXT=1
 export YOLO_CONFIG_DIR="$RUN_DIR/yolo"
 export MPLCONFIGDIR="$RUN_DIR/matplotlib"
 
@@ -82,12 +71,6 @@ if [[ -f "$GOLD" ]]; then
     --output-md "$RUN_DIR/score.md" \
     --output-diff "$RUN_DIR/diff.md"
   cat "$RUN_DIR/score.md"
-  # Block checks read Document AI responses, which a Claude run never has.
-  if [[ "$PROVIDER" != "claude" ]]; then
-    python "$ROOT_DIR/ocr/check_blocks.py" "$RUN_DIR/work" --gold-edition "$GOLD" \
-      > "$RUN_DIR/blocks.txt" 2>/dev/null
-    tail -1 "$RUN_DIR/blocks.txt"
-  fi
 else
   echo "No gold/$DATE/gold-edition.json: the candidate is validated but not scored."
 fi

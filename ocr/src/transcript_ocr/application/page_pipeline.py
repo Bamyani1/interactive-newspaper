@@ -9,10 +9,8 @@ from pathlib import Path
 from PIL import Image
 
 from ..config.constants import MIN_AD_IMAGE_AREA_PIXELS
-from ..config.model_calls import uses_claude
 from ..contracts.content_models import ArticleImage, OtherContent, PageContent
 from ..contracts.diagnostics_models import PageDiagnostics, StageTimer
-from ..detection.american_stories_provider import detect_layout_boxes
 from ..detection.visual_provider import detect_image_regions
 from ..image_linking.assignment_applier import _apply_visual_assignments
 from ..image_linking.cropper import crop_and_save_images, crop_regions, draw_region_annotations
@@ -20,27 +18,26 @@ from ..image_linking.visual_matcher import match_images_visual
 from ..postprocessing.coverage import uncovered_blocks
 from ..preprocessing.image_preprocessor import check_page_quality, prepare_page_image_paths
 from ..recognition.claude_reader import read_page_text
-from ..recognition.docai_provider import extract_page_text
-from ..recognition.page_extractor import _extract_page_number_from_filename, process_page_with_docai
+from ..recognition.page_extractor import _extract_page_number_from_filename, structure_page
 from ..shared.console import error, info, status, substep, warning
 
 _UNCHECKED_LAYOUT = {"ad or cartoon", "table", "photo"}
 
 
-def extract_page_docai(
+def extract_page(
     image_path: str,
     diag: PageDiagnostics | None = None,
     work_dir: str | None = None,
     client=None,
 ):
-    """Create explicit image branches, run DocAI, and detect source visuals.
+    """Create explicit image branches, read the page text, and detect source visuals.
 
-    Returns ``(docai_result, ocr_derivative, regions, source_master)``.  Pixel
+    Returns ``(page_text, ocr_derivative, regions, source_master)``.  Pixel
     quality checks are warnings only and never skip a manifest canvas before a
-    successful Document AI and structuring response.
+    successful reading and structuring response.
     """
     base_name = os.path.basename(image_path)
-    status(f"DocAI extracting {base_name}...")
+    status(f"Reading {base_name}...")
     if diag is not None:
         diag.filename = base_name
 
@@ -68,35 +65,16 @@ def extract_page_docai(
         warning(f"{base_name}: {quality.message}; cloud processing will still run")
 
     save_outputs = owned_temp is None and os.getenv(
-        "OCR_SAVE_DOCAI_JSON", ""
+        "OCR_SAVE_PAGE_TEXT", ""
     ).strip().lower() in {"1", "true"}
-    if uses_claude():
-        # Claude reads the page itself: no Document AI and no layout model.
-        save_prefix = os.path.join(work_dir, Path(image_path).stem) if save_outputs else None
-        docai_result = read_page_text(
-            client, ocr_derivative, save_prefix=save_prefix, diag=diag
-        )
-    else:
-        # Found on the OCR derivative itself, so boxes share Document AI's geometry.
-        layout = detect_layout_boxes(ocr_derivative)
-        substep(f"Layout: {len(layout)} box(es)")
-        response_path = None
-        if save_outputs:
-            response_path = os.path.join(work_dir, f"{Path(image_path).stem}.docai.json")
-        docai_result = extract_page_text(
-            ocr_derivative, layout=layout, response_path=response_path
-        )
-    substep(
-        f"DocAI: {len(docai_result.raw_text)} chars, "
-        f"mean_conf={docai_result.mean_confidence:.2f}"
-    )
-    if diag is not None:
-        diag.docai_mean_confidence = docai_result.mean_confidence
+    save_prefix = os.path.join(work_dir, Path(image_path).stem) if save_outputs else None
+    page_text = read_page_text(client, ocr_derivative, save_prefix=save_prefix, diag=diag)
+    substep(f"Page text: {len(page_text.raw_text)} chars")
 
     regions = detect_image_regions(source_master, diag=diag)
     if regions:
         substep(f"Detected {len(regions)} visual region(s) on the source master")
-    return docai_result, ocr_derivative, regions, source_master
+    return page_text, ocr_derivative, regions, source_master
 
 
 def _apply_minimum_ad_visual_area(assignments, regions):
@@ -123,7 +101,7 @@ def _apply_minimum_ad_visual_area(assignments, regions):
 def structure_and_link_page(
     client,
     image_path: str,
-    docai_result,
+    page_text,
     preprocessed_image: Image.Image,
     regions: list[tuple[int, int, int, int]],
     output_dir: str,
@@ -141,32 +119,31 @@ def structure_and_link_page(
         # Ads and tables are restructured by design; only story text is held to the check.
         block_texts = [
             block.text
-            for block in getattr(docai_result, "paragraph_regions", []) or []
+            for block in getattr(page_text, "paragraph_regions", []) or []
             if getattr(block, "label", "") not in _UNCHECKED_LAYOUT
         ]
-        page_content, _gemini_image, _gemini_regions = process_page_with_docai(
+        page_content, _image, _regions = structure_page(
             client,
             image_path,
-            docai_result,
+            page_text,
             preprocessed_image,
             regions,
             diag=diag,
         )
         missing = uncovered_blocks(block_texts, page_content)
         if missing:
-            # Generation is seeded, so the retry asks for a different sample.
+            # Each call samples afresh, so a second structuring may keep the block.
             warning(
                 f"{base_name}: {len(missing)} OCR block(s) mostly missing from the "
                 "structured page; structuring once more"
             )
-            retry_content, _gemini_image, _gemini_regions = process_page_with_docai(
+            retry_content, _image, _regions = structure_page(
                 client,
                 image_path,
-                docai_result,
+                page_text,
                 preprocessed_image,
                 regions,
                 diag=diag,
-                seed=1,
             )
             retry_missing = uncovered_blocks(block_texts, retry_content)
             if len(retry_missing) <= len(missing):
@@ -314,6 +291,6 @@ def structure_and_link_page(
 __all__ = [
     "_apply_minimum_ad_visual_area",
     "_extract_page_number_from_filename",
-    "extract_page_docai",
+    "extract_page",
     "structure_and_link_page",
 ]

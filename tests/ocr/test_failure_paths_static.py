@@ -29,10 +29,8 @@ _KEPT = (
 )
 
 
-class _OneBlockDocAI:
+class _OneBlockPage:
     raw_text = _KEPT
-    mean_confidence = 0.95
-    low_confidence_words: list[str] = []
     paragraphs = [_KEPT]
 
     def __init__(self, label=""):
@@ -47,14 +45,14 @@ def _structure_with_bodies(tmp_path, monkeypatch, bodies, label=""):
 
     def structure(*_args, **kwargs):
         body = bodies[len(calls)]
-        calls.append(kwargs.get("seed", 0))
+        calls.append(kwargs)
         page = PageContent(articles=[Article(headline="Center", body=body)])
         return page, preprocessed, []
 
-    monkeypatch.setattr("transcript_ocr.application.page_pipeline.process_page_with_docai", structure)
+    monkeypatch.setattr("transcript_ocr.application.page_pipeline.structure_page", structure)
     diag = PageDiagnostics()
     result = structure_and_link_page(
-        object(), str(img_path), _OneBlockDocAI(label), preprocessed, [], str(tmp_path), diag=diag
+        object(), str(img_path), _OneBlockPage(label), preprocessed, [], str(tmp_path), diag=diag
     )
     return result, calls, diag
 
@@ -62,8 +60,7 @@ def _structure_with_bodies(tmp_path, monkeypatch, bodies, label=""):
 def test_page_missing_ocr_text_is_structured_again(tmp_path, monkeypatch):
     result, calls, _ = _structure_with_bodies(tmp_path, monkeypatch, ["Too short.", _KEPT])
 
-    # Generation is seeded, so the retry must ask for a different sample.
-    assert calls == [0, 1]
+    assert len(calls) == 2
     assert result is not None
     assert result.articles[0].body == _KEPT
 
@@ -82,7 +79,7 @@ def test_ad_text_restructured_by_the_model_is_not_a_missing_block(tmp_path, monk
         tmp_path, monkeypatch, ["Too short."], label="ad or cartoon"
     )
 
-    assert calls == [0]
+    assert len(calls) == 1
     assert result is not None
 
 
@@ -101,7 +98,7 @@ def test_visual_match_failure_preserves_unresolved_region_without_spatial_fallba
     regions = [(10, 10, 210, 210)]
 
     monkeypatch.setattr(
-        "transcript_ocr.application.page_pipeline.process_page_with_docai",
+        "transcript_ocr.application.page_pipeline.structure_page",
         lambda *a, **k: (page_content, preprocessed, regions),
     )
     monkeypatch.setattr(
@@ -118,17 +115,15 @@ def test_visual_match_failure_preserves_unresolved_region_without_spatial_fallba
     out_dir.mkdir(parents=True, exist_ok=True)
     (tmp_path / "ocr").mkdir(parents=True, exist_ok=True)
 
-    # Provide a fake docai_result (not used since process_page_with_docai is mocked)
-    class _FakeDocAI:
+    # Page text is unused: structure_page is mocked.
+    class _FakePageText:
         raw_text = "test"
-        mean_confidence = 0.95
-        low_confidence_words = []
         paragraphs = []
 
     result = structure_and_link_page(
         object(),
         str(img_path),
-        _FakeDocAI(),
+        _FakePageText(),
         preprocessed,
         regions,
         str(out_dir),
@@ -141,7 +136,7 @@ def test_visual_match_failure_preserves_unresolved_region_without_spatial_fallba
     assert result.other_content[-1].body == "images/Page 02_img1.jpg"
 
 
-def test_docai_failure_below_threshold_aborts_without_debug_artifacts(tmp_path, monkeypatch):
+def test_page_reading_failure_below_threshold_aborts_without_debug_artifacts(tmp_path, monkeypatch):
     """A failed edition is cleaned up and retained only in the metadata log."""
     edition_dir = tmp_path / "ocr" / "scans" / "1970-01-01"
     edition_dir.mkdir(parents=True, exist_ok=True)
@@ -151,12 +146,10 @@ def test_docai_failure_below_threshold_aborts_without_debug_artifacts(tmp_path, 
     public_root = tmp_path / "public" / "editions"
     public_root.mkdir(parents=True, exist_ok=True)
 
-    from transcript_ocr.recognition.docai_provider import DocAIError
+    def _fail_extract(_img, diag=None, work_dir=None, client=None):
+        raise RuntimeError("synthetic failure")
 
-    def _fail_extract_docai(_img, diag=None, work_dir=None):
-        raise DocAIError("synthetic failure")
-
-    monkeypatch.setattr("transcript_ocr.application.edition_pipeline.extract_page_docai", _fail_extract_docai)
+    monkeypatch.setattr("transcript_ocr.application.edition_pipeline.extract_page", _fail_extract)
     monkeypatch.setattr("transcript_ocr.application.edition_pipeline._log_failure", lambda *a, **k: None)
 
     paths = RunPaths(
