@@ -3,7 +3,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { backupEditions, restoreEditions } from "../../scripts/db/backup-editions.mjs";
+import {
+  backupEditions,
+  restoreEditions,
+  verifyBackup,
+} from "../../scripts/db/backup-editions.mjs";
 
 const md5 = (body: string | Buffer) => createHash("md5").update(body).digest("hex");
 
@@ -96,5 +100,32 @@ describe("backup-editions", () => {
     const result = await restoreEditions({ editionsDir: root, client, log: () => {} });
 
     expect(result).toEqual({ restored: 0, kept: 0 });
+  });
+
+  it("backs up only the dates it is given", async () => {
+    mkdirSync(path.join(root, "1983-04-28"));
+    writeFileSync(path.join(root, "1983-04-28", "edition.json"), "{}");
+    const client = memoryClient();
+    await backupEditions({ editionsDir: root, client, dates: ["1983-04-28"], log: () => {} });
+    expect([...client.objects.keys()]).toEqual(["edition-backups/1983-04-28/edition.json"]);
+  });
+
+  it("verifies that every local JSON file is stored byte for byte", async () => {
+    const client = memoryClient();
+    await backupEditions({ editionsDir: root, client, log: () => {} });
+    expect(await verifyBackup({ editionsDir: root, date: "1983-04-21", client })).toEqual([]);
+
+    client.objects.set("edition-backups/1983-04-21/upload-manifest.json", Buffer.from("tampered"));
+    client.objects.delete("edition-backups/1983-04-21/edition.json");
+    expect(await verifyBackup({ editionsDir: root, date: "1983-04-21", client })).toEqual([
+      "missing edition-backups/1983-04-21/edition.json",
+      "mismatched edition-backups/1983-04-21/upload-manifest.json",
+    ]);
+  });
+
+  it("fails verification for a date with no local edition.json", async () => {
+    expect(await verifyBackup({ editionsDir: root, date: "1999-01-01", client: memoryClient() })).toEqual([
+      "no local edition.json for 1999-01-01",
+    ]);
   });
 });

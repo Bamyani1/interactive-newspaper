@@ -554,6 +554,7 @@ def process_edition(
             outcomes=outcomes,
             provider=_provider_provenance(),
             model_routes=model_routes(),
+            estimated_cost_usd=estimated_cost,
         )
         stage("Candidate summary", 5, 5)
         success(

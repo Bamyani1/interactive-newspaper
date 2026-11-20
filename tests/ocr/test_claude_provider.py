@@ -7,6 +7,8 @@ import io
 import json
 import math
 import sys
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -170,6 +172,80 @@ def test_truncated_or_invalid_output_is_left_unparsed_for_the_schema_retry():
             timeout_seconds=5,
         )
         assert response.parsed is None
+
+
+def test_a_stream_that_never_ends_times_out_at_the_deadline():
+    # The SDK drops ping events, and each one resets the read timeout, so a
+    # stalled stream that only sends pings yields nothing and never times out.
+    class _StalledStream(_FakeStream):
+        def __iter__(self):
+            threading.Event().wait()
+            return iter([])
+
+        def get_final_message(self):
+            threading.Event().wait()
+
+    fake = _FakeAnthropic([None])
+    fake.messages = SimpleNamespace(stream=lambda **_request: _StalledStream(None))
+
+    started = time.monotonic()
+    with pytest.raises(TimeoutError, match="page_structuring exceeded 1s"):
+        ClaudeOCRClient(fake).generate_content(
+            model="claude-haiku-5-5",
+            contents=["x"],
+            config=_config(),
+            stage="page_structuring",
+            timeout_seconds=1,
+        )
+    assert time.monotonic() - started < 5
+
+
+def test_a_timed_out_stream_is_closed_so_its_reader_stops():
+    released = threading.Event()
+    finished = threading.Event()
+
+    class _ClosableStalledStream(_FakeStream):
+        def get_final_message(self):
+            released.wait()
+            finished.set()
+            raise ConnectionError("stream closed")
+
+        def close(self):
+            released.set()
+
+    fake = _FakeAnthropic([None])
+    fake.messages = SimpleNamespace(stream=lambda **_request: _ClosableStalledStream(None))
+
+    with pytest.raises(TimeoutError):
+        ClaudeOCRClient(fake).generate_content(
+            model="claude-haiku-5-5",
+            contents=["x"],
+            config=_config(),
+            stage="page_structuring",
+            timeout_seconds=1,
+        )
+    assert finished.wait(2)
+
+
+def test_a_base_exception_in_the_reader_reaches_the_caller():
+    class _Halt(BaseException):
+        pass
+
+    class _HaltingStream(_FakeStream):
+        def get_final_message(self):
+            raise _Halt()
+
+    fake = _FakeAnthropic([None])
+    fake.messages = SimpleNamespace(stream=lambda **_request: _HaltingStream(None))
+
+    with pytest.raises(_Halt):
+        ClaudeOCRClient(fake).generate_content(
+            model="claude-haiku-5-5",
+            contents=["x"],
+            config=_config(),
+            stage="page_structuring",
+            timeout_seconds=5,
+        )
 
 
 def test_retry_routes_claude_client_with_claude_model_and_timeout(monkeypatch):
@@ -393,3 +469,19 @@ def test_provenance_names_anthropic_and_no_google_project(monkeypatch, tmp_path)
     assert payload["provider"]["name"] == "anthropic"
     assert "google_cloud" not in payload
     assert "some-project" not in target.read_text()
+
+
+def test_provenance_records_the_editions_estimated_cost(tmp_path):
+    # archive:run's spend cap and the publish check read it from here.
+    target = tmp_path / "provenance.json"
+    write_provenance(
+        target,
+        edition_date="1985-10-18",
+        edition_dir=tmp_path,
+        manifest_path=None,
+        outcomes=[],
+        provider=_provider_provenance(),
+        model_routes={},
+        estimated_cost_usd=0.41234,
+    )
+    assert json.loads(target.read_text())["estimated_cost_usd"] == 0.4123

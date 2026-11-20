@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const DEFAULT_BASE_URL = "https://cdm15963.contentdm.oclc.org";
-const DEFAULT_COLLECTION = "p15963coll9";
+export const DEFAULT_BASE_URL = "https://cdm15963.contentdm.oclc.org";
+export const DEFAULT_COLLECTION = "p15963coll9";
 const SEARCH = "source^wesleyan^all^and";
 const FIELDS = "title!date!dmrecord!source!find";
 const ISSUE_TITLE = /(?:ohio\s+wesleyan\s+)?transcript/i;
@@ -248,7 +248,7 @@ async function fetchQuery(url: string): Promise<DmQueryResponse> {
   return JSON.parse(await fetchText(url)) as DmQueryResponse;
 }
 
-async function fetchParentRecords(baseUrl: string, collection: string) {
+export async function fetchParentRecords(baseUrl: string, collection: string) {
   const records: ContentDmRecord[] = [];
   let start = 1;
   let total = 0;

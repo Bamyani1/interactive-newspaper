@@ -28,6 +28,7 @@ def write_provenance(
     outcomes: Iterable[PageOutcome],
     provider: dict[str, str],
     model_routes: dict[str, dict],
+    estimated_cost_usd: float | None = None,
 ) -> None:
     source_root = Path(edition_dir)
     manifest_url = ""
@@ -60,6 +61,8 @@ def write_provenance(
         "models": model_routes,
         "pages": pages,
     }
+    if estimated_cost_usd is not None:
+        payload["estimated_cost_usd"] = round(estimated_cost_usd, 4)
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_name(target.name + ".part")
