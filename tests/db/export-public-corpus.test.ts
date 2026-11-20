@@ -23,8 +23,6 @@ const FEEDBACK_QUESTION = "PRIVATE-FEEDBACK-QUESTION was the canal answer wrong?
 const RATE_KEY = "PRIVATE-RATE-KEY-42";
 const SENTINELS = [SESSION_TOKEN, TURN_QUESTION, FEEDBACK_QUESTION, RATE_KEY];
 
-const EMBEDDING = `[${Array.from({ length: 768 }, (_, i) => (i % 7 === 0 ? "0.25" : "0")).join(",")}]`;
-
 async function seedFixtures(db: TestDb): Promise<void> {
   await db.executor.query({
     text: `INSERT INTO editions (date, publication_info, page_count, article_count)
@@ -33,19 +31,18 @@ async function seedFixtures(db: TestDb): Promise<void> {
   await db.executor.query({
     text: `INSERT INTO articles
                    (id, edition_date, position, category, headline, summary, full_text,
-                    body_plain, byline, page, is_hero, image_urls, image_captions, embedding,
+                    body_plain, byline, page, is_hero, image_urls, image_captions,
                     embedding_model, embedding_input_hash, embedding_input_version)
                VALUES
                    ('art-1', '1955-03-09', 1, 'News', 'Canal Reopens', 'The canal reopens.',
                     'The canal reopens after repairs.', 'The canal reopens after repairs.',
-                    'A. Reporter', 1, TRUE, $1, $2, $3, 'gemini-embedding-2', 'hash-1', 'article-chunk-v1'),
+                    'A. Reporter', 1, TRUE, $1, $2, 'gemini-embedding-2', 'hash-1', 'article-chunk-v1'),
                    ('art-2', '1955-03-09', 2, 'Sports', 'Nine Wins Opener', 'The nine wins.',
                     'The town nine wins its opener.', 'The town nine wins its opener.',
-                    NULL, 2, FALSE, '[]', '[]', NULL, NULL, NULL, NULL)`,
+                    NULL, 2, FALSE, '[]', '[]', NULL, NULL, NULL)`,
     params: [
       JSON.stringify(["1955-03-09/images/photo_1.webp"]),
       JSON.stringify(["The canal at dawn"]),
-      EMBEDDING,
     ],
   });
   await db.executor.query({
@@ -152,9 +149,6 @@ describe("export-public-corpus (PGlite)", () => {
     expect(articleLines).toHaveLength(2);
     for (const row of articleLines) {
       expect(row).not.toHaveProperty("search_vector");
-      // Legacy preview/unlabeled vectors are excluded by design: runtime
-      // SQL never serves them, so the eval baseline matches production's
-      // effective lexical-only state without ~100 MB of inert payload.
       expect(row).not.toHaveProperty("embedding");
       expect(row).not.toHaveProperty("embedding_model");
       expect(row).not.toHaveProperty("embedding_input_hash");
@@ -200,13 +194,10 @@ describe("export-public-corpus (PGlite)", () => {
       }
 
       const article = await target.executor.query({
-        text: `SELECT search_vector IS NOT NULL AS has_search_vector,
-                              embedding::text AS embedding
+        text: `SELECT search_vector IS NOT NULL AS has_search_vector
                        FROM articles WHERE id = 'art-1'`,
       });
       expect(article[0].has_search_vector).toBe(true);
-      // The excluded legacy vector arrives as NULL in the eval target.
-      expect(article[0].embedding).toBeNull();
 
       // Re-importing is a no-op thanks to ON CONFLICT DO NOTHING.
       const again = await importPublicCorpus(target.executor, { dir: exported.outDir });

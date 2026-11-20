@@ -12,7 +12,7 @@ import {
   finalizeBuild,
   populateBuildRecords,
 } from "../../scripts/db/build-rag-index.mjs";
-import { exportBuildVectors } from "../../scripts/db/export-build-vectors.mjs";
+import { exportBuildVectors, vectorColumn } from "../../scripts/db/export-build-vectors.mjs";
 import { importBuildVectors } from "../../scripts/db/import-build-vectors.mjs";
 import {
   RAG_EMBEDDING_DIMS,
@@ -159,5 +159,16 @@ describe("export-build-vectors round trip", () => {
     );
     expect(rows[0].total).toBe(result.embedded.chunks);
     expect(rows[0].matched).toBe(rows[0].total);
+  });
+});
+
+describe("vectorColumn", () => {
+  // 0015 dropped the Gemini-era 768-dimension column; such a build has no vectors left.
+  it("refuses a build that isn't 1024-dimension", () => {
+    expect(vectorColumn({ id: "b-1024", embedding_dims: 1024 })).toBe("embedding_1024");
+    expect(() => vectorColumn({ id: "b-768", embedding_dims: 768 })).toThrow(
+      /b-768.*768-dimension/
+    );
+    expect(() => vectorColumn({ id: "b-null", embedding_dims: null })).toThrow(/768-dimension/);
   });
 });

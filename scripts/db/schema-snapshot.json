@@ -137,55 +137,6 @@
         "ai_spend_counter_pkey PRIMARY KEY (day)"
       ]
     },
-    "answer_cache": {
-      "columns": [
-        {
-          "name": "cache_identity",
-          "dataType": "text",
-          "nullable": false,
-          "default": null
-        },
-        {
-          "name": "created_at",
-          "dataType": "timestamp with time zone",
-          "nullable": false,
-          "default": "now()"
-        },
-        {
-          "name": "filters_hash",
-          "dataType": "text",
-          "nullable": false,
-          "default": null
-        },
-        {
-          "name": "id",
-          "dataType": "bigint",
-          "nullable": false,
-          "default": null
-        },
-        {
-          "name": "question",
-          "dataType": "text",
-          "nullable": false,
-          "default": null
-        },
-        {
-          "name": "question_embedding",
-          "dataType": "vector",
-          "nullable": false,
-          "default": null
-        },
-        {
-          "name": "response",
-          "dataType": "jsonb",
-          "nullable": false,
-          "default": null
-        }
-      ],
-      "constraints": [
-        "answer_cache_pkey PRIMARY KEY (id)"
-      ]
-    },
     "api_rate_bucket": {
       "columns": [
         {
@@ -246,12 +197,6 @@
         {
           "name": "context_text",
           "dataType": "text",
-          "nullable": true,
-          "default": null
-        },
-        {
-          "name": "embedding",
-          "dataType": "vector",
           "nullable": true,
           "default": null
         },
@@ -322,12 +267,6 @@
         {
           "name": "content_revision_id",
           "dataType": "text",
-          "nullable": true,
-          "default": null
-        },
-        {
-          "name": "embedding",
-          "dataType": "vector",
           "nullable": true,
           "default": null
         },
@@ -411,12 +350,6 @@
           "name": "edition_date",
           "dataType": "text",
           "nullable": false,
-          "default": null
-        },
-        {
-          "name": "embedding",
-          "dataType": "vector",
-          "nullable": true,
           "default": null
         },
         {
@@ -1669,8 +1602,6 @@
     "ads_pkey": "CREATE UNIQUE INDEX ads_pkey ON public.ads USING btree (id)",
     "ai_spend_by_scope_pkey": "CREATE UNIQUE INDEX ai_spend_by_scope_pkey ON public.ai_spend_by_scope USING btree (day, scope)",
     "ai_spend_counter_pkey": "CREATE UNIQUE INDEX ai_spend_counter_pkey ON public.ai_spend_counter USING btree (day)",
-    "answer_cache_pkey": "CREATE UNIQUE INDEX answer_cache_pkey ON public.answer_cache USING btree (id)",
-    "answer_cache_scope_idx": "CREATE INDEX answer_cache_scope_idx ON public.answer_cache USING btree (cache_identity, filters_hash, created_at DESC)",
     "api_rate_bucket_pkey": "CREATE UNIQUE INDEX api_rate_bucket_pkey ON public.api_rate_bucket USING btree (key)",
     "article_chunks_pkey": "CREATE UNIQUE INDEX article_chunks_pkey ON public.article_chunks USING btree (id)",
     "article_images_pkey": "CREATE UNIQUE INDEX article_images_pkey ON public.article_images USING btree (id)",
@@ -1693,18 +1624,15 @@
     "idx_api_rate_bucket_expires": "CREATE INDEX idx_api_rate_bucket_expires ON public.api_rate_bucket USING btree (expires_at)",
     "idx_article_chunks_article": "CREATE INDEX idx_article_chunks_article ON public.article_chunks USING btree (index_build_id, article_id, chunk_index)",
     "idx_article_chunks_content_revision": "CREATE INDEX idx_article_chunks_content_revision ON public.article_chunks USING btree (content_revision_id) WHERE (content_revision_id IS NOT NULL)",
-    "idx_article_chunks_embedding": "CREATE INDEX idx_article_chunks_embedding ON public.article_chunks USING hnsw (embedding vector_cosine_ops) WITH (m='16', ef_construction='128')",
     "idx_article_chunks_embedding_1024": "CREATE INDEX idx_article_chunks_embedding_1024 ON public.article_chunks USING hnsw (embedding_1024 vector_cosine_ops) WITH (m='16', ef_construction='128')",
     "idx_article_chunks_search": "CREATE INDEX idx_article_chunks_search ON public.article_chunks USING gin (search_vector)",
     "idx_article_images_article": "CREATE INDEX idx_article_images_article ON public.article_images USING btree (index_build_id, article_id, image_index)",
     "idx_article_images_caption_search": "CREATE INDEX idx_article_images_caption_search ON public.article_images USING gin (to_tsvector('english'::regconfig, COALESCE(caption, ''::text)))",
     "idx_article_images_content_revision": "CREATE INDEX idx_article_images_content_revision ON public.article_images USING btree (content_revision_id) WHERE (content_revision_id IS NOT NULL)",
-    "idx_article_images_embedding": "CREATE INDEX idx_article_images_embedding ON public.article_images USING hnsw (embedding vector_cosine_ops) WITH (m='16', ef_construction='128')",
     "idx_article_images_embedding_1024": "CREATE INDEX idx_article_images_embedding_1024 ON public.article_images USING hnsw (embedding_1024 vector_cosine_ops) WITH (m='16', ef_construction='128')",
     "idx_articles_byline": "CREATE INDEX idx_articles_byline ON public.articles USING btree (byline) WHERE (byline IS NOT NULL)",
     "idx_articles_category": "CREATE INDEX idx_articles_category ON public.articles USING btree (category)",
     "idx_articles_edition": "CREATE INDEX idx_articles_edition ON public.articles USING btree (edition_date)",
-    "idx_articles_embedding": "CREATE INDEX idx_articles_embedding ON public.articles USING hnsw (embedding vector_cosine_ops) WITH (m='16', ef_construction='128')",
     "idx_articles_search": "CREATE INDEX idx_articles_search ON public.articles USING gin (search_vector)",
     "idx_ask_feedback_created": "CREATE INDEX idx_ask_feedback_created ON public.ask_feedback USING btree (created_at DESC)",
     "idx_ask_feedback_request": "CREATE INDEX idx_ask_feedback_request ON public.ask_feedback USING btree (request_id)",

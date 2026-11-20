@@ -26,12 +26,6 @@ export interface CandidateRetrievalResult {
     vector: { status: "success" | "failed"; count: number; error?: string };
   };
   identity: ReturnType<typeof getRagRetrievalConfig>;
-  servedTarget: "legacy" | "versioned";
-  shadow?: {
-    articles: RetrievedArticle[];
-    method: RetrievalMethod;
-    signals: CandidateRetrievalResult["signals"];
-  };
 }
 
 /** The steps of the corrective retry, in the order they can fail. */
@@ -156,7 +150,6 @@ export async function retrieveCandidates(params: {
   const started = Date.now();
   await loadServingPointer();
   const identity = getRagRetrievalConfig();
-  const servedTarget = identity.mode === "versioned" ? "versioned" : "legacy";
   // Month-stratified vector selection for wide date ranges (>= ~3
   // months): survey questions need coverage across the range, not the
   // similarity-densest fortnight. Narrow ranges keep pure similarity.
@@ -186,35 +179,10 @@ export async function retrieveCandidates(params: {
     category: searchOptions.category ?? undefined,
     startDate: searchOptions.startDate ?? undefined,
     endDate: searchOptions.endDate ?? undefined,
-    retrievalTarget: servedTarget,
   });
   const servedVectorPromise = embeddingPromise.then((embedding) =>
-    queryArticlesByEmbedding(embedding, {
-      ...searchOptions,
-      retrievalTarget: servedTarget,
-    })
+    queryArticlesByEmbedding(embedding, searchOptions)
   );
-  const shadowPromises =
-    identity.mode === "shadow"
-      ? [
-          searchArticlesForRag(params.ftsQuery, {
-            ...searchOptions,
-            category: searchOptions.category ?? undefined,
-            startDate: searchOptions.startDate ?? undefined,
-            endDate: searchOptions.endDate ?? undefined,
-            retrievalTarget: "versioned",
-          }),
-          embeddingPromise.then((embedding) =>
-            queryArticlesByEmbedding(embedding, {
-              ...searchOptions,
-              retrievalTarget: "versioned",
-            })
-          ),
-        ]
-      : null;
-  const shadowOutcomesPromise = shadowPromises
-    ? Promise.allSettled(shadowPromises)
-    : Promise.resolve(null);
 
   // Start lexical retrieval immediately. Query embedding and vector SQL form
   // a separate branch, so an embedding/API failure can never prevent FTS.
@@ -253,7 +221,6 @@ export async function retrieveCandidates(params: {
     );
   }
   if (ftsOutcome.status === "rejected" && vectorOutcome.status === "rejected") {
-    await shadowOutcomesPromise;
     throw new RetrievalSignalsUnavailableError(ftsOutcome.reason, vectorOutcome.reason);
   }
 
@@ -275,7 +242,7 @@ export async function retrieveCandidates(params: {
         stage: "retrieve",
         signal: "vector",
         msg: "vector signal returned 0 rows while full-text returned rows; run npm run rag:health",
-        servedTable: servedTarget === "versioned" ? "article_chunks" : "articles",
+        servedTable: "article_chunks",
         vectorFilter: {
           indexBuildId: identity.activeIndexBuildId,
           embeddingModel: identity.embeddingModel,
@@ -284,14 +251,6 @@ export async function retrieveCandidates(params: {
       })
     );
   }
-
-  const shadowOutcomes = await shadowOutcomesPromise;
-  const shadow = shadowOutcomes
-    ? combineSignalOutcomes(shadowOutcomes[0], shadowOutcomes[1], {
-        limit: params.limit,
-        vectorWeight: params.vectorWeight,
-      })
-    : null;
 
   // eslint-disable-next-line no-console -- structured retrieval telemetry
   console.info(
@@ -309,7 +268,6 @@ export async function retrieveCandidates(params: {
       // served table actually holds — npm run rag:health checks that.
       configuredEmbeddingModel: identity.embeddingModel,
       configuredTextEmbeddingInputVersion: identity.textEmbeddingInputVersion,
-      servedTarget,
       method: combined.method,
       ftsCandidates: combined.rawFts.length,
       vectorCandidates: combined.rawVector.length,
@@ -318,13 +276,6 @@ export async function retrieveCandidates(params: {
         0,
         combined.rawFts.length + combined.rawVector.length - combined.articles.length
       ),
-      shadowMethod: shadow?.method,
-      shadowFtsCandidates: shadow?.rawFts.length,
-      shadowVectorCandidates: shadow?.rawVector.length,
-      shadowCandidates: shadow?.articles.length,
-      shadowErrors: shadow
-        ? [shadow.signals.fts.error, shadow.signals.vector.error].filter(Boolean)
-        : undefined,
     })
   );
 
@@ -336,14 +287,6 @@ export async function retrieveCandidates(params: {
     rawVector: combined.rawVector,
     signals: combined.signals,
     identity,
-    servedTarget,
-    shadow: shadow
-      ? {
-          articles: shadow.articles,
-          method: shadow.method,
-          signals: shadow.signals,
-        }
-      : undefined,
   };
 }
 

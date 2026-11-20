@@ -1,7 +1,4 @@
 /** @vitest-environment node */
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import sharp from "sharp";
@@ -21,7 +18,11 @@ import {
   sniffImageMime,
 } from "../../scripts/db/build-rag-index.mjs";
 import { buildArticleChunkRecords } from "../../src/lib/article-chunking";
-import { buildChunkHeader, buildEmbeddingInput, type ChunkedDocument } from "../../src/lib/embeddings";
+import {
+  buildChunkHeader,
+  buildEmbeddingInput,
+  type ChunkedDocument,
+} from "../../src/lib/embeddings";
 import { computeCostUsd, computeEmbeddingCostUsd } from "../../src/lib/cost-tracker";
 import {
   RAG_EMBEDDING_DIMS,
@@ -33,9 +34,6 @@ import {
   RAG_TEXT_EMBEDDING_INPUT_VERSION,
 } from "../../src/lib/rag-model-config";
 import { MIGRATIONS_DIR, createTestDb, type TestDb } from "./helpers/pglite";
-
-const testDir = path.dirname(fileURLToPath(import.meta.url));
-const EMBED_MJS_PATH = path.resolve(testDir, "../../scripts/db/embed.mjs");
 
 const DATE = "1954-05-05";
 const CORPUS = "corpus-test-v1";
@@ -651,7 +649,7 @@ describe("build-rag-index against PGlite", () => {
     expect(rows[0].e_pending).toBe(TOTAL_CHUNKS); // untouched
   });
 
-  it("never modifies legacy NULL-build rows, and the embed.mjs fence holds", async () => {
+  it("never modifies legacy NULL-build rows, and a NULL-build fence holds", async () => {
     await db.pg.query(
       `INSERT INTO article_chunks
                  (id, article_id, chunk_index, chunk_text, embedding_input_hash,
@@ -683,7 +681,7 @@ describe("build-rag-index against PGlite", () => {
       has_embedding: false,
     });
 
-    // An embed.mjs-shaped UPDATE (fenced with index_build_id IS NULL) can
+    // A NULL-build-fenced UPDATE (fenced with index_build_id IS NULL) can
     // never reach a build-scoped row.
     const buildRowId = `${buildF}:${A3}:0000`;
     const touched = await db.pg.query(
@@ -697,15 +695,6 @@ describe("build-rag-index against PGlite", () => {
       [buildRowId]
     );
     expect(buildRow[0].embedding_model).toBe(RAG_EMBEDDING_MODEL);
-
-    // Static fence on the script itself: legacy-only guard present, every
-    // chunk/image statement carries the NULL-build predicate, no --force.
-    const source = readFileSync(EMBED_MJS_PATH, "utf8");
-    expect(source).toContain("--legacy-unversioned");
-    expect(source).not.toContain("--force");
-    expect(source).not.toContain("isForce");
-    const fenced = source.match(/index_build_id IS NULL/g) ?? [];
-    expect(fenced.length).toBeGreaterThanOrEqual(4); // 2 SELECTs + 2 UPDATEs
   });
 
   it("dryRunReport prices the exact chunk plan with cost-tracker constants", async () => {

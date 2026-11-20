@@ -153,7 +153,7 @@ function retrievalIdentityMetadata(
     embeddingModel: identity.embeddingModel,
     textEmbeddingInputVersion: identity.textEmbeddingInputVersion,
     imageEmbeddingInputVersion: identity.imageEmbeddingInputVersion,
-    retrievalTarget: identity.mode === "versioned" ? ("versioned" as const) : ("legacy" as const),
+    retrievalTarget: identity.mode,
   };
 }
 

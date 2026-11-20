@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getRagRetrievalConfig, setServingPointer, type ServingPointer } from "@/src/lib/rag-index-config";
+import {
+  getRagRetrievalConfig,
+  setServingPointer,
+  type ServingPointer,
+} from "@/src/lib/rag-index-config";
 import { createServingPointerLoader } from "@/src/lib/rag-serving-pointer";
 
 const VERSIONED = { RAG_RETRIEVAL_MODE: "versioned" } as unknown as NodeJS.ProcessEnv;
@@ -30,15 +34,13 @@ const served = () => getRagRetrievalConfig(VERSIONED).activeIndexBuildId;
 afterEach(() => setServingPointer(null));
 
 describe("loadServingPointer", () => {
-  it("never reads the database when the env names a build or the mode is legacy", async () => {
-    for (const env of [
-      { RAG_RETRIEVAL_MODE: "versioned", RAG_ACTIVE_INDEX_BUILD_ID: "build-env" },
-      {},
-    ] as unknown as NodeJS.ProcessEnv[]) {
-      const h = harness(env);
-      await h.load();
-      expect(h.reads).toEqual([]);
-    }
+  it("never reads the database when the env names a build", async () => {
+    const h = harness({
+      RAG_RETRIEVAL_MODE: "versioned",
+      RAG_ACTIVE_INDEX_BUILD_ID: "build-env",
+    } as unknown as NodeJS.ProcessEnv);
+    await h.load();
+    expect(h.reads).toEqual([]);
   });
 
   it("reads once, serves the pointer for 30 s, then reads again", async () => {

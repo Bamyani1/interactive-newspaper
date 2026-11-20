@@ -24,7 +24,7 @@ Terms that appear across multiple docs:
 - **HNSW** — Hierarchical Navigable Small World. The pgvector ANN index used for embedding similarity search. Parameters: `m=16, ef_construction=128, hnsw.ef_search=100`.
 - **hybrid search** — The combined vector + FTS retrieval in `retrieval.ts :: retrieveCandidates`, which runs both signals independently and merges them with `db.ts :: fuseArticleResults` via RRF. When both signals succeed and return nothing, the reported method is `none`, not `hybrid`.
 - **index build** — A versioned, immutable set of chunk and image vectors (`rag_index_builds`); production serves the one named by `RAG_ACTIVE_INDEX_BUILD_ID`.
-- **retrieval mode** — `RAG_RETRIEVAL_MODE`: `versioned` (production), `shadow`, or `legacy`, which matches no vectors and silently runs keyword-only.
+- **retrieval mode** — `RAG_RETRIEVAL_MODE`: only `versioned` (the default); `legacy` and `shadow` were removed with migration 0015 and fail closed.
 - **RRF** — Reciprocal Rank Fusion. The algorithm that merges vector and FTS rank lists: `score = weight / (K + rank)` with `K=40`.
 - **simple pipeline** — The non-agent path in `/api/ask`: reformulate → retrieve → rerank → generate (embedding happens inside retrieve).
 - **turn** — One (question, answer) pair in a conversation. Multiple turns form a session: the newest 5 are the prompt context, and rows are kept for `ASK_SESSION_TTL_DAYS` (default 7) in `ask_session_turns`.
@@ -39,7 +39,7 @@ Common troubleshooting:
 | Symptom                            | Where to look                                                                                            |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `/api/ask` returning 504s          | [rag-pipeline.md § Deadlines and cancellation](rag-pipeline.md#deadlines-and-cancellation)               |
-| Every answer is an error           | Check Google Cloud billing and Vertex access first: every Gemini call bills the Cloud project            |
+| Every answer is an error           | Check the Anthropic and Voyage keys and their rate limits, then today's `ai_spend_by_scope` budget row   |
 | Answers look keyword-only          | `npm run rag:health`; [data-model.md § Investigate a slow query](data-model.md#investigate-a-slow-query) |
 | Vector search feels slow           | [data-model.md § Investigate a slow query](data-model.md#investigate-a-slow-query)                       |
 | New editions missing from Ask      | [data-model.md § Build and activate a new index](data-model.md#build-and-activate-a-new-index)           |

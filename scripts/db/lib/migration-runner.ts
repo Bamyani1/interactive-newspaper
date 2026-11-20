@@ -71,7 +71,6 @@ export const CANONICAL_TABLES: ReadonlyArray<{ name: string; kind: "reseedable" 
   { name: "ai_spend_counter", kind: "runtime" },
   { name: "ai_spend_by_scope", kind: "runtime" },
   { name: "api_rate_bucket", kind: "runtime" },
-  { name: "answer_cache", kind: "runtime" },
   { name: "year_digests", kind: "runtime" },
 ];
 

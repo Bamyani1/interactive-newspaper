@@ -19,7 +19,7 @@ export interface ArchiveCoverage {
   requestedEndDate?: string;
   category?: string;
   corpusVersion: string;
-  retrievalTarget: "legacy" | "versioned";
+  retrievalTarget: "versioned";
   /** Pre-computed chronological digest of the requested year, when the
    * question targets a single archive year. Trusted guidance, never
    * citable evidence. */

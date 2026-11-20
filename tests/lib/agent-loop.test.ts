@@ -186,7 +186,7 @@ describe("agent-loop", () => {
           earliestEditionDate: "1960-01-01",
           latestEditionDate: "1965-12-31",
           corpusVersion: "corpus-v1",
-          retrievalTarget: "legacy",
+          retrievalTarget: "versioned",
         },
       });
 

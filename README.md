@@ -11,7 +11,7 @@
 [![TypeScript 5](https://img.shields.io/badge/TypeScript-5-B80D3E?style=flat-square&logo=typescript&logoColor=E8E8E8&labelColor=1A1F24)](https://www.typescriptlang.org)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-B80D3E?style=flat-square&logo=python&logoColor=E8E8E8&labelColor=1A1F24)](https://python.org)
 [![Postgres pgvector](https://img.shields.io/badge/Postgres-pgvector-B80D3E?style=flat-square&logo=postgresql&logoColor=E8E8E8&labelColor=1A1F24)](https://github.com/pgvector/pgvector)
-[![Google Gemini](https://img.shields.io/badge/Google-Gemini-B80D3E?style=flat-square&logo=google&logoColor=E8E8E8&labelColor=1A1F24)](https://ai.google.dev)
+[![Anthropic Claude](https://img.shields.io/badge/Anthropic-Claude-B80D3E?style=flat-square&logo=anthropic&logoColor=E8E8E8&labelColor=1A1F24)](https://www.anthropic.com/claude)
 [![CI](https://img.shields.io/github/actions/workflow/status/Bamyani1/interactive-newspaper/nextjs-ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=E8E8E8&labelColor=1A1F24&label=CI)](https://github.com/Bamyani1/interactive-newspaper/actions/workflows/nextjs-ci.yml)
 [![License MIT](https://img.shields.io/badge/License-MIT-B80D3E?style=flat-square&labelColor=1A1F24)](./LICENSE)
 
@@ -21,7 +21,7 @@
 
 ---
 
-> Status: the reader, search, Ask the Archive, and both data pipelines are deployed on Vercel. Ask serves `versioned` retrieval from one immutable index build (activated 2026-08-03) over `article_chunks` / `article_images`, with every Gemini call on Vertex AI. `legacy` mode survives only as an emergency switch, and one that degrades to keyword-only search ([why](./docs/architecture/rag-pipeline.md#legacy-cutover-behavior)). Explore the [live demo](https://interactive-newspaper-sable.vercel.app), run it locally, or read [`docs/architecture/`](./docs/architecture/) for deep-dives on each subsystem.
+> Status: the reader, search, Ask the Archive, and both data pipelines are deployed on Vercel. Ask serves one immutable index build of 1024-dim Voyage vectors over `article_chunks` / `article_images`, named by a serving pointer in the database; Claude rewrites, ranks, and answers. Explore the [live demo](https://interactive-newspaper-sable.vercel.app), run it locally, or read [`docs/architecture/`](./docs/architecture/) for deep-dives on each subsystem.
 
 ---
 
@@ -62,11 +62,11 @@ Ohio Wesleyan University's student newspaper, _The Transcript_, has been publish
 1. **Ingest** raw TIF scans from the ContentDM IIIF archive (custom discovery and download tools in `scripts/iiif/`).
 2. **OCR** each page through a Python pipeline combining Google Document AI Enterprise OCR (page text with token confidence), a hybrid visual detector (the American Stories newspaper-layout model for photos, cartoons and ads, plus DocLayout-YOLO for tables), and Google Gemini (structuring articles, headlines, bylines and ads, and deciding what each detected visual is).
 3. **Merge** articles that span multiple pages, review every page seam, enrich ads with structured metadata, then validate and atomically publish the edition with its images on Cloudflare R2.
-4. **Store** the structured output in Neon Postgres with `tsvector` full-text search, then build an immutable index of 768-dim `pgvector` embeddings: sentence-aware text chunks plus one multimodal vector per photo.
+4. **Store** the structured output in Neon Postgres with `tsvector` full-text search, then build an immutable index of 1024-dim `pgvector` embeddings from Voyage AI: sentence-aware text chunks plus one multimodal vector per photo.
 5. **Serve** a Next.js 16 application with a period-accurate reading UI, keyword search, and an "Ask the Archive" research workspace powered by a full RAG pipeline that routes complex questions to a function-calling agent.
-6. **Search multimodally** — text queries match text chunks; visual queries (e.g., "show me protest photos") match per-photo vectors and captions in the same embedding space.
+6. **Search multimodally** — text queries match text chunks; visual queries (e.g., "show me protest photos") match per-photo vectors (caption plus pixels) and captions.
 
-**Scale today:** 351 editions (3,099 pages, 1950-01-11 through 2006-04-20); 11,705 articles indexed as 13,143 sentence-aware text chunks plus 2,875 photo vectors (768-dim `gemini-embedding-2`); 6,846 ads, 6,804 of them enriched with structured metadata; 57 year digests for survey questions; an offline Ohio weather archive covering 1950–2000 (18,628 daily entries); and a monthly US top-10 music archive for 1958–2010 (6,290 chart entries across 629 months).
+**Scale today:** 366 editions (3,230 pages, 1950-01-11 through 2006-04-20); 12,153 articles indexed as 13,615 sentence-aware text chunks (`voyage-context-4`) plus 2,967 photo vectors (`voyage-multimodal-3.5`), 1024-dim each; 7,124 ads, 7,063 of them enriched with structured metadata; 57 year digests for survey questions; an offline Ohio weather archive covering 1950–2000 (18,628 daily entries); and a monthly US top-10 music archive for 1958–2010 (6,290 chart entries across 629 months).
 
 ---
 
@@ -74,12 +74,12 @@ Ohio Wesleyan University's student newspaper, _The Transcript_, has been publish
 
 - **Browse the archive.** Read digitized editions with period-accurate typography, section navigation, an edition picker, and date controls; `/edition` opens the latest issue.
 - **Search.** `/search` runs full-text search with category and date-range filters and highlighted snippets.
-- **Ask the Archive.** Natural-language research over the archive with a full RAG pipeline: query reformulation, hybrid vector + full-text retrieval, Gemini reranking with a corrective retry, cited answer generation, and streaming SSE responses.
-- **Complex questions get an agent.** Multi-era, comparative, or multi-hop questions go to a Gemini function-calling agent with `search_archive`, `read_article`, and `list_editions` tools instead of the linear pipeline.
+- **Ask the Archive.** Natural-language research over the archive with a full RAG pipeline: query reformulation, hybrid vector + full-text retrieval, Claude reranking with a corrective retry, cited answer generation, and streaming SSE responses.
+- **Complex questions get an agent.** Multi-era, comparative, or multi-hop questions go to a Claude tool-use agent with `search_archive`, `read_article`, and `list_editions` tools instead of the linear pipeline.
 - **Answers you can check.** Each answer carries source cards with an in-page article reader, a coverage note on what was searchable, a low-confidence caveat when evidence is thin, follow-up suggestions, and copy / rate / re-run controls.
 - **Multi-thread conversations.** Turns persist to Neon (5 turns of prompt context; rows kept `ASK_SESSION_TTL_DAYS`, default 7). Past threads are kept in the browser and can be renamed or deleted; on phones the archive opens as a bottom sheet. Follow-up questions carry context.
 - **Export a conversation.** Any Ask thread exports to a formatted PDF client-side (`jspdf` + `html2canvas`).
-- **Budget-aware by default.** A per-environment daily spend cap (`RAG_DAILY_BUDGET_USD`, default $2) refuses new questions before a runaway loop can run up the Vertex AI bill.
+- **Budget-aware by default.** A per-environment daily spend cap (`RAG_DAILY_BUDGET_USD`, default $2) refuses new questions before a runaway loop can run up the model bill.
 - **Multimodal visual queries.** "Show me protest photos" searches per-photo vectors and captions, inlines up to three grounded photos in the answer, and lists the rest in a "More pictures" grid with a full-screen lightbox.
 - **End-to-end OCR pipeline.** A five-stage Python pipeline turns raw TIF scans into a validated `edition.json`: Document AI OCR, hybrid visual detection, Gemini page structuring and visual assignment, edition-wide article grouping with seam review, ad enrichment, and a targeted final review. A shell wrapper then uploads content-addressed images to R2 and atomically promotes the edition.
 - **Historical context.** The reader's sidebar shows that day's Delaware, Ohio weather (offline archive for 1950–2000, live NOAA/Open-Meteo lookup beyond it) and that month's US top-10 songs (1958–2010) with an embedded player.
@@ -132,7 +132,7 @@ flowchart LR
   R2[("Cloudflare R2<br/>image CDN · edition backups")]:::data
   DB[("Neon Postgres<br/>tsvector + pgvector<br/>index builds · sessions · spend")]:::data
   IDX["rag:index:build<br/>immutable vector builds"]:::brand
-  AI["Vertex AI<br/>Gemini + gemini-embedding-2"]:::data
+  AI["Anthropic + Voyage AI<br/>Claude · voyage-context-4 · voyage-multimodal-3.5"]:::data
   API["Next.js API<br/>/api/ask · /api/search · /api/editions"]:::brand
   UI["Next.js 16 + React 19<br/>reader · search · Ask"]:::brand
 
@@ -152,7 +152,7 @@ flowchart LR
 
 1. **Frontend.** Next.js App Router with server components, streaming API routes, and feature modules in `src/features/` (`news-feed`, `ask-archive`, `search`, `archive`, `time-controls`, `navigation`, `music-player`, `weather`, `context-panel`, `footer`, `theme`). Cross-feature imports are avoided by convention; the sidebar, time-controls, and edition-footer modules compose other features.
 2. **API layer.** Server routes in `src/app/api/`. `POST /api/ask` runs the RAG pipeline (SSE with `?stream=1`, which the UI uses, or JSON for the evaluation harness). `GET`/`DELETE /api/ask/session` rehydrate or delete a thread's server-side history; `POST /api/ask/feedback` records ratings. `GET /api/editions` and `/api/editions/[date]` serve edition data; `/api/search` and `/api/weather` back the search page and sidebar; `/api/admin/revalidate` flushes the editions cache; `/api/internal/retention` is the nightly Vercel cron.
-3. **Database.** Neon serverless Postgres, schema from 12 numbered migrations. Content (`editions`, `articles`, `ads`, `weather`, `music`); retrieval (`article_chunks`, `article_images` with HNSW indexes, scoped to an immutable `rag_index_builds` row, plus `year_digests`); runtime (`ask_session_turns`, `ask_feedback`, `ai_spend_by_scope`, `api_rate_bucket`); and publication and identity tables for offline tooling.
+3. **Database.** Neon serverless Postgres, schema from 15 numbered migrations. Content (`editions`, `articles`, `ads`, `weather`, `music`); retrieval (`article_chunks`, `article_images` with HNSW indexes, scoped to an immutable `rag_index_builds` row that `rag_serving_pointer` names, plus `year_digests`); runtime (`ask_session_turns`, `ask_feedback`, `ai_spend_by_scope`, `api_rate_bucket`); and publication and identity tables for offline tooling.
 4. **OCR pipeline.** Python 3.12 domain-driven package with AST-enforced import boundaries. Five stages, parallel per page for stages 1–2; a shell wrapper owns validation, R2 upload, and atomic promotion.
 5. **Ops scripts.** Node and shell scripts for migrations, seeding, versioned RAG index builds and health checks, R2 upload/GC and edition backups, OCR orchestration, evaluation, and the weather archive.
 6. **Image CDN.** Cloudflare R2 hosts content-addressed `.webp` images (`ocr-assets/<sha256>.webp`) in production via `IMAGE_BASE_URL`, with a local API proxy in dev. The same bucket holds the edition JSON backups.
@@ -180,7 +180,7 @@ The three deep-dives cross-reference each other and share a glossary. Read them 
 - Tailwind CSS 4.3 with a token-based design system (`src/styles/tokens/`, mirroring [`design.md`](./design.md)) and shared primitives in `src/components/ui/primitives/`
 - Framer Motion 12 (`LazyMotion`, honours reduced motion) for edition swaps, navigation, time controls, and the lightbox
 - `react-markdown` + `remark-gfm` for chat answers, `sanitize-html` for search snippets, `jspdf` + `html2canvas` for PDF export, `lucide-react` icons
-- Playfair Display, Source Serif 4, and JetBrains Mono via `next/font/google`
+- Playfair Display, Source Serif 4, and JetBrains Mono, self-hosted via `next/font/local`
 
 **Backend**
 
@@ -191,7 +191,8 @@ The three deep-dives cross-reference each other and share a glossary. Read them 
 
 **AI / Machine Learning**
 
-- **Google Gemini** (`@google/genai`) — answers and reranking on `gemini-3.8-flash`, query reformulation on `gemini-3.5-flash-lite`, and 768-dimensional `gemini-embedding-2` vectors, plus the independently configured OCR stages. Vertex AI everywhere: ADC locally and for the data pipeline, a service account (`GOOGLE_SERVICE_ACCOUNT_JSON`) on the Vercel serving runtime (production and previews). There is no API-key mode: without `GOOGLE_CLOUD_PROJECT` every Gemini client refuses to start.
+- **Anthropic Claude** (`@anthropic-ai/sdk`) — answers and the agent on `claude-sonnet-5-5` at medium effort (`RAG_ANSWER_PROFILE=haiku-xhigh` moves them to Haiku), query reformulation and the relevance judge on `claude-haiku-5-5`, plus the OCR stages.
+- **Voyage AI** — 1024-dimensional vectors: `voyage-context-4` for text chunks, each embedded in the context of its whole article, and `voyage-multimodal-3.5` for photos (caption plus pixels). The `rerank-3` cross-encoder is an optional reranker.
 - **Google Document AI** — Enterprise OCR processor for page text with token-level confidence
 - **American Stories layout model + DocLayout-YOLO** — hybrid visual detector: the American Stories ONNX checkpoint finds photos, cartoons, and ads; DocLayout-YOLO adds tables it missed
 
@@ -220,25 +221,25 @@ For the full end-to-end deep-dive — error taxonomy, dedup, agent tool interfac
 
 Modern user queries don't match 1960s newspaper language. "What did students think about the Vietnam War?" against text that uses "the war in Indochina" or "the conflict in Southeast Asia" hurts both vector and FTS retrieval.
 
-`query-reformulator.ts` uses Gemini to rewrite the question into period-appropriate vocabulary, detect text-vs-visual intent, produce separate `embeddingQuery` and `ftsQuery` outputs, infer database date filters only from explicit years/decades/ranges, and classify complexity. Semantic expansion stays in `embeddingQuery`; `ftsQuery` is deliberately limited to 1–3 essential names/nouns with no generated `OR` chain. Broad one-topic synthesis remains on the simple path. It also tags coverage intent (absence/count/exhaustive) and, for explicit comparisons, each period. If the rewrite fails or exceeds 8 s, the original question drives the vector leg, FTS gets a locally derived keyword set, the question stays simple, and the response carries `meta.reformulationDegraded`.
+`query-reformulator.ts` uses Claude Haiku to rewrite the question into period-appropriate vocabulary, detect text-vs-visual intent, produce separate `embeddingQuery` and `ftsQuery` outputs, infer database date filters only from explicit years/decades/ranges, and classify complexity. Semantic expansion stays in `embeddingQuery`; `ftsQuery` is deliberately limited to 1–3 essential names/nouns with no generated `OR` chain. Broad one-topic synthesis remains on the simple path. It also tags coverage intent (absence/count/exhaustive) and, for explicit comparisons, each period. If the rewrite fails or exceeds 8 s, the original question drives the vector leg, FTS gets a locally derived keyword set, the question stays simple, and the response carries `meta.reformulationDegraded`.
 
 ### Embedding & retrieval
 
-`embeddings.ts` produces 768-dimensional query vectors with `gemini-embedding-2`, with a five-minute per-instance LRU. Ask searches only the active index build: deterministic overlapping text chunks in `article_chunks` and one vector per photo in `article_images`. `retrieval.ts :: retrieveCandidates` runs HNSW vector and chunk-aware FTS retrieval as two independent legs, then merges them with Reciprocal Rank Fusion (k = 40) using mode-specific weights (0.7/0.3 for visual, 0.6/0.4 for text). The judge chooses from 40 fused candidates (50 visual); up to 12 sources (15 visual) reach the answer. Date ranges of 90 days or more use month-stratified vector selection so a survey covers the whole range. Each leg's raw result stays inspectable, so `meta.method` reports what actually produced the candidates — `hybrid`, `fts`, `vector`, or `none` when both legs succeeded and returned nothing.
+`embeddings.ts` embeds the question with Voyage once per model it searches (`voyage-context-4` for text chunks, `voyage-multimodal-3.5` for photos), with a five-minute per-instance LRU. Ask searches only the build the serving pointer names: deterministic overlapping text chunks in `article_chunks` and one vector per photo in `article_images`. `retrieval.ts :: retrieveCandidates` runs HNSW vector and chunk-aware FTS retrieval as two independent legs, then merges them with Reciprocal Rank Fusion (k = 40) using mode-specific weights (0.7/0.3 for visual, 0.6/0.4 for text). The judge chooses from 40 fused candidates (50 visual); up to 12 sources (15 visual) reach the answer. Date ranges of 90 days or more use month-stratified vector selection so a survey covers the whole range. Each leg's raw result stays inspectable, so `meta.method` reports what actually produced the candidates — `hybrid`, `fts`, `vector`, or `none` when both legs succeeded and returned nothing.
 
 `npm run rag:health` is the read-only check for the retrieval identity itself: it reports the index-build readiness predicates individually, the embedding stamps actually present on the served tables, and the serving `WHERE` clause run as a `COUNT`. A count of zero there means the serving filter matches no rows — the vector leg goes dark without raising an error.
 
 ### Reranking with CRAG
 
-Retrieved articles go to Gemini with explicit score anchors (0–10). Scores ≥4 (text) / ≥3 (visual) survive. The judge receives matched passages and image captions; it treats evidence that corrects a false premise as relevant, and in visual mode distinguishes a relevant pictured subject from an article that merely mentions that subject beside an unrelated image. On zero-result ranking, **one corrective retrieval retry** runs with broader search terms — a single-pass CRAG — and re-ranks at ≥3 (text) / ≥2 (visual). If a text search is still vetoed, the top fused candidates go forward at the neutral score 5; a vetoed photo search returns no images. The judge has 12 s and re-judges the top half of the pool once on timeout. Setting `VOYAGE_API_KEY` swaps in a Voyage `rerank-2.5` cross-encoder, falling back to Gemini on any failure.
+Retrieved articles go to a Claude Haiku judge with explicit score anchors (0–10). Scores ≥4 (text) / ≥3 (visual) survive. The judge receives matched passages and image captions; it treats evidence that corrects a false premise as relevant, and in visual mode distinguishes a relevant pictured subject from an article that merely mentions that subject beside an unrelated image. On zero-result ranking, **one corrective retrieval retry** runs with broader search terms — a single-pass CRAG — and re-ranks at ≥3 (text) / ≥2 (visual). If a text search is still vetoed, the top fused candidates go forward at the neutral score 5; a vetoed photo search returns no images. The judge has 12 s and re-judges the top half of the pool once on timeout. `RAG_RERANKER=voyage` ranks with Voyage `rerank-3` alone, and `voyage+claude` lets `rerank-3` narrow the pool to 20 for the judge; either falls back to the judge on any failure.
 
 ### Answer generation
 
-The answer generator receives the **original** user question plus the matched passages from reranked articles. A skip-Gemini guard fires when the mean of the three best reranker scores is below 5, so a tally across many partial sources is not refused. The output ceiling leaves room for the thinking budget plus the structured JSON answer, and malformed structured envelopes are never shown as raw UI text. Confidence is based on verified visible citations and the model-independent 0–10 reranker rubric, not embedding-distance constants.
+The answer generator receives the **original** user question plus the matched passages from reranked articles. A skip-the-model guard fires when the mean of the three best reranker scores is below 5, so a tally across many partial sources is not refused. The output ceiling leaves room for the thinking budget plus the structured JSON answer, and malformed structured envelopes are never shown as raw UI text. Confidence is based on verified visible citations and the model-independent 0–10 reranker rubric, not embedding-distance constants.
 
 ### Agent loop for complex questions
 
-`agent-loop.ts` — constrained Gemini function-calling loop with three tools (`search_archive`, `read_article`, `list_editions`). It permits at most three tool rounds, then makes one mandatory synthesis call under a dedicated final-answer instruction with function calling explicitly set to `NONE`. The final call starts fresh from a deduplicated packet of returned article evidence, avoiding prior tool-call turns that can condition the model to keep searching. It is AbortSignal-aware and backed by the same canonical retrieval/reranking/CRAG service as the simple path. Research stops before a new round when fewer than 20 s remain before the deadline, so synthesis always has time to write; every round streams.
+`agent-loop.ts` — constrained Claude tool-use loop with three tools (`search_archive`, `read_article`, `list_editions`). It permits at most three tool rounds, then makes one mandatory synthesis call under a dedicated final-answer instruction with no tools offered. The final call starts fresh from a deduplicated packet of returned article evidence, avoiding prior tool-call turns that can condition the model to keep searching. It is AbortSignal-aware and backed by the same canonical retrieval/reranking/CRAG service as the simple path. Research stops before a new round when fewer than 20 s remain before the deadline, so synthesis always has time to write; every round streams.
 
 ### Conversation threading
 
@@ -299,7 +300,7 @@ The goal: _"show me photos of the homecoming parade"_ should actually surface th
 
 ### Embed-time
 
-`npm run rag:index:build` (`scripts/db/build-rag-index.mjs`) creates an immutable index build and fills it with `gemini-embedding-2` vectors: sentence-aware text chunks in `article_chunks`, and one multimodal vector per image (read from R2) in `article_images`. A build is finalized, then activated, and serving names it in `RAG_ACTIVE_INDEX_BUILD_ID`. This keeps late-article facts retrievable and prevents a primary image from diluting the article's only text vector.
+`npm run rag:index:build` (`scripts/db/build-rag-index.mjs`) creates an immutable index build and fills it with Voyage vectors: sentence-aware text chunks in `article_chunks` (`voyage-context-4`), and one multimodal vector per image (read from R2) in `article_images` (`voyage-multimodal-3.5`). A build is finalized, then `--switch` activates it and moves the `rag_serving_pointer` row Ask reads; `--switch-back` returns to the previous build. This keeps late-article facts retrievable and prevents a primary image from diluting the article's only text vector.
 
 ### Query-time
 
@@ -317,7 +318,7 @@ When the reformulator flags a query as visual:
 
 ## Database Schema
 
-Designed for Neon serverless Postgres. Canonical DDL lives in [scripts/db/migrations/](./scripts/db/migrations) (`0001`–`0012`, applied with `npm run db:migrate`); column-by-column details in [docs/architecture/data-model.md](./docs/architecture/data-model.md).
+Designed for Neon serverless Postgres. Canonical DDL lives in [scripts/db/migrations/](./scripts/db/migrations) (`0001`–`0015`, applied with `npm run db:migrate`); column-by-column details in [docs/architecture/data-model.md](./docs/architecture/data-model.md).
 
 ```sql
 -- Core content, written by db:seed from public/editions/<date>/edition.json
@@ -330,7 +331,6 @@ articles (
   writer_position, is_hero, is_featured,
   image_urls JSONB, image_caption, image_captions JSONB,
   search_vector TSVECTOR,               -- trigger-maintained
-  embedding VECTOR(768),                -- legacy; read only when RAG_RETRIEVAL_MODE=legacy
   embedding_model, embedding_input_hash, embedding_input_version
 )
 
@@ -342,13 +342,16 @@ music   (year + month + rank PK, title, artist, youtube_id)
 
 -- RAG evidence; Ask serves only rows of the active build
 rag_index_builds (id PK, corpus_version, status, pipeline_version, embedding_model,
+                  image_embedding_model, embedding_dims,
                   text_embedding_input_version, image_embedding_input_version,
                   created_at, validated_at, activated_at, failure_reason)
+rag_serving_pointer (id = 1, index_build_id FK, corpus_version,
+                     previous_build_id, previous_corpus_version, switched_at)
 article_chunks (id PK, index_build_id FK, article_id FK, chunk_index, chunk_text,
-                search_vector, embedding VECTOR(768), embedding_model,
+                context_text, search_vector, embedding_1024 VECTOR(1024), embedding_model,
                 embedding_input_version, embedding_input_hash)
 article_images (id PK, index_build_id FK, article_id FK, image_index, image_url,
-                caption, embedding VECTOR(768), embedding_model,
+                caption, embedding_1024 VECTOR(1024), embedding_model,
                 embedding_input_version, embedding_input_hash)
 corpus_versions (id PK, manifest_hash, edition_count, article_count, ad_count, …)
 year_digests    (year PK, digest, article_count, model, generated_at)
@@ -364,14 +367,14 @@ api_rate_bucket   (key PK, count, expires_at, created_at)    -- sliding window
 -- Also present: schema_migrations (ledger); identity, revision, publication and
 -- asset-registry tables for offline tooling (source_records, issues,
 -- edition_revisions, content_items, content_revisions, assets, asset_references, …);
--- and two retired runtime tables (ai_spend_counter, answer_cache)
+-- and one retired runtime table (ai_spend_counter)
 ```
 
 Indexes:
 
 - B-tree on `articles.edition_date`, `articles.category`, `articles.byline (WHERE NOT NULL)`, `ads.edition_date`
 - GIN on `articles.search_vector`, `article_chunks.search_vector`, and `to_tsvector('english', article_images.caption)`
-- HNSW (`vector_cosine_ops`, `m=16, ef_construction=128`) on `article_chunks.embedding`, `article_images.embedding`, and the legacy `articles.embedding`; versioned queries run `hnsw.ef_search=100` plus `iterative_scan='relaxed_order'`
+- HNSW (`vector_cosine_ops`, `m=16, ef_construction=128`) on `article_chunks.embedding_1024` and `article_images.embedding_1024`; queries run `hnsw.ef_search=100` plus `iterative_scan='relaxed_order'`
 - Partial unique indexes key unversioned rows and build rows separately; one `active` build per `corpus_version`
 
 Plpgsql triggers maintain `articles.search_vector` (headline A > summary B > byline = body_plain C) and an unweighted `article_chunks.search_vector`.
@@ -401,13 +404,13 @@ A representative sample of commits that each address a real failure mode discove
 | `976b61a` | Reranker bounds         | Reranker fallback could exceed `maxArticles`. Capped.                                                                                                         |
 | `d051dcd` | Cache correctness       | The answer cache served context-flavored answers across sessions. It was first bypassed when history was non-empty, then removed entirely (`243f9d0`, below). |
 | `243f9d0` | Answer privacy          | The semantic answer cache matched paraphrases at 0.94 similarity and could serve one reader another's answer. Every question now runs the full pipeline.      |
-| `d932969` | Billing isolation       | Serving used Gemini API keys billed to prepaid credits, and production failed when they ran out. Every call now runs on Vertex with a service account.        |
+| `d932969` | Billing isolation       | Serving used Gemini API keys billed to prepaid credits, and production failed when they ran out. Ask now runs on Anthropic and Voyage keys instead.           |
 | `e2b34f1` | Budget isolation        | Local testing and production shared one daily spend counter. Spend is now scoped per environment.                                                             |
 | `88560b7` | Agent deadline          | The agent kept researching until too little time remained to write the answer. It now stops before a new round when fewer than 20 s remain.                   |
 | `9a3a3c1` | Scan safety             | The OCR wrapper deleted inbox scans even when a run failed before publishing. Scans are now removed only after the edition is promoted.                       |
 | `e28f60e` | Index-build safety      | A full seed or backfill deleted chunk and image rows that belonged to the active index build. Both now touch only rows outside any build.                     |
 
-Every pipeline step has a timeout and a typed error envelope with a `kind` discriminator. Answers and reranking run on Gemini 3.8 Flash; only query reformulation uses Flash-Lite, and retries never change the stage model.
+Every pipeline step has a timeout and a typed error envelope with a `kind` discriminator. Answers and the agent run on Claude Sonnet 5.5, reformulation and reranking on Claude Haiku 5.5, and retries never change the stage model.
 
 ---
 
@@ -418,8 +421,8 @@ Every pipeline step has a timeout and a typed error envelope with a `kind` discr
 About 125 Vitest files:
 
 - **Lib tests** (`tests/lib/`) — one suite per `src/lib` service: retrieval, reranker, agent loop/tools, answer generation and grounding, cost tracker, rate limit, retention, SSE protocol
-- **API tests** (`tests/api/`) — `ask-route.test.ts` (100+ cases) covers the full `/api/ask` pipeline, streaming, dedup, regenerate, and the error taxonomy with mocked Gemini; plus session, feedback, editions, search, weather, and retention routes
-- **Golden RAG regression** — opt-in (`RUN_RAG_GOLDEN=1`) `rag-golden-questions.test.ts` against the real DB and Gemini; frozen source/fact and security assertions decide correctness, while citation-count/confidence drift is reported as telemetry
+- **API tests** (`tests/api/`) — `ask-route.test.ts` (100+ cases) covers the full `/api/ask` pipeline, streaming, dedup, regenerate, and the error taxonomy with mocked Claude and Voyage; plus session, feedback, editions, search, weather, and retention routes
+- **Golden RAG regression** — opt-in (`RUN_RAG_GOLDEN=1`) `rag-golden-questions.test.ts` against the real DB, Claude, and Voyage; frozen source/fact and security assertions decide correctness, while citation-count/confidence drift is reported as telemetry
 - **Database tests** (`tests/db/`) — migrations, seed, publisher state machine, index builds, and backups on in-memory PGlite
 - **Component tests** — React Testing Library + jsdom across `ask-archive`, `news-feed`, `components`, `search`, `theme`, `time-controls`, `music`, `footer`, `edition-picker`
 - **Runner** — `npm run test:run` (CI) or `npm test` (watch)
@@ -449,7 +452,7 @@ About 125 Vitest files:
 
 ## Getting Started
 
-**Prerequisites:** Node.js 24+ with npm, Python 3.12 (for OCR), a Neon Postgres database (or any Postgres with `pgvector`), a Google Cloud project with billing, Vertex AI, and Document AI enabled, and working Application Default Credentials.
+**Prerequisites:** Node.js 24+ with npm, Python 3.12 (for OCR), a Neon Postgres database (or any Postgres with `pgvector`), an Anthropic API key, and a Voyage AI API key.
 
 ```bash
 # 1. Clone and install
@@ -458,9 +461,7 @@ cd interactive-newspaper
 npm ci
 
 # 2. Configure
-cp .env.example .env.local      # DATABASE_URL, GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION=global
-gcloud auth application-default login
-npm run google:verify-adc       # read-only check of ADC, project, APIs, and the OCR processor
+cp .env.example .env.local      # DATABASE_URL, ANTHROPIC_API_KEY, VOYAGE_API_KEY
 
 # 3. Create the schema and load data
 npm run db:migrate                      # applies scripts/db/migrations/ (creates every table)
@@ -480,10 +481,9 @@ The reader and search work once the data is seeded. Ask's vector search also nee
 ```bash
 npm run rag:index:build -- --dry-run --yes                       # read-only plan and cost
 npm run rag:index:build -- --create --corpus <corpus-id> --yes   # prints <build-id>
-for step in populate embed-text embed-images finalize activate; do
+for step in populate embed-text embed-images finalize switch; do
   npm run rag:index:build -- --$step <build-id> --yes
 done
-# .env.local: RAG_RETRIEVAL_MODE=versioned, RAG_ACTIVE_INDEX_BUILD_ID=<build-id>, RAG_CORPUS_VERSION=<corpus-id>
 npm run rag:health
 ```
 
@@ -534,31 +534,31 @@ Schema changes live in `scripts/db/migrations/` (`0001`–`0012`) and are applie
 
 Create `.env.local` from `.env.example`:
 
-| Variable                                                                      | Required            | Purpose                                                                                                                       |
-| ----------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                                                                | Yes                 | Neon Postgres connection string                                                                                               |
-| `GOOGLE_CLOUD_PROJECT`                                                        | Yes                 | Vertex AI / Document AI project. Required by every Gemini client; without it they refuse to start rather than use an API key  |
-| `GOOGLE_CLOUD_LOCATION`                                                       | Optional            | Vertex location; defaults to `global`, which `google:verify-adc` requires                                                     |
-| `GOOGLE_SERVICE_ACCOUNT_JSON`                                                 | Yes on Vercel       | Service-account key JSON (raw or base64) for Vertex where there is no ADC; a malformed value throws                           |
-| `GOOGLE_ADC_EXPECTED_PRINCIPAL`                                               | Recommended locally | Optional identity assertion used by the read-only ADC preflight                                                               |
-| `RAG_RETRIEVAL_MODE`                                                          | Yes                 | `versioned` in production; the code default `legacy` serves keyword-only results                                              |
-| `RAG_ACTIVE_INDEX_BUILD_ID`                                                   | Yes with versioned  | The immutable index build Ask serves                                                                                          |
-| `RAG_CORPUS_VERSION`                                                          | Yes with versioned  | Must equal the active build's `corpus_version`, or versioned retrieval fails readiness                                        |
-| `RAG_DAILY_BUDGET_USD`                                                        | Optional            | Daily AI spend cap per environment (default 2, clamped to 50)                                                                 |
-| `ASK_SESSION_TTL_DAYS`                                                        | Optional            | Days conversation turns stay recallable (default 7, clamped 1–30)                                                             |
-| `CRON_SECRET`                                                                 | Yes in production   | Bearer token the Vercel cron presents to `/api/internal/retention`; without it the nightly sweep is refused                   |
-| `ADMIN_REVALIDATE_TOKEN`                                                      | Optional            | Auth token for `/api/admin/revalidate`                                                                                        |
-| `IMAGE_BASE_URL`                                                              | Optional            | R2 public CDN base URL (falls back to a local API proxy in dev)                                                               |
-| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | Scripts only        | Credentials for `images:upload`, `editions:backup`, `rag:index:build --embed-images`, and R2 GC; the web app never reads them |
-| `DOCUMENT_AI_PROCESSOR_ID`                                                    | Yes (OCR)           | Document AI OCR processor                                                                                                     |
-| `DOCUMENT_AI_LOCATION`                                                        | Yes (OCR)           | Typically `us`                                                                                                                |
-| `OCR_DETECTOR_LICENSES_ACCEPTED`                                              | Yes (OCR)           | `true` acknowledges the American Stories and DocLayout-YOLO license terms; the wrapper refuses to start without it            |
-| `VOYAGE_API_KEY`                                                              | Optional            | Swaps in the Voyage `rerank-2.5` reranker; falls back to Gemini on any failure                                                |
-| `GC_APPROVAL_TOKEN`                                                           | Optional            | Must match `--approval-token` for `images:gc -- --apply`                                                                      |
-| `FEEDBACK_RETENTION_DAYS`                                                     | Optional            | Overrides the 90-day `ask_feedback` retention window                                                                          |
-| `EVAL_DATABASE_URL`                                                           | Optional            | Separate database for the isolated evaluation harness                                                                         |
-| `OCR_WORKERS`                                                                 | Optional            | Parallel page workers for the OCR pipeline (default 1)                                                                        |
-| `GEMINI_CALL_SPACING_S`                                                       | Optional            | Minimum gap between OCR Gemini calls (default 0.5)                                                                            |
+| Variable                                                                      | Required          | Purpose                                                                                                                       |
+| ----------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                                | Yes               | Neon Postgres connection string                                                                                               |
+| `GOOGLE_CLOUD_PROJECT`                                                        | Yes               | Vertex AI / Document AI project. Required by every Gemini client; without it they refuse to start rather than use an API key  |
+| `GOOGLE_CLOUD_LOCATION`                                                       | Optional          | Vertex location for the OCR Gemini path; defaults to `global`                                                                 |
+| `ANTHROPIC_API_KEY`                                                           | Yes               | Claude for Ask (reformulation, ranking, answers, agent) and the OCR stages                                                    |
+| `VOYAGE_API_KEY`                                                              | Yes               | Voyage query and index embeddings; also the optional `rerank-3` reranker                                                      |
+| `RAG_ANSWER_PROFILE`                                                          | Optional          | `sonnet-medium` (default) or `haiku-xhigh` for answers and the agent                                                          |
+| `RAG_RERANKER`                                                                | Optional          | `claude` (default, Haiku judge), `voyage` (`rerank-3` alone), or `voyage+claude`                                              |
+| `RAG_RETRIEVAL_MODE`                                                          | Optional          | `versioned`, the only mode and the default; the removed `legacy` and `shadow` refuse to start                                 |
+| `RAG_ACTIVE_INDEX_BUILD_ID`, `RAG_CORPUS_VERSION`                             | Optional          | Emergency override of the serving pointer, set as a pair; the corpus must equal the build's `corpus_version`                  |
+| `RAG_DAILY_BUDGET_USD`                                                        | Optional          | Daily AI spend cap per environment (default 2, clamped to 50)                                                                 |
+| `ASK_SESSION_TTL_DAYS`                                                        | Optional          | Days conversation turns stay recallable (default 7, clamped 1–30)                                                             |
+| `CRON_SECRET`                                                                 | Yes in production | Bearer token the Vercel cron presents to `/api/internal/retention`; without it the nightly sweep is refused                   |
+| `ADMIN_REVALIDATE_TOKEN`                                                      | Optional          | Auth token for `/api/admin/revalidate`                                                                                        |
+| `IMAGE_BASE_URL`                                                              | Optional          | R2 public CDN base URL (falls back to a local API proxy in dev)                                                               |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` | Scripts only      | Credentials for `images:upload`, `editions:backup`, `rag:index:build --embed-images`, and R2 GC; the web app never reads them |
+| `DOCUMENT_AI_PROCESSOR_ID`                                                    | Yes (OCR)         | Document AI OCR processor                                                                                                     |
+| `DOCUMENT_AI_LOCATION`                                                        | Yes (OCR)         | Typically `us`                                                                                                                |
+| `OCR_DETECTOR_LICENSES_ACCEPTED`                                              | Yes (OCR)         | `true` acknowledges the American Stories and DocLayout-YOLO license terms; the wrapper refuses to start without it            |
+| `GC_APPROVAL_TOKEN`                                                           | Optional          | Must match `--approval-token` for `images:gc -- --apply`                                                                      |
+| `FEEDBACK_RETENTION_DAYS`                                                     | Optional          | Overrides the 90-day `ask_feedback` retention window                                                                          |
+| `EVAL_DATABASE_URL`                                                           | Optional          | Separate database for the isolated evaluation harness                                                                         |
+| `OCR_WORKERS`                                                                 | Optional          | Parallel page workers for the OCR pipeline (default 1)                                                                        |
+| `GEMINI_CALL_SPACING_S`                                                       | Optional          | Minimum gap between OCR Gemini calls (default 0.5)                                                                            |
 
 The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PLAIN`, `OCR_MIN_TEXT_LENGTH`, `DOCAI_CONFIDENCE_THRESHOLD`, `AMERICAN_STORIES_MODEL_PATH`) — see [`ocr/README.md`](./ocr/README.md).
 
@@ -590,12 +590,11 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 | `npm run db:reset`                                            | Truncate re-seedable tables, restore locked editions, re-seed; refuses while a validated or active index build exists unless `--include-rag-builds` |
 | `npm run db:retention-sweep -- --yes`                         | Manual retention sweep (production runs it nightly via cron)                                                                                        |
 | **RAG index & health**                                        |                                                                                                                                                     |
-| `npm run rag:index:build -- <step> --yes`                     | Create, fill, validate, and activate an immutable index build                                                                                       |
+| `npm run rag:index:build -- <step> --yes`                     | Create, fill, and validate an immutable index build; `--switch` serves it                                                                           |
 | `npm run rag:health`                                          | Read-only check that the configured build is servable                                                                                               |
 | `npm run rag:smoke`                                           | Post every landing prompt at a running `/api/ask` (spends budget)                                                                                   |
 | `npm run db:export-build-vectors` / `db:import-build-vectors` | Move an index build between databases without re-embedding                                                                                          |
 | `npm run db:gc-index-builds -- --list`                        | List builds; `--prune <id> --yes` deletes a superseded one                                                                                          |
-| `npm run google:verify-adc`                                   | Read-only ADC, project, API, and OCR-processor check                                                                                                |
 | **Assets & backups**                                          |                                                                                                                                                     |
 | `npm run images:upload -- --date YYYY-MM-DD`                  | Optimize, content-address, and upload one edition's images to R2                                                                                    |
 | `npm run images:gc`                                           | Registry-driven R2 garbage collection (dry run unless `--apply`)                                                                                    |
@@ -642,7 +641,7 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 │   └── types/                    # Shared TypeScript types
 │
 ├── src/lib/
-│   ├── agent-loop.ts             # Gemini function-calling agent (3 tool rounds + synthesis)
+│   ├── agent-loop.ts             # Claude tool-use agent (3 tool rounds + synthesis)
 │   ├── agent-tools.ts            # search_archive, read_article, list_editions
 │   ├── answer-generator.ts       # Cited answer generation (JSON + streaming)
 │   ├── answer-grounding.ts       # Binds answers to cited sources and images
@@ -652,18 +651,19 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 │   ├── ask-limits.ts             # Question limits shared by composer and route
 │   ├── ask-stream-events.ts      # /api/ask SSE protocol types
 │   ├── citation-snapshot.ts      # Bounded source snapshots stored per turn
+│   ├── claude-client.ts          # Lazy Anthropic client
 │   ├── conversation-store.ts     # Neon-backed session turns
 │   ├── cost-tracker.ts           # Token→USD accounting + daily budget kill switch
 │   ├── db-timeout.ts             # Driver-free DB timeout race
 │   ├── db.ts                     # FTS, vector search, RRF fusion, edition queries
 │   ├── editions-server.ts        # Cached edition list + prod DB-outage guard
-│   ├── embeddings.ts             # gemini-embedding-2 text/image vectors + LRU
-│   ├── gemini-client.ts          # Lazy Vertex client (requires GOOGLE_CLOUD_PROJECT)
-│   ├── gemini-quota.ts           # Quota-exhaustion detection and messaging
+│   ├── embeddings.ts             # Voyage text/photo vectors + LRU
+│   ├── model-errors.ts           # Quota-exhaustion and abort detection, messaging
 │   ├── query-reformulator.ts     # Era-aware expansion + intent classification
 │   ├── rag-coverage.ts           # Coverage notes for absence/count/exhaustive questions
-│   ├── rag-index-config.ts       # Retrieval mode + active index build
-│   ├── rag-model-config.ts       # Per-stage model + thinking-level routing
+│   ├── rag-index-config.ts       # Serving build: pointer or env override
+│   ├── rag-model-config.ts       # Per-stage model + effort routing
+│   ├── rag-serving-pointer.ts    # Cached read of the serving pointer
 │   ├── rate-limit.ts             # Neon + in-memory sliding window
 │   ├── reranker.ts               # LLM reranker + graceful fallback
 │   ├── retention.ts              # Retention sweep for runtime tables
@@ -687,7 +687,6 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 │   ├── iiif/                     # ContentDM IIIF discovery, download, inventory
 │   ├── weather/                  # Weather archive build/verify
 │   ├── dev/                      # Music archive builders, SVG generators
-│   ├── google/                   # ADC verification
 │   └── lib/                      # Local env loader
 │
 ├── docs/
@@ -762,8 +761,8 @@ The OCR pipeline reads several more of its own (`OCR_ENVIRONMENT`, `OCR_FORCE_PL
 <summary><strong>AI / Machine learning engineering</strong></summary>
 
 - Retrieval-augmented generation end-to-end: query reformulation, hybrid search with RRF, LLM reranking with CRAG, cited generation
-- Constrained Gemini function-calling agent for complex multi-hop queries (bounded rounds, deadline-aware, AbortSignal-aware)
-- Separate text-chunk and per-image multimodal embeddings in one 768-dimensional retrieval space, served from immutable, versioned index builds
+- Constrained Claude tool-use agent for complex multi-hop queries (bounded rounds, deadline-aware, AbortSignal-aware)
+- Separate text-chunk (`voyage-context-4`) and per-image multimodal (`voyage-multimodal-3.5`) embeddings, served from immutable, versioned index builds
 - Citation-verified confidence based on reranker evidence, with golden source/fact regression checks
 - Prompt engineering for extraction, structuring, classification, reranking, generation, and tool-calling — each prompt tuned for its task
 - Hardening against real production failure modes: rate limiting, prompt injection, token truncation, bounded corrective retrieval, and cancellable database work
@@ -833,4 +832,4 @@ This is an unofficial independent student project. _The Transcript_ is Ohio Wesl
 
 Newspaper scans sourced from the OCLC ContentDM public archive. Weather data from NOAA. Music chart data from the public Billboard Hot 100 history.
 
-Built with [Next.js](https://nextjs.org), [Google Gemini](https://ai.google.dev), [Neon Postgres](https://neon.tech), [pgvector](https://github.com/pgvector/pgvector), [Framer Motion](https://www.framer.com/motion/), and many other open-source libraries. Thanks to the teams behind them.
+Built with [Next.js](https://nextjs.org), [Anthropic Claude](https://www.anthropic.com/claude), [Voyage AI](https://www.voyageai.com), [Neon Postgres](https://neon.tech), [pgvector](https://github.com/pgvector/pgvector), [Framer Motion](https://www.framer.com/motion/), and many other open-source libraries. Thanks to the teams behind them.
