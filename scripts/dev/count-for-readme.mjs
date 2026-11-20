@@ -3,16 +3,17 @@
 
 /**
  * One-shot audit script for README/architecture-doc numbers.
- * Prints authoritative counts from Neon + filesystem so the docs can
+ * Prints authoritative counts from the database + filesystem so the docs can
  * cite real values instead of stale snapshots.
  *
- * Usage: node scripts/dev/count-for-readme.mjs
+ * Usage: node --import tsx scripts/dev/count-for-readme.mjs
  */
 
-import { neon } from "@neondatabase/serverless";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { createSql } from "../../src/lib/sql.ts";
+import { ensureLocalShim } from "../db/lib/local-shim.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envPath = path.resolve(__dirname, "../../.env.local");
@@ -23,7 +24,8 @@ if (existsSync(envPath)) {
   }
 }
 
-const sql = neon(process.env.DATABASE_URL);
+await ensureLocalShim(process.env.DATABASE_URL);
+const sql = createSql(process.env.DATABASE_URL);
 
 async function main() {
   const out = {};
@@ -35,7 +37,6 @@ async function main() {
 
   // Articles
   const artRows = await sql`SELECT COUNT(*)::int AS n,
-                                     COUNT(embedding)::int AS n_embedded,
                                      COUNT(DISTINCT edition_date)::int AS distinct_editions
                               FROM articles`;
   out.articles = artRows[0];

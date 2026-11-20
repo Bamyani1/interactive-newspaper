@@ -1,0 +1,3009 @@
+{
+  "schemaVersion": 1,
+  "datasetId": "rag-retrieval-v1",
+  "split": "development",
+  "contentHash": "d16afa7f929b99e2c834fa3db4e034c0e60daf49ed920b4698fefc4c3275b638",
+  "provenance": "Written by claude-haiku-5-5 (effort xhigh) from a seeded sample of served articles, 50 per decade (scripts/rag/build-retrieval-set.mjs). Synthetic: for retrieval decisions only.",
+  "questions": [
+    {
+      "id": "ret1-1950-10-18-24",
+      "question": "Did the Transcript in fall 1950 weigh installing lights for evening football games as a fix for the Bishops' losing streak and weak student spirit?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-10-18-24"
+      ],
+      "source": "1950-10-18 — How About Night Football?"
+    },
+    {
+      "id": "ret1-1950-01-18-60",
+      "question": "Did Ohio Wesleyan's women swimmers win against Bowling Green in early 1950, and who took the lone Wesleyan first place?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-01-18-60"
+      ],
+      "source": "1950-01-18 — Bishop Coeds Drop Meet To BeeGees"
+    },
+    {
+      "id": "ret1-1957-01-09-33",
+      "question": "What did Nation's Business say in late 1956 about Ohio Wesleyan president Arthur Flemming's government work at the Office of Defense Mobilization?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1957-01-09-33"
+      ],
+      "source": "1957-01-09 — Flemming Needed In ODM, Business Magazine Asserts"
+    },
+    {
+      "id": "ret1-1950-09-27-51",
+      "question": "How did Ohio Wesleyan's athletic coaching staff spend their summer break back in 1950?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-09-27-51"
+      ],
+      "source": "1950-09-27 — Bishop Coaches Relate Activities During Summer"
+    },
+    {
+      "id": "ret1-1950-02-10-5",
+      "question": "Who were the headline speakers at the early 1950s Republican and Democratic recruitment days at Ohio Wesleyan, and when were they scheduled?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-02-10-5"
+      ],
+      "source": "1950-02-10 — GOP Head, Demo Vice-Chairman Will Speak Here"
+    },
+    {
+      "id": "ret1-1952-01-09-23",
+      "question": "Why did a 1952 Transcript opinion piece admire Okgill Kim for returning to teach at a wartime university in Korea?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1952-01-09-23"
+      ],
+      "source": "1952-01-09 — Her Dedication - Our Inspiration"
+    },
+    {
+      "id": "ret1-1950-10-18-58",
+      "question": "Which sophomore was chosen judicial secretary of OWU's Associated Women Students by upperclass women in October 1950?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-10-18-58"
+      ],
+      "source": "1950-10-18 — Martha Cecil Elected AWS Judicial Secretary"
+    },
+    {
+      "id": "ret1-1951-01-10-54",
+      "question": "What dreamlike theme did the Thetas, Kappas and Pi Phis choose for their joint Trionym dance at St. Mary's gym in early 1951?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1951-01-10-54"
+      ],
+      "source": "1951-01-10 — Trionym Scheduled For Saturday Night, 'Fantasia' Is Theme"
+    },
+    {
+      "id": "ret1-1954-01-13-11",
+      "question": "Which Ohio Wesleyan player led the basketball team with 19 points in its January 1954 win over Heidelberg that ended a losing streak?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1954-01-13-11"
+      ],
+      "source": "1954-01-13 — Bishops Snap Five Game Losing Skein"
+    },
+    {
+      "id": "ret1-1950-04-26-29",
+      "question": "What student-faculty radio program was returning to Marion's WMRN in spring 1950, and who was its emcee?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-04-26-29"
+      ],
+      "source": "1950-04-26 — Half-Hour Shows Resume On WMRN"
+    },
+    {
+      "id": "ret1-1950-05-24-54",
+      "question": "What kinds of spring formals, picnics, and other end-of-year parties did sororities and fraternities hold at Ohio Wesleyan in May 1950, just before finals?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-05-24-54"
+      ],
+      "source": "1950-05-24 — Sorority Row Has Last Whirl As Formals Squelch Plans For Study"
+    },
+    {
+      "id": "ret1-1954-01-13-60",
+      "question": "How did the new campus phone system in early 1954 affect students trying to reach women's dorms at Ohio Wesleyan?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1954-01-13-60"
+      ],
+      "source": "1954-01-13 — 'Murderous Mechanism' Tortures OWU Students"
+    },
+    {
+      "id": "ret1-1950-02-10-3",
+      "question": "What was the Alumni fund total for 1949 at Ohio Wesleyan, and how many contributors gave, according to early 1950s reporting?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-02-10-3"
+      ],
+      "source": "1950-02-10 — Alumni Fund Gets Record $53,000"
+    },
+    {
+      "id": "ret1-1952-01-09-47",
+      "question": "Which sororities hosted the Trionym dance in the Memorial Ballroom in January 1952, and who supplied the music?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1952-01-09-47"
+      ],
+      "source": "1952-01-09 — Trionym Dance Scheduled By Pi Phis, Kappas And Thetas For Saturday Night"
+    },
+    {
+      "id": "ret1-1950-09-27-52",
+      "question": "How many runners did Ohio Wesleyan's cross-country team field in fall 1950, and who was the promising sophomore from Ashtabula?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-09-27-52"
+      ],
+      "source": "1950-09-27 — Tracksters Open Distance Season"
+    },
+    {
+      "id": "ret1-1950-09-27-33",
+      "question": "Who led Ohio Wesleyan's cheerleading squad in the fall of 1950, and how did the new tryout rules treat prior experience?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-09-27-33"
+      ],
+      "source": "1950-09-27 — Dave Baker Chosen Head Cheerleader"
+    },
+    {
+      "id": "ret1-1950-12-13-1",
+      "question": "What did speaker James Hine tell Ohio Wesleyan students in 1950 about preparing for marriage at the YW-YM forum?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-12-13-1"
+      ],
+      "source": "1950-12-13 — Marriage Lecture Draws Big Crowd, Mostly Women"
+    },
+    {
+      "id": "ret1-1950-04-19-42",
+      "question": "Who replaced Dave Puddington as head of Ohio Wesleyan's \"W\" Clan in the spring of 1950, and who else took office?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-04-19-42"
+      ],
+      "source": "1950-04-19 — Barber Elected \"W\" Clan Prexy"
+    },
+    {
+      "id": "ret1-1950-10-18-47",
+      "question": "How did Ohio Wesleyan's football squad fare against Case in the muddy 1950 homecoming game at Shaw Field?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-10-18-47"
+      ],
+      "source": "1950-10-18 — Frasermen Fall To Rough Riders"
+    },
+    {
+      "id": "ret1-1950-09-27-12",
+      "question": "What did the women's student association do in 1950 to give freshman house councils a role in enforcing Stuyvesant Hall conduct standards?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-09-27-12"
+      ],
+      "source": "1950-09-27 — New AWS Officers To Be Elected"
+    },
+    {
+      "id": "ret1-1950-10-18-8",
+      "question": "What was the Campus Chest fundraising goal at Ohio Wesleyan in the fall of 1950, and how were student solicitors organized in the dorms and fraternities?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-10-18-8"
+      ],
+      "source": "1950-10-18 — University Campus Chest Drive Aims For $10,000 Goal"
+    },
+    {
+      "id": "ret1-1956-01-11-7",
+      "question": "In 1956, how did a Transcript opinion writer argue that the women's AWS demerit rules at Ohio Wesleyan failed to build real honor or maturity?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1956-01-11-7"
+      ],
+      "source": "1956-01-11 — Coed Maturity?"
+    },
+    {
+      "id": "ret1-1950-12-06-2",
+      "question": "How did Ohio Wesleyan students in late 1950 view the Korean War and the chance of being drafted?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-12-06-2"
+      ],
+      "source": "1950-12-06 — We Might As Well Face If"
+    },
+    {
+      "id": "ret1-1950-01-18-25",
+      "question": "How did Ohio Wesleyan students help the Delaware County Red Cross blood drive in the early 1950s, and how was their effort recognized?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-01-18-25"
+      ],
+      "source": "1950-01-18 — OWU Students Praised For Blood Donations"
+    },
+    {
+      "id": "ret1-1950-03-22-57",
+      "question": "Which record-setting Willis High center committed to play college basketball at Ohio Wesleyan around 1950?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-03-22-57"
+      ],
+      "source": "1950-03-22 — McKinnie Plans To Be Cager At Ohio Wesleyan"
+    },
+    {
+      "id": "ret1-1950-02-22-1",
+      "question": "Who was the principal speaker at the 1950 Republican Recruitment Day at Ohio Wesleyan, and what was his political background?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-02-22-1"
+      ],
+      "source": "1950-02-22 — Guy G. Gabrielson Principal Speaker For GOP Recruitment Day Proceedings"
+    },
+    {
+      "id": "ret1-1950-01-18-14",
+      "question": "What options did Ohio Wesleyan students vote on in January 1950 regarding campus groups that barred members by race, creed, or national origin?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-01-18-14"
+      ],
+      "source": "1950-01-18 — Advisory Referendum"
+    },
+    {
+      "id": "ret1-1950-10-25-73",
+      "question": "Which freshman women ran for president, vice-president, secretary, and treasurer of Stuyvesant Hall in the fall of 1950?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-10-25-73"
+      ],
+      "source": "1950-10-25 — Stuyvesant Coeds Elect Officers Today"
+    },
+    {
+      "id": "ret1-1950-10-18-3",
+      "question": "Why did a 1950 Ohio Wesleyan writer oppose Wesleyan Players bringing a professional actress to campus instead of casting students in the leads?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-10-18-3"
+      ],
+      "source": "1950-10-18 — Professional Helps Defeat Purpose"
+    },
+    {
+      "id": "ret1-1950-03-15-44",
+      "question": "Back in the early 1950s, how did Ohio Wesleyan's sailing club win official recognition from the athletic department, and who pushed for it?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-03-15-44"
+      ],
+      "source": "1950-03-15 — OWU Sailing Club Recognized As Part Of Athletic Dept."
+    },
+    {
+      "id": "ret1-1954-01-13-38",
+      "question": "What 1954 campaign did Ohio Wesleyan's geology and geography departments start to counter cheap Soviet-subsidized textbooks in Japanese universities?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1954-01-13-38"
+      ],
+      "source": "1954-01-13 — Shanklin Fights Soviet Financed Tokyo U. Texts"
+    },
+    {
+      "id": "ret1-1951-01-10-56",
+      "question": "Which Ohio Wesleyan fraternity held a winter formal in early 1951, and what did the Beta Sigs host after a basketball game?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1951-01-10-56"
+      ],
+      "source": "1951-01-10 — Army Takes Phi Tau Social Chairman; Beta Sigs Hold Post-Game Open House"
+    },
+    {
+      "id": "ret1-1950-10-04-35",
+      "question": "Back in fall 1950, who edited the renamed OWL, now called On Wesleyan Life, and why did the Transcript urge students to subscribe?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-10-04-35"
+      ],
+      "source": "1950-10-04 — Oh What Literature"
+    },
+    {
+      "id": "ret1-1950-11-08-3",
+      "question": "Who won the rainy freshman-sophomore tug of war at the Olentangy in November 1950, and when would the freshmen's dinks come off?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-11-08-3"
+      ],
+      "source": "1950-11-08 — Heavens And Freshmen Make Sophomores Wet"
+    },
+    {
+      "id": "ret1-1958-01-15-2",
+      "question": "Why did Count Basie cancel the Ohio Wesleyan Registration Dance in early 1958, and what replacement dates did the Social Committee consider?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1958-01-15-2"
+      ],
+      "source": "1958-01-15 — No Band, No Date As Basie Backs-Out"
+    },
+    {
+      "id": "ret1-1950-02-22-32",
+      "question": "How did Ohio Wesleyan's basketball team beat Otterbein in a close 1950 game at Edwards gym, and who made the decisive last-second shot?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-02-22-32"
+      ],
+      "source": "1950-02-22 — Bishops Nip Otters 63-61 In Closing Seconds Last Night"
+    },
+    {
+      "id": "ret1-1950-02-22-37",
+      "question": "How did Ohio Wesleyan's basketball Bishops fare against Oberlin in February 1950, and who led the Wesleyan scorers?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-02-22-37"
+      ],
+      "source": "1950-02-22 — Red And Black Defense Weak As Yeoman Capture 64-54 Victory"
+    },
+    {
+      "id": "ret1-1950-04-19-16",
+      "question": "What outdoor spring activities did the 1950 Transcript suggest for students, like picnics, field trips, and Spring Fever Day?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-04-19-16"
+      ],
+      "source": "1950-04-19 — In The Spring, A Young Man..."
+    },
+    {
+      "id": "ret1-1950-10-04-39",
+      "question": "During the Korean War era, how did a 1950 Transcript writer respond to Prof. Eells' claim that Truman's policy toward communism was appeasement?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-10-04-39"
+      ],
+      "source": "1950-10-04 — Reds Not Appeased By Truman Foreign Policy"
+    },
+    {
+      "id": "ret1-1950-03-15-7",
+      "question": "Who was the main speaker at the Pi Delta Epsilon publications banquet in April 1950, and which newspaper did he work for?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-03-15-7"
+      ],
+      "source": "1950-03-15 — Toledo Blade Editor To Talk Here April 13"
+    },
+    {
+      "id": "ret1-1950-12-13-5",
+      "question": "Which church council vice-presidency did OWU president Arthur Flemming take on in late 1950?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-12-13-5"
+      ],
+      "source": "1950-12-13 — Flemming Adds New Church Duty As Administrator"
+    },
+    {
+      "id": "ret1-1950-03-22-55",
+      "question": "Did Ohio Wesleyan show the Les Miserables movie in Gray Chapel in spring 1950, and what were the showtimes?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-03-22-55"
+      ],
+      "source": "1950-03-22 — Les Miserables Will Be Screened Here April 14"
+    },
+    {
+      "id": "ret1-1950-11-15-40",
+      "question": "Why did a 1950 Ohio Wesleyan sports column oppose dropping intramural football, and what hazard near the fields did it blame for player injuries?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-11-15-40"
+      ],
+      "source": "1950-11-15 — Sport's Goods"
+    },
+    {
+      "id": "ret1-1950-05-10-23",
+      "question": "In the spring of 1950, why did a reader object to the Transcript's review of the Wesleyan Players' production of Julius Caesar?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-05-10-23"
+      ],
+      "source": "1950-05-10 — Reader Flays Caesar's Review In Transcript"
+    },
+    {
+      "id": "ret1-1950-12-06-13",
+      "question": "In the early 1950s, how did Ohio Wesleyan's new mid-semester grade estimates differ from the old D-slip system, and how did other colleges' registrars react?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-12-06-13"
+      ],
+      "source": "1950-12-06 — Registrars Praise Grading System At Wesleyan"
+    },
+    {
+      "id": "ret1-1950-05-10-17",
+      "question": "What did the 1950 Ohio Wesleyan women's association decide about enforcing its rules on drinking, and would it create a police force?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-05-10-17"
+      ],
+      "source": "1950-05-10 — AWS Policy Reverts To Individual"
+    },
+    {
+      "id": "ret1-1950-10-25-46",
+      "question": "Which famous alumnus gave the convocation sermon at Ohio Wesleyan's fall homecoming back in 1950?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-10-25-46"
+      ],
+      "source": "1950-10-25 — Campus Goes All Out To Greet Returning Alums"
+    },
+    {
+      "id": "ret1-1950-04-19-78",
+      "question": "Back in spring 1950, why did only one visiting student show up to Ohio Wesleyan's political citizenship conference at the Tub?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-04-19-78"
+      ],
+      "source": "1950-04-19 — Intercollegiate Conference Flops; Single Oberlin Delegate Attends"
+    },
+    {
+      "id": "ret1-1950-04-26-6",
+      "question": "During the McCarthy era, what did Flemming say about the Senate's Owen Lattimore hearings and John T. Flynn's book The Road Ahead?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1950-04-26-6"
+      ],
+      "source": "1950-04-26 — Calls Lattimore Hearings 'Unfair'"
+    },
+    {
+      "id": "ret1-1959-01-14-30",
+      "question": "What did the Interfraternity Council decide in January 1959 about delaying fraternity rushing and pledging until second semester?",
+      "mode": "text",
+      "decade": "1950s",
+      "expectedSourceIdsAny": [
+        "1959-01-14-30"
+      ],
+      "source": "1959-01-14 — IFC Passes Deferment"
+    },
+    {
+      "id": "ret1-1965-01-13-48",
+      "question": "Back in the mid-1960s, what was it like for an Ohio Wesleyan senior who spent six weeks in a NASA isolation study at Dayton's Wright-Patterson base?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1965-01-13-48"
+      ],
+      "source": "1965-01-13 — OWU Senior Plays 'Guinea Pig' In Experimental Space Plan"
+    },
+    {
+      "id": "ret1-1960-05-04-41",
+      "question": "Which student was picked as the next Omicron Delta Kappa president at Ohio Wesleyan in the spring of 1960?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-05-04-41"
+      ],
+      "source": "1960-05-04 — ODK Taps Seven; Dunbar President"
+    },
+    {
+      "id": "ret1-1960-05-04-52",
+      "question": "Which professors were chosen for the Faculty Personnel Committee in the spring of 1960?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-05-04-52"
+      ],
+      "source": "1960-05-04 — 21 Faculty Committee Posts Filled"
+    },
+    {
+      "id": "ret1-1966-11-02-44",
+      "question": "In the mid-1960s, why did Ohio Wesleyan withhold property taxes on its Williams Drive fraternity houses, and how did the county auditor respond?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1966-11-02-44"
+      ],
+      "source": "1966-11-02 — County Auditor Claims 'Fraternities Taxable'"
+    },
+    {
+      "id": "ret1-1964-02-19-12",
+      "question": "What did the 1964 Transcript report on fraternity membership criteria and Greek integration progress at Ohio Wesleyan, including Tau Kappa Epsilon's pledges?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1964-02-19-12"
+      ],
+      "source": "1964-02-19 — Discrimination..."
+    },
+    {
+      "id": "ret1-1968-10-09-34",
+      "question": "In the late 1960s, what alternative to the fraternity blackball method was Ohio Wesleyan's Interfraternity Council considering for admitting new members?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1968-10-09-34"
+      ],
+      "source": "1968-10-09 — Frats May Drop Blackball System"
+    },
+    {
+      "id": "ret1-1961-01-11-26",
+      "question": "Back in January 1961, how did The Transcript preview Wooster's upcoming basketball game against the Bishops, and what role did center Lu Wims play?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1961-01-11-26"
+      ],
+      "source": "1961-01-11 — Wooster Guns For Upset Over High-Flying Bishops"
+    },
+    {
+      "id": "ret1-1966-01-12-31",
+      "question": "Back in the mid-1960s, which Ohio Wesleyan soccer captain earned honorable mention on the national coaches' 1965 All-American squad?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1966-01-12-31"
+      ],
+      "source": "1966-01-12 — Stultz All-American"
+    },
+    {
+      "id": "ret1-1969-04-02-12",
+      "question": "Who did the OWU track team face in its first Ohio Conference meet of spring 1969, and what did Coach Frye say about that opponent?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1969-04-02-12"
+      ],
+      "source": "1969-04-02 — Thinclads To Meet Raiders"
+    },
+    {
+      "id": "ret1-1961-04-26-30",
+      "question": "In the early 1960s, why were master of library science robes colored lemon yellow, according to the Transcript's humorous tale of rival libraries and tea?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1961-04-26-30"
+      ],
+      "source": "1961-04-26 — A ROBE BY ANY OTHER NAME"
+    },
+    {
+      "id": "ret1-1967-04-12-14",
+      "question": "How did Panhellenic plan to revive the Alpha Delta Pi sorority chapter at Ohio Wesleyan in the spring of 1967?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1967-04-12-14"
+      ],
+      "source": "1967-04-12 — Leaders Plan ADPI Recolonization"
+    },
+    {
+      "id": "ret1-1960-04-13-19",
+      "question": "What did Ohio Wesleyan's student paper in April 1960 argue about offering scholarships to Black students expelled from Southern colleges over civil rights demonstrations?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-04-13-19"
+      ],
+      "source": "1960-04-13 — Negro Aid"
+    },
+    {
+      "id": "ret1-1960-05-04-70",
+      "question": "Which varsity teams played on Monnett Day in spring 1960 at Ohio Wesleyan, and who were their opponents?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-05-04-70"
+      ],
+      "source": "1960-05-04 — Five Varsity Contests Slated For Monnett Day\nOther Sports Also Readied"
+    },
+    {
+      "id": "ret1-1960-01-13-26",
+      "question": "How did Delaware's city admissions tax come to apply to OWU's new social fee in the early 1960s, and who ended up paying it?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-01-13-26"
+      ],
+      "source": "1960-01-13 — Social Fee Tax Added"
+    },
+    {
+      "id": "ret1-1964-02-19-14",
+      "question": "What did Ohio Wesleyan's trustees declare in February 1964 about race, creed, or nationality restrictions in fraternities and sororities?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1964-02-19-14"
+      ],
+      "source": "1964-02-19 — Trustees' Bias Stand"
+    },
+    {
+      "id": "ret1-1969-04-02-29",
+      "question": "How did Ohio Wesleyan's lacrosse team start its 1969 season, and who was its leading scorer in those early games?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1969-04-02-29"
+      ],
+      "source": "1969-04-02 — 'Tough' Schedule Hurts Stickmen"
+    },
+    {
+      "id": "ret1-1968-10-09-10",
+      "question": "How did a 1968 Ohio Wesleyan editorial suggest fraternities and campus security stop the Williams Drive thefts of color TVs?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1968-10-09-10"
+      ],
+      "source": "1968-10-09 — Less Negligence Could Halt Fraternity Thefts"
+    },
+    {
+      "id": "ret1-1968-01-10-24",
+      "question": "How many Ohio Wesleyan people went to the 1967 Cleveland student religion conference over winter break, and which group sponsored it?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1968-01-10-24"
+      ],
+      "source": "1968-01-10 — 15 Attend Process '67 In Cleveland"
+    },
+    {
+      "id": "ret1-1969-04-02-6",
+      "question": "What was the timeline for the spring 1969 Student Government elections at OWU, including the nominating convention and when voting took place?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1969-04-02-6"
+      ],
+      "source": "1969-04-02 — SG Election Plans Set"
+    },
+    {
+      "id": "ret1-1966-01-12-1",
+      "question": "How did a professor in 1966 react to pledge-class students who appeared unconscious or exhausted at a January convocation in chapel?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1966-01-12-1"
+      ],
+      "source": "1966-01-12 — Pledges Appall Prof With Chapel Conduct"
+    },
+    {
+      "id": "ret1-1966-02-09-3",
+      "question": "Why did President Smith want to split OWU's Finance and Investment Committee into separate budget and endowment committees in 1966?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1966-02-09-3"
+      ],
+      "source": "1966-02-09 — Trustees Return To Deliberate 'Routine Affairs'"
+    },
+    {
+      "id": "ret1-1968-10-09-13",
+      "question": "What did a 1968 OWU columnist argue about the Student Action Committee's campaign to eliminate the Greek system?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1968-10-09-13"
+      ],
+      "source": "1968-10-09 — Sack SAC"
+    },
+    {
+      "id": "ret1-1964-10-28-48",
+      "question": "Which Ohio Wesleyan sociology professor received a Great Lakes College Association grant to do fieldwork in Ethiopia during the 1964 school year?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1964-10-28-48"
+      ],
+      "source": "1964-10-28 — Professors After Class"
+    },
+    {
+      "id": "ret1-1960-04-13-12",
+      "question": "How did critics review the 1960 joint a cappella choir concert in Gray Chapel featuring Ohio State, Baldwin-Wallace and Ohio Wesleyan?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-04-13-12"
+      ],
+      "source": "1960-04-13 — Tri-Concert Impressive"
+    },
+    {
+      "id": "ret1-1966-11-02-47",
+      "question": "In 1966, what did The Transcript argue about AWS hours for freshmen and whether age should decide senior privileges?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1966-11-02-47"
+      ],
+      "source": "1966-11-02 — AWS Hours System Shelters Frosh, Does Not Provide 'Positive Incentive'"
+    },
+    {
+      "id": "ret1-1964-01-15-48",
+      "question": "Who filled in teaching journalism courses in early 1964 while the department chairman recovered from a heart inflammation?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1964-01-15-48"
+      ],
+      "source": "1964-01-15 — OSU Prof Pinch Hits"
+    },
+    {
+      "id": "ret1-1963-05-01-11",
+      "question": "Why did a 1963 Transcript opinion piece oppose the four-year draft extension Congress passed in March, and how did it link conscription to disarmament?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1963-05-01-11"
+      ],
+      "source": "1963-05-01 — Chenoweth Asks For Draft Bill Response..."
+    },
+    {
+      "id": "ret1-1966-01-12-2",
+      "question": "How much did Ohio Wesleyan students give to the Thrust Toward Fulfillment capital campaign in the mid-1960s, and what share of students contributed?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1966-01-12-2"
+      ],
+      "source": "1966-01-12 — Student Donation Gets Thanks From Smith"
+    },
+    {
+      "id": "ret1-1961-04-26-7",
+      "question": "Which big band was booked to play the Greek Week Ball at Ohio Wesleyan in the spring of 1961?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1961-04-26-7"
+      ],
+      "source": "1961-04-26 — Greek Week Rolls Along"
+    },
+    {
+      "id": "ret1-1960-05-04-18",
+      "question": "Why did Ohio Wesleyan paint campus boulders, rocks, and manhole covers yellow back in the early 1960s?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-05-04-18"
+      ],
+      "source": "1960-05-04 — Yellow Paint Saves Mowers"
+    },
+    {
+      "id": "ret1-1960-01-13-22",
+      "question": "How did Student Government's Elections Committee plan to change candidate publicity and campaign literature for the spring 1960 elections at Ohio Wesleyan?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-01-13-22"
+      ],
+      "source": "1960-01-13 — SG To Print Candidates' Qualifications"
+    },
+    {
+      "id": "ret1-1961-04-26-32",
+      "question": "How did Ohio Wesleyan's sailing team do at the Ohio Intercollegiate Sailing Championships hosted by Wooster in the spring of 1961, and who led them?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1961-04-26-32"
+      ],
+      "source": "1961-04-26 — OWU Sails To Victory At Wooster"
+    },
+    {
+      "id": "ret1-1960-05-04-25",
+      "question": "How many Ohio Wesleyan seniors were on track to graduate in June 1960, and which majors had the most graduating students?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-05-04-25"
+      ],
+      "source": "1960-05-04 — Grad Requirements Met By 408 Seniors"
+    },
+    {
+      "id": "ret1-1960-05-04-31",
+      "question": "How did Ohio Wesleyan students and fraternities volunteer with girls from the Girls Industrial School through the Red Cross program in the early 1960s?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-05-04-31"
+      ],
+      "source": "1960-05-04 — OWU-GIS Program Continues To Grow"
+    },
+    {
+      "id": "ret1-1968-10-09-17",
+      "question": "How did editor Gayle Helt plan to change the look of the 1969 Bijou yearbook back in the fall of 1968?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1968-10-09-17"
+      ],
+      "source": "1968-10-09 — Bijou Goes 'Contemporary'"
+    },
+    {
+      "id": "ret1-1963-01-16-9",
+      "question": "How much did Ohio Wesleyan pay in the early 1960s for the Delaware Community Field, and what athletic facilities came with it?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1963-01-16-9"
+      ],
+      "source": "1963-01-16 — 12 Acre Purchase Includes Stadium, Courts"
+    },
+    {
+      "id": "ret1-1969-04-02-8",
+      "question": "What did a 1969 Transcript opinion piece argue about OWU's unstructured alternative courses, and why did it criticize organized syllabi?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1969-04-02-8"
+      ],
+      "source": "1969-04-02 — Free University Offers Challenge, Opportunity"
+    },
+    {
+      "id": "ret1-1964-01-15-9",
+      "question": "Back in early 1964, what invitation did Ohio Wesleyan receive from the CBS quiz show College Bowl, and what did the university say it hoped to gain?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1964-01-15-9"
+      ],
+      "source": "1964-01-15 — College Bowl Bids OWU For Match"
+    },
+    {
+      "id": "ret1-1964-01-15-13",
+      "question": "Which Ohio Wesleyan professors won study or research leaves for the second and third terms of 1963-64, and what projects were they planning?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1964-01-15-13"
+      ],
+      "source": "1964-01-15 — Four Professors Come For Term; Four Take Research, Study Leaves"
+    },
+    {
+      "id": "ret1-1960-04-13-0",
+      "question": "What caused the 1960 Le Bijou yearbook's delivery to slip from May 20 to late May?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-04-13-0"
+      ],
+      "source": "1960-04-13 — Bijou Date Pushed Back"
+    },
+    {
+      "id": "ret1-1960-04-13-44",
+      "question": "How were Friday afternoon classes rescheduled for the Good Friday service at Gray Chapel in 1960, and what music was performed?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1960-04-13-44"
+      ],
+      "source": "1960-04-13 — Classes Move For Services"
+    },
+    {
+      "id": "ret1-1967-04-12-4",
+      "question": "How did the spring 1967 Student Senate reapportionment amendment proposed by Scott Sattler change seats for independent students?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1967-04-12-4"
+      ],
+      "source": "1967-04-12 — Proposed Amendment May Cause Reapportionment Of Student Senate"
+    },
+    {
+      "id": "ret1-1968-10-09-65",
+      "question": "How did Ohio Wesleyan's 1968 housing and dining changes aim to boost social mixing between underclassmen without Greek rush?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1968-10-09-65"
+      ],
+      "source": "1968-10-09 — Housing Urges New Social Life"
+    },
+    {
+      "id": "ret1-1968-01-31-20",
+      "question": "How was OWU's wrestling team doing in early 1968, and who were its top wrestlers like Art Keown?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1968-01-31-20"
+      ],
+      "source": "1968-01-31 — The Stick Speaks"
+    },
+    {
+      "id": "ret1-1963-05-01-42",
+      "question": "Which students were appointed to Ohio Wesleyan's Student Council committees in spring 1963, such as the Elections Committee or Special Days Committee?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1963-05-01-42"
+      ],
+      "source": "1963-05-01 — New Members Named For 11 Exec Committees"
+    },
+    {
+      "id": "ret1-1969-04-02-35",
+      "question": "What campus events and spring sports matches were scheduled at Ohio Wesleyan in early April 1969, such as the Biafra forum and the Kenyon baseball game?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1969-04-02-35"
+      ],
+      "source": "1969-04-02 — Wesleyan Week Calendar of Events"
+    },
+    {
+      "id": "ret1-1967-04-12-19",
+      "question": "How did the Ohio Wesleyan golf team fare in its opening matches of the spring 1967 season against Kenyon, Heidelberg and Otterbein?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1967-04-12-19"
+      ],
+      "source": "1967-04-12 — Golfers Win 2, Lose 1"
+    },
+    {
+      "id": "ret1-1964-10-28-40",
+      "question": "What changes to the chapel program were under discussion at Ohio Wesleyan in fall 1964, such as new discussion formats or fewer chapels?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1964-10-28-40"
+      ],
+      "source": "1964-10-28 — Change In Chapel Due By Next Year — Griffin"
+    },
+    {
+      "id": "ret1-1966-02-09-4",
+      "question": "Why did OWU set up an ad hoc court in the mid-1960s to try apartment policy cases, and what earlier incident prompted it?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1966-02-09-4"
+      ],
+      "source": "1966-02-09 — Ad Hoc Court Begins Judging Apartment Cases"
+    },
+    {
+      "id": "ret1-1961-01-11-45",
+      "question": "How did Ohio Wesleyan's wrestling team open its 1961 season, and which wrestler remained undefeated?",
+      "mode": "text",
+      "decade": "1960s",
+      "expectedSourceIdsAny": [
+        "1961-01-11-45"
+      ],
+      "source": "1961-01-11 — Matmen Get Two Tries For 1st Win"
+    },
+    {
+      "id": "ret1-1974-05-23-30",
+      "question": "In the mid-1970s, what community partnership did OWU's Listening Post crisis phone service consider with Delaware's Help Anonymous?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1974-05-23-30"
+      ],
+      "source": "1974-05-23 — Listening Post May Expand"
+    },
+    {
+      "id": "ret1-1978-01-12-21",
+      "question": "Which professor became acting dean of academic affairs at Ohio Wesleyan in 1978 after Melvin Vulgamore resigned to become provost at Richmond?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1978-01-12-21"
+      ],
+      "source": "1978-01-12 — Louthan Named Acting Dean"
+    },
+    {
+      "id": "ret1-1975-11-06-14",
+      "question": "What did Ohio's drug reform law taking effect in November 1975 change about penalties for marijuana users versus dealers?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1975-11-06-14"
+      ],
+      "source": "1975-11-06 — New Ohio drug law is easier on users, harder on pushers"
+    },
+    {
+      "id": "ret1-1973-01-11-29",
+      "question": "Under 1973 NCAA rules, how would a proposed amendment to the 1.6 grade rule have changed freshman eligibility for Ohio Wesleyan athletes?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1973-01-11-29"
+      ],
+      "source": "1973-01-11 — New NCAA Ordinance Would Benefit OWU"
+    },
+    {
+      "id": "ret1-1976-05-27-1",
+      "question": "In the 1976 Ohio Wesleyan vote for senior class president, which two juniors advanced to a runoff, and what were their vote totals?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1976-05-27-1"
+      ],
+      "source": "1976-05-27 — Sponseller, Kane vie for Sr. Class top post"
+    },
+    {
+      "id": "ret1-1977-11-10-16",
+      "question": "What bequest did alumnus Andrew Penn Martin and his wife Opal give Ohio Wesleyan around 1977, and how were the funds designated?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1977-11-10-16"
+      ],
+      "source": "1977-11-10 — Martin, wife donate $155,000"
+    },
+    {
+      "id": "ret1-1970-02-18-32",
+      "question": "Back in the 1970 season, who set a new pool and varsity record in the 200-yard butterfly when the Bishop swimmers beat Akron?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-02-18-32"
+      ],
+      "source": "1970-02-18 — Mermen Down Akron For Fifth Straight"
+    },
+    {
+      "id": "ret1-1977-11-10-9",
+      "question": "In the late 1970s, how did an Ohio Wesleyan columnist satirize issue-based referendum voting in off-year elections?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1977-11-10-9"
+      ],
+      "source": "1977-11-10 — Where yes is no"
+    },
+    {
+      "id": "ret1-1973-01-11-15",
+      "question": "How did Ohio Wesleyan handle write-in ballots in the 1973 senior class trustee election, and when was voting scheduled?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1973-01-11-15"
+      ],
+      "source": "1973-01-11 — Trustee Election Plans Aim At Smooth Race"
+    },
+    {
+      "id": "ret1-1970-02-18-37",
+      "question": "What 1970 proposal did the faculty Executive Committee circulate to give students a voice in departmental policy and faculty hiring?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-02-18-37"
+      ],
+      "source": "1970-02-18 — More Student Action In Policy Making Asked"
+    },
+    {
+      "id": "ret1-1977-11-10-12",
+      "question": "How did the Romance Languages faculty respond in 1977 to a student columnist who called required Spanish study a waste of time?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1977-11-10-12"
+      ],
+      "source": "1977-11-10 — Profs disagree with column"
+    },
+    {
+      "id": "ret1-1978-09-14-9",
+      "question": "What fines did WCSA's House Council policy set in 1978 for dorm rule violations and damage to residence hall property?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1978-09-14-9"
+      ],
+      "source": "1978-09-14 — WCSA agenda planned"
+    },
+    {
+      "id": "ret1-1978-01-12-26",
+      "question": "How did a 1970s Transcript column view Kermit Washington's punch on Rudy Tomjanovich and the NBA's crackdown on enforcers?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1978-01-12-26"
+      ],
+      "source": "1978-01-12 — Close Encounters of the 4th kind: Actual contact with an NBA enforcer"
+    },
+    {
+      "id": "ret1-1972-10-05-17",
+      "question": "What blues guitarist was booked to open the Social Committee's fall 1972 concert season in Gray Chapel, and how much were tickets?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1972-10-05-17"
+      ],
+      "source": "1972-10-05 — Muddy Waters Here Oct. 17"
+    },
+    {
+      "id": "ret1-1974-05-23-46",
+      "question": "In the mid-1970s, how did Ohio Wesleyan's lacrosse team finish against Bowling Green, and what did coach Seiler blame for the loss?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1974-05-23-46"
+      ],
+      "source": "1974-05-23 — Bowling Green Nips Stickmen"
+    },
+    {
+      "id": "ret1-1970-01-14-30",
+      "question": "Which scholars gave lectures at OWU in January 1970 for the Cultural Heritage of Black America program, and what were their topics?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-01-14-30"
+      ],
+      "source": "1970-01-14 — Black America Program Schedules Guest Lectures"
+    },
+    {
+      "id": "ret1-1974-05-23-14",
+      "question": "Why did a 1974 senior call himself ashamed to be an OWU grad and refuse alumni involvement over the treatment of instructor John Avant?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1974-05-23-14"
+      ],
+      "source": "1974-05-23 — Senior Ashamed To Be OWU Grad'"
+    },
+    {
+      "id": "ret1-1974-05-23-11",
+      "question": "How did Ohio Wesleyan in the mid-1970s plan to let students earn two degrees through its arts-professional programs, and why did the school see them as important for enrollment?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1974-05-23-11"
+      ],
+      "source": "1974-05-23 — Arts-Professional—A Positive Effort"
+    },
+    {
+      "id": "ret1-1970-04-08-23",
+      "question": "How did the Bishop track team fare in the spring 1970 triangular meet at Otterbein against Mt. Union, and which runner won two events?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-04-08-23"
+      ],
+      "source": "1970-04-08 — Bishop Thinclads Lose In Opener"
+    },
+    {
+      "id": "ret1-1978-01-12-1",
+      "question": "Which album did a Transcript writer in early 1978 name the best LP of 1977 in his top-15 list, and which band made it?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1978-01-12-1"
+      ],
+      "source": "1978-01-12 — Sedivy's Top 15 Albums Varied"
+    },
+    {
+      "id": "ret1-1971-04-29-3",
+      "question": "How many OWU students won off-campus housing permission in the spring 1971 lottery, and how did that compare with the year before?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1971-04-29-3"
+      ],
+      "source": "1971-04-29 — 240 Win Lottery; Number To Rise"
+    },
+    {
+      "id": "ret1-1970-04-08-28",
+      "question": "Which writers and scholars were featured at the GLCA English conference Ohio Wesleyan hosted in spring 1970?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-04-08-28"
+      ],
+      "source": "1970-04-08 — GLCA English Conference Planned Here April 24, 25"
+    },
+    {
+      "id": "ret1-1970-01-14-14",
+      "question": "Who is Ron Dorfman, and what was the Chicago Journalism Review he helped launch in the late 1960s?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-01-14-14"
+      ],
+      "source": "1970-01-14 — Forum Preview"
+    },
+    {
+      "id": "ret1-1970-04-29-6",
+      "question": "What led to the 1970 vote on fluoridating Delaware, Ohio's water, and who filed the petition forcing it?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-04-29-6"
+      ],
+      "source": "1970-04-29 — Fluoridated Delaware: To Be Or Not To Be?"
+    },
+    {
+      "id": "ret1-1973-11-22-0",
+      "question": "Why did Ohio Wesleyan's admissions applications drop in the fall of 1973, according to the director of admissions?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1973-11-22-0"
+      ],
+      "source": "1973-11-22 — Admissions Applications Down 28%"
+    },
+    {
+      "id": "ret1-1975-01-16-23",
+      "question": "How much property was stolen from Ohio Wesleyan buildings during the winter break in the mid-1970s, and which location suffered the biggest loss?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1975-01-16-23"
+      ],
+      "source": "1975-01-16 — Burglars Hit OWU For $1,450"
+    },
+    {
+      "id": "ret1-1973-11-22-15",
+      "question": "Which Ohio Wesleyan professors took leave for winter term in the early 1970s, and what projects did they plan to pursue?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1973-11-22-15"
+      ],
+      "source": "1973-11-22 — 7 Faculty To Take Leave During Winter Term"
+    },
+    {
+      "id": "ret1-1972-01-20-23",
+      "question": "What did a 1972 Transcript opinion piece say about William Kunstler's talk on justice, revolution, and public complacency?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1972-01-20-23"
+      ],
+      "source": "1972-01-20 — Hypocrisy Shrouds Justice"
+    },
+    {
+      "id": "ret1-1974-05-23-44",
+      "question": "What were Ohio Wesleyan's fall 1974 football prospects after a 3-5-1 season, and who was competing for the starting quarterback job?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1974-05-23-44"
+      ],
+      "source": "1974-05-23 — Fall Sports—Successful Season Ahead?"
+    },
+    {
+      "id": "ret1-1978-09-14-30",
+      "question": "How much did Ohio Wesleyan plan to spend on Nautilus machines for Edwards Gym in the late 1970s, and where would they be installed?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1978-09-14-30"
+      ],
+      "source": "1978-09-14 — Nautilus machines, weights to arrive next month"
+    },
+    {
+      "id": "ret1-1976-01-15-14",
+      "question": "Which campus improvements did Ohio Wesleyan's student paper applaud in January 1976, including a new field house and a career week?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1976-01-15-14"
+      ],
+      "source": "1976-01-15 — New Year, New Look"
+    },
+    {
+      "id": "ret1-1970-01-07-20",
+      "question": "Who were the football tri-captains and soccer co-captains picked for the 1970 season at the late-1960s OWU fall sports banquet?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-01-07-20"
+      ],
+      "source": "1970-01-07 — Henley, Small, Shively Named Fall Sport MVPs; Team Captains Elected"
+    },
+    {
+      "id": "ret1-1972-01-20-22",
+      "question": "In the early 1970s, what did the Transcript urge faculty to do about abolishing distribution requirements after a 1,400-signature petition?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1972-01-20-22"
+      ],
+      "source": "1972-01-20 — Reconsideration"
+    },
+    {
+      "id": "ret1-1970-02-18-25",
+      "question": "How did Ohio Wesleyan's wrestlers fare at the 1970 GLCA wrestling championships, and who earned the tournament's Outstanding Wrestler award?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-02-18-25"
+      ],
+      "source": "1970-02-18 — Grapplers Place Fourth In Great Lakes Tourney"
+    },
+    {
+      "id": "ret1-1973-11-22-23",
+      "question": "How did OWU's soccer team do at the first Midwest Liberal Arts Soccer Invitational in 1973, and who beat them in the final?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1973-11-22-23"
+      ],
+      "source": "1973-11-22 — Booters Runner-Up After Overtime Loss"
+    },
+    {
+      "id": "ret1-1972-01-20-14",
+      "question": "How did Coach Frank Shannon's Ohio Wesleyan cagers do against Denison and Marietta in January 1972?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1972-01-20-14"
+      ],
+      "source": "1972-01-20 — Cagers Face Key Matches"
+    },
+    {
+      "id": "ret1-1978-01-12-7",
+      "question": "What banking options did Delaware students have in the late 1970s, including checking accounts, student credit cards, and savings and loan rates?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1978-01-12-7"
+      ],
+      "source": "1978-01-12 — Where to put your money..."
+    },
+    {
+      "id": "ret1-1973-04-05-15",
+      "question": "Which controversial Washington political columnist was booked to speak at Gray Chapel in the spring of 1973 through the Lecture Artist Series?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1973-04-05-15"
+      ],
+      "source": "1973-04-05 — Merry-Go-Round' Columnist Lectures"
+    },
+    {
+      "id": "ret1-1970-04-08-10",
+      "question": "When and how did OWU seniors elect a senior representative to the Board of Trustees in spring 1970?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-04-08-10"
+      ],
+      "source": "1970-04-08 — Senior Election of '70 Trustee Set"
+    },
+    {
+      "id": "ret1-1979-04-05-22",
+      "question": "In the late 1970s, what did a Transcript phone poll say was the main problem with student social life at Ohio Wesleyan?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1979-04-05-22"
+      ],
+      "source": "1979-04-05 — Transcript survey reveals OWU social life not varied"
+    },
+    {
+      "id": "ret1-1973-11-22-16",
+      "question": "Why did Ohio Wesleyan's soccer team miss the NCAA regional tournament in 1973 despite finishing first in the Ohio Conference, and what fix did the editorial propose?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1973-11-22-16"
+      ],
+      "source": "1973-11-22 — Needless Conflict Mars Outstanding Soccer Season"
+    },
+    {
+      "id": "ret1-1977-03-03-30",
+      "question": "What jokey excuses did Ohio Wesleyan's student paper in the late 1970s warn readers not to use to dodge final exams?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1977-03-03-30"
+      ],
+      "source": "1977-03-03 — How not to escape finals"
+    },
+    {
+      "id": "ret1-1977-03-03-0",
+      "question": "Back in 1977, why was the Le Bijou yearbook at risk of not being published, and how many sales were needed?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1977-03-03-0"
+      ],
+      "source": "1977-03-03 — Yearbook sales lag; may not be published"
+    },
+    {
+      "id": "ret1-1974-05-23-2",
+      "question": "Why did Air Force ROTC leave Ohio Wesleyan in the mid-1970s after a quarter century on campus?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1974-05-23-2"
+      ],
+      "source": "1974-05-23 — ROTC Leaves After 25 Years"
+    },
+    {
+      "id": "ret1-1976-01-15-6",
+      "question": "Which academic calendar did Ohio Wesleyan's faculty pick for the 1976-77 year, and how many votes did it get in the University-wide poll?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1976-01-15-6"
+      ],
+      "source": "1976-01-15 — Calendar To Remain Same"
+    },
+    {
+      "id": "ret1-1975-01-16-17",
+      "question": "Back in 1975, did the student affairs council let the fraternity council run its own probe into rush and hazing?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1975-01-16-17"
+      ],
+      "source": "1975-01-16 — IFC To Conduct Own Investigation"
+    },
+    {
+      "id": "ret1-1979-04-05-8",
+      "question": "Why did Ohio Wesleyan's Alpha Xi Delta chapter shut down around 1979, and how many members did it still have when it closed?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1979-04-05-8"
+      ],
+      "source": "1979-04-05 — Alpha Xi Delta third sorority to close in four years"
+    },
+    {
+      "id": "ret1-1970-01-28-3",
+      "question": "Back in 1970, how many units would Ohio Wesleyan students need for graduation under the Academic Policy Committee's proposal, and how were courses grouped into divisions?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1970-01-28-3"
+      ],
+      "source": "1970-01-28 — APC Submits New Distribution Proposal"
+    },
+    {
+      "id": "ret1-1978-09-14-3",
+      "question": "Who was hired in 1978 to take over the Economics Department job after Ronald Lykins was denied contract renewal at Ohio Wesleyan?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1978-09-14-3"
+      ],
+      "source": "1978-09-14 — Nine new full-time faculty join staff"
+    },
+    {
+      "id": "ret1-1973-01-11-6",
+      "question": "In January 1973, what did a Transcript opinion piece urge students to do about renewed Vietnam bombing, and which Ohio congressmen did it name?",
+      "mode": "text",
+      "decade": "1970s",
+      "expectedSourceIdsAny": [
+        "1973-01-11-6"
+      ],
+      "source": "1973-01-11 — Dead Men Don't Pick Up Peaces"
+    },
+    {
+      "id": "ret1-1981-10-08-33",
+      "question": "Which economist who advised Chile's Economics Minister spoke at the 1981 Ohio Wesleyan symposium on Chile in the 1970s?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1981-10-08-33"
+      ],
+      "source": "1981-10-08 — 2-Day Chile Series Highlights Past"
+    },
+    {
+      "id": "ret1-1981-01-22-3",
+      "question": "Around 1981, how did OWU's applications compare to the year before, and what reason did President Wenzlau give?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1981-01-22-3"
+      ],
+      "source": "1981-01-22 — Applications Down 10.8 Percent"
+    },
+    {
+      "id": "ret1-1982-10-07-11",
+      "question": "What did a 1982 Transcript letter from the abortion rights group NARAL urge readers to do in response to the Moral Majority?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1982-10-07-11"
+      ],
+      "source": "1982-10-07 — NARAL Fights For The Right To Choose"
+    },
+    {
+      "id": "ret1-1983-11-03-16",
+      "question": "How would Ohio's 1983 Issue 3, which repealed the post-January tax changes, have affected college tuition and student grants?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1983-11-03-16"
+      ],
+      "source": "1983-11-03 — No, No, No"
+    },
+    {
+      "id": "ret1-1980-10-16-38",
+      "question": "In the 1980s, how did OWU's faculty and staff gourmet dinner club plan its meals, and who was eligible to join?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1980-10-16-38"
+      ],
+      "source": "1980-10-16 — OWU Gourmet Club adds spice to life"
+    },
+    {
+      "id": "ret1-1983-10-13-37",
+      "question": "In the fall of 1983, how did OWU rally from a 14-point fourth-quarter deficit to tie Denison in their Blue Division conference opener?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1983-10-13-37"
+      ],
+      "source": "1983-10-13 — Hood's Passes to Belville Lead Bishops to 21-21 Tie"
+    },
+    {
+      "id": "ret1-1983-04-14-14",
+      "question": "In spring 1983, how did the Bishops baseball team fare in its doubleheader against Otterbein, and which players got the hits?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1983-04-14-14"
+      ],
+      "source": "1983-04-14 — Out Of There"
+    },
+    {
+      "id": "ret1-1983-09-15-21",
+      "question": "Why did Violet Meek, former dean of educational services, take a leave in 1983, and how was it tied to restructuring?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1983-09-15-21"
+      ],
+      "source": "1983-09-15 — Meek Takes Year Leave"
+    },
+    {
+      "id": "ret1-1980-05-01-0",
+      "question": "What led the Women's Task Force to protest the Transcript in spring 1980, and how did other students react to the demonstration?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1980-05-01-0"
+      ],
+      "source": "1980-05-01 — OWU Feminist Protest Draws Mixed Reactions"
+    },
+    {
+      "id": "ret1-1983-01-20-18",
+      "question": "In the early 1980s, why did one writer argue Ohio Wesleyan should keep its small living units open despite their high operating costs?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1983-01-20-18"
+      ],
+      "source": "1983-01-20 — Small Living Units Provide Necessary Focal Points"
+    },
+    {
+      "id": "ret1-1988-04-06-21",
+      "question": "Back in the late 1980s, could OWU students who broke campus rules pay money to Residential Life instead of facing social probation?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1988-04-06-21"
+      ],
+      "source": "1988-04-06 — Money Buys Morals at OWU"
+    },
+    {
+      "id": "ret1-1980-10-09-6",
+      "question": "Back in 1980, how was Ohio Wesleyan hoping to recover the import duty it paid on its Gray Chapel concert organ, and what would the refund fund?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1980-10-09-6"
+      ],
+      "source": "1980-10-09 — OWU to save $10,000 if U.S. Senate OKs bill"
+    },
+    {
+      "id": "ret1-1980-10-30-41",
+      "question": "Which fall 1980 game gave the Bishops soccer team the OAC Southern division crown, with Marc Waite's late winner over Denison?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1980-10-30-41"
+      ],
+      "source": "1980-10-30 — Booters Advance to OAC Playoffs"
+    },
+    {
+      "id": "ret1-1986-11-14-31",
+      "question": "How did Ohio Wesleyan's men's and women's basketball teams rank in the NCAC preseason polls going into the 1986-87 winter season?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1986-11-14-31"
+      ],
+      "source": "1986-11-14 — Men 1st, women 2nd in polls"
+    },
+    {
+      "id": "ret1-1987-10-14-17",
+      "question": "How did Ohio Wesleyan field hockey do against Wittenberg in October 1987, and why did the coach feel the Bishops should have won?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1987-10-14-17"
+      ],
+      "source": "1987-10-14 — Stickers Tie"
+    },
+    {
+      "id": "ret1-1988-09-28-22",
+      "question": "In 1988, how did Ohio Wesleyan's field hockey team fare in the Hartwick tournament final against Scranton, and who scored the winner?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1988-09-28-22"
+      ],
+      "source": "1988-09-28 — Field hockey falls to Scranton"
+    },
+    {
+      "id": "ret1-1986-10-31-26",
+      "question": "How did Ohio Wesleyan's field hockey team fare in its first-ever trip to the regional tournament at Oberlin in the fall of 1986?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1986-10-31-26"
+      ],
+      "source": "1986-10-31 — Field hockey: off to regionals"
+    },
+    {
+      "id": "ret1-1981-05-14-18",
+      "question": "Who won the senior class president election at Ohio Wesleyan in May 1981 on the first ballot, and what share of the vote did he get?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1981-05-14-18"
+      ],
+      "source": "1981-05-14 — Ogden Elected With 60 Percent"
+    },
+    {
+      "id": "ret1-1981-02-19-26",
+      "question": "Which OWU women's track runners broke records in the early 1981 meet against Spring Arbor, Hillsdale and Oberlin?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1981-02-19-26"
+      ],
+      "source": "1981-02-19 — Murray Leads Runners To Record-Breaking Win"
+    },
+    {
+      "id": "ret1-1982-11-04-13",
+      "question": "Who scored the late winning goal when the Bishops edged Denison 3-2 for the OAC South soccer title in November 1982?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1982-11-04-13"
+      ],
+      "source": "1982-11-04 — Booters nip Denison for OAC South title"
+    },
+    {
+      "id": "ret1-1986-09-19-6",
+      "question": "How did Ohio Wesleyan faculty in the mid-1980s compare student partying and social life with the activism of the 1960s and 1970s?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1986-09-19-6"
+      ],
+      "source": "1986-09-19 — College used to be more work, less play"
+    },
+    {
+      "id": "ret1-1984-04-05-32",
+      "question": "How did the Alpha Gam sorority at Ohio Wesleyan leave campus in 1984, and what would happen to its house?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1984-04-05-32"
+      ],
+      "source": "1984-04-05 — Alpha Gam"
+    },
+    {
+      "id": "ret1-1985-02-01-25",
+      "question": "What new administrative role did politics professor William Louthan take on in early 1985, and how long was it meant to last?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1985-02-01-25"
+      ],
+      "source": "1985-02-01 — Louthan appointed to new post"
+    },
+    {
+      "id": "ret1-1983-10-13-4",
+      "question": "In the early 1980s, where did money from dorm and fraternity fines at Ohio Wesleyan go, and what programs did it pay for?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1983-10-13-4"
+      ],
+      "source": "1983-10-13 — Fines Fund 'Positive' Dorm Programs"
+    },
+    {
+      "id": "ret1-1989-01-17-11",
+      "question": "How did a 1989 campus tribute remember Thomas Britton Schultz after his death, and what legacy did it describe?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1989-01-17-11"
+      ],
+      "source": "1989-01-17 — Share Their Thoughts"
+    },
+    {
+      "id": "ret1-1988-03-23-12",
+      "question": "What were Ohio Wesleyan's baseball expectations for the spring of 1988 under coach Roger Ingles, and where were they ranked in the NCAC preseason?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1988-03-23-12"
+      ],
+      "source": "1988-03-23 — Baseball Team Starts Spring Season"
+    },
+    {
+      "id": "ret1-1981-09-17-24",
+      "question": "How did women's volleyball coach Mary Parker view the team's prospects in fall 1981, after their 7-21 season the year before?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1981-09-17-24"
+      ],
+      "source": "1981-09-17 — Volleyball Team Set"
+    },
+    {
+      "id": "ret1-1982-04-22-4",
+      "question": "How did Ohio Wesleyan's men's tennis team fare at the 1982 GLCA tournament, and which school finished second?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1982-04-22-4"
+      ],
+      "source": "1982-04-22 — Men's tennis wins GLCA tournament"
+    },
+    {
+      "id": "ret1-1987-10-07-17",
+      "question": "Why did a 1987 Transcript columnist criticize freshmen women at Ohio Wesleyan for taking up smoking?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1987-10-07-17"
+      ],
+      "source": "1987-10-07 — Don't light up!"
+    },
+    {
+      "id": "ret1-1986-10-10-14",
+      "question": "In 1986, how did Ohio Wesleyan's sororities and women's groups split over feminism, and why were sorority reps joining the Women's Task Force?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1986-10-10-14"
+      ],
+      "source": "1986-10-10 — Campus feminism comes of age"
+    },
+    {
+      "id": "ret1-1981-10-22-25",
+      "question": "What were the final scores of Ohio Wesleyan's men's soccer games against Capital and Marietta in the fall of 1981?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1981-10-22-25"
+      ],
+      "source": "1981-10-22 — Men's soccer team wins two shutouts"
+    },
+    {
+      "id": "ret1-1989-03-29-26",
+      "question": "How did a 1989 letter writer defend The Transcript's reporting on Eric Eisenberg's arrest against claims that it biased public opinion?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1989-03-29-26"
+      ],
+      "source": "1989-03-29 — Editor immature. Journalists abuse the press"
+    },
+    {
+      "id": "ret1-1982-05-06-27",
+      "question": "How did Rob Keith, OWU's Greek affairs coordinator in the early 1980s, suggest students measure whether an activity counts as hazing?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1982-05-06-27"
+      ],
+      "source": "1982-05-06 — Hazing Creates Confusion, Controversy"
+    },
+    {
+      "id": "ret1-1983-01-13-15",
+      "question": "Why did the student governance task force in early 1983 miss its January deadline for recommendations to the student body and university presidents?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1983-01-13-15"
+      ],
+      "source": "1983-01-13 — Task Force Report To Be Late"
+    },
+    {
+      "id": "ret1-1989-09-13-5",
+      "question": "What did Dean Don Chenoweth propose in the late 1980s to have students police their own drinking rules instead of university enforcement?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1989-09-13-5"
+      ],
+      "source": "1989-09-13 — Chenoweth Hopes To Develop Honor System For Alcohol Policy"
+    },
+    {
+      "id": "ret1-1982-02-18-21",
+      "question": "How did Ohio Wesleyan's Beeghly Library help send English-language books to Chinese schools and libraries in the early 1980s?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1982-02-18-21"
+      ],
+      "source": "1982-02-18 — Books Shipped To China"
+    },
+    {
+      "id": "ret1-1981-02-12-29",
+      "question": "Which fraternity came out on top at the Delta Gamma Anchor Splash in Pfeiffer Natatorium during the early 1980s, and how many points did it score?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1981-02-12-29"
+      ],
+      "source": "1981-02-12 — Beta Loses Shorts In Anchor Splash"
+    },
+    {
+      "id": "ret1-1986-02-28-8",
+      "question": "What did the university's judicial hearing decide in the mid-1980s pellet gun shooting of a Stuyvesant student who was walking to Smith Hall?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1986-02-28-8"
+      ],
+      "source": "1986-02-28 — Judicial judgement lenient in shooting, woman says"
+    },
+    {
+      "id": "ret1-1988-03-23-17",
+      "question": "How did the Ohio Wesleyan golf team finish at its spring break tournament in South Carolina back in the late 1980s?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1988-03-23-17"
+      ],
+      "source": "1988-03-23 — Golf Team Places 7th In Tournament"
+    },
+    {
+      "id": "ret1-1987-11-04-17",
+      "question": "How did freshman players on Ohio Wesleyan's men's soccer team help win the NCAC title in the late 1980s?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1987-11-04-17"
+      ],
+      "source": "1987-11-04 — Freshmen contributing to team"
+    },
+    {
+      "id": "ret1-1980-02-14-3",
+      "question": "What tuition and fee increase did Ohio Wesleyan's trustees approve in early 1980 for 1980-81, and what was the reason behind it?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1980-02-14-3"
+      ],
+      "source": "1980-02-14 — Total Fees To Increase 13 Percent"
+    },
+    {
+      "id": "ret1-1980-10-16-11",
+      "question": "How did a 1980s Transcript opinion writer satirize the preppie look and attitude among OWU students in Delaware, Ohio?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1980-10-16-11"
+      ],
+      "source": "1980-10-16 — Preppie Is An Attitude"
+    },
+    {
+      "id": "ret1-1980-10-23-8",
+      "question": "Which experimental courses did the Academic Policy Committee approve for winter term in 1980, like an interdisciplinary business ethics class and accelerated languages?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1980-10-23-8"
+      ],
+      "source": "1980-10-23 — APC OKs experimental courses"
+    },
+    {
+      "id": "ret1-1985-10-04-11",
+      "question": "What was the schedule for Ohio Wesleyan's Apartheid Alert week in October 1985, and which ANC representative was speaking?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1985-10-04-11"
+      ],
+      "source": "1985-10-04 — Anti-apartheid activities slated to start Tuesday"
+    },
+    {
+      "id": "ret1-1980-05-29-5",
+      "question": "How many paid enrollment deposits had Ohio Wesleyan admissions received by late May 1980, and how did that compare with 1979?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1980-05-29-5"
+      ],
+      "source": "1980-05-29 — 613 paid deposits in; down 14% from 1979"
+    },
+    {
+      "id": "ret1-1987-04-01-2",
+      "question": "In the late 1980s, what did Ohio Wesleyan's library pay for LS/2000 equipment and annual fees after its pilot phase ended?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1987-04-01-2"
+      ],
+      "source": "1987-04-01 — Beeghly adopts LS-2000 on permanent basis"
+    },
+    {
+      "id": "ret1-1983-04-07-24",
+      "question": "How did a 1983 Transcript writer respond to the Beta Theta Pi riots and their comparison to Kent State?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1983-04-07-24"
+      ],
+      "source": "1983-04-07 — Protesters' Actions Destroy Credibility"
+    },
+    {
+      "id": "ret1-1986-04-04-22",
+      "question": "Who were the four juniors running for senior class president at Ohio Wesleyan in April 1986, and what did they promise?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1986-04-04-22"
+      ],
+      "source": "1986-04-04 — Four vie for senior presidency"
+    },
+    {
+      "id": "ret1-1984-05-17-0",
+      "question": "Who won the second run-off election for senior class president at Ohio Wesleyan in spring 1984, and what was the vote margin?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1984-05-17-0"
+      ],
+      "source": "1984-05-17 — Victory starts 'Happy' days"
+    },
+    {
+      "id": "ret1-1985-10-04-9",
+      "question": "In fall 1985, what did a Transcript opinion piece reveal about a writer's awkward talk with his little brother over a girl's letter?",
+      "mode": "text",
+      "decade": "1980s",
+      "expectedSourceIdsAny": [
+        "1985-10-04-9"
+      ],
+      "source": "1985-10-04 — Tie-Dye Shirts and Best Friends"
+    },
+    {
+      "id": "ret1-1995-01-25-0",
+      "question": "What events were scheduled during the mid-1990s inauguration of Thomas Courtice as Ohio Wesleyan's new president in January 1995?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1995-01-25-0"
+      ],
+      "source": "1995-01-25 — Courtice to become OWU's 14th president"
+    },
+    {
+      "id": "ret1-1997-01-22-7",
+      "question": "How did frozen pipes flood the small Creative Arts house on Rowland Avenue after winter break in January 1997?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1997-01-22-7"
+      ],
+      "source": "1997-01-22 — Flood Soaks Creative Arts House"
+    },
+    {
+      "id": "ret1-1990-04-18-3",
+      "question": "How did Orchesis set up its spring 1990 concert at Chappelear Drama Center, and where did audiences sit?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-04-18-3"
+      ],
+      "source": "1990-04-18 — Three Sided Stage Perfects Atmosphere of Show"
+    },
+    {
+      "id": "ret1-1990-04-04-6",
+      "question": "In the early 1990s, what public relations award did Ohio Wesleyan's Panhellenic Council win from a regional panhellenic association, and which campus events helped earn it?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-04-04-6"
+      ],
+      "source": "1990-04-04 — Panhellenic Council Wins Public Relations Award"
+    },
+    {
+      "id": "ret1-1994-10-26-6",
+      "question": "How did the top-ranked, undefeated Ohio Wesleyan men's soccer team perform against Kenyon in the 1994 season's big NCAC showdown?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1994-10-26-6"
+      ],
+      "source": "1994-10-26 — Soccer Team Routs Kenyon"
+    },
+    {
+      "id": "ret1-1994-01-19-17",
+      "question": "Why did a January 1994 Transcript opinion piece say Alpha Sigma Phi stood apart from other fraternities during freshman rush?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1994-01-19-17"
+      ],
+      "source": "1994-01-19 — Fraternity Encourages Frosh To Think Greek"
+    },
+    {
+      "id": "ret1-1999-03-03-13",
+      "question": "Did The Transcript in early 1999 argue that believing same-sex relations are wrong doesn't necessarily make someone homophobic?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1999-03-03-13"
+      ],
+      "source": "1999-03-03 — Moral concerns do not equal homophobia"
+    },
+    {
+      "id": "ret1-1990-03-28-3",
+      "question": "Which tickets competed in the 1990 WCSA presidential race, and what did Elizabeth Phillips and Fahd Husain propose during their debate?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-03-28-3"
+      ],
+      "source": "1990-03-28 — Tickets clash in WCSA debate"
+    },
+    {
+      "id": "ret1-1998-03-18-16",
+      "question": "In 1998, which Ohio Wesleyan senior shot putter qualified for the Division III national meet in Waltham, and what technique did she use?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1998-03-18-16"
+      ],
+      "source": "1998-03-18 — Albrecht To Throw Shotput At Nationals"
+    },
+    {
+      "id": "ret1-1999-04-21-7",
+      "question": "What did Ohio Wesleyan's late-1990s policy on respect and harassment prohibit, and what was the maximum penalty for violations?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1999-04-21-7"
+      ],
+      "source": "1999-04-21 — Policy in question"
+    },
+    {
+      "id": "ret1-1990-12-12-24",
+      "question": "What did oddsmaker Jimmy \"the Greek\" Snyder think of Mike Tyson's December 1990 bout against Alex Stewart?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-12-12-24"
+      ],
+      "source": "1990-12-12 — What 'the Greek' had to say about the Tyson fight"
+    },
+    {
+      "id": "ret1-1997-10-15-16",
+      "question": "In the late 1990s, what kinds of purchases did Ohio Wesleyan student organizations make with WCSA funds that broke the budget guidelines?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1997-10-15-16"
+      ],
+      "source": "1997-10-15 — WCSA Reviews Budget Guidelines"
+    },
+    {
+      "id": "ret1-1993-02-16-9",
+      "question": "Why couldn't Arrested Development, the winner of the student poll, perform at Ohio Wesleyan's spring concert back in 1993?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1993-02-16-9"
+      ],
+      "source": "1993-02-16 — The Arrested Development of the Spring Concert"
+    },
+    {
+      "id": "ret1-1990-02-28-26",
+      "question": "In early 1990, which Ohio Wesleyan students went on a 12-day trip to the Soviet Union, and which cities did they visit?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-02-28-26"
+      ],
+      "source": "1990-02-28 — Five Ohio Wesleyan Students Head For Soviet Union Today"
+    },
+    {
+      "id": "ret1-1990-02-14-21",
+      "question": "Who designed the Wexner Center for the Visual Arts at Ohio State, and what art did its inaugural exhibit showcase when it opened in 1990?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-02-14-21"
+      ],
+      "source": "1990-02-14 — Wexner Center opens"
+    },
+    {
+      "id": "ret1-1990-01-17-20",
+      "question": "Around 1990, why did Ohio Wesleyan faculty say student attendance at concerts and arts events had fallen, and did they suggest requiring students to attend?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-01-17-20"
+      ],
+      "source": "1990-01-17 — Interest Drops In The Arts"
+    },
+    {
+      "id": "ret1-1995-03-22-10",
+      "question": "How much did a week at Ohio Wesleyan's gifted junior league summer camp cost per student in the mid-1990s?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1995-03-22-10"
+      ],
+      "source": "1995-03-22 — OWJL Camp will be sponsered by the University again"
+    },
+    {
+      "id": "ret1-1999-09-15-3",
+      "question": "How many students were on the ballot in the September 1999 WCSA geo-rep elections at Ohio Wesleyan?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1999-09-15-3"
+      ],
+      "source": "1999-09-15 — WCSA elections held today"
+    },
+    {
+      "id": "ret1-1999-09-15-8",
+      "question": "What objections did the 1999 Transcript opinion piece raise against an IFC proposal to restrict campus parties to greek students?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1999-09-15-8"
+      ],
+      "source": "1999-09-15 — Greek IDs Pose Problems for Rest of Campus"
+    },
+    {
+      "id": "ret1-1995-10-25-19",
+      "question": "How did the IFC respond in 1995 when a column said Greek organizations were most tied to campus racial division?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1995-10-25-19"
+      ],
+      "source": "1995-10-25 — IFC Member Responds To Column"
+    },
+    {
+      "id": "ret1-1991-10-16-27",
+      "question": "How did OWU's clay target shooting team do at the Ohio State skeet shoot at the start of the 1991 season?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1991-10-16-27"
+      ],
+      "source": "1991-10-16 — Clay Target Team Wins at Ohio State"
+    },
+    {
+      "id": "ret1-1990-04-18-9",
+      "question": "Which Ohio Wesleyan men won the 4x100 relay at the spring 1990 outdoor track invitational, and what was their time?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-04-18-9"
+      ],
+      "source": "1990-04-18 — Track and field: Bishops tackle tough schedule"
+    },
+    {
+      "id": "ret1-1993-10-06-13",
+      "question": "Back in 1993, how did Ohio Wesleyan's field hockey team do against Earlham and Oberlin, and who scored the winning goal over Earlham?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1993-10-06-13"
+      ],
+      "source": "1993-10-06 — Field Hockey Team Splits Pair of Matches"
+    },
+    {
+      "id": "ret1-1993-02-16-1",
+      "question": "During the early 1990s, why did a campus Awareness Week poster listing 375 supposed gay or bisexual public figures raise libel concerns?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1993-02-16-1"
+      ],
+      "source": "1993-02-16 — Gay/Lesbian/Bisexual Awareness Week Sign May Be Libelous"
+    },
+    {
+      "id": "ret1-1995-09-06-3",
+      "question": "How did a 1995 Ohio Wesleyan opinion piece criticize the university's ban on rifles in student rooms and its room search policy?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1995-09-06-3"
+      ],
+      "source": "1995-09-06 — University's Rules Questioned"
+    },
+    {
+      "id": "ret1-1997-01-22-17",
+      "question": "How did Ohio Wesleyan's Early Childhood Center in the late 1990s use OWU students and offer flexible preschool schedules for local families?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1997-01-22-17"
+      ],
+      "source": "1997-01-22 — Early Childhood Center Offers Learning Opportunities"
+    },
+    {
+      "id": "ret1-1999-04-21-10",
+      "question": "Why did David Cozzens reject turning Merrick Hall into classrooms in the spring of 1999?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1999-04-21-10"
+      ],
+      "source": "1999-04-21 — Cozzens: Merrick as academic building not an option"
+    },
+    {
+      "id": "ret1-1990-04-04-38",
+      "question": "What did a 1990 Transcript travel guide to Greece say about when dinner is served and when Athens nightlife begins?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-04-04-38"
+      ],
+      "source": "1990-04-04 — Greece: A guide to your vacation"
+    },
+    {
+      "id": "ret1-1992-02-27-14",
+      "question": "In 1992, how did Ohio Wesleyan respond to doubts about whether the emergency phone safety lights worked, and how often were they tested?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1992-02-27-14"
+      ],
+      "source": "1992-02-27 — Lights Have Been Tested"
+    },
+    {
+      "id": "ret1-1992-02-27-10",
+      "question": "How did the Ohio Wesleyan men's basketball team fare against Denison in the opening round of the 1992 NCAC tournament?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1992-02-27-10"
+      ],
+      "source": "1992-02-27 — Bishops 1-0 in tournament"
+    },
+    {
+      "id": "ret1-1996-01-24-16",
+      "question": "In January 1996, how did President Courtice respond to campus violence, and who did he name to lead the faculty posse?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1996-01-24-16"
+      ],
+      "source": "1996-01-24 — Courtice declares martial law in response to violence"
+    },
+    {
+      "id": "ret1-1994-03-16-6",
+      "question": "What happened to the Ohio Wesleyan students who went to Louisiana with Habitat for Humanity in March 1994 when a group of teens attacked them in New Iberia?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1994-03-16-6"
+      ],
+      "source": "1994-03-16 — Habitat members assaulted on Louisiana trip"
+    },
+    {
+      "id": "ret1-1990-04-04-31",
+      "question": "Who succeeded Carolyn Schwenker as president of the Ohio Wesleyan equestrian team in the spring of 1990?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-04-04-31"
+      ],
+      "source": "1990-04-04 — Equestrian team ready to ride"
+    },
+    {
+      "id": "ret1-1991-11-19-1",
+      "question": "How did the 1991 accident involving an Ohio Wesleyan van at Oak Hill Avenue and Liberty Street happen, and who was injured?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1991-11-19-1"
+      ],
+      "source": "1991-11-19 — Student crashes University van, six injured"
+    },
+    {
+      "id": "ret1-1999-04-21-19",
+      "question": "Who sat on the 1999 search committee to replace Claudia Spencer as Ohio Wesleyan's director of student activities, and what criteria did Dave Cozzens set for the job?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1999-04-21-19"
+      ],
+      "source": "1999-04-21 — Search Committee to Look for Replacement"
+    },
+    {
+      "id": "ret1-1991-12-11-7",
+      "question": "Back in the early 1990s, what did a satirical Transcript piece suggest was really keeping Santa Claus from doing his Christmas work that year?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1991-12-11-7"
+      ],
+      "source": "1991-12-11 — Will Santa Claus Be Coming To Delaware?"
+    },
+    {
+      "id": "ret1-1997-03-19-12",
+      "question": "What incidents did campus Public Safety log in late February and early March 1997, such as a library cash theft?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1997-03-19-12"
+      ],
+      "source": "1997-03-19 — Public Safety Report"
+    },
+    {
+      "id": "ret1-1999-10-27-4",
+      "question": "What did a 1999 Transcript opinion column criticize about how Ohio Wesleyan told students about an alleged campus rape?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1999-10-27-4"
+      ],
+      "source": "1999-10-27 — Rape prompts discussion"
+    },
+    {
+      "id": "ret1-1990-04-18-17",
+      "question": "What weight-loss strategy did a spring 1990 campus paper recommend before summer, balancing eating less with regular endurance exercise?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-04-18-17"
+      ],
+      "source": "1990-04-18 — The effective way to lose pounds for summer"
+    },
+    {
+      "id": "ret1-1996-01-24-9",
+      "question": "In January 1996, how did a student respond to a column that faulted the greek affairs coordinator over drinking and the alcohol policy?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1996-01-24-9"
+      ],
+      "source": "1996-01-24 — Junior responds to column on greeks & the alcohol policy"
+    },
+    {
+      "id": "ret1-1998-05-06-3",
+      "question": "Who earned Bachelor of Fine Arts degrees in Ohio Wesleyan's class of 1998?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1998-05-06-3"
+      ],
+      "source": "1998-05-06 — The Class of 1998"
+    },
+    {
+      "id": "ret1-1997-03-19-4",
+      "question": "Which Ohio Wesleyan houses were targeted by vandals in February 1997, and how did Public Safety and the IFC respond?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1997-03-19-4"
+      ],
+      "source": "1997-03-19 — Fraternities endure vandalism on The Hill"
+    },
+    {
+      "id": "ret1-1997-01-22-0",
+      "question": "What economics exchange with Technical University in Dresden did Ohio Wesleyan launch in the late 1990s, and what can students observe there?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1997-01-22-0"
+      ],
+      "source": "1997-01-22 — OWU Initiates New Off-Campus Program With Germany"
+    },
+    {
+      "id": "ret1-1990-02-14-8",
+      "question": "Who delivered the keynote address at Ohio Wesleyan's first Order of Omega Greek Leadership Conference back in 1990?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-02-14-8"
+      ],
+      "source": "1990-02-14 — Leaders learn roles"
+    },
+    {
+      "id": "ret1-1990-03-28-10",
+      "question": "What stops and meal were included in the 1990 Delaware arts center day trip to Dayton, and how much did it cost?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-03-28-10"
+      ],
+      "source": "1990-03-28 — Dayton Tour Begins Tomorrow For Castle"
+    },
+    {
+      "id": "ret1-1990-03-28-17",
+      "question": "What did a 1990 Transcript review say about the wonton soup at Canton, the Chinese restaurant in Delaware's Kroger center?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-03-28-17"
+      ],
+      "source": "1990-03-28 — Canton Serves Fresh Cooked Food"
+    },
+    {
+      "id": "ret1-1997-03-19-11",
+      "question": "In the late 1990s, how could Ohio Wesleyan students without cars get refunds for rides to Columbus or Crosswoods on the shuttle?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1997-03-19-11"
+      ],
+      "source": "1997-03-19 — Free Transportation Is Available For Students"
+    },
+    {
+      "id": "ret1-1990-09-12-26",
+      "question": "Which novels and nonfiction titles were selling best at college bookstores in the fall of 1990?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-09-12-26"
+      ],
+      "source": "1990-09-12 — Campus Paperback Bestsellers"
+    },
+    {
+      "id": "ret1-1998-01-21-13",
+      "question": "Who led Ohio Wesleyan women's basketball in scoring in the win at Case Reserve back in January 1998?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1998-01-21-13"
+      ],
+      "source": "1998-01-21 — Bishop hoops splits week with Wittenburg, Case"
+    },
+    {
+      "id": "ret1-1990-03-28-19",
+      "question": "Why did Ohio Wesleyan dining services in 1990 say reusable china and silverware were unlikely to replace styrofoam plates in the cafeterias?",
+      "mode": "text",
+      "decade": "1990s",
+      "expectedSourceIdsAny": [
+        "1990-03-28-19"
+      ],
+      "source": "1990-03-28 — Styrofoam dinnerware policy unlikely to be changed in University dining areas"
+    },
+    {
+      "id": "ret1-2000-11-01-15",
+      "question": "Around 2000, how many religious groups did Ohio Wesleyan offer students, and did student interest in them grow?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-11-01-15"
+      ],
+      "source": "2000-11-01 — Faith Groups Thrive at OWU"
+    },
+    {
+      "id": "ret1-2000-02-23-10",
+      "question": "Back in the 2000 primaries, how did the Transcript columnist view Bush's South Carolina campaign tactics, and why was he drawn to John McCain?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-02-23-10"
+      ],
+      "source": "2000-02-23 — Bush bows to right-wing S.C. Bible thumpers"
+    },
+    {
+      "id": "ret1-2006-02-16-15",
+      "question": "Back in the mid-2000s, how did the Lorain-raised Cleveland rap duo Play Havoc start out, and what was their first gig?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2006-02-16-15"
+      ],
+      "source": "2006-02-16 — Havoc in Delaware"
+    },
+    {
+      "id": "ret1-2002-02-27-1",
+      "question": "What did Ohio Wesleyan faculty debate in early 2002 about a proposed policy on sexual relationships between faculty and students, especially the sanctions?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2002-02-27-1"
+      ],
+      "source": "2002-02-27 — Fraternization policy presented to faculty"
+    },
+    {
+      "id": "ret1-2004-10-27-28",
+      "question": "Which video game executive, a former OWU fine arts and philosophy double major, spoke at the Sagan Colloquium in fall 2004?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2004-10-27-28"
+      ],
+      "source": "2004-10-27 — Video game executive to speak as part of National Colloquium"
+    },
+    {
+      "id": "ret1-2006-02-01-3",
+      "question": "Who temporarily took over as Ohio Wesleyan's vice president of University Relations after Mark Richter stepped down in early 2006?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2006-02-01-3"
+      ],
+      "source": "2006-02-01 — Richter resigns vice president post"
+    },
+    {
+      "id": "ret1-2000-09-13-22",
+      "question": "Back in fall 2000, what did The Transcript claim the Ham-Wil roof construction and Jay Walk detour were really up to?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-09-13-22"
+      ],
+      "source": "2000-09-13 — Ham-Wil/Library conspiracy uncovered by students\nStudents forced into library, never seen again at OWU"
+    },
+    {
+      "id": "ret1-2000-09-13-13",
+      "question": "In the 2000 campaign, how did a Transcript opinion piece weigh an evil candidate against a stupid one, and which did it endorse?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-09-13-13"
+      ],
+      "source": "2000-09-13 — Evil candidate better than stupid candidate"
+    },
+    {
+      "id": "ret1-2004-03-03-3",
+      "question": "Who was the last male resident of Ohio Wesleyan's Women's House before a student was accepted to live there in 2004?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2004-03-03-3"
+      ],
+      "source": "2004-03-03 — Male student accepted to live in Women's House next year"
+    },
+    {
+      "id": "ret1-2002-04-10-0",
+      "question": "What did OWU's student government plan for online elections starting fall 2002, and how would students log in to vote?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2002-04-10-0"
+      ],
+      "source": "2002-04-10 — WCSA to hold elections online starting next fall"
+    },
+    {
+      "id": "ret1-2006-02-16-16",
+      "question": "How did OWU faculty and staff raise money in early 2006 for their spring break trip to help hurricane-damaged Houma, Louisiana?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2006-02-16-16"
+      ],
+      "source": "2006-02-16 — Hurricane Jam raises money for Houma trip"
+    },
+    {
+      "id": "ret1-2005-01-26-21",
+      "question": "Back in January 2005, what did the campus paper argue about giving Ohio Wesleyan students a day off for King's holiday?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2005-01-26-21"
+      ],
+      "source": "2005-01-26 — MLK Jr. Day should be a day off"
+    },
+    {
+      "id": "ret1-2003-10-22-17",
+      "question": "Which psychology professor joined Ohio Wesleyan in fall 2003 and studies lip-reading and referred sensations?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2003-10-22-17"
+      ],
+      "source": "2003-10-22 — Johnson Joins Psychology Dept."
+    },
+    {
+      "id": "ret1-2004-04-14-38",
+      "question": "Who earned medalist honors at the Ted Barclay Invitational hosted by Denison in spring 2004, and how did he win it?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2004-04-14-38"
+      ],
+      "source": "2004-04-14 — Sports Briefs"
+    },
+    {
+      "id": "ret1-2005-11-03-4",
+      "question": "How did ProgressOWU's 2005 Hunger Banquet assign students to upper, middle, and lower class meals?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2005-11-03-4"
+      ],
+      "source": "2005-11-03 — Banquet to offer taste of unequal portions"
+    },
+    {
+      "id": "ret1-2004-09-22-27",
+      "question": "In 2004, what did a Transcript opinion writer say students would miss about campus food points once they moved off campus?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2004-09-22-27"
+      ],
+      "source": "2004-09-22 — Enjoy Food Points While You Still Live On Campus"
+    },
+    {
+      "id": "ret1-2005-09-29-53",
+      "question": "What concerts, open houses, and brunches were on Ohio Wesleyan's Homecoming weekend schedule in early October 2005?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2005-09-29-53"
+      ],
+      "source": "2005-09-29 — Homecoming 2005 Schedule of Events (Continued)"
+    },
+    {
+      "id": "ret1-2004-10-27-15",
+      "question": "Where did OWU's men's golf team finish in the fall of 2004 at the NCAA Division III preview tournament in Florida?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2004-10-27-15"
+      ],
+      "source": "2004-10-27 — Golf Team Finishes Fall Season, Places Eighth at Tournament"
+    },
+    {
+      "id": "ret1-2000-11-01-20",
+      "question": "Back in fall 2000, what did the squirrel militia demand from OWU's administration after attacking students with acorns and trash?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-11-01-20"
+      ],
+      "source": "2000-11-01 — 'Squirrel Squadron' delcares war on Ohio Wesleyan campus"
+    },
+    {
+      "id": "ret1-2006-02-16-26",
+      "question": "When and where was the Arnold Fitness Weekend held in 2006, and which bodybuilders were students excited to meet there?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2006-02-16-26"
+      ],
+      "source": "2006-02-16 — The Terminator to return to Ohio"
+    },
+    {
+      "id": "ret1-2003-02-26-14",
+      "question": "Why did a 2003 Transcript columnist think OWU's weekend social scene was lagging, and how did party crackdowns and liability concerns factor in?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2003-02-26-14"
+      ],
+      "source": "2003-02-26 — Choosing a college: what it comes down to"
+    },
+    {
+      "id": "ret1-2004-04-14-7",
+      "question": "How did Ohio Wesleyan's Residence Hall Association get started in spring 2004, and where would its budget money come from?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2004-04-14-7"
+      ],
+      "source": "2004-04-14 — RHA Holds First Meeting"
+    },
+    {
+      "id": "ret1-2001-01-24-6",
+      "question": "How did a Transcript opinion writer in early 2001 criticize George W. Bush's presidency after the Supreme Court ended the 2000 Florida recount?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2001-01-24-6"
+      ],
+      "source": "2001-01-24 — Election leaves columnist speechless"
+    },
+    {
+      "id": "ret1-2003-02-26-11",
+      "question": "What alternative to war did France, Germany and Russia put before the UN Security Council over Iraq during the early 2003 crisis?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2003-02-26-11"
+      ],
+      "source": "2003-02-26 — Germany, France Start New Anti-War Effort"
+    },
+    {
+      "id": "ret1-2002-10-30-13",
+      "question": "Who started OWU TV on Channel 24 back in the early 2000s, and what kinds of programming did it plan to air on campus?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2002-10-30-13"
+      ],
+      "source": "2002-10-30 — OWU TV Channel Kicks Off"
+    },
+    {
+      "id": "ret1-2000-10-25-3",
+      "question": "What timing changes did the city make to the Sandusky Street traffic signals near the JAYwalk in fall 2000 to cut student waiting time?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-10-25-3"
+      ],
+      "source": "2000-10-25 — Dear Editor,"
+    },
+    {
+      "id": "ret1-2004-10-27-35",
+      "question": "Back in fall 2004, which freshman started a movie club at Ohio Wesleyan, and who agreed to advise it?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2004-10-27-35"
+      ],
+      "source": "2004-10-27 — Freshman to start new club for movie lovers on campus"
+    },
+    {
+      "id": "ret1-2003-02-26-2",
+      "question": "How did Ohio Wesleyan plan to use the $2 million Lilly Endowment grant in 2003 to connect career choice with faith?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2003-02-26-2"
+      ],
+      "source": "2003-02-26 — Chaplain's Office And Career Services Receive Lilly Grant"
+    },
+    {
+      "id": "ret1-2000-11-29-8",
+      "question": "Why did the Tolkien discussion group at Ohio Wesleyan shut down around the turn of the millennium?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-11-29-8"
+      ],
+      "source": "2000-11-29 — Tolkien society disbands"
+    },
+    {
+      "id": "ret1-2000-10-25-14",
+      "question": "What unexpected occupants did Buildings and Grounds find in Merrick Hall while clearing out old ceilings in the fall of 2000?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-10-25-14"
+      ],
+      "source": "2000-10-25 — B & G assesses Merrick Hall"
+    },
+    {
+      "id": "ret1-2005-01-26-23",
+      "question": "What did a 2005 Transcript column complain about regarding OWU's bookstore service, and how much money did the bookstore bring the university?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2005-01-26-23"
+      ],
+      "source": "2005-01-26 — What's up with the bookstore?"
+    },
+    {
+      "id": "ret1-2001-10-10-11",
+      "question": "What incidents did campus Public Safety log in early October 2001, like fire alarms and residence hall drug and alcohol referrals?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2001-10-10-11"
+      ],
+      "source": "2001-10-10 — Public Safety Reports Oct. 2-9"
+    },
+    {
+      "id": "ret1-2000-10-04-19",
+      "question": "How did Ohio Wesleyan's volleyball team perform at the Bishop Invitational and its Otterbein match back in October 2000?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-10-04-19"
+      ],
+      "source": "2000-10-04 — Volleyball"
+    },
+    {
+      "id": "ret1-2000-10-04-0",
+      "question": "What did OWU trustees and student leaders propose for spending the roughly $1 million revenue surplus back in fall 2000?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-10-04-0"
+      ],
+      "source": "2000-10-04 — Trustees to visit campus Friday"
+    },
+    {
+      "id": "ret1-2000-02-02-0",
+      "question": "Back in early 2000, did OWU's trustees raise the Information Systems budget after students and the WCSA pressed for more technology funding?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-02-02-0"
+      ],
+      "source": "2000-02-02 — Trustees pass the budget, demand more for InfoSys"
+    },
+    {
+      "id": "ret1-2000-04-19-18",
+      "question": "What was David Seltzer's photo exhibit with superimposed words at Humphreys Art Hall in spring 2000, and how did students react to it?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-04-19-18"
+      ],
+      "source": "2000-04-19 — 'Slipping Man' photo exhibit opens in Humphreys"
+    },
+    {
+      "id": "ret1-2004-04-14-11",
+      "question": "Why did a 2004 Transcript reviewer give Disney's The Alamo, with Billy Bob Thornton as Davy Crockett, such a poor grade?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2004-04-14-11"
+      ],
+      "source": "2004-04-14 — Try to Forget The Alamo"
+    },
+    {
+      "id": "ret1-2000-11-01-10",
+      "question": "Back in fall 2000, how did OWU's Amnesty International chapter use a letter-writing session to mark women's rights week?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-11-01-10"
+      ],
+      "source": "2000-11-01 — Amnesty Group Campaigns for Human Rights"
+    },
+    {
+      "id": "ret1-2006-03-30-1",
+      "question": "When were WCSA budget requests for 2006-2007 due in spring 2006, and what happened to groups that missed the deadline?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2006-03-30-1"
+      ],
+      "source": "2006-03-30 — Spring funding deadline nearing"
+    },
+    {
+      "id": "ret1-2000-01-26-13",
+      "question": "Where did Ohio Wesleyan send its recyclables after Delaware Recyclers shut down around the turn of the millennium?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-01-26-13"
+      ],
+      "source": "2000-01-26 — University Enters Into New Recycling Contract With City"
+    },
+    {
+      "id": "ret1-2006-04-20-25",
+      "question": "What did a 2006 Transcript column say about paying $20 for a Green Day fan club and spending hours on its online forum?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2006-04-20-25"
+      ],
+      "source": "2006-04-20 — The Cost of Friendship Is $20 Per Year"
+    },
+    {
+      "id": "ret1-2001-09-05-10",
+      "question": "How did the women's soccer team fare in its opening weekend of the 2001 season against John Carroll and Nazareth College?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2001-09-05-10"
+      ],
+      "source": "2001-09-05 — Women's Soccer Team Has Mixed Season Opener"
+    },
+    {
+      "id": "ret1-2000-09-13-26",
+      "question": "Back in fall 2000, what events did Ohio Wesleyan's Greek Week include, and when was the Greek Olympics held?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-09-13-26"
+      ],
+      "source": "2000-09-13 — Greek Week 2000 Schedule"
+    },
+    {
+      "id": "ret1-2000-10-25-15",
+      "question": "Which OWU senior said a glowing figure claiming to be God appeared near Stuyvesant Hall after an ice cream social in 2000?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-10-25-15"
+      ],
+      "source": "2000-10-25 — OWU Student Meets God After 'Ice Cream' Binge"
+    },
+    {
+      "id": "ret1-2003-10-22-23",
+      "question": "Which Ohio Wesleyan players scored in the men's soccer win over Hiram in fall 2003, and how lopsided was the final?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2003-10-22-23"
+      ],
+      "source": "2003-10-22 — Men's Soccer Defeats Hiram"
+    },
+    {
+      "id": "ret1-2005-03-03-16",
+      "question": "Back in 2005, what concern did a student letter raise about several administrators departing Ohio Wesleyan while student retention dominated the news?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2005-03-03-16"
+      ],
+      "source": "2005-03-03 — Administration retention should be the concern"
+    },
+    {
+      "id": "ret1-2000-03-01-10",
+      "question": "Why did Ohio Wesleyan's women's basketball team, with a 23-3 record, get left out of the NCAA tournament in the 1999-2000 season?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2000-03-01-10"
+      ],
+      "source": "2000-03-01 — Women's basketball loses in second round"
+    },
+    {
+      "id": "ret1-2005-04-14-8",
+      "question": "Back in spring 2005, what did a sophomore columnist conclude when asking whether his closet, family, and friends were really all his?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2005-04-14-8"
+      ],
+      "source": "2005-04-14 — If You Believe It, The World Can Be Yours"
+    },
+    {
+      "id": "ret1-2005-09-29-22",
+      "question": "How did Ohio Wesleyan plan to slow Wabash and quarterback Russ Harbaugh in the 2005 NCAC home opener?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2005-09-29-22"
+      ],
+      "source": "2005-09-29 — Defense looks to fuel NCAC hopes"
+    },
+    {
+      "id": "ret1-2003-10-22-16",
+      "question": "Back in 2003, did WCSA move to keep resident assistants off the Judicial Board, and why were people worried about conflicts of interest?",
+      "mode": "text",
+      "decade": "2000s",
+      "expectedSourceIdsAny": [
+        "2003-10-22-16"
+      ],
+      "source": "2003-10-22 — WCSA Suggests No More RAS on Judicial Board"
+    }
+  ]
+}

@@ -135,7 +135,7 @@ async function exportLockedEditions() {
       const [edition] = await sql`SELECT * FROM editions WHERE date = ${date}`;
       if (!edition) continue;
       const articles =
-        await sql`SELECT id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model, embedding_input_hash, embedding_input_version FROM articles WHERE edition_date = ${date} ORDER BY position`;
+        await sql`SELECT id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding_model, embedding_input_hash, embedding_input_version FROM articles WHERE edition_date = ${date} ORDER BY position`;
       const ads =
         await sql`SELECT edition_date, position, title, body, category, ad_type, display_text, phone, address, price, image_urls FROM ads WHERE edition_date = ${date} ORDER BY position`;
       saved[date] = { edition, articles, ads };
@@ -160,8 +160,8 @@ async function restoreLockedEditions(savedData) {
     if (articles.length > 0) {
       const articleQueries = articles.map(
         (a) =>
-          sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding, embedding_model, embedding_input_hash, embedding_input_version)
-            VALUES (${a.id}, ${a.edition_date}, ${a.position}, ${a.category}, ${a.headline}, ${a.summary}, ${a.full_text}, ${a.body_plain}, ${a.byline}, ${a.writer_position}, ${a.page}, ${a.is_hero}, ${a.is_featured}, ${JSON.stringify(a.image_urls)}, ${a.image_caption}, ${JSON.stringify(a.image_captions)}, ${a.embedding}, ${a.embedding_model}, ${a.embedding_input_hash}, ${a.embedding_input_version})
+          sql`INSERT INTO articles (id, edition_date, position, category, headline, summary, full_text, body_plain, byline, writer_position, page, is_hero, is_featured, image_urls, image_caption, image_captions, embedding_model, embedding_input_hash, embedding_input_version)
+            VALUES (${a.id}, ${a.edition_date}, ${a.position}, ${a.category}, ${a.headline}, ${a.summary}, ${a.full_text}, ${a.body_plain}, ${a.byline}, ${a.writer_position}, ${a.page}, ${a.is_hero}, ${a.is_featured}, ${JSON.stringify(a.image_urls)}, ${a.image_caption}, ${JSON.stringify(a.image_captions)}, ${a.embedding_model}, ${a.embedding_input_hash}, ${a.embedding_input_version})
             ON CONFLICT (id) DO NOTHING`
       );
       await sql.transaction(articleQueries);
@@ -318,11 +318,6 @@ async function seedEditions(scopedDate = "") {
               image_urls = EXCLUDED.image_urls,
               image_caption = EXCLUDED.image_caption,
               image_captions = EXCLUDED.image_captions,
-              embedding = CASE
-                WHEN articles.embedding_input_hash = EXCLUDED.embedding_input_hash
-                 AND articles.embedding_input_version = EXCLUDED.embedding_input_version
-                 AND articles.embedding_model = ${EMBEDDING_MODEL}
-                THEN articles.embedding ELSE NULL END,
               embedding_model = CASE
                 WHEN articles.embedding_input_hash = EXCLUDED.embedding_input_hash
                  AND articles.embedding_input_version = EXCLUDED.embedding_input_version
@@ -364,11 +359,6 @@ async function seedEditions(scopedDate = "") {
               ON CONFLICT (id) DO UPDATE SET
                 chunk_index = EXCLUDED.chunk_index,
                 chunk_text = EXCLUDED.chunk_text,
-                embedding = CASE
-                  WHEN article_chunks.embedding_input_hash = EXCLUDED.embedding_input_hash
-                   AND article_chunks.embedding_input_version = EXCLUDED.embedding_input_version
-                   AND article_chunks.embedding_model = ${EMBEDDING_MODEL}
-                  THEN article_chunks.embedding ELSE NULL END,
                 embedding_model = CASE
                   WHEN article_chunks.embedding_input_hash = EXCLUDED.embedding_input_hash
                    AND article_chunks.embedding_input_version = EXCLUDED.embedding_input_version
@@ -404,10 +394,6 @@ async function seedEditions(scopedDate = "") {
                 image_index = EXCLUDED.image_index,
                 image_url = EXCLUDED.image_url,
                 caption = EXCLUDED.caption,
-                embedding = CASE
-                  WHEN article_images.image_url = EXCLUDED.image_url
-                   AND article_images.caption IS NOT DISTINCT FROM EXCLUDED.caption
-                  THEN article_images.embedding ELSE NULL END,
                 embedding_model = CASE
                   WHEN article_images.image_url = EXCLUDED.image_url
                    AND article_images.caption IS NOT DISTINCT FROM EXCLUDED.caption

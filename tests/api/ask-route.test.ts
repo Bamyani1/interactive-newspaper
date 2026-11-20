@@ -122,7 +122,6 @@ import {
   getConversationHistory,
   formatHistoryForPrompt,
 } from "@/src/lib/conversation-store";
-import { clearAnswerCache } from "@/src/lib/answer-cache";
 import { answerSourceLimitFor, candidateLimitFor } from "@/src/lib/retrieval";
 
 function makeRequest(body: Record<string, unknown>, opts: { stream?: boolean } = {}): NextRequest {
@@ -186,6 +185,9 @@ const mockArticle = {
 // clearAllMocks intentionally preserves implementations, which previously let
 // an FTS rejection from one block leak into unrelated route tests.
 beforeEach(() => {
+  // Ask serves only a named build; the db module is mocked, so no row is read.
+  vi.stubEnv("RAG_ACTIVE_INDEX_BUILD_ID", "build-test");
+  vi.stubEnv("RAG_CORPUS_VERSION", "corpus-test");
   (embedQuery as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue(new Array(768).fill(0));
   (queryArticlesByEmbedding as ReturnType<typeof vi.fn>)
     .mockReset()
@@ -198,7 +200,7 @@ beforeEach(() => {
     articleCount: 11_705,
     earliestEditionDate: "1950-01-01",
     latestEditionDate: "2006-12-31",
-    retrievalTarget: "legacy",
+    retrievalTarget: "versioned",
   });
   (reformulateQuery as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue({
     embeddingQuery: "What happened at OWU?",
@@ -246,7 +248,6 @@ describe("POST /api/ask", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    clearAnswerCache();
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "What happened at OWU?",
       ftsQuery: "What happened at OWU?",
@@ -259,7 +260,7 @@ describe("POST /api/ask", () => {
       articleCount: 11_705,
       earliestEditionDate: "1950-01-01",
       latestEditionDate: "2006-12-31",
-      retrievalTarget: "legacy",
+      retrievalTarget: "versioned",
     });
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (queryArticlesByEmbedding as ReturnType<typeof vi.fn>).mockResolvedValue([mockArticle]);
@@ -564,7 +565,6 @@ describe("POST /api/ask", () => {
 
     // Short body should not have ellipsis — clear cache so second POST
     // re-runs the pipeline (answer cache would otherwise replay first hit).
-    clearAnswerCache();
 
     const shortArticle = { ...mockArticle, bodyPlain: "Short body", relevanceScore: 8 };
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([shortArticle]);
@@ -1479,7 +1479,6 @@ describe("Complexity routing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    clearAnswerCache();
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
@@ -1552,7 +1551,7 @@ describe("Complexity routing", () => {
       articleCount: 11_705,
       earliestEditionDate: "1950-01-01",
       latestEditionDate: "2006-12-31",
-      retrievalTarget: "legacy",
+      retrievalTarget: "versioned",
     });
     (runAgentLoop as ReturnType<typeof vi.fn>).mockResolvedValue({
       answer: "The cited evidence identified two parades [1965-03-15-4].",
@@ -1803,7 +1802,6 @@ describe("CRAG retry", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    clearAnswerCache();
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "obscure topic",
       ftsQuery: "obscure topic",
@@ -1859,7 +1857,6 @@ describe("CRAG retry (streaming)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    clearAnswerCache();
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "obscure topic",
       ftsQuery: "obscure topic",
@@ -1931,7 +1928,6 @@ describe("Streaming + agent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    clearAnswerCache();
     (embedQuery as ReturnType<typeof vi.fn>).mockResolvedValue(new Array(768).fill(0));
     (rerankArticles as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...mockArticle, relevanceScore: 8 },
@@ -2089,7 +2085,7 @@ describe("Streaming + agent", () => {
       articleCount: 1_500,
       earliestEditionDate: "1960-01-01",
       latestEditionDate: "1970-12-31",
-      retrievalTarget: "legacy",
+      retrievalTarget: "versioned",
     });
 
     const response = await POST(
@@ -2162,7 +2158,6 @@ describe("Every question runs the RAG pipeline (streaming)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    clearAnswerCache();
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "cache test",
       ftsQuery: "cache test",
@@ -2304,7 +2299,6 @@ describe("persistTurnBounded (conversation-turn race fix)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    clearAnswerCache();
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "race-q",
       ftsQuery: "race-q",
@@ -2453,7 +2447,6 @@ describe("typed AskError response body", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    clearAnswerCache();
     (reformulateQuery as ReturnType<typeof vi.fn>).mockResolvedValue({
       embeddingQuery: "q",
       ftsQuery: "q",
@@ -2555,7 +2548,6 @@ describe("canned error answers are never stored as history", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    clearAnswerCache();
   });
 
   it("returns 504 and stores nothing when generation times out", async () => {
@@ -2729,7 +2721,6 @@ describe("honest degradation metadata", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearAskDedupForTests();
-    clearAnswerCache();
   });
 
   it("reports a degraded reformulation instead of leaving it indistinguishable", async () => {

@@ -336,7 +336,7 @@ export async function runEvalQuestions(options: RunEvalOptions): Promise<RunEval
 
 interface CliArgs {
   dataset: "dev" | "dev2" | "holdout";
-  mode: "legacy" | "versioned";
+  mode: "versioned";
   build: string | null;
   out: string;
   yes: boolean;
@@ -345,13 +345,11 @@ interface CliArgs {
   limit: number | null;
 }
 
-function parseArgs(argv: string[]): CliArgs {
+export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     dataset: "dev",
-    // Default to what the exported serving config says. A hard-coded
-    // "legacy" silently evaluated the path production no longer serves
-    // unless every run remembered --mode versioned --build <id>.
-    mode: process.env.RAG_RETRIEVAL_MODE?.trim() === "versioned" ? "versioned" : "legacy",
+    // The only retrieval mode since migration 0015; --mode stays for old scripts.
+    mode: "versioned",
     build: process.env.RAG_ACTIVE_INDEX_BUILD_ID?.trim() || null,
     out: "",
     yes: false,
@@ -378,8 +376,8 @@ function parseArgs(argv: string[]): CliArgs {
       }
       case "--mode": {
         const value = next();
-        if (value !== "legacy" && value !== "versioned") {
-          throw new Error(`--mode must be legacy or versioned, got ${value}`);
+        if (value !== "versioned") {
+          throw new Error(`--mode must be versioned, got ${value}`);
         }
         args.mode = value;
         break;
@@ -412,8 +410,8 @@ function parseArgs(argv: string[]): CliArgs {
     }
   }
   if (!args.out) throw new Error("--out <dir> is required");
-  if (args.mode === "versioned" && !args.build) {
-    throw new Error("--build <id> is required with --mode versioned");
+  if (!args.build) {
+    throw new Error("--build <id> is required (or RAG_ACTIVE_INDEX_BUILD_ID)");
   }
   return args;
 }
@@ -513,6 +511,8 @@ async function main(): Promise<void> {
   }
 
   const indexModule = await import("../../src/lib/rag-index-config");
+  const pointerModule = await import("../../src/lib/rag-serving-pointer");
+  await pointerModule.loadServingPointer();
   const identity = indexModule.getRagRetrievalConfig();
   const config: EvalRunConfig = {
     retrievalMode: identity.mode,

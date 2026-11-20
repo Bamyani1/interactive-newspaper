@@ -237,7 +237,7 @@ export interface AskResponse {
     embeddingModel?: string;
     textEmbeddingInputVersion?: string;
     imageEmbeddingInputVersion?: string;
-    retrievalTarget?: "legacy" | "versioned";
+    retrievalTarget?: "versioned";
     coverage?: {
       intent: "absence" | "count" | "exhaustive" | "comparison";
       editionCount: number;

@@ -25,7 +25,7 @@
  *   npm run rag:health -- --json
  *
  * Reads .env.local like the rest of scripts/db/; an exported DATABASE_URL
- * or RAG_RETRIEVAL_MODE still wins, so a one-off check against another
+ * or RAG_ACTIVE_INDEX_BUILD_ID still wins, so a one-off check against another
  * deployment is a prefix away.
  *
  * Exit: 0 healthy, 1 mismatch, 2 usage/connection error.
@@ -35,20 +35,10 @@ import { fileURLToPath } from "node:url";
 
 /**
  * The table retrieval reads and the literal WHERE clause it applies, mirroring
- * db.ts's queryRagV2ByEmbedding (versioned/shadow) and
- * queryLegacyArticlesByEmbedding (legacy). Kept in one place so the check can
- * report the filter verbatim rather than paraphrasing it.
+ * db.ts's queryRagV2ByEmbedding. Kept in one place so the check can report
+ * the filter verbatim rather than paraphrasing it.
  */
 export function servingPlan(config) {
-  if (config.mode === "legacy") {
-    return {
-      table: "articles",
-      buildScoped: false,
-      vectorColumn: "embedding",
-      where: "embedding IS NOT NULL AND embedding_model = $1",
-      params: [config.embeddingModel],
-    };
-  }
   return {
     table: "article_chunks",
     buildScoped: true,
@@ -62,11 +52,9 @@ export function servingPlan(config) {
 
 /**
  * The photo search's filter (db.ts, onlyWithImages). Photos have their own
- * model, so a build can serve text and still match no photo. Legacy mode
- * has no photo vectors.
+ * model, so a build can serve text and still match no photo.
  */
 export function imageServingPlan(config) {
-  if (config.mode === "legacy") return null;
   return {
     table: "article_images",
     where:
@@ -86,16 +74,8 @@ function predicate(name, expected, actual) {
 
 /**
  * Every predicate of assertConfiguredIndexBuildReady, evaluated one at a time.
- * Legacy mode has no build row by construction, so it reports applicable:false
- * rather than a fabricated pass.
  */
 export async function checkBuildRow(executor, config) {
-  if (config.mode === "legacy") {
-    return {
-      applicable: false,
-      reason: "legacy retrieval serves the unversioned articles index",
-    };
-  }
   if (!config.activeIndexBuildId) {
     return {
       applicable: true,
@@ -124,9 +104,8 @@ export async function checkBuildRow(executor, config) {
     };
   }
 
-  // Mirrors db.ts: 'versioned' serves only an active build; 'shadow' may also
-  // measure a merely validated one.
-  const allowedStatuses = config.mode === "versioned" ? ["active"] : ["validated", "active"];
+  // Mirrors db.ts: Ask serves only an active build, the one active build of
+  // its corpus.
   const checks = [
     predicate("corpus_version", config.corpusVersion, build.corpus_version),
     predicate("pipeline_version", config.pipelineVersion, build.pipeline_version),
@@ -143,18 +122,9 @@ export async function checkBuildRow(executor, config) {
       config.imageEmbeddingInputVersion,
       build.image_embedding_input_version
     ),
-    {
-      name: "status",
-      ok: allowedStatuses.includes(String(build.status)),
-      expected: allowedStatuses.join(" | "),
-      actual: build.status,
-    },
+    predicate("status", "active", build.status),
+    predicate("active_count", 1, Number(build.active_count)),
   ];
-  // active_count is a 'versioned'-only predicate in db.ts; reporting it as a
-  // pass under 'shadow' would claim a check that never ran.
-  if (config.mode === "versioned") {
-    checks.push(predicate("active_count", 1, Number(build.active_count)));
-  }
 
   return {
     applicable: true,
@@ -307,17 +277,30 @@ export async function checkRagHealth(executor, deps) {
   };
 }
 
+/** The rag_serving_pointer row, or null when it or its table (0014) is missing. */
+export async function readServingPointer(executor) {
+  try {
+    const [row] = await executor.query({
+      text: "SELECT index_build_id, corpus_version FROM rag_serving_pointer WHERE id = 1",
+    });
+    return row
+      ? { indexBuildId: String(row.index_build_id), corpusVersion: String(row.corpus_version) }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function formatReport(report) {
   const mark = (ok) => (ok ? "ok  " : "FAIL");
   const lines = [
     `config.mode                 ${report.config.mode}`,
-    `config.indexBuildId         ${report.config.activeIndexBuildId ?? "(none)"}`,
+    `config.indexBuildId         ${report.config.activeIndexBuildId ?? "(none)"}` +
+      (report.config.source ? ` (${report.config.source})` : ""),
     `${mark(report.migrations.current)} migrations.current`,
   ];
 
-  if (!report.build.applicable) {
-    lines.push(`     build.row               n/a — ${report.build.reason}`);
-  } else if (!report.build.exists) {
+  if (!report.build.exists) {
     lines.push("FAIL build.row               missing");
   } else {
     for (const [name, check] of Object.entries(report.build.row)) {
@@ -387,10 +370,16 @@ async function main() {
     const { createNeonExecutor } = executorModule.default ?? executorModule;
     ({ assertMigrationsCurrent } = runnerModule.default ?? runnerModule);
     const { getRagRetrievalConfig } = indexConfigModule.default ?? indexConfigModule;
-    // Throws on an invalid RAG_RETRIEVAL_MODE or a candidate mode with no
-    // build id — a configuration error, not a health mismatch.
-    config = getRagRetrievalConfig();
     executor = createNeonExecutor(databaseUrl);
+    // Checks what Ask would serve: the env's build when it names one,
+    // otherwise the database's serving pointer. Throws on an invalid
+    // RAG_RETRIEVAL_MODE or with neither — a configuration error, not a
+    // health mismatch.
+    const pointer = await readServingPointer(executor);
+    config = getRagRetrievalConfig(process.env, pointer);
+    config.source = process.env.RAG_ACTIVE_INDEX_BUILD_ID?.trim()
+      ? "env override"
+      : "serving pointer";
   } catch (error) {
     console.error(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(2);
