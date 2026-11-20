@@ -34,13 +34,13 @@ def crop_and_save_images(
     regions: list[tuple[int, int, int, int]],
     output_dir: str,
     page_stem: str,
-    padding_frac: float = 0.10,
+    padding_frac: float = 0.02,
     quality: int = 95,
 ) -> dict[int, str]:
-    """Crop detected regions from the source-quality color page.
+    """Crop detected regions from the source-quality color page for publishing.
 
-    The 10% evidence margin is part of the visual-call contract.  Public asset
-    optimization happens later, after only referenced crops are known.
+    The margin stays small so a crop does not take in neighbouring headers,
+    captions or columns; the 10% evidence margin belongs to ``crop_regions``.
     """
     if not regions:
         return {}

@@ -194,7 +194,6 @@ def structure_and_link_page(
                 regions,
                 output_dir,
                 page_name,
-                padding_frac=0.10,
             )
             if diag is not None:
                 diag.images_saved = len(saved_files)
