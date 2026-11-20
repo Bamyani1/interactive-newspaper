@@ -275,6 +275,36 @@ describe("scoreRun fact recall", () => {
   it("averages the share of fact groups each answer covers: (2/2 + 0/1) / 2", () => {
     expect(scores.metrics.factRecall).toBe(0.5);
   });
+
+  it("leaves out fact groups the question's own words satisfy", () => {
+    const echoed = scoreRun({
+      runFile: finalizeRunFile({
+        schemaVersion: 1,
+        runId: RUN_ID,
+        datasetId: DATASET_ID,
+        split: "development",
+        config: records[0].config,
+        startedAt: null,
+        records: [records[0]],
+        totals: computeRunTotals([records[0]]),
+        selfSha256: null,
+      }),
+      evidence: {
+        datasetId: DATASET_ID,
+        split: "development",
+        questions: [
+          {
+            id: "qf1",
+            question: "When did the Board meet in Gray Chapel?",
+            expectedFactsAny: [["Gray Chapel"], ["1969"]],
+          },
+        ],
+      },
+    });
+    // The phrase match credits the echoed "Gray Chapel"; the echo-free metric does not.
+    expect(echoed.metrics.factRecall).toBe(0.5);
+    expect(echoed.metrics.factRecallNoEcho).toBe(0);
+  });
 });
 
 describe("scoreRun citation and answer metrics", () => {

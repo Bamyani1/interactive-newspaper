@@ -32,11 +32,14 @@ import {
   type EvalRunRecord,
   type FreezeCandidateReceipt,
 } from "./lib/eval-records";
+import { nuggetsFor } from "./lib/answer-support";
 
 // ─── Evidence shape (mirrors the dev catalog) ───────────────────
 
 export interface EvidenceQuestion {
   id: string;
+  /** The question as asked; echo detection reads it. */
+  question?: string;
   expectedSourceIdsAny?: string[];
   expectedSourceIdsAll?: string[];
   /** Every group must contribute at least one returned source ID. */
@@ -44,6 +47,8 @@ export interface EvidenceQuestion {
   forbiddenInAnswer?: string[];
   /** Every group needs one of its phrases in the answer text. */
   expectedFactsAny?: string[][];
+  /** Owner marks, parallel to expectedFactsAny; absent means every group is vital. */
+  expectedFactsVital?: boolean[];
   mode?: "text" | "visual";
   /** True when the correct behavior is refusing to answer. */
   expectedRefusal?: boolean;
@@ -192,6 +197,7 @@ export function scoreRun(options: ScoreRunOptions): ScoreReport {
   let relevantTotal = 0;
   const claimSupport: number[] = [];
   const factRecall: number[] = [];
+  const factRecallNoEcho: number[] = [];
   const visualHits: number[] = [];
   let expectedRefusals = 0;
   let correctRefusals = 0;
@@ -242,6 +248,15 @@ export function scoreRun(options: ScoreRunOptions): ScoreReport {
         group.some((phrase) => answerLower.includes(phrase.toLowerCase()))
       ).length;
       factRecall.push(groupsHit / question.expectedFactsAny.length);
+      // Groups the question's own words satisfy are free for any answer that echoes it.
+      const scored = nuggetsFor(question).filter((nugget) => !nugget.echo);
+      if (scored.length > 0) {
+        factRecallNoEcho.push(
+          scored.filter((nugget) =>
+            nugget.phrases.some((phrase) => answerLower.includes(phrase.toLowerCase()))
+          ).length / scored.length
+        );
+      }
     }
 
     // ── Visual attachment accuracy ──
@@ -308,6 +323,7 @@ export function scoreRun(options: ScoreRunOptions): ScoreReport {
     citationRecall: relevantTotal === 0 ? null : relevantCited / relevantTotal,
     claimSupportRate: mean(claimSupport),
     factRecall: mean(factRecall),
+    factRecallNoEcho: mean(factRecallNoEcho),
     visualAttachmentAccuracy: mean(visualHits),
     noAnswerCalibration: expectedRefusals === 0 ? null : correctRefusals / expectedRefusals,
     injectionResistance: injectionProbes === 0 ? null : injectionSafe / injectionProbes,
@@ -349,6 +365,7 @@ const QUALITY_METRICS = new Set([
   "citationRecall",
   "claimSupportRate",
   "factRecall",
+  "factRecallNoEcho",
   "visualAttachmentAccuracy",
   "noAnswerCalibration",
   "injectionResistance",

@@ -87,6 +87,7 @@ scripts/dev/data/
 !scripts/db/locked-editions.json
 !tests/api/rag-golden-questions.json
 !tests/api/rag-dev-v2-questions.json
+!tests/api/rag-retrieval-v1-questions.json
 # Baseline snapshot for the RAG golden-question regression test
 # (tests/api/rag-golden-questions.test.ts, run on demand with RUN_RAG_GOLDEN=1).
 # Committed so each run compares against a stable reference instead of writing a

@@ -164,7 +164,7 @@ async function draftQuestion(client, prompt, usage) {
   return JSON.parse(text);
 }
 
-async function mapLimit(items, limit, fn) {
+export async function mapLimit(items, limit, fn) {
   const results = new Array(items.length);
   let next = 0;
   await Promise.all(
