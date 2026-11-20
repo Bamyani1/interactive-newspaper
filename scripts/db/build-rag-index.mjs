@@ -12,6 +12,8 @@
  * means a NEW build id; builds are immutable once out of 'building'):
  *   --create --corpus <id>       mint a 'building' build, print its id
  *   --populate <buildId>         deterministic chunk/image records (no model calls)
+ *   --reuse <buildId> [--from <id>]  copy vectors + context lines of unchanged
+ *                                articles from the serving (or named) build
  *   --contextualize <buildId>    Claude-written keyword-search context per chunk
  *                                (Batch API; --batch <id> collects a submitted batch)
  *   --embed-text <buildId>       voyage-context-4 chunk embeddings, one list per
@@ -20,6 +22,10 @@
  *   --finalize <buildId>         coverage check -> 'validated' or 'failed'
  *   --register-corpus <id>       add a corpus version to corpus_versions (idempotent);
  *                                imports require it on the target
+ *   --switch <buildId>           serve this build: activate it and move the
+ *                                rag_serving_pointer row (0014), in one transaction
+ *   --switch-back                serve the pointer's previous build again
+ *   --pointer                    print the serving pointer
  *   --dry-run [--corpus <id>]    read-only cost/plan report, no writes
  *   --status <buildId>           build row + pending counts
  *
@@ -1040,6 +1046,203 @@ export async function rollbackActivation(executor, buildId) {
   return { buildId, status: "validated" };
 }
 
+const REUSE_IDENTITY_COLUMNS = [
+  "embedding_model",
+  "image_embedding_model",
+  "embedding_dims",
+  "text_embedding_input_version",
+  "image_embedding_input_version",
+];
+
+/**
+ * Copy vectors into a 'building' build from an older one (the serving build
+ * by default) so --embed-text and --embed-images only pay for what changed.
+ * voyage-context-4 embeds an article's chunks together, so an article is
+ * reused whole or not at all: its (chunk_index, embedding_input_hash) list
+ * must equal the source's, and every source chunk must carry a vector.
+ * Context lines are copied with the vectors. A photo is reused when its
+ * article is and its index, URL (content-addressed) and caption match.
+ * Run it after --populate and before --contextualize; it is idempotent.
+ */
+export async function reuseFromBuild(executor, buildId, { fromBuildId } = {}) {
+  const build = await requireBuildingBuild(executor, buildId);
+  const sourceId = fromBuildId ?? (await getServingPointer(executor))?.indexBuildId;
+  if (!sourceId) {
+    throw new Error("No serving pointer to reuse from; name a source build with --from <buildId>.");
+  }
+  const source = await getBuild(executor, sourceId);
+  if (!source) throw new Error(`Unknown index build ${sourceId}.`);
+  for (const column of REUSE_IDENTITY_COLUMNS) {
+    if (String(source[column]) !== String(build[column])) {
+      throw new Error(
+        `Build ${sourceId} has ${column}=${source[column]}, ${buildId} has ${build[column]}; ` +
+          `its vectors cannot be reused.`
+      );
+    }
+  }
+
+  const sameArticles = `
+    same_articles AS (
+      SELECT t.article_id
+      FROM (SELECT article_id,
+                   array_agg(chunk_index || ':' || embedding_input_hash ORDER BY chunk_index) AS sig
+            FROM article_chunks WHERE index_build_id = $1 GROUP BY article_id) t
+      JOIN (SELECT article_id,
+                   array_agg(chunk_index || ':' || embedding_input_hash ORDER BY chunk_index) AS sig,
+                   bool_and(embedding_1024 IS NOT NULL AND embedding_model = $3
+                            AND embedding_input_version = $4) AS complete
+            FROM article_chunks WHERE index_build_id = $2 GROUP BY article_id) s
+        USING (article_id)
+      WHERE t.sig = s.sig AND s.complete
+    )`;
+  const [text] = await executor.query({
+    text: `WITH ${sameArticles},
+           copied AS (
+             UPDATE article_chunks AS c
+             SET embedding_1024 = s.embedding_1024,
+                 embedding_model = s.embedding_model,
+                 embedding_input_version = s.embedding_input_version,
+                 context_text = COALESCE(c.context_text, s.context_text)
+             FROM article_chunks AS s
+             WHERE c.index_build_id = $1 AND s.index_build_id = $2
+               AND c.article_id = s.article_id AND c.chunk_index = s.chunk_index
+               AND c.embedding_1024 IS NULL
+               AND c.article_id IN (SELECT article_id FROM same_articles)
+             RETURNING c.article_id)
+           SELECT count(*)::int AS chunks, count(DISTINCT article_id)::int AS articles FROM copied`,
+    params: [buildId, sourceId, build.embedding_model, build.text_embedding_input_version],
+  });
+  const [images] = await executor.query({
+    text: `WITH ${sameArticles},
+           copied AS (
+             UPDATE article_images AS i
+             SET embedding_1024 = s.embedding_1024,
+                 embedding_model = s.embedding_model,
+                 embedding_input_version = s.embedding_input_version,
+                 embedding_input_hash = s.embedding_input_hash
+             FROM article_images AS s
+             WHERE i.index_build_id = $1 AND s.index_build_id = $2
+               AND i.article_id = s.article_id AND i.image_index = s.image_index
+               AND i.image_url = s.image_url AND i.caption IS NOT DISTINCT FROM s.caption
+               AND i.embedding_1024 IS NULL AND s.embedding_1024 IS NOT NULL
+               AND s.embedding_model = $5 AND s.embedding_input_version = $6
+               AND s.embedding_input_hash IS NOT NULL
+               AND i.article_id IN (SELECT article_id FROM same_articles)
+             RETURNING i.id)
+           SELECT count(*)::int AS images FROM copied`,
+    params: [
+      buildId,
+      sourceId,
+      build.embedding_model,
+      build.text_embedding_input_version,
+      build.image_embedding_model,
+      build.image_embedding_input_version,
+    ],
+  });
+  const [pending] = await executor.query({
+    text: `SELECT
+             (SELECT count(DISTINCT article_id)::int FROM article_chunks
+              WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS articles,
+             (SELECT count(*)::int FROM article_chunks
+              WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS chunks,
+             (SELECT count(*)::int FROM article_images
+              WHERE index_build_id = $1 AND embedding_1024 IS NULL) AS images`,
+    params: [buildId],
+  });
+  return {
+    sourceBuildId: sourceId,
+    articles: { reused: Number(text.articles), toEmbed: Number(pending.articles) },
+    chunks: { reused: Number(text.chunks), toEmbed: Number(pending.chunks) },
+    images: { reused: Number(images.images), toEmbed: Number(pending.images) },
+  };
+}
+
+export async function getServingPointer(executor) {
+  const [row] = await executor.query({
+    text: `SELECT index_build_id, corpus_version, previous_build_id, previous_corpus_version,
+                  switched_at
+           FROM rag_serving_pointer WHERE id = 1`,
+  });
+  if (!row) return null;
+  return {
+    indexBuildId: String(row.index_build_id),
+    corpusVersion: String(row.corpus_version),
+    previousBuildId: row.previous_build_id ? String(row.previous_build_id) : null,
+    previousCorpusVersion: row.previous_corpus_version ? String(row.previous_corpus_version) : null,
+    switchedAt: row.switched_at,
+  };
+}
+
+/**
+ * Point Ask at a build. One transaction demotes the corpus's other active
+ * build, activates this one and moves the pointer, keeping the old pair as
+ * `previous_*` for --switch-back. A build whose chunks are not all embedded
+ * (a half-finished import, say) is refused: Ask would serve a partial index.
+ */
+export async function switchServingBuild(executor, buildId) {
+  const build = await getBuild(executor, buildId);
+  if (!build) throw new Error(`Unknown index build ${buildId}.`);
+  if (build.status !== "validated" && build.status !== "active") {
+    throw new Error(
+      `Index build ${buildId} is '${build.status}'; only 'validated' or 'active' builds can serve.`
+    );
+  }
+  const [counts] = await executor.query({
+    text: `SELECT count(*)::int AS chunks,
+                  count(*) FILTER (WHERE embedding_1024 IS NULL)::int AS missing
+           FROM article_chunks WHERE index_build_id = $1`,
+    params: [buildId],
+  });
+  if (Number(counts.chunks) === 0) throw new Error(`Index build ${buildId} has no chunks.`);
+  if (Number(counts.missing) > 0) {
+    throw new Error(
+      `Index build ${buildId} has ${counts.missing} chunk(s) without vectors; ` +
+        `finish embedding or importing it first.`
+    );
+  }
+
+  const current = await getServingPointer(executor);
+  const unchanged = current?.indexBuildId === buildId;
+  const previousBuildId = unchanged ? current.previousBuildId : (current?.indexBuildId ?? null);
+  const previousCorpus = unchanged
+    ? current.previousCorpusVersion
+    : (current?.corpusVersion ?? null);
+  await executor.transactionBatch([
+    {
+      text: `UPDATE rag_index_builds SET status = 'validated'
+             WHERE corpus_version = $1 AND status = 'active' AND id <> $2`,
+      params: [build.corpus_version, buildId],
+    },
+    {
+      text: `UPDATE rag_index_builds SET status = 'active', activated_at = now()
+             WHERE id = $1 AND status = 'validated'`,
+      params: [buildId],
+    },
+    {
+      text: `INSERT INTO rag_serving_pointer
+               (id, index_build_id, corpus_version, previous_build_id, previous_corpus_version)
+             VALUES (1, $1, $2, $3, $4)
+             ON CONFLICT (id) DO UPDATE SET
+               index_build_id = EXCLUDED.index_build_id,
+               corpus_version = EXCLUDED.corpus_version,
+               previous_build_id = EXCLUDED.previous_build_id,
+               previous_corpus_version = EXCLUDED.previous_corpus_version,
+               switched_at = now()`,
+      params: [buildId, build.corpus_version, previousBuildId, previousCorpus],
+    },
+  ]);
+  return { buildId, corpusVersion: String(build.corpus_version), previousBuildId };
+}
+
+/** Point Ask back at the previous build; running it again flips forward. */
+export async function switchBack(executor) {
+  const current = await getServingPointer(executor);
+  if (!current?.previousBuildId) {
+    throw new Error("The serving pointer has no previous build to switch back to.");
+  }
+  return switchServingBuild(executor, current.previousBuildId);
+}
+
 /**
  * Read-only build plan and cost estimate: NO writes, NO model calls.
  * chunkChars sums the exact embedding input per article: the header once,
@@ -1160,6 +1363,13 @@ async function main() {
   const populateId = argValue("--populate");
   if (populateId) {
     console.log(JSON.stringify(await populateBuildRecords(executor, populateId), null, 2));
+    return;
+  }
+
+  const reuseId = argValue("--reuse");
+  if (reuseId) {
+    const result = await reuseFromBuild(executor, reuseId, { fromBuildId: argValue("--from") });
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
 
@@ -1287,6 +1497,22 @@ async function main() {
     return;
   }
 
+  const switchId = argValue("--switch");
+  if (switchId) {
+    console.log(JSON.stringify(await switchServingBuild(executor, switchId), null, 2));
+    return;
+  }
+
+  if (process.argv.includes("--switch-back")) {
+    console.log(JSON.stringify(await switchBack(executor), null, 2));
+    return;
+  }
+
+  if (process.argv.includes("--pointer")) {
+    console.log(JSON.stringify(await getServingPointer(executor), null, 2));
+    return;
+  }
+
   if (process.argv.includes("--dry-run")) {
     const report = await dryRunReport(executor, { corpusVersion: argValue("--corpus") });
     console.log(JSON.stringify(report, null, 2));
@@ -1320,8 +1546,9 @@ async function main() {
   }
 
   fail(
-    "One of --create, --populate, --contextualize, --embed-text, --embed-images, --finalize, " +
-      "--register-corpus, --activate, --rollback-activation, --dry-run, --status is required."
+    "One of --create, --populate, --reuse, --contextualize, --embed-text, --embed-images, --finalize, " +
+      "--register-corpus, --activate, --rollback-activation, --switch, --switch-back, --pointer, " +
+      "--dry-run, --status is required."
   );
 }
 

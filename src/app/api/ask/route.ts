@@ -79,6 +79,7 @@ import {
 } from "@/src/lib/retrieval";
 import type { CandidateRetrievalResult } from "@/src/lib/retrieval";
 import { getRagRetrievalConfig } from "@/src/lib/rag-index-config";
+import { loadServingPointer } from "@/src/lib/rag-serving-pointer";
 import type { CoverageIntent } from "@/src/lib/query-reformulator";
 import type { ArchiveCoverage } from "@/src/lib/rag-coverage";
 import { buildCitationSnapshots, type CitationSnapshotSource } from "@/src/lib/citation-snapshot";
@@ -910,6 +911,7 @@ async function handleStreamingAsk(params: {
         let articles: RetrievedArticle[];
         let method: RetrievalMethod = "hybrid";
         let retrievalTimeMs = 0;
+        await loadServingPointer();
         let retrievalIdentity = getRagRetrievalConfig();
 
         try {
@@ -1504,6 +1506,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let articles: RetrievedArticle[];
     let method: RetrievalMethod = "hybrid";
     let retrievalTimeMs = 0;
+    await loadServingPointer();
     let retrievalIdentity = getRagRetrievalConfig();
     // Visual mode retrieves more candidates since we pre-filter to articles
     // with images (smaller pool, need wider net to find relevant photos)

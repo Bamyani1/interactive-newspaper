@@ -10,6 +10,7 @@ import {
   checkRagHealth,
   formatReport,
   imageServingPlan,
+  readServingPointer,
   servingPlan,
 } from "../../scripts/db/check-rag-health.mjs";
 import { MIGRATIONS_DIR, createTestDb, type TestDb } from "./helpers/pglite";
@@ -321,5 +322,20 @@ describe("check-rag-health", () => {
       params: [BUILD, IMAGE_MODEL, IMAGE_INPUT],
     });
     expect(imageServingPlan(config({ mode: "legacy", activeIndexBuildId: null }))).toBeNull();
+  });
+
+  it("reads the serving pointer, and null before there is one or without its table", async () => {
+    expect(await readServingPointer(db.executor)).toBeNull();
+    await db.pg.query(
+      `INSERT INTO rag_serving_pointer (id, index_build_id, corpus_version) VALUES (1, $1, 'c')`,
+      [BUILD]
+    );
+    expect(await readServingPointer(db.executor)).toEqual({
+      indexBuildId: BUILD,
+      corpusVersion: "c",
+    });
+    const broken = { ...db.executor, query: async () => Promise.reject(new Error("no table")) };
+    expect(await readServingPointer(broken)).toBeNull();
+    await db.pg.query("DELETE FROM rag_serving_pointer");
   });
 });
